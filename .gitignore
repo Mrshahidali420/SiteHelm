@@ -1,0 +1,7 @@
+# Tooling state — not part of the project
+.remember/
+
+# OS cruft
+.DS_Store
+Thumbs.db
+desktop.ini
