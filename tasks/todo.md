@@ -12,7 +12,7 @@
 - [x] Task 1: Establish the clean-room evidence protocol and source register. Validation: PASS. Committed in 4b097a5.
 - [x] Task 2: Build public WordPress MCP market and EMCP capability inventories. Validation: PASS with 21 registered sources. Committed in 4b097a5.
 - [x] Task 3: Define, screen, and obtain approval for the product identity. User selected SiteHelm on 2026-07-24. Validation: PASS.
-- [ ] Task 4: Create the auditable V1 requirements matrix.
+- [x] Task 4: Create the auditable V1 requirements matrix. Validation: PASS with 64 requirements (51 V1, 13 roadmap/excluded) covering all seven V1 modules.
 - [ ] Task 5: Freeze the Phase 2 foundation contract.
 - [ ] Task 6: Run the Phase 1 readiness gate and obtain approval.
 
