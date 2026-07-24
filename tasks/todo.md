@@ -9,9 +9,9 @@
 
 ## Phase 1 Execution
 
-- [x] Task 1: Establish the clean-room evidence protocol and source register. Validation: PASS. Commit skipped because authorization was not granted.
-- [x] Task 2: Build public WordPress MCP market and EMCP capability inventories. Validation: PASS with 21 registered sources. Commit skipped because authorization was not granted.
-- [ ] Task 3: Define, screen, and obtain approval for the product identity.
+- [x] Task 1: Establish the clean-room evidence protocol and source register. Validation: PASS. Committed in 4b097a5.
+- [x] Task 2: Build public WordPress MCP market and EMCP capability inventories. Validation: PASS with 21 registered sources. Committed in 4b097a5.
+- [x] Task 3: Define, screen, and obtain approval for the product identity. User selected SiteHelm on 2026-07-24. Validation: PASS.
 - [ ] Task 4: Create the auditable V1 requirements matrix.
 - [ ] Task 5: Freeze the Phase 2 foundation contract.
 - [ ] Task 6: Run the Phase 1 readiness gate and obtain approval.

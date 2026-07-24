@@ -59,8 +59,8 @@ Scores use 1–5 for distinctiveness, pronunciation, category fit, extensibility
 | Candidate | Distinctive | Pronounceable | Category fit | Extensible | Searchable | Agency credibility | Total | Assessment |
 |---|---:|---:|---:|---:|---:|---:|---:|---|
 | SiteHelm | 4 | 5 | 5 | 4 | 4 | 5 | 27 | Clearest customer meaning and strongest agency tone; matching `.com` is registered. |
-| ControlLoom | 5 | 4 | 4 | 5 | 5 | 4 | Most distinctive and cleanest preliminary collision screen; requires more category explanation. |
-| StackRelay | 4 | 5 | 4 | 5 | 3 | 4 | Strong integration-platform meaning; existing `stackrelay` GitHub identity creates avoidable confusion. |
+| ControlLoom | 5 | 4 | 4 | 5 | 5 | 4 | 27 | Most distinctive and cleanest preliminary collision screen; requires more category explanation. |
+| StackRelay | 4 | 5 | 4 | 5 | 3 | 4 | 25 | Strong integration-platform meaning; existing `stackrelay` GitHub identity creates avoidable confusion. |
 
 ### Recommendation
 
@@ -68,4 +68,11 @@ Scores use 1–5 for distinctiveness, pronunciation, category fit, extensibility
 
 ## Selected Identity
 
-Decision gate: the user must choose one finalist before this brief becomes authoritative. No candidate is currently treated as the product identity, and no public reservation or announcement is authorized.
+**SiteHelm** was selected by the user on 2026-07-24 from the three screened finalists.
+
+- Product name: SiteHelm, pronounced "site helm".
+- Category statement: a secure WordPress MCP operations platform delivered as one plugin.
+- Value proposition: one plugin for operating WordPress and supported plugins through MCP, with consistent discovery, permission, preview, verification, audit, and recovery behavior.
+- ControlLoom and StackRelay are unselected candidates with no reserved or pending status.
+- The registered state of `sitehelm.com` is a recorded observation, not a blocker; naming does not depend on that domain.
+- No domain, social account, repository, or plugin slug is reserved. Any public reservation or announcement requires separate explicit user approval.
