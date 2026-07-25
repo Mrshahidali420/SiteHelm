@@ -13,6 +13,7 @@
 Copied from the frozen contract (`docs/product/phase-2-foundation-contract.md`) and approved decisions. Every task implicitly includes these:
 
 - Platform floor: PHP `>= 8.1`, WordPress `>= 6.6` (approved by user 2026-07-25). The plugin must refuse to boot below these and degrade safely (admin notice, no fatal).
+- PHP 8.1 syntax rule (amended 2026-07-25 after Task 3 review): class-level `readonly class` is PHP 8.2+ syntax and must NOT be used. Wherever a code block in this plan shows `final readonly class X`, implement `final class X` with every promoted constructor property individually marked `readonly` (e.g. `public readonly string $id`). Behavior is identical; only the declaration form changes.
 - The contract is frozen: PHP translation must not change field semantics, allowed values, or guarantees. Renames require a contract revision first.
 - Exactly eleven dispatchers: `content-read`, `content-write`, `media-read`, `media-write`, `menu-read`, `menu-write`, `elementor-read`, `elementor-write`, `fields-read`, `fields-write`, `system-read`. No other top-level MCP tools.
 - Operation identifiers: lower-case kebab-case, start/end alphanumeric, permanent after release.
