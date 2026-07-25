@@ -28,12 +28,19 @@ final class CapabilityRegistryTest extends TestCase {
 		$this->registry = new CapabilityRegistry();
 	}
 
-	private function makeReadDefinition( string $id = 'system-environment' ): OperationDefinition {
+	private function makeReadDefinition(
+		string $id = 'system-environment',
+		Domain $domain = Domain::System
+	): OperationDefinition {
+		$module       = Domain::System === $domain ? ModuleId::Diagnostics : ModuleId::Core;
+		$capabilities = Domain::System === $domain ? [ 'manage_options' ] : [ 'edit_posts' ];
+		$description  = Domain::System === $domain ? 'Report environment versions.' : "Perform $id operation.";
+
 		return new OperationDefinition(
 			id: $id,
-			domain: Domain::System,
+			domain: $domain,
 			mode: Mode::Read,
-			description: 'Report environment versions.',
+			description: $description,
 			inputSchema: [
 				'type'                 => 'object',
 				'properties'           => [],
@@ -45,7 +52,7 @@ final class CapabilityRegistryTest extends TestCase {
 				'additionalProperties' => false,
 			],
 			schemaVersion: 1,
-			requiredCapabilities: [ 'manage_options' ],
+			requiredCapabilities: $capabilities,
 			risk: Risk::Low,
 			isReadOnly: true,
 			isDestructive: false,
@@ -53,7 +60,7 @@ final class CapabilityRegistryTest extends TestCase {
 			previewPolicy: PreviewPolicy::NotApplicable,
 			snapshotPolicy: SnapshotPolicy::NotApplicable,
 			rollbackPolicy: RollbackPolicy::NotApplicable,
-			module: ModuleId::Diagnostics,
+			module: $module,
 			supportedVersions: [ 'wordpress' => '>=6.6' ],
 			example: [
 				'operation' => $id,
@@ -106,5 +113,31 @@ final class CapabilityRegistryTest extends TestCase {
 	public function test_unknown_operation_lookup_throws(): void {
 		$this->expectException( InvalidArgumentException::class );
 		$this->registry->definition( 'does-not-exist' );
+	}
+
+	public function test_for_dispatcher_filters_and_preserves_registration_order(): void {
+		// Register three operations: two Content domain, one System domain.
+		$content_list       = $this->makeReadDefinition( 'content-list', Domain::Content );
+		$system_environment = $this->makeReadDefinition( 'system-environment', Domain::System );
+		$content_get        = $this->makeReadDefinition( 'content-get', Domain::Content );
+
+		$this->registry->register( $content_list, static fn(): array => [] );
+		$this->registry->register( $system_environment, static fn(): array => [] );
+		$this->registry->register( $content_get, static fn(): array => [] );
+
+		// Assert content-read returns both Content operations in registration order.
+		$content_read = $this->registry->forDispatcher( 'content-read' );
+		$this->assertSame(
+			[ 'content-list', 'content-get' ],
+			array_map( static fn( OperationDefinition $d ): string => $d->id, $content_read )
+		);
+
+		// Assert the returned array is reindexed as a list.
+		$this->assertSame( [ 0, 1 ], array_keys( $content_read ) );
+
+		// Assert system-read returns only the System operation.
+		$system_read = $this->registry->forDispatcher( 'system-read' );
+		$this->assertSame( [ 'system-environment' ], array_map( static fn( OperationDefinition $d ): string => $d->id, $system_read ) );
+		$this->assertSame( [ 0 ], array_keys( $system_read ) );
 	}
 }
