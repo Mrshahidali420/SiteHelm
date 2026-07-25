@@ -39,6 +39,8 @@ Every task implicitly includes all of these. They are copied from the frozen con
 
 **Trusted-write mode is OUT of scope for Phase 3a.** The contract permits an administrator to enroll risk-`low` operations for single-call execution in trusted-write mode. No Phase 3a write operation is risk `low` — `content-create` and `content-update` are `medium` per the requirements matrix, and `content-rollback-apply` is `medium` — so no Phase 3a operation is eligible. Do **not** build enrollment storage, an enrollment admin screen, or a trusted-write bypass branch in `ChangeEngine`. In trusted-write mode Phase 3a behaves exactly as in safe-write mode: the two-phase flow is mandatory for every `previewPolicy: required` operation. `PolicyEngine` already treats `trusted-write` and `safe-write` identically and must stay that way.
 
+**Runtime output validation against `outputSchema` is deferred, per recorded interpretation I6.** Phase 2 shipped none and Phase 3a adds none. The interim mitigation Phase 3a *does* build is a per-operation test, one for each of the five operations this phase registers (`content-get`, `content-update`, `content-create`, `content-rollback-apply`, `audit-list`), asserting that the operation's returned `data` conforms to its own declared `outputSchema`. That catches schema drift where it originates and costs nothing at runtime. Validation at the dispatcher's return point is **required before V1 public release**, because that is the point at which the declared schema becomes a promise to third-party clients. Do not build it here.
+
 ## Architecture Decisions
 
 These are decided here so no task has to invent them.
@@ -57,7 +59,15 @@ Ordinary settings stay in the options API: `sitehelm_permission_mode` (existing)
 
 Schema version lives in the `sitehelm_db_version` option (integer as string). `Installer::maybeUpgrade()` runs on `plugins_loaded` (after boot) and re-runs `dbDelta` whenever the stored version is below `Installer::DB_VERSION`. `dbDelta` is idempotent and additive, so the upgrade path for version 2+ is: add the column or index to the `CREATE TABLE` statement, bump `DB_VERSION`, and `dbDelta` migrates in place. Destructive migrations are out of scope and would require a dedicated migration step.
 
-**Degradation.** `Installer::install()` returns `false` and writes `sitehelm_db_status = 'unavailable'` when `dbDelta` did not produce all three tables. The gateway, the registry, the policy engine, catalogs, `system-environment`, and `content-get` all keep working — none of them touch these tables. Only the storage-dependent surfaces degrade, and they degrade to **`integration_unavailable`**. Mapping justification: the contract defines that code as "the module that owns the operation is not active because its supported [dependency] is not installed"; the core module's change, audit, and snapshot engines depend on its own local tables, and when those are absent the engine genuinely is not installed. `execution_failed` was rejected because it falsely asserts that a write started.
+**Degradation.** `Installer::install()` returns `false` and writes `sitehelm_db_status = 'unavailable'` when `dbDelta` did not produce all three tables.
+
+Storage unavailability is reported through **normal module health**, not through a special case: `CoreModule::health()` returns `ModuleHealth::Inactive` with a `null` version whenever `Installer::isAvailable()` is false, and `Active` otherwise (Task 3). Everything else then follows from machinery that already exists — `CatalogBuilder` marks every core operation `available: false` with `blockedReason: 'integration_unavailable'`, `system-read` integration health reports `core: inactive`, and `Dispatcher`'s existing health branch refuses invocation with `integration_unavailable`. Catalog, integration health, and invocation therefore cannot disagree, and no judgement call about which error code to raise is left to a task.
+
+The cost of module-level granularity is deliberate and stated here: `content-get` and `audit-list` do not themselves touch the three tables, but they belong to the `core` module, so they degrade with it. A module is the smallest unit of health the contract gives us, and a catalog that advertised `content-get` while the module reported itself inactive would be the same class of lie this rule exists to prevent.
+
+The gateway, the registry, the policy engine, the dispatcher catalogs themselves, and the `diagnostics` module's `system-environment` all keep working, because none of them is part of the `core` module.
+
+`ChangeEngine::require_storage()` and `AuditRead`'s availability probe remain as defence in depth. With health-based degradation they are no longer the primary guard and should not be reachable through `Dispatcher`, but they keep a direct caller — a future WP-CLI path, a test, an internal call — from writing into tables that do not exist.
 
 ### D2. Plan token handling
 
@@ -95,7 +105,7 @@ The fingerprint is recomputed at apply from a fresh `resolveTarget()`. A differe
 `PreviewRenderer::render()` returns exactly `[ 'human' => string, 'machine' => array ]`.
 
 - `human` is a plain-text block: a first line naming the operation and target, then one indented line per changed field. Text fields longer than 80 characters are rendered as `"<first 80 chars>…" (N characters)` so the summary stays bounded.
-- `machine` is `[ 'target' => <targetKey>, 'changes' => [ [ 'field' => ..., 'before' => ..., 'after' => ... ], ... ] ]`, with `changes` ordered by `ContentFields::FIELD_ORDER` position and then alphabetically for any field not in that list — never by PHP array insertion order.
+- `machine` is `[ 'target' => <targetKey>, 'exists' => <bool>, 'changes' => [ [ 'field' => ..., 'before' => ..., 'after' => ... ], ... ] ]`, with `changes` ordered by `ContentFields::FIELD_ORDER` position and then alphabetically for any field not in that list — never by PHP array insertion order. `exists` is carried because a creation and an update produce structurally identical `changes` lists, and a client rendering the preview needs to say "create" or "revise" without inferring it from the target key. Task 8 asserts the full three-key shape, not just the members a given test cares about, so this decision and the implementation cannot drift apart again.
 
 Determinism follows from that fixed ordering plus the fact that both renderings are pure functions of `TargetState::fields` and `PlannedChange::afterFields`.
 
@@ -118,16 +128,22 @@ An interface was chosen over a value object of closures because six named method
 
 `CapabilityRegistry` gains `registerWrite( OperationDefinition, WriteOperation )`, `hasWriteOperation( string )`, and `writeOperation( string )`. `register()` is untouched, so **every Phase 2 read path is byte-for-byte unchanged**. `Dispatcher` branches once, after authorization and validation: if `hasWriteOperation()` it calls `ChangeEngine::handle()`, otherwise it calls `handler()` exactly as before.
 
-`planChange()` runs in **both** phases. At apply the engine re-runs `resolveTarget()` (for the fingerprint) and then `planChange()` with the payload recovered from the stored plan. That is what makes apply execute exactly the previewed change, and it means any guard inside `planChange()` — for example `content-create`'s conditional `publish_posts` check — runs at preview and again at apply with no duplicated code. `PlannedChange` is therefore never serialized into the plan row.
+`planChange()` runs in **both** phases. At apply the engine re-runs `resolveTarget()` (for the fingerprint) and then `planChange()` with **the payload the client re-supplies on the apply call**, verified against the stored `payload_hash`. No payload is stored: `plan_body` holds only the preview renderings and the snapshot eligibility, and `payload_hash` is a one-way digest, so the plan row cannot reconstruct the arguments and is not meant to. The client therefore resends `arguments` unchanged alongside `planToken`; the digest comparison is what proves they are the same arguments the preview was generated from. Because the client-facing consequence of getting this wrong is a confusing `invalid_input` on the primary happy path, it is stated in the dispatcher tool schema's `planToken` description and enforced with a dedicated message in `Dispatcher` (Task 13).
 
-Verification compares `readBack()->fields` against `PlannedChange::afterFields`, restricted to the keys `afterFields` declares. `afterFields` is the **promised subset**, so an operation only ever promises what it actually sets.
+Re-running `planChange()` is what makes apply execute exactly the previewed change, and it means any guard inside it — for example `content-create`'s conditional `publish_posts` check — runs at preview and again at apply with no duplicated code. `PlannedChange` is therefore never serialized into the plan row.
+
+Verification compares `readBack()->fields` against `PlannedChange::afterFields`, restricted to the keys `afterFields` declares. `afterFields` is the **promised subset**, so an operation only ever promises what it actually sets, and a promise it kept is never reported as a failure.
+
+Verification does not stop there. Comparing only the promised keys would let a third-party `save_post` hook rewrite `post_content`, retag terms, or rewrite the slug during `wp_update_post()` and pass silently — a change the caller approved a preview that never showed, which contradicts REQ-0005's outcome that the operator "inspects exactly what a proposed write will change". The engine already holds the full before-state and the full after-state, so after the promised keys verify it also compares the **unpromised** keys and appends one `warnings[]` entry per unpromised field that changed. Field **names** only, never values — the same redaction rule the audit summary follows. `post_modified_gmt` is excluded because every write changes it. These are warnings, not failures: the operation kept every promise it made, and turning a third-party plugin's behaviour into a write failure would break sites for doing nothing wrong.
 
 ### D6. Audit
 
 Every `previewPolicy: required` write produces an audit record, in two steps:
 
-1. **Before execution** `AuditRecorder::start()` inserts a row with `outcome = 'started'`. If that insert fails, the engine refuses to execute and returns `integration_unavailable` with state untouched — the contract's "no such operation may execute without producing an audit record" is thereby unbreakable.
-2. **After execution and verification** `AuditRecorder::finish()` updates `outcome`, `snapshot_id`, the concrete `target_key`, and the redacted `summary`. A failed update is logged server-side and surfaces as a warning on the result; the record already exists, so the guarantee holds.
+1. **Before execution** `AuditRecorder::start()` inserts a row with `outcome = 'started'`, **already carrying `snapshot_id` and `rollback_ref`**. If that insert fails, the engine refuses to execute and returns `integration_unavailable` with state untouched — the contract's "no such operation may execute without producing an audit record" is thereby unbreakable.
+2. **After execution and verification** `AuditRecorder::finish()` updates `outcome`, the concrete `target_key`, and the redacted `summary`, and restates `snapshot_id` and `rollback_ref` (the snapshot is captured before the audit row opens, so both are already known; restating them keeps `finish()` a complete statement of the final row rather than a partial one).
+
+**Why the snapshot handle is written on the opening insert, not only on `finish()`.** The snapshot is captured *before* the audit record opens, so both values are in hand at `start()`. If they were written only by `finish()`, a fatal error inside `applyChange()` — an out-of-memory in a third-party hook, a killed PHP worker — would leave a permanently `started` audit row with `rollback_ref = NULL`, a real snapshot row nothing points at, and possibly a landed write. That state is recoverable only by direct database access, which is precisely what interpretation I4's rationale ("the audit record exists before execution, so the recovery information is never lost") promises it will never require. Writing both on the opening insert makes that claim unconditional instead of true-only-on-paths-that-reach-`finish()`.
 
 Stored: `correlation_id`, `site_id`, `actor_id`, `actor_login`, `client_id`, `operation_id`, `target_key`, `plan_fingerprint` (the plan's `stateFingerprint`), `outcome`, `summary`, `snapshot_id`, `rollback_ref`, `recorded_at`. The rollback reference is duplicated onto the audit row so an audit read can hand a recovery handle straight to `rollback-apply` without a join.
 
@@ -174,14 +190,15 @@ src/
 │   ├── ContentRollbackApply.php REQ-0008 rollback execution WriteOperation
 │   └── AuditRead.php            REQ-0009 audit log read handler
 ├── Registry/CapabilityRegistry.php   MODIFIED: registerWrite/hasWriteOperation/writeOperation
-├── Registry/CatalogBuilder.php       MODIFIED: meta-capabilities excluded from the catalog filter
-├── Gateway/Dispatcher.php            MODIFIED: authorize before health; planToken; write routing
+├── Registry/CatalogBuilder.php       MODIFIED: meta-capabilities mapped to primitives for the catalog filter
+├── Gateway/Dispatcher.php            MODIFIED: authorize before health; strict top-level members; planToken; write routing
 ├── Gateway/McpServer.php             MODIFIED: planToken in the tool schema; stop echoing tool name
 └── Bootstrap/Plugin.php              MODIFIED: CoreModule, ChangeEngine, installer, cron wiring
 
 sitehelm.php                          MODIFIED: activation/deactivation hooks, upgrade check
 
 tests/
+├── TestCase.php                      MODIFIED: shared assertConformsToOutputSchema() helper (Task 2)
 ├── Doubles/FakeWpdb.php              Shared $wpdb test double for every storage test
 └── Unit/
     ├── Storage/InstallerTest.php
@@ -233,7 +250,7 @@ Phase 2 merged with three latent findings recorded in its plan's "Residual risks
 
 **Interfaces:**
 - Consumes: `CatalogBuilder::build( string $dispatcher, OperationContext $context ): array`; `Dispatcher::dispatch( string $dispatcherName, array $args, OperationContext $context ): array`; `PolicyEngine::authorize( OperationDefinition $definition, OperationContext $context, ?int $targetId = null ): void`.
-- Produces: no signature changes. Behavioural guarantees later tasks rely on: (a) an operation whose only required capability is a target meta-capability (`edit_post`, `delete_post`, `assign_terms`) appears in the dispatcher catalog; (b) `Dispatcher` returns `forbidden` in preference to `integration_unavailable` or `unsupported_version`; (c) `McpServer` never echoes a client-supplied tool name.
+- Produces: no signature changes. Behavioural guarantees later tasks rely on: (a) an operation whose only required capability is a target meta-capability (`edit_post`, `delete_post`, `assign_terms`) is filtered on that capability's **primitive equivalent** (`edit_posts`, `delete_posts`, `edit_posts`), so it appears in the catalog of a caller who could plausibly perform it and stays hidden from one who could not; (b) `Dispatcher` returns `forbidden` in preference to `integration_unavailable` or `unsupported_version`; (c) `McpServer` never echoes a client-supplied tool name.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -244,11 +261,12 @@ Add these two methods to `tests/Unit/Registry/CatalogBuilderTest.php` (the class
 	 * A target meta-capability cannot be evaluated without a concrete target:
 	 * WordPress's map_meta_cap resolves a target-less check to do_not_allow, so
 	 * user_can() returns false for every user including administrators. The
-	 * catalog must therefore not filter on meta-capabilities at all, or every
-	 * write operation would vanish from every catalog.
+	 * catalog therefore filters on the meta-capability's PRIMITIVE equivalent —
+	 * edit_post becomes edit_posts — so a caller who could plausibly perform the
+	 * operation still sees it.
 	 */
 	public function test_meta_capability_only_operation_stays_in_the_catalog(): void {
-		$this->allowCapabilities( [ 'manage_options' ] );
+		$this->allowCapabilities( [ 'edit_posts' ] );
 		$this->registry->register(
 			new OperationDefinition(
 				id: 'content-update',
@@ -293,7 +311,7 @@ Add these two methods to `tests/Unit/Registry/CatalogBuilderTest.php` (the class
 	}
 
 	/**
-	 * Excluding meta-capabilities must not weaken the non-meta filter: an
+	 * Mapping meta-capabilities must not weaken the non-meta filter: an
 	 * operation that also needs a primitive capability the user does not hold
 	 * stays hidden.
 	 */
@@ -337,6 +355,66 @@ Add these two methods to `tests/Unit/Registry/CatalogBuilderTest.php` (the class
 		$catalog = $this->builder->build( 'content-write', $this->makeContext() );
 
 		$this->assertSame( [], $catalog['operations'] );
+	}
+
+	/**
+	 * The failure mode a naive "skip meta-capabilities entirely" fix would
+	 * introduce: content-update declares only edit_post, so skipping would leave
+	 * it with no filterable capability at all and it would be advertised to
+	 * every authenticated caller, a subscriber's catalog included. Mapping
+	 * edit_post to edit_posts keeps a real visibility boundary.
+	 */
+	public function test_a_caller_without_capabilities_sees_no_write_operations_while_an_editor_does(): void {
+		$this->registry->register(
+			new OperationDefinition(
+				id: 'content-update',
+				domain: Domain::Content,
+				mode: Mode::Write,
+				description: 'Revise the title, body, or excerpt of one existing content item.',
+				inputSchema: [
+					'type'                 => 'object',
+					'properties'           => [ 'id' => [ 'type' => 'integer' ] ],
+					'additionalProperties' => false,
+				],
+				outputSchema: [
+					'type'                 => 'object',
+					'properties'           => [ 'id' => [ 'type' => 'integer' ] ],
+					'additionalProperties' => false,
+				],
+				schemaVersion: 1,
+				requiredCapabilities: [ 'edit_post' ],
+				risk: Risk::Medium,
+				isReadOnly: false,
+				isDestructive: false,
+				isIdempotent: true,
+				previewPolicy: PreviewPolicy::Required,
+				snapshotPolicy: SnapshotPolicy::Required,
+				rollbackPolicy: RollbackPolicy::Supported,
+				module: ModuleId::Core,
+				supportedVersions: [ 'wordpress' => '>=6.6' ],
+				example: [
+					'operation' => 'content-update',
+					'arguments' => [ 'id' => 42 ],
+				],
+			),
+			static fn(): array => []
+		);
+
+		$this->allowCapabilities( [] );
+		$this->assertSame(
+			[],
+			$this->builder->build( 'content-write', $this->makeContext() )['operations'],
+			'A subscriber must not be told the site can be written to.'
+		);
+
+		$this->allowCapabilities( [ 'edit_posts' ] );
+		$this->assertSame(
+			[ 'content-update' ],
+			array_column(
+				$this->builder->build( 'content-write', $this->makeContext() )['operations'],
+				'operation'
+			)
+		);
 	}
 ```
 
@@ -412,14 +490,19 @@ Add this method to `tests/Unit/Gateway/McpServerTest.php`:
 
 ```
 export PATH="/c/Users/SHAHID ALI/AppData/Roaming/Composer/bin:$PATH"
-vendor/bin/phpunit --filter 'test_meta_capability_only_operation_stays_in_the_catalog|test_missing_primitive_capability_still_hides_a_meta_capability_operation|test_authorization_failure_wins_over_module_health|test_unknown_tool_message_does_not_echo_the_client_value'
+vendor/bin/phpunit --filter 'test_meta_capability_only_operation_stays_in_the_catalog|test_missing_primitive_capability_still_hides_a_meta_capability_operation|test_a_caller_without_capabilities_sees_no_write_operations_while_an_editor_does|test_authorization_failure_wins_over_module_health|test_unknown_tool_message_does_not_echo_the_client_value'
 ```
 
-Expected: FAIL, four failures.
-- `test_meta_capability_only_operation_stays_in_the_catalog` fails because `is_permitted()` calls `user_can( 7, 'edit_post' )` with no object id; the stub returns false for any capability outside the held list, so the operation is filtered out and `array_column` yields `[]`.
-- `test_missing_primitive_capability_still_hides_a_meta_capability_operation` currently passes only by accident (both capabilities fail); it will keep passing and must keep passing after the fix — if it fails after the fix, the fix is too broad.
-- `test_authorization_failure_wins_over_module_health` fails with `integration_unavailable` instead of `forbidden` because `Dispatcher` reads module health before calling `policy->authorize()`.
-- `test_unknown_tool_message_does_not_echo_the_client_value` fails because the message is `"Unknown tool 'plugins-write'."`.
+Expected: five tests run, **four fail and one already passes**. Do not read "everything must be red" as the target; check each name against this list.
+
+FAIL now, PASS after Step 3:
+- `test_meta_capability_only_operation_stays_in_the_catalog` — `is_permitted()` calls `user_can( 7, 'edit_post' )` with no object id and no mapping; the stub holds only `edit_posts`, so the operation is filtered out and `array_column` yields `[]`.
+- `test_a_caller_without_capabilities_sees_no_write_operations_while_an_editor_does` — its first assertion (a capability-less caller sees nothing) already holds; its second (an editor sees `content-update`) does not, so the test fails overall.
+- `test_authorization_failure_wins_over_module_health` — returns `integration_unavailable` instead of `forbidden`, because `Dispatcher` reads module health before calling `policy->authorize()`.
+- `test_unknown_tool_message_does_not_echo_the_client_value` — the message is `"Unknown tool 'plugins-write'."`.
+
+PASSES already, and **must keep passing** after Step 3 — if it turns red, the fix is too broad:
+- `test_missing_primitive_capability_still_hides_a_meta_capability_operation` — today it passes only incidentally, because both required capabilities fail the target-less check. After the fix it must pass for the right reason: the mapped `edit_posts` is genuinely not held.
 
 - [ ] **Step 3: Implement**
 
@@ -427,26 +510,38 @@ In `src/Registry/CatalogBuilder.php`, add the constant and replace `is_permitted
 
 ```php
 	/**
-	 * Target meta-capabilities from the foundation contract. WordPress resolves
-	 * these through map_meta_cap against a concrete object, so a target-less
-	 * check is meaningless: map_meta_cap returns do_not_allow and user_can()
-	 * answers false for every user, administrators included.
+	 * Target meta-capabilities from the foundation contract, each mapped to the
+	 * primitive capability that stands in for it when there is no target.
+	 *
+	 * WordPress resolves a meta-capability through map_meta_cap against a
+	 * concrete object. A catalog listing has no object, so a target-less check
+	 * is meaningless: map_meta_cap returns do_not_allow and user_can() answers
+	 * false for every user, administrators included.
+	 *
+	 * Skipping meta-capabilities instead of mapping them would be worse than
+	 * the bug it fixes. `content-update` declares only `edit_post`, so with the
+	 * skip it would have no filterable capability left and would be advertised
+	 * to every authenticated caller — a subscriber's catalog included. Mapping
+	 * keeps a real, if coarser, visibility boundary.
 	 */
-	private const META_CAPABILITIES = [ 'edit_post', 'delete_post', 'assign_terms' ];
+	private const META_CAPABILITY_MAP = [
+		'edit_post'    => 'edit_posts',
+		'delete_post'  => 'delete_posts',
+		'assign_terms' => 'edit_posts',
+	];
 ```
 
 ```php
 	/**
-	 * Whether the resolved user holds every non-meta capability the operation
-	 * requires.
+	 * Whether the resolved user holds every capability the operation requires,
+	 * with target meta-capabilities evaluated through their primitive stand-ins.
 	 *
-	 * Target meta-capabilities are deliberately NOT evaluated here. A catalog
-	 * listing has no concrete target, and WordPress's map_meta_cap resolves a
-	 * target-less meta check to do_not_allow — so filtering on one would hide
-	 * every write operation from every user rather than answering a useful
-	 * question. PolicyEngine performs the real target-bound check at
-	 * invocation and remains authoritative; an operation listed here may still
-	 * be refused with `forbidden` when invoked against a specific target.
+	 * This answers "could this caller plausibly perform this operation at all",
+	 * which is the only question a target-less catalog listing can answer. It is
+	 * deliberately NOT an authorization decision: PolicyEngine performs the real
+	 * target-bound check at invocation time and remains authoritative, so an
+	 * operation listed here may still be refused with `forbidden` when invoked
+	 * against a specific target.
 	 *
 	 * @param OperationDefinition $definition The operation to test.
 	 * @param OperationContext    $context    The request context.
@@ -457,10 +552,9 @@ In `src/Registry/CatalogBuilder.php`, add the constant and replace `is_permitted
 	 */
 	private function is_permitted( OperationDefinition $definition, OperationContext $context ): bool {
 		foreach ( $definition->requiredCapabilities as $capability ) {
-			if ( in_array( $capability, self::META_CAPABILITIES, true ) ) {
-				continue;
-			}
-			if ( ! user_can( $context->userId, $capability ) ) {
+			$effective = self::META_CAPABILITY_MAP[ $capability ] ?? $capability;
+
+			if ( ! user_can( $context->userId, $effective ) ) {
 				return false;
 			}
 		}
@@ -470,14 +564,15 @@ In `src/Registry/CatalogBuilder.php`, add the constant and replace `is_permitted
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 ```
 
-Also replace the second bullet of the class-level docblock list so it no longer claims the check answers "could this user ever perform this operation":
+Also replace the second bullet of the class-level docblock list so it no longer claims the check answers "could this user ever perform this operation" through a target-less meta check:
 
 ```php
  * Two distinct filters apply, and they must not be confused:
- * - Operations the caller may not SEE (a required non-meta capability is not
- *   held) are omitted entirely, per the contract's "every operation the caller
- *   is permitted to see". Advertising them would disclose the site's surface
- *   area. Target meta-capabilities are not evaluated here at all; see
+ * - Operations the caller may not SEE (a required capability is not held) are
+ *   omitted entirely, per the contract's "every operation the caller is
+ *   permitted to see". Advertising them would disclose the site's surface area.
+ *   A required target meta-capability is evaluated through its primitive
+ *   stand-in, because a listing has no target to evaluate it against; see
  *   is_permitted().
  * - Operations blocked by a module dependency stay listed with `available:false`
  *   and a `blockedReason`, because the contract requires blocked operations to
@@ -528,8 +623,10 @@ In `src/Gateway/McpServer.php`, inside `toolCall()`, replace the unknown-tool br
 
 ```
 export PATH="/c/Users/SHAHID ALI/AppData/Roaming/Composer/bin:$PATH"
-vendor/bin/phpunit --filter 'test_meta_capability_only_operation_stays_in_the_catalog|test_missing_primitive_capability_still_hides_a_meta_capability_operation|test_authorization_failure_wins_over_module_health|test_unknown_tool_message_does_not_echo_the_client_value'
+vendor/bin/phpunit --filter 'test_meta_capability_only_operation_stays_in_the_catalog|test_missing_primitive_capability_still_hides_a_meta_capability_operation|test_a_caller_without_capabilities_sees_no_write_operations_while_an_editor_does|test_authorization_failure_wins_over_module_health|test_unknown_tool_message_does_not_echo_the_client_value'
 ```
+
+All five pass, including the one that was already green in Step 2.
 
 - [ ] **Step 5: Full suite and lint**
 
@@ -547,11 +644,14 @@ Both must be clean. `phpcs` is run with no path argument, so it lints the whole 
 git add -A
 git commit -m "fix: close Phase 2 residual risks reachable in Phase 3a
 
-Meta-capabilities are excluded from the catalog filter: a target-less
-listing cannot evaluate them, and map_meta_cap would hide every write
-operation from every user. Authorization now precedes the module-health
-checks so forbidden always wins over integration_unavailable. The
-unknown-tool message no longer echoes the client's value."
+Meta-capabilities are mapped to their primitive equivalents for the
+catalog filter: a target-less listing cannot evaluate them, and
+map_meta_cap would hide every write operation from every user. Skipping
+them instead would advertise content-update, whose only declared
+capability is edit_post, to every authenticated caller. Authorization now
+precedes the module-health checks so forbidden always wins over
+integration_unavailable. The unknown-tool message no longer echoes the
+client's value."
 ```
 
 ---
@@ -565,6 +665,7 @@ The `core` module has no PHP presence yet. Create it, register its first operati
 - Create: `src/Modules/Core/ContentRead.php`
 - Create: `src/Modules/Core/CoreModule.php`
 - Modify: `src/Bootstrap/Plugin.php`
+- Modify: `tests/TestCase.php` (shared `assertConformsToOutputSchema()` helper, used from here on by Tasks 14–17)
 - Test: `tests/Unit/Modules/Core/ContentFieldsTest.php`
 - Test: `tests/Unit/Modules/Core/ContentReadTest.php`
 - Test: `tests/Unit/Modules/Core/CoreModuleTest.php`
@@ -582,8 +683,162 @@ The `core` module has no PHP presence yet. Create it, register its first operati
   - `ContentFields::publicRecord( int $postId, array $fields ): array` — the client-facing record.
   - `ContentRead::handle( array $input, OperationContext $context ): array`.
   - `CoreModule` implements `IntegrationModule` with a no-argument constructor.
+  - `SiteHelm\Tests\TestCase::assertConformsToOutputSchema( array $data, array $schema ): void` — the shared interim guard for interpretation I6, used again by Tasks 14, 15, 16, and 17.
+
+**On `CoreModule::health()` in this task.** It reports `Active` unconditionally, and that is correct *here*: nothing this task registers touches the plugin's own tables, so the `core` module has no storage dependency yet. Task 3 creates that dependency and, in the same task, makes `health()` storage-aware — returning `Inactive` with a `null` version when `Installer::isAvailable()` is false. Do not attempt the storage-aware version in this task: `Installer` does not exist until Task 3, so referencing it here would leave Task 2 unable to end with a green suite. Task 3 also updates `CoreModuleTest::test_module_declares_core_identity_and_active_health` accordingly.
 
 - [ ] **Step 1: Write the failing test**
+
+Add the shared conformance helper to `tests/TestCase.php`, along with `use stdClass;`:
+
+```php
+	/**
+	 * Reports whether one value matches a declared property, type and all.
+	 *
+	 * This is the single source of truth for the type rules, shared by the
+	 * branch-selection predicate and by the assertions that report failures.
+	 * It mirrors SchemaValidator's rules with one deliberate difference: an
+	 * empty JSON object has no distinct PHP array form, so a declared `object`
+	 * member is satisfied by a stdClass placeholder or by an empty array as
+	 * well as by an associative array. SchemaValidator itself is not reused,
+	 * because it is an INPUT validator and rejects both of those.
+	 *
+	 * @param mixed                $value    The member's value.
+	 * @param array<string, mixed> $property The member's declared schema.
+	 *
+	 * @return bool True when the value matches the declaration.
+	 */
+	private function matchesDeclaredType( mixed $value, array $property ): bool {
+		$type = $property['type'] ?? null;
+
+		$matches = match ( $type ) {
+			'string'  => is_string( $value ),
+			'integer' => is_int( $value ),
+			'number'  => is_int( $value ) || is_float( $value ),
+			'boolean' => is_bool( $value ),
+			'array'   => is_array( $value ) && array_is_list( $value ),
+			'object'  => $value instanceof stdClass || is_array( $value ),
+			default   => true,
+		};
+
+		if ( ! $matches || 'array' !== $type || ! isset( $property['items']['type'] ) ) {
+			return $matches;
+		}
+
+		foreach ( $value as $item ) {
+			$item_matches = match ( $property['items']['type'] ) {
+				'string'  => is_string( $item ),
+				'integer' => is_int( $item ),
+				default   => true,
+			};
+
+			if ( ! $item_matches ) {
+				return false;
+			}
+		}
+
+		return true;
+	}
+
+	/**
+	 * Reports whether a payload conforms to one schema, without asserting.
+	 *
+	 * A predicate rather than an assertion because selecting which branch of a
+	 * `oneOf` union a payload matches requires testing branches that are
+	 * expected to fail.
+	 *
+	 * @param array<string, mixed> $data   The returned data payload.
+	 * @param array<string, mixed> $schema One schema, or one branch of a union.
+	 *
+	 * @return bool True when the payload conforms.
+	 */
+	private function conformsToSchema( array $data, array $schema ): bool {
+		$properties = $schema['properties'] ?? [];
+
+		if ( [] !== array_diff( array_keys( $data ), array_keys( $properties ) ) ) {
+			return false;
+		}
+
+		if ( [] !== array_diff( $schema['required'] ?? [], array_keys( $data ) ) ) {
+			return false;
+		}
+
+		foreach ( $data as $key => $value ) {
+			if ( ! $this->matchesDeclaredType( $value, $properties[ $key ] ) ) {
+				return false;
+			}
+		}
+
+		return true;
+	}
+
+	/**
+	 * Asserts a returned `data` payload conforms to its operation's declared
+	 * outputSchema.
+	 *
+	 * Interpretation I6 accepts that nothing validates output at runtime and
+	 * mandates this per-operation test as the interim mitigation, so drift is
+	 * caught where it originates rather than by a client.
+	 *
+	 * A write's schema is a `oneOf` union of its plan-phase and apply-phase
+	 * shapes (interpretation I2). The union is satisfied only by matching
+	 * exactly one branch: zero means the payload matches neither shape, and
+	 * more than one would mean the branches are not actually exclusive, which
+	 * is the defect the union exists to prevent. Once a single branch is
+	 * selected, the member-level assertions run against it so a failure names
+	 * the member rather than the whole payload.
+	 *
+	 * @param array<string, mixed> $data   The returned data payload.
+	 * @param array<string, mixed> $schema The operation's declared outputSchema.
+	 */
+	protected function assertConformsToOutputSchema( array $data, array $schema ): void {
+		if ( isset( $schema['oneOf'] ) ) {
+			$matched = array_values(
+				array_filter(
+					$schema['oneOf'],
+					fn( array $branch ): bool => $this->conformsToSchema( $data, $branch )
+				)
+			);
+
+			$this->assertCount(
+				1,
+				$matched,
+				sprintf(
+					'The payload [%s] must match exactly one branch of the declared union, and matched %d.',
+					implode( ', ', array_keys( $data ) ),
+					count( $matched )
+				)
+			);
+
+			$schema = $matched[0];
+		}
+
+		$properties = $schema['properties'] ?? [];
+
+		$this->assertSame(
+			[],
+			array_values( array_diff( array_keys( $data ), array_keys( $properties ) ) ),
+			'The payload carries a member the declared outputSchema does not.'
+		);
+
+		$this->assertSame(
+			[],
+			array_values( array_diff( $schema['required'] ?? [], array_keys( $data ) ) ),
+			'The payload omits a member the declared outputSchema requires.'
+		);
+
+		foreach ( $data as $key => $value ) {
+			$this->assertTrue(
+				$this->matchesDeclaredType( $value, $properties[ $key ] ),
+				sprintf(
+					"Member '%s' does not match its declared type '%s'.",
+					$key,
+					(string) ( $properties[ $key ]['type'] ?? null )
+				)
+			);
+		}
+	}
+```
 
 Create `tests/Unit/Modules/Core/ContentFieldsTest.php`:
 
@@ -824,8 +1079,30 @@ final class ContentReadTest extends TestCase {
 			$this->assertSame( ErrorCode::TargetNotFound, $e->errorCode );
 		}
 	}
+
+	/**
+	 * Interim mitigation for interpretation I6: nothing validates output against
+	 * outputSchema at runtime, so each operation asserts it here instead. The
+	 * schema is read from the registered definition rather than restated, so the
+	 * test cannot pass against a schema that has since drifted.
+	 */
+	public function test_the_returned_record_conforms_to_the_declared_output_schema(): void {
+		Functions\when( 'user_can' )->justReturn( true );
+		Functions\when( 'get_bloginfo' )->justReturn( '6.8.1' );
+		$this->stubPost();
+
+		$registry = new CapabilityRegistry();
+		( new CoreModule() )->register( $registry );
+
+		$this->assertConformsToOutputSchema(
+			$this->handler->handle( [ 'id' => 42 ], $this->makeContext() ),
+			$registry->definition( 'content-get' )->outputSchema
+		);
+	}
 }
 ```
+
+`ContentReadTest` needs `use SiteHelm\Modules\Core\CoreModule;` and `use SiteHelm\Registry\CapabilityRegistry;` for that last test.
 
 Create `tests/Unit/Modules/Core/CoreModuleTest.php`:
 
@@ -1437,10 +1714,14 @@ returns target_not_found for both absent and invisible targets."
 ---
 ### Task 3: Database installer for the three plugin-owned tables
 
+This task creates the `core` module's storage dependency, so it is also the task that makes `CoreModule::health()` report on it. Those two things belong together: the moment the tables exist as a dependency is the moment a `health()` that ignores them starts lying.
+
 **Files:**
 - Create: `src/Storage/Installer.php`
 - Create: `tests/Doubles/FakeWpdb.php`
+- Modify: `src/Modules/Core/CoreModule.php`
 - Test: `tests/Unit/Storage/InstallerTest.php`
+- Test: `tests/Unit/Modules/Core/CoreModuleTest.php`
 
 **Interfaces:**
 - Consumes: nothing from earlier tasks. WordPress: `dbDelta()`, `get_option()`, `update_option()`, `$wpdb->prefix`, `$wpdb->get_charset_collate()`, `$wpdb->get_var()`, `$wpdb->prepare()`, `$wpdb->esc_like()`.
@@ -1449,7 +1730,8 @@ returns target_not_found for both absent and invisible targets."
   - `Installer::TABLE_PLANS` (`'plans'`), `Installer::TABLE_AUDIT` (`'audit'`), `Installer::TABLE_SNAPSHOTS` (`'snapshots'`).
   - `Installer::tableName( string $suffix ): string` — static, `$wpdb->prefix . 'sitehelm_' . $suffix`.
   - `Installer::install(): bool`, `Installer::maybeUpgrade(): bool`, `Installer::isAvailable(): bool`.
-  - `SiteHelm\Tests\Doubles\FakeWpdb` with public `$prefix`, `$insert_id`, `$rows_affected`, `$last_error`, `$queries`, `$prepared`, `$inserts`, `$updates`, `$rowQueue`, `$resultQueue`, `$varQueue`, `$queryRowsQueue`, `$failInsert`, `$failInsertTables`, `$failUpdate`, and methods `prepare()`, `esc_like()`, `get_charset_collate()`, `get_var()`, `get_row()`, `get_results()`, `insert()`, `update()`, `query()`. Note that `$insert_id` is one shared counter across all tables, so a test that inserts a snapshot before an audit row sees the audit row take the second identifier.
+  - `SiteHelm\Tests\Doubles\FakeWpdb` with public `$prefix`, `$insert_id`, `$rows_affected`, `$last_error`, `$queries`, `$prepared`, `$inserts`, `$updates`, `$rowQueue`, `$resultQueue`, `$varQueue`, `$queryRowsQueue`, `$failInsert`, `$failInsertTables`, `$failUpdate`, and methods `prepare()`, `esc_like()`, `get_charset_collate()`, `get_var()`, `get_row()`, `get_results()`, `insert()`, `update()`, `query()`. Note that `$insert_id` is one shared counter across all tables, so a test that inserts a snapshot before an audit row sees the audit row take the second identifier. Note also, because it matters for Task 5: like real `$wpdb::insert()`, this double returns a **row count** (`1`) and exposes the new identifier separately on `$insert_id`. The two values are only ever equal for the very first insert.
+  - `CoreModule::health()` becomes storage-aware: `[ 'version' => null, 'health' => 'inactive' ]` when `Installer::isAvailable()` is false, `[ 'version' => <wp version>, 'health' => 'active' ]` otherwise.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1762,14 +2044,59 @@ final class InstallerTest extends TestCase {
 }
 ```
 
+Now make `CoreModuleTest` assert both health branches. **Replace** the existing `test_module_declares_core_identity_and_active_health` with the two methods below, and add `use SiteHelm\Storage\Installer;` plus a `$this->options` fixture to the class (Task 2 left the class with no `get_option` stub, because it did not need one):
+
+```php
+	/** @var array<string, mixed> */
+	private array $options = [];
+
+	protected function setUp(): void {
+		parent::setUp();
+		$this->options = [ Installer::STATUS_OPTION => Installer::STATUS_READY ];
+		Functions\when( 'get_option' )->alias(
+			fn( string $key, mixed $fallback = false ): mixed => $this->options[ $key ] ?? $fallback
+		);
+	}
+
+	public function test_module_is_active_with_the_wordpress_version_when_storage_is_ready(): void {
+		Functions\when( 'get_bloginfo' )->justReturn( '6.8.1' );
+		$module = new CoreModule();
+
+		$this->assertSame( ModuleId::Core, $module->id() );
+		$this->assertSame( 'wordpress', $module->dependency()['name'] );
+		$this->assertSame( ModuleHealth::Active->value, $module->health()['health'] );
+		$this->assertSame( '6.8.1', $module->health()['version'] );
+		$this->assertNotSame( '', $module->displayName() );
+	}
+
+	/**
+	 * The catalog, system-read integration health, and Dispatcher all read this
+	 * one value. If it stayed 'active' while the tables were missing, the
+	 * content-write catalog would advertise every write as available and every
+	 * invocation would still refuse — three surfaces contradicting each other,
+	 * and an AI client attempting a write the catalog promised.
+	 */
+	public function test_module_is_inactive_with_no_version_when_storage_is_unavailable(): void {
+		Functions\when( 'get_bloginfo' )->justReturn( '6.8.1' );
+		$this->options[ Installer::STATUS_OPTION ] = Installer::STATUS_UNAVAILABLE;
+
+		$health = ( new CoreModule() )->health();
+
+		$this->assertSame( ModuleHealth::Inactive->value, $health['health'] );
+		$this->assertNull( $health['version'] );
+	}
+```
+
+The remaining `CoreModuleTest` method, `test_module_registers_content_get_on_the_content_read_dispatcher`, is unchanged.
+
 - [ ] **Step 2: Run the test to verify it fails**
 
 ```
 export PATH="/c/Users/SHAHID ALI/AppData/Roaming/Composer/bin:$PATH"
-vendor/bin/phpunit --filter InstallerTest
+vendor/bin/phpunit --filter 'InstallerTest|CoreModuleTest'
 ```
 
-Expected: FAIL with `Error: Class "SiteHelm\Storage\Installer" not found` — the class does not exist yet.
+Expected: FAIL with `Error: Class "SiteHelm\Storage\Installer" not found` from every `InstallerTest` case and from both `CoreModuleTest` health cases — the class does not exist yet, and `CoreModuleTest` now imports it.
 
 - [ ] **Step 3: Implement**
 
@@ -2035,11 +2362,48 @@ final class Installer {
 }
 ```
 
+In `src/Modules/Core/CoreModule.php`, add the import and replace `health()` in full:
+
+```php
+use SiteHelm\Storage\Installer;
+```
+
+```php
+	/**
+	 * The detected version and health status.
+	 *
+	 * The module's own local tables are a dependency exactly like a third-party
+	 * plugin would be, so their absence is reported the same way: inactive, with
+	 * no detected version. Reporting it here rather than at each call site is
+	 * what keeps the three surfaces that read health in agreement — the
+	 * dispatcher catalog marks every core operation `available: false` with
+	 * `blockedReason: integration_unavailable`, system-read integration health
+	 * reports the module inactive, and Dispatcher refuses invocation with
+	 * `integration_unavailable`. A catalog that advertised a write the engine
+	 * would then refuse is the failure this prevents.
+	 *
+	 * @return array<string, mixed> Version and health.
+	 */
+	public function health(): array {
+		if ( ! ( new Installer() )->isAvailable() ) {
+			return [
+				'version' => null,
+				'health'  => ModuleHealth::Inactive->value,
+			];
+		}
+
+		return [
+			'version' => (string) get_bloginfo( 'version' ),
+			'health'  => ModuleHealth::Active->value,
+		];
+	}
+```
+
 - [ ] **Step 4: Run the test to verify it passes**
 
 ```
 export PATH="/c/Users/SHAHID ALI/AppData/Roaming/Composer/bin:$PATH"
-vendor/bin/phpunit --filter InstallerTest
+vendor/bin/phpunit --filter 'InstallerTest|CoreModuleTest'
 ```
 
 - [ ] **Step 5: Full suite and lint**
@@ -2059,7 +2423,12 @@ git commit -m "feat: database installer for the three plugin-owned tables
 Pending plans, audit events, and rollback snapshots get dedicated local
 tables created through dbDelta, with a stored schema version and an
 additive upgrade path. A creation failure records an unavailable status
-and returns false rather than throwing, so the gateway keeps serving."
+and returns false rather than throwing, so the gateway keeps serving.
+
+CoreModule::health() now reports that storage state, because these tables
+are the module's own dependency. Catalog availability, system-read
+integration health, and dispatcher invocation therefore all read one
+value and cannot contradict each other."
 ```
 
 ---
@@ -2520,7 +2889,7 @@ changed, and expired rows are pruned opportunistically on each issue."
 - Consumes: `Installer::tableName()`, `Installer::TABLE_AUDIT`.
 - Produces, relied on by Tasks 6, 9, and 17:
   - `AuditStore::MAX_LIMIT` (100).
-  - `AuditStore::insert( array $row ): int` — row keys: `correlation_id`, `site_id`, `actor_id`, `actor_login`, `client_id`, `operation_id`, `target_key`, `plan_fingerprint`, `outcome`, `summary`, `recorded_at`. Returns the new row id, or `0` on failure.
+  - `AuditStore::insert( array $row ): int` — row keys: `correlation_id`, `site_id`, `actor_id`, `actor_login`, `client_id`, `operation_id`, `target_key`, `plan_fingerprint`, `outcome`, `summary`, `snapshot_id` (nullable), `rollback_ref` (nullable), `recorded_at`. Returns the new row id, or `0` on failure. `snapshot_id` and `rollback_ref` are written on the OPENING insert, not only by `finish()`: the snapshot is captured before the audit record opens, and a fatal between the two would otherwise strand a real snapshot no audit row points at (D6).
   - `AuditStore::finish( int $id, string $outcome, ?int $snapshotId, ?string $rollbackRef, string $targetKey, string $summary ): bool`.
   - `AuditStore::query( array $filters, int $limit, int $offset ): array`.
   - `AuditStore::count( array $filters ): int`.
@@ -2583,12 +2952,24 @@ final class AuditStoreTest extends TestCase {
 			'plan_fingerprint' => str_repeat( 'b', 64 ),
 			'outcome'          => 'started',
 			'summary'          => '{}',
+			'snapshot_id'      => 9,
+			'rollback_ref'     => 'rb-0123456789abcdef01234567',
 			'recorded_at'      => 1_800_000_000,
 		];
 	}
 
-	public function test_insert_returns_the_new_row_id(): void {
+	/**
+	 * Inserts TWICE deliberately. Asserting only that the first insert returns 1
+	 * cannot distinguish the correct implementation from the wrong one: real
+	 * $wpdb::insert() returns a ROW COUNT, so `return (int) $inserted;` also
+	 * yields 1 and the test would pass. With that bug every write would receive
+	 * auditRef 'audit-1' and AuditRecorder::finish() would overwrite audit row 1
+	 * forever, destroying REQ-0009's accountability guarantee while the suite
+	 * stayed green. Only reading $wpdb->insert_id produces 2 on the second call.
+	 */
+	public function test_insert_returns_the_new_row_id_not_the_affected_row_count(): void {
 		$this->assertSame( 1, $this->store->insert( $this->row() ) );
+		$this->assertSame( 2, $this->store->insert( $this->row() ) );
 		$this->assertSame(
 			Installer::tableName( Installer::TABLE_AUDIT ),
 			$this->wpdb->inserts[0]['table']
@@ -2599,6 +2980,29 @@ final class AuditStoreTest extends TestCase {
 		$this->wpdb->failInsert = true;
 
 		$this->assertSame( 0, $this->store->insert( $this->row() ) );
+	}
+
+	/**
+	 * The recovery handle must be on the row from the moment it exists, so a
+	 * fatal inside the write cannot strand a captured snapshot that no audit row
+	 * references. See D6.
+	 */
+	public function test_insert_stores_the_snapshot_handle_on_the_opening_row(): void {
+		$this->store->insert( $this->row() );
+
+		$data = $this->wpdb->inserts[0]['data'];
+		$this->assertSame( 9, $data['snapshot_id'] );
+		$this->assertSame( 'rb-0123456789abcdef01234567', $data['rollback_ref'] );
+	}
+
+	public function test_insert_accepts_an_absent_snapshot_handle(): void {
+		$row                 = $this->row();
+		$row['snapshot_id']  = null;
+		$row['rollback_ref'] = null;
+
+		$this->assertSame( 1, $this->store->insert( $row ) );
+		$this->assertNull( $this->wpdb->inserts[0]['data']['snapshot_id'] );
+		$this->assertNull( $this->wpdb->inserts[0]['data']['rollback_ref'] );
 	}
 
 	public function test_finish_updates_outcome_snapshot_reference_target_and_summary(): void {
@@ -2763,6 +3167,9 @@ final class AuditStore {
 	public function insert( array $row ): int {
 		global $wpdb;
 
+		$snapshot_id  = isset( $row['snapshot_id'] ) ? (int) $row['snapshot_id'] : null;
+		$rollback_ref = isset( $row['rollback_ref'] ) ? (string) $row['rollback_ref'] : null;
+
 		$inserted = $wpdb->insert(
 			Installer::tableName( Installer::TABLE_AUDIT ),
 			[
@@ -2776,11 +3183,17 @@ final class AuditStore {
 				'plan_fingerprint' => (string) $row['plan_fingerprint'],
 				'outcome'          => (string) $row['outcome'],
 				'summary'          => (string) $row['summary'],
+				'snapshot_id'      => $snapshot_id,
+				'rollback_ref'     => $rollback_ref,
 				'recorded_at'      => (int) $row['recorded_at'],
 			],
-			[ '%s', '%s', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%d' ]
+			[ '%s', '%s', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%s', '%d' ]
 		);
 
+		// $wpdb::insert() returns the number of AFFECTED ROWS, never an
+		// identifier. The new row id lives on $wpdb->insert_id, and returning the
+		// affected-row count instead would hand every write the reference
+		// 'audit-1' and make finish() overwrite one row forever.
 		return false === $inserted ? 0 : (int) $wpdb->insert_id;
 	}
 	// phpcs:enable WordPress.DB.DirectDatabaseQuery.DirectQuery
@@ -4246,6 +4659,26 @@ final class PreviewRendererTest extends TestCase {
 		);
 	}
 
+	/**
+	 * Asserts the WHOLE shape, not only the members a given test happens to
+	 * read. D4 and the implementation previously disagreed about whether
+	 * `machine` carried `exists`, and nothing caught it because every assertion
+	 * addressed one key at a time. This test fails on any added, removed, or
+	 * reordered member, in either rendering.
+	 */
+	public function test_the_rendering_shape_is_exactly_two_keys_and_the_machine_diff_is_exactly_three(): void {
+		$preview = $this->renderer->render(
+			'content-update',
+			$this->currentState(),
+			new PlannedChange( [ 'title' => 'Edited title' ], [ 'post_title' => 'Edited title' ] )
+		);
+
+		$this->assertSame( [ 'human', 'machine' ], array_keys( $preview ) );
+		$this->assertSame( [ 'target', 'exists', 'changes' ], array_keys( $preview['machine'] ) );
+		$this->assertIsString( $preview['human'] );
+		$this->assertSame( [ 'field', 'before', 'after' ], array_keys( $preview['machine']['changes'][0] ) );
+	}
+
 	public function test_changes_follow_the_declared_field_order_not_insertion_order(): void {
 		$planned = new PlannedChange(
 			[],
@@ -4616,7 +5049,7 @@ count, so a large body cannot swamp a confirmation prompt."
   - `AuditRecorder::OUTCOME_STARTED`, `OUTCOME_APPLIED`, `OUTCOME_VERIFICATION_FAILED`, `OUTCOME_EXECUTION_FAILED`, `OUTCOME_RESTORED`, `OUTCOME_RESTORE_FAILED`.
   - `AuditRecorder::__construct( AuditStore $store, AuditRedactor $redactor )`.
   - `AuditRecorder::reference( int $auditId ): string` — static, `"audit-123"`.
-  - `AuditRecorder::start( OperationDefinition $definition, OperationContext $context, string $targetKey, string $planFingerprint ): int` — the audit row id, or `0` when storage refused.
+  - `AuditRecorder::start( OperationDefinition $definition, OperationContext $context, string $targetKey, string $planFingerprint, ?int $snapshotId, ?string $rollbackRef ): int` — the audit row id, or `0` when storage refused. **Six parameters, not four.** The last two are the recovery handle, written on the opening insert so a fatal inside the write cannot leave a captured snapshot unreachable (D6). Task 12 is the only caller and already holds both values by the time it calls this.
   - `AuditRecorder::finish( int $auditId, string $outcome, ?int $snapshotId, ?string $rollbackRef, string $targetKey, array $beforeFields, array $afterFields ): bool`.
 
 - [ ] **Step 1: Write the failing test**
@@ -4851,7 +5284,9 @@ final class AuditRecorderTest extends TestCase {
 			$this->makeDefinition(),
 			$this->makeContext(),
 			'post:42',
-			str_repeat( 'b', 64 )
+			str_repeat( 'b', 64 ),
+			9,
+			'rb-0123456789abcdef01234567'
 		);
 
 		$this->assertSame( 1, $id );
@@ -4868,19 +5303,57 @@ final class AuditRecorderTest extends TestCase {
 		$this->assertSame( 1_800_000_000, $row['recorded_at'] );
 	}
 
+	/**
+	 * The opening row must already carry the recovery handle. If it did not, a
+	 * fatal inside the write — an out-of-memory in a third-party save_post hook,
+	 * a killed worker — would leave a permanently 'started' row with a NULL
+	 * rollback_ref beside a real snapshot row nothing points at, reachable only
+	 * through direct database access. That is exactly what interpretation I4's
+	 * rationale promises will never be necessary.
+	 */
+	public function test_start_writes_the_recovery_handle_on_the_opening_row(): void {
+		$this->recorder->start(
+			$this->makeDefinition(),
+			$this->makeContext(),
+			'post:42',
+			str_repeat( 'b', 64 ),
+			9,
+			'rb-0123456789abcdef01234567'
+		);
+
+		$row = $this->wpdb->inserts[0]['data'];
+		$this->assertSame( 9, $row['snapshot_id'] );
+		$this->assertSame( 'rb-0123456789abcdef01234567', $row['rollback_ref'] );
+	}
+
+	public function test_start_accepts_an_operation_that_captured_no_snapshot(): void {
+		$this->recorder->start(
+			$this->makeDefinition(),
+			$this->makeContext(),
+			'post:new',
+			str_repeat( 'b', 64 ),
+			null,
+			null
+		);
+
+		$row = $this->wpdb->inserts[0]['data'];
+		$this->assertNull( $row['snapshot_id'] );
+		$this->assertNull( $row['rollback_ref'] );
+	}
+
 	public function test_start_returns_zero_when_storage_refuses(): void {
 		$this->wpdb->failInsert = true;
 
 		$this->assertSame(
 			0,
-			$this->recorder->start( $this->makeDefinition(), $this->makeContext(), 'post:42', str_repeat( 'b', 64 ) )
+			$this->recorder->start( $this->makeDefinition(), $this->makeContext(), 'post:42', str_repeat( 'b', 64 ), 9, 'rb-0123456789abcdef01234567' )
 		);
 	}
 
 	public function test_start_tolerates_an_unresolvable_user(): void {
 		Functions\when( 'get_userdata' )->justReturn( false );
 
-		$this->recorder->start( $this->makeDefinition(), $this->makeContext(), 'post:42', str_repeat( 'b', 64 ) );
+		$this->recorder->start( $this->makeDefinition(), $this->makeContext(), 'post:42', str_repeat( 'b', 64 ), null, null );
 
 		$this->assertSame( '', $this->wpdb->inserts[0]['data']['actor_login'] );
 	}
@@ -5108,10 +5581,18 @@ final class AuditRecorder {
 	/**
 	 * Opens one audit record before execution.
 	 *
+	 * The recovery handle is part of the OPENING insert, not something finish()
+	 * adds later. The snapshot is captured before this is called, so both values
+	 * are already known; deferring them would mean a fatal inside the write left
+	 * a captured snapshot that no audit row references, recoverable only by
+	 * direct database access.
+	 *
 	 * @param OperationDefinition $definition      The operation being executed.
 	 * @param OperationContext    $context         The request context.
 	 * @param string              $targetKey       The planned target key.
 	 * @param string              $planFingerprint The approved plan's state fingerprint.
+	 * @param int|null            $snapshotId      The snapshot row captured for this write, if any.
+	 * @param string|null         $rollbackRef     The snapshot's rollback reference, if any.
 	 *
 	 * @return int The audit row identifier, or 0 when storage refused.
 	 *
@@ -5122,7 +5603,9 @@ final class AuditRecorder {
 		OperationDefinition $definition,
 		OperationContext $context,
 		string $targetKey,
-		string $planFingerprint
+		string $planFingerprint,
+		?int $snapshotId,
+		?string $rollbackRef
 	): int {
 		return $this->store->insert(
 			[
@@ -5136,6 +5619,8 @@ final class AuditRecorder {
 				'plan_fingerprint' => $planFingerprint,
 				'outcome'          => self::OUTCOME_STARTED,
 				'summary'          => self::EMPTY_SUMMARY,
+				'snapshot_id'      => $snapshotId,
+				'rollback_ref'     => $rollbackRef,
 				'recorded_at'      => $context->requestTime,
 			]
 		);
@@ -6789,6 +7274,81 @@ final class ChangeEngineApplyTest extends TestCase {
 		);
 	}
 
+	/**
+	 * The audit row must carry the recovery handle from the moment it is
+	 * created, not only once finish() runs, so that a fatal inside applyChange()
+	 * cannot strand a real snapshot that nothing references. The audit row is
+	 * the second insert: the snapshot is captured first and FakeWpdb shares one
+	 * insert_id counter.
+	 */
+	public function test_the_opening_audit_row_already_carries_the_rollback_reference(): void {
+		$result = $this->apply();
+
+		$audit_row = $this->wpdb->inserts[1]['data'];
+		$this->assertSame( AuditRecorder::OUTCOME_STARTED, $audit_row['outcome'] );
+		$this->assertSame( 1, $audit_row['snapshot_id'] );
+		$this->assertSame( $result->rollbackRef, $audit_row['rollback_ref'] );
+	}
+
+	/**
+	 * REQ-0005 promises the operator inspects exactly what a write will change.
+	 * A third-party save_post hook that rewrites an unpromised field breaks that
+	 * promise silently if verification only ever looks at the promised keys. The
+	 * operation kept its own promise, so this warns; it does not fail.
+	 */
+	public function test_an_unpromised_field_change_warns_without_failing_verification(): void {
+		$current = new TargetState(
+			'post:42',
+			true,
+			[
+				'post_title'   => 'Original title',
+				'post_content' => '<p>Original body.</p>',
+			]
+		);
+
+		$this->operation->target        = $current;
+		$this->operation->readBackState = new TargetState(
+			'post:42',
+			true,
+			[
+				'post_title'        => 'Edited title',
+				'post_content'      => '<p>Rewritten by another plugin.</p>',
+				'post_modified_gmt' => '2026-07-26 11:00:00',
+			]
+		);
+
+		$this->wpdb->rowQueue       = [
+			$this->planRow(
+				[
+					'state_fingerprint' => ( new StateFingerprint( $this->normalizer ) )
+						->compute( $current, $this->makeContext() ),
+				]
+			),
+		];
+		$this->wpdb->queryRowsQueue = [ 1 ];
+
+		$result = $this->engine->apply(
+			$this->makeDefinition(),
+			$this->operation,
+			[ 'id' => 42, 'title' => 'Edited title' ],
+			self::TOKEN,
+			$this->makeContext()
+		);
+
+		$this->assertSame( VerificationStatus::Verified, $result->verification );
+
+		$joined = implode( ' | ', $result->warnings );
+		$this->assertStringContainsString( 'post_content', $joined );
+		// Names only. A warning must never carry the value it is warning about.
+		$this->assertStringNotContainsString( 'Rewritten by another plugin', $joined );
+		// post_modified_gmt changes on every write and must never be reported.
+		$this->assertStringNotContainsString( 'post_modified_gmt', $joined );
+	}
+
+	public function test_a_write_that_changes_only_what_it_promised_warns_about_nothing(): void {
+		$this->assertSame( [], $this->apply()->warnings );
+	}
+
 	public function test_a_failed_execution_restores_the_snapshot_and_reports_compensation(): void {
 		$this->operation->applyThrows = new OperationException(
 			ErrorCode::ExecutionFailed,
@@ -6899,6 +7459,18 @@ In `src/Change/ChangeEngine.php`, add these imports:
 use Throwable;
 ```
 
+Add this constant beside the class's other members:
+
+```php
+	/**
+	 * The one field that changes on every write regardless of what was planned.
+	 * It is in the state fingerprint, because that is how a concurrent edit is
+	 * detected, but it is never promised and never reported as an unpromised
+	 * change — it would be reported on every single write.
+	 */
+	private const VOLATILE_FIELD = 'post_modified_gmt';
+```
+
 Add these methods after `preview()`:
 
 ```php
@@ -6937,10 +7509,29 @@ Add these methods after `preview()`:
 	/**
 	 * The apply phase: execute exactly the previewed change.
 	 *
-	 * Order matters and is deliberate. Every refusal that leaves state untouched
-	 * happens before the plan is consumed, so a rejected apply costs the caller
-	 * nothing but a retry. The plan is consumed immediately before the audit
-	 * record opens, and the audit record opens before anything executes.
+	 * Order matters and is deliberate:
+	 *
+	 * - Every binding and freshness check runs BEFORE the plan is consumed, so a
+	 *   plan rejected for a reason the caller can fix costs nothing but a retry.
+	 * - The state fingerprint is checked BEFORE the payload hash. Both refuse a
+	 *   plan that no longer matches, but they refuse it with different codes, and
+	 *   a concurrent edit can invalidate both at once: the target changed, so the
+	 *   fingerprint differs, and the normalized payload derived from that target
+	 *   differs too. The contract names that situation `conflict`, so the
+	 *   fingerprint must be the check that fires. Reversing them would report
+	 *   `stale_plan` for a concurrent edit.
+	 * - Consumption is the last thing that happens before the audit record opens,
+	 *   and the audit record opens before anything executes.
+	 *
+	 * Two refusals deliberately occur AFTER consumption, because neither is
+	 * something the caller can correct by resubmitting the same plan: capture()
+	 * can raise `rollback_unavailable` when a required snapshot cannot be
+	 * recorded, and start() raises `integration_unavailable` when the audit row
+	 * cannot be opened. Both leave the target untouched — nothing has executed
+	 * yet — but the plan token is already spent, so the caller must generate a
+	 * fresh preview. This is stated rather than glossed: burning a token on a
+	 * storage failure is a real cost, and the alternative (executing without a
+	 * snapshot or without an audit record) would break a contract guarantee.
 	 *
 	 * @param OperationDefinition  $definition The operation being applied.
 	 * @param WriteOperation       $operation  The six-phase implementation.
@@ -6983,18 +7574,25 @@ Add these methods after `preview()`:
 		}
 
 		// planChange() runs again here so the apply executes exactly what was
-		// previewed, and so every guard inside it is re-evaluated.
+		// previewed, and so every guard inside it is re-evaluated. The payload is
+		// the one the CLIENT re-supplied on this call; the digest comparison below
+		// is what proves it is the payload the preview was generated from.
 		$planned = $operation->planChange( $current, $payload, $context );
-		if ( (string) $row['payload_hash'] !== $this->normalizer->fingerprint( $planned->payload ) ) {
-			throw $this->stale_plan();
-		}
 
+		// The fingerprint is checked first, and deliberately. A concurrent edit
+		// invalidates both this and the payload hash at once, and the contract
+		// names that case `conflict`; checking the payload first would answer
+		// `stale_plan` for a situation the contract has a different code for.
 		if ( (string) $row['state_fingerprint'] !== $this->fingerprint->compute( $current, $context ) ) {
 			throw new OperationException(
 				ErrorCode::Conflict,
 				'The target changed between the preview and this approval, so nothing was applied.',
 				'Read the target again and generate a fresh preview.'
 			);
+		}
+
+		if ( (string) $row['payload_hash'] !== $this->normalizer->fingerprint( $planned->payload ) ) {
+			throw $this->stale_plan();
 		}
 
 		if ( ! $this->plans->consume( $digest, $context->requestTime ) ) {
@@ -7005,7 +7603,17 @@ Add these methods after `preview()`:
 		$snapshot = $this->capture( $definition, $operation, $current, $context );
 		$restore  = $snapshot['restore'];
 
-		$audit_id = $this->audit->start( $definition, $context, $current->targetKey, (string) $row['state_fingerprint'] );
+		// The snapshot handle goes onto the OPENING audit row. Both values are
+		// already known here, and deferring them to finish() would let a fatal
+		// inside applyChange() strand a captured snapshot no audit row names.
+		$audit_id = $this->audit->start(
+			$definition,
+			$context,
+			$current->targetKey,
+			(string) $row['state_fingerprint'],
+			$snapshot['id'],
+			$snapshot['reference']
+		);
 		if ( 0 === $audit_id ) {
 			throw new OperationException(
 				ErrorCode::IntegrationUnavailable,
@@ -7077,6 +7685,18 @@ Add these methods after `preview()`:
 					'Ask a site administrator to review the audit entry for correlation %s and restore the recorded snapshot.',
 					$context->correlationId
 				)
+			);
+		}
+
+		// The operation kept every promise it made, but something else may have
+		// changed fields the preview never showed — a third-party save_post hook
+		// rewriting post_content, retagging terms, or regenerating the slug. The
+		// caller approved a preview that did not mention them, so each is named
+		// here. Names only, never values, exactly as in the audit summary.
+		foreach ( $this->unpromised_changes( $planned, $current, $after ) as $field ) {
+			$warnings[] = sprintf(
+				'The write also changed %s, which the approved plan did not promise. Another plugin on this site is likely modifying content on save.',
+				$field
 			);
 		}
 
@@ -7199,7 +7819,9 @@ Add these methods after `preview()`:
 	 *
 	 * Only the promised keys are compared, and both sides go through the
 	 * canonical fingerprint so key order and nesting cannot cause a false
-	 * mismatch.
+	 * mismatch. Fields the plan did not promise are handled separately by
+	 * unpromised_changes(), which warns rather than fails: an operation that
+	 * kept every promise it made has not failed verification.
 	 *
 	 * @param PlannedChange $planned The promised change.
 	 * @param TargetState   $after   The persisted state.
@@ -7216,6 +7838,49 @@ Add these methods after `preview()`:
 
 		return $this->normalizer->fingerprint( $observed )
 			=== $this->normalizer->fingerprint( $planned->afterFields );
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+
+	/**
+	 * Field names that changed although the approved plan never promised them.
+	 *
+	 * Verifying only the promised keys would let a third-party save_post hook
+	 * rewrite post_content, retag terms, or regenerate the slug during the write
+	 * and pass silently — a change the operator approved a preview that never
+	 * showed it, which is the opposite of REQ-0005's "inspects exactly what a
+	 * proposed write will change". The engine already holds both the full
+	 * before-state and the full after-state, so the comparison is free.
+	 *
+	 * Only fields present in BOTH states are considered, so a creation (whose
+	 * before-state is empty) produces no warnings, and a field the after-state
+	 * newly exposes is not reported as a change. post_modified_gmt is excluded
+	 * because every write changes it, exactly as D3 says.
+	 *
+	 * @param PlannedChange $planned The promised change.
+	 * @param TargetState   $before  The state resolved immediately before the write.
+	 * @param TargetState   $after   The persisted state.
+	 *
+	 * @return string[] The unpromised field names that changed.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+	 */
+	private function unpromised_changes( PlannedChange $planned, TargetState $before, TargetState $after ): array {
+		$changed = [];
+
+		foreach ( $after->fields as $field => $value ) {
+			if ( self::VOLATILE_FIELD === $field
+				|| array_key_exists( $field, $planned->afterFields )
+				|| ! array_key_exists( $field, $before->fields ) ) {
+				continue;
+			}
+
+			if ( $this->normalizer->fingerprint( [ $field => $value ] )
+				!== $this->normalizer->fingerprint( [ $field => $before->fields[ $field ] ] ) ) {
+				$changed[] = (string) $field;
+			}
+		}
+
+		return $changed;
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 
@@ -7323,8 +7988,10 @@ divergence returns verification_failed with the discrepancy recorded."
 - Produces, relied on by Tasks 14, 15, 16, and 18:
   - `Dispatcher::__construct( CapabilityRegistry $registry, CatalogBuilder $catalogBuilder, PolicyEngine $policy, SchemaValidator $schemaValidator, ChangeEngine $changeEngine )` — five parameters.
   - `Dispatcher::PLAN_TOKEN_KEY` (`'planToken'`) — a reserved sibling of `operation` and `arguments`, never part of an operation's `inputSchema`.
+  - `Dispatcher::ALLOWED_KEYS` (`[ 'operation', 'arguments', 'planToken' ]`) — the only members an operation call may carry. Anything else is `invalid_input`.
   - A malformed `planToken` returns `stale_plan`; an absent one previews.
-  - `McpServer`'s advertised dispatcher tool schema includes `planToken`.
+  - Approving a plan requires `arguments` to be resent unchanged beside the token; a token with no `arguments` is `invalid_input` with a message that says why.
+  - `McpServer`'s advertised dispatcher tool schema includes `planToken`, whose description states the resend requirement.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -7471,6 +8138,58 @@ Add these to `tests/Unit/Gateway/DispatcherTest.php`. Update `setUp()` so the `D
 		);
 	}
 
+	/**
+	 * Nothing stores the payload — plan_body holds only the preview renderings
+	 * and payload_hash is a one-way digest — so the apply call must carry the
+	 * same arguments the preview was generated from. A client that sends only
+	 * the token is on the primary happy path and must be told exactly that,
+	 * not handed a bare "missing required property 'id'".
+	 */
+	public function test_approving_a_plan_without_resending_arguments_says_so(): void {
+		$this->registerStubWrite();
+
+		try {
+			$this->buildDispatcher()->dispatch(
+				'content-write',
+				[
+					'operation' => 'content-update',
+					'planToken' => str_repeat( 'a', 64 ),
+				],
+				$this->makeContext()
+			);
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::InvalidInput, $e->errorCode );
+			$this->assertStringContainsString( 'resent', $e->getMessage() );
+		}
+	}
+
+	/**
+	 * Unknown siblings are rejected rather than ignored. Silently dropping them
+	 * means a client that mistypes `plan_token` gets a brand-new preview and a
+	 * success envelope while believing it just approved a change.
+	 */
+	public function test_an_unknown_top_level_member_is_invalid_input(): void {
+		$this->registerStubWrite();
+
+		try {
+			$this->buildDispatcher()->dispatch(
+				'content-write',
+				[
+					'operation'  => 'content-update',
+					'plan_token' => str_repeat( 'a', 64 ),
+					'arguments'  => [ 'id' => 42 ],
+				],
+				$this->makeContext()
+			);
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::InvalidInput, $e->errorCode );
+			// The client's raw member name is untrusted text and is never echoed.
+			$this->assertStringNotContainsString( 'plan_token', $e->getMessage() );
+		}
+	}
+
 	public function test_the_read_path_still_routes_to_a_bare_handler(): void {
 		$response = $this->buildDispatcher()->dispatch(
 			'system-read',
@@ -7539,6 +8258,17 @@ use SiteHelm\Change\ChangeEngine;
 	 * A plan token's exact wire shape: 64 lowercase hexadecimal characters.
 	 */
 	private const PLAN_TOKEN_LENGTH = 64;
+
+	/**
+	 * The only members an operation call may carry.
+	 *
+	 * Unknown siblings are refused rather than ignored, matching the strictness
+	 * the contract already demands of operation input. Ignoring them is not a
+	 * neutral choice here: a client that mistypes `plan_token` would silently
+	 * receive a fresh preview inside a success envelope while believing it had
+	 * just approved a change.
+	 */
+	public const ALLOWED_KEYS = [ 'operation', 'arguments', self::PLAN_TOKEN_KEY ];
 ```
 
 ```php
@@ -7552,23 +8282,55 @@ use SiteHelm\Change\ChangeEngine;
 	}
 ```
 
+Immediately after the catalog early-return in `dispatch()` — that is, after the `if ( ! is_string( $operation_id ) || '' === $operation_id ) { return ...; }` block and before the `$this->registry->has( $operation_id )` check — insert the strict-member guard:
+
+```php
+		// Unknown siblings are refused, not ignored. `arguments` is validated
+		// strictly, and its container must be held to the same standard: a
+		// mistyped `plan_token` would otherwise downgrade an approval into a
+		// fresh preview and report success.
+		if ( [] !== array_diff( array_keys( $args ), self::ALLOWED_KEYS ) ) {
+			throw new OperationException(
+				ErrorCode::InvalidInput,
+				'The call carries a member that is not part of a dispatcher tool call.',
+				'Send only operation, arguments, and planToken. Check the spelling of planToken in particular.'
+			);
+		}
+```
+
+The client's raw member name is deliberately not echoed, for the same reason the operation name is not: it is untrusted text bound for an outbound envelope.
+
 Replace the tail of `dispatch()`, from the `$validated = ...` assignment to the end of the method, with:
 
 ```php
-		$validated = $this->schemaValidator->validate( $arguments, $definition->inputSchema );
-
 		if ( $this->registry->hasWriteOperation( $operation_id ) ) {
+			$plan_token = $this->resolve_plan_token( $args[ self::PLAN_TOKEN_KEY ] ?? null );
+
+			// Nothing stores the payload: plan_body holds only the preview
+			// renderings, and payload_hash is a one-way digest. Approving a plan
+			// therefore means resending the same arguments, and a caller that
+			// sends only the token is told exactly that rather than receiving a
+			// bare schema violation on the primary happy path.
+			if ( null !== $plan_token && ! is_array( $args['arguments'] ?? null ) ) {
+				throw new OperationException(
+					ErrorCode::InvalidInput,
+					'Approving a plan requires the arguments the preview was generated from, resent unchanged beside the plan token.',
+					'Resend the original arguments together with the plan token, or omit the token to generate a fresh preview.'
+				);
+			}
+
 			return $this->changeEngine->handle(
 				$definition,
 				$this->registry->writeOperation( $operation_id ),
-				$validated,
-				$this->resolve_plan_token( $args[ self::PLAN_TOKEN_KEY ] ?? null ),
+				$this->schemaValidator->validate( $arguments, $definition->inputSchema ),
+				$plan_token,
 				$context
 			)->toArray();
 		}
 
-		$handler = $this->registry->handler( $operation_id );
-		$data    = $handler( $validated, $context );
+		$validated = $this->schemaValidator->validate( $arguments, $definition->inputSchema );
+		$handler   = $this->registry->handler( $operation_id );
+		$data      = $handler( $validated, $context );
 
 		return ( new OperationResult(
 			operationId: $definition->id,
@@ -7577,6 +8339,8 @@ Replace the tail of `dispatch()`, from the `$validated = ...` assignment to the 
 			correlationId: $context->correlationId,
 		) )->toArray();
 ```
+
+The plan token stays resolved inside the write branch. Resolving it earlier would make a stray `planToken` on a *read* call raise `stale_plan`, which describes nothing that happened; the strict-member guard above already refuses anything the call has no business carrying.
 
 Add this private method beside `resolve_target_id()`:
 
@@ -7624,7 +8388,7 @@ In `src/Gateway/McpServer.php`, add `planToken` to the advertised tool schema in
 							],
 							'planToken' => [
 								'type'        => 'string',
-								'description' => 'Approval token from a previous preview. Omit on a write to receive a plan instead of executing.',
+								'description' => 'Approval token from a previous preview. Omit on a write to receive a plan instead of executing. When supplied, resend the SAME arguments the preview was generated from: the token authorizes those arguments and is checked against them, and the server does not store them.',
 							],
 							'arguments' => [
 								'type'        => 'object',
@@ -7677,7 +8441,12 @@ registered write goes to the change engine, everything else keeps
 Phase 2's bare-handler path unchanged. The plan token is a reserved
 sibling of operation and arguments rather than operation input, and a
 malformed token is refused with stale_plan rather than silently
-downgrading an apply into a fresh preview."
+downgrading an apply into a fresh preview.
+
+Unknown top-level members are now invalid_input rather than ignored, so
+a mistyped planToken cannot quietly turn an approval into a preview, and
+approving without resending arguments returns a message that says so
+instead of a bare schema violation."
 ```
 
 ---
@@ -8003,8 +8772,49 @@ final class ContentUpdateTest extends TestCase {
 			$this->assertSame( ErrorCode::RollbackUnavailable, $e->errorCode );
 		}
 	}
+
+	/**
+	 * Interim mitigation for interpretation I6: nothing validates output against
+	 * outputSchema at runtime, so each operation asserts it here instead. The
+	 * apply-phase payload is assembled exactly as ChangeEngine::apply() builds
+	 * it, from this operation's own outputs, and checked against the schema the
+	 * module actually registered rather than a restatement of it.
+	 */
+	public function test_the_apply_phase_payload_conforms_to_the_declared_output_schema(): void {
+		Functions\when( 'get_bloginfo' )->justReturn( '6.8.1' );
+		$registry = new CapabilityRegistry();
+		( new CoreModule() )->register( $registry );
+
+		$context = $this->makeContext();
+		$current = $this->operation->resolveTarget( [ 'id' => 42 ], $context );
+		$planned = $this->operation->planChange(
+			$current,
+			[
+				'id'    => 42,
+				'title' => 'Edited title',
+			],
+			$context
+		);
+
+		$target = $this->operation->applyChange( $current, $planned, $context );
+		$this->stubPost( 'Edited title' );
+		$after = $this->operation->readBack( $target, $context );
+
+		$this->assertConformsToOutputSchema(
+			[
+				'target'  => $target,
+				'changed' => array_keys( $planned->afterFields ),
+				'state'   => $after->fields,
+			],
+			$registry->definition( 'content-update' )->outputSchema
+		);
+	}
 }
 ```
+
+`ContentUpdateTest` needs `use SiteHelm\Modules\Core\CoreModule;` and `use SiteHelm\Registry\CapabilityRegistry;` for that last test.
+
+**On REQ-0014's "the prior revision remained available" acceptance evidence.** No unit test covers it, and that is deliberate rather than an oversight: revisions are created inside `wp_update_post()` by WordPress itself, and Brain Monkey stubs that function, so any unit-level assertion would be testing the stub. `test_apply_change_writes_only_the_promised_fields` covers what this code controls — that the update goes through `wp_update_post()` with the post ID, which is the call that makes WordPress record a revision — and the revision itself is demonstrated on a real site in Task 18, demonstration step 12, with `wp_get_post_revisions( <post> )`. That is the only evidence for this clause; do not record it as automated.
 
 Add this to `tests/Unit/Modules/Core/CoreModuleTest.php`:
 
@@ -8460,36 +9270,63 @@ In `src/Modules/Core/CoreModule.php`, add the constant beside the class's other 
 
 ```php
 	/**
-	 * The uniform output schema every core write shares. Exactly one group of
-	 * properties is populated per phase: `plan` in the plan phase, and `target`,
-	 * `changed`, and `state` in the apply phase. One schema rather than two
-	 * because the contract gives an operation one outputSchema, and a write has
-	 * two response shapes.
+	 * The uniform output schema every core write shares. A write has two
+	 * response shapes but the contract gives an operation one outputSchema, so
+	 * this is a `oneOf` union of the two: the plan phase returns `plan` alone,
+	 * and the apply phase returns `target`, `changed`, and `state` together.
+	 *
+	 * `oneOf` rather than one flat object with every property optional, because
+	 * a flat object would also accept a malformed response carrying `plan` and
+	 * `target` at once. Each branch is closed (`required` plus
+	 * `additionalProperties: false`), so a response carrying both fails both
+	 * branches and the union rejects it. See interpretation I2.
 	 */
 	private const WRITE_OUTPUT_SCHEMA = [
-		'type'                 => 'object',
-		'properties'           => [
-			'plan'    => [
-				'type'        => 'object',
-				'description' => 'Plan phase only: the change plan to approve, including its plan token.',
+		'type'  => 'object',
+		'oneOf' => [
+			[
+				'title'                => 'Plan phase',
+				'type'                 => 'object',
+				'properties'           => [
+					'plan' => [
+						'type'        => 'object',
+						'description' => 'The change plan to approve, including its plan token.',
+					],
+				],
+				'required'             => [ 'plan' ],
+				'additionalProperties' => false,
 			],
-			'target'  => [
-				'type'        => 'string',
-				'description' => 'Apply phase only: the concrete target that was written.',
-			],
-			'changed' => [
-				'type'        => 'array',
-				'items'       => [ 'type' => 'string' ],
-				'description' => 'Apply phase only: the fields the approved plan changed.',
-			],
-			'state'   => [
-				'type'        => 'object',
-				'description' => 'Apply phase only: the verified persisted state of the target.',
+			[
+				'title'                => 'Apply phase',
+				'type'                 => 'object',
+				'properties'           => [
+					'target'  => [
+						'type'        => 'string',
+						'description' => 'The concrete target that was written.',
+					],
+					'changed' => [
+						'type'        => 'array',
+						'items'       => [ 'type' => 'string' ],
+						'description' => 'The fields the approved plan changed.',
+					],
+					'state'   => [
+						'type'        => 'object',
+						'description' => 'The verified persisted state of the target.',
+					],
+				],
+				'required'             => [ 'target', 'changed', 'state' ],
+				'additionalProperties' => false,
 			],
 		],
-		'additionalProperties' => false,
 	];
 ```
+
+Both branches match what the engine actually builds, which is why they can be
+closed: `ChangeEngine::preview()` returns `data: [ 'plan' => ... ]` and nothing
+else, and `ChangeEngine::apply()` returns exactly `[ 'target', 'changed',
+'state' ]`. Non-fatal notices travel on `OperationResult::$warnings`, which is
+an envelope field rather than part of `data`, so the unpromised-change warnings
+Task 12 adds do not belong in either branch.
 
 Add the import and, at the end of `register()`, the write registration:
 
@@ -8498,6 +9335,8 @@ use SiteHelm\Contracts\Mode;
 ```
 
 (already imported; add nothing if present)
+
+The code below is **appended inside `CoreModule::register( CapabilityRegistry $registry ): void`**, after the `content-get` registration Task 2 added. Two locals are already in scope there, both created by that method's opening line `$fields = new ContentFields();` — `$registry` (the method parameter) and `$fields`. This snippet introduces a third, `$targets`, which Tasks 15 and 16 then reuse.
 
 ```php
 		$targets = new ContentTarget( $fields );
@@ -8808,8 +9647,37 @@ final class ContentCreateTest extends TestCase {
 			$this->assertSame( ErrorCode::RollbackUnavailable, $e->errorCode );
 		}
 	}
+
+	/**
+	 * Interim mitigation for interpretation I6, as for every other registered
+	 * operation: the apply-phase payload is assembled exactly as
+	 * ChangeEngine::apply() builds it and checked against the schema the module
+	 * actually registered.
+	 */
+	public function test_the_apply_phase_payload_conforms_to_the_declared_output_schema(): void {
+		Functions\when( 'get_bloginfo' )->justReturn( '6.8.1' );
+		$registry = new CapabilityRegistry();
+		( new CoreModule() )->register( $registry );
+
+		$context = $this->makeContext();
+		$current = $this->operation->resolveTarget( $this->input(), $context );
+		$planned = $this->operation->planChange( $current, $this->input(), $context );
+		$target  = $this->operation->applyChange( $current, $planned, $context );
+		$after   = $this->operation->readBack( $target, $context );
+
+		$this->assertConformsToOutputSchema(
+			[
+				'target'  => $target,
+				'changed' => array_keys( $planned->afterFields ),
+				'state'   => $after->fields,
+			],
+			$registry->definition( 'content-create' )->outputSchema
+		);
+	}
 }
 ```
+
+`ContentCreateTest` needs `use SiteHelm\Modules\Core\CoreModule;` and `use SiteHelm\Registry\CapabilityRegistry;` for that last test, and its `get_post` stub must return the newly created post so `readBack( 'post:77' )` resolves — reuse whatever `stubPost()`-equivalent the file already sets up in `setUp()`, adjusting the identifier to 77 if it is not already.
 
 Add this to `tests/Unit/Modules/Core/CoreModuleTest.php`:
 
@@ -9087,7 +9955,15 @@ final class ContentCreate implements WriteOperation {
 }
 ```
 
-In `src/Modules/Core/CoreModule.php`, append this registration inside `register()`:
+In `src/Modules/Core/CoreModule.php`, append this registration **inside `register( CapabilityRegistry $registry ): void`, after the `content-update` registration Task 14 added**. Three locals are already in scope at that point and none needs re-creating:
+
+| In scope | Where it came from |
+|---|---|
+| `$registry` | the method parameter |
+| `$fields` | `$fields = new ContentFields();`, the method's opening line (Task 2) |
+| `$targets` | `$targets = new ContentTarget( $fields );` (Task 14) |
+
+`self::WRITE_OUTPUT_SCHEMA` is the private class constant Task 14 added; it is referenced, not redeclared.
 
 ```php
 		$registry->registerWrite(
@@ -9193,7 +10069,7 @@ The contract requires every write dispatcher to expose a `rollback-apply` operat
 - Test: `tests/Unit/Modules/Core/CoreModuleTest.php`
 
 **Interfaces:**
-- Consumes: `WriteOperation`; `ContentFields`; `ContentTarget` (`resolve()`, `verifyRead()`, `snapshotOf()`, `restoreFields()`); `SnapshotStore` (`findByRef()`, `markRestored()`); `CapabilityRegistry` (`has()`, `definition()`); `PolicyEngine::authorize()`; `ModuleHealth`; `PayloadNormalizer`.
+- Consumes: `WriteOperation`; `ContentFields`; `ContentTarget` (`resolve()`, `verifyRead()`, `snapshotOf()`, `restoreFields()`); `SnapshotStore` (`findByRef()`, `markRestored()`); `CapabilityRegistry` (`has()`, `definition()`); `PolicyEngine::authorize()`; `ModuleHealth`; `ModuleId`.
 - Produces: `ContentRollbackApply::__construct( ContentFields $fields, ContentTarget $targets, SnapshotStore $snapshots, CapabilityRegistry $registry, PolicyEngine $policy )` implementing `WriteOperation`; `content-rollback-apply` registered on `content-write`.
 
 - [ ] **Step 1: Write the failing test**
@@ -9512,6 +10388,30 @@ final class ContentRollbackApplyTest extends TestCase {
 		}
 	}
 
+	/**
+	 * The contract scopes a write dispatcher's rollback to its OWN domain. A
+	 * snapshot recorded by another module can be perfectly healthy — the module
+	 * compatibility check would pass it — and still not be this operation's to
+	 * restore. Only core records snapshots today, so nothing else catches this.
+	 */
+	public function test_a_snapshot_recorded_by_another_module_is_target_not_found(): void {
+		$this->queueSnapshot(
+			[
+				'module_id'       => 'elementor',
+				'module_versions' => '{"elementor":{"health":"active","version":"3.25.0"}}',
+			],
+			2
+		);
+		$current = $this->operation->resolveTarget( [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+
+		try {
+			$this->operation->planChange( $current, [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::TargetNotFound, $e->errorCode );
+		}
+	}
+
 	public function test_capture_snapshot_records_the_pre_rollback_state(): void {
 		$this->queueSnapshot();
 		$current  = $this->operation->resolveTarget( [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
@@ -9548,8 +10448,37 @@ final class ContentRollbackApplyTest extends TestCase {
 
 		$this->assertSame( 'Edited title', $this->writes[0]['post_title'] );
 	}
+
+	/**
+	 * Interim mitigation for interpretation I6, as for every other registered
+	 * operation: the apply-phase payload is assembled exactly as
+	 * ChangeEngine::apply() builds it and checked against the schema the module
+	 * actually registered.
+	 */
+	public function test_the_apply_phase_payload_conforms_to_the_declared_output_schema(): void {
+		Functions\when( 'get_bloginfo' )->justReturn( '6.8.1' );
+		( new CoreModule() )->register( $this->registry );
+
+		$this->queueSnapshot( [], 3 );
+		$context = $this->makeContext();
+		$current = $this->operation->resolveTarget( [ 'rollbackRef' => self::REFERENCE ], $context );
+		$planned = $this->operation->planChange( $current, [ 'rollbackRef' => self::REFERENCE ], $context );
+		$target  = $this->operation->applyChange( $current, $planned, $context );
+		$after   = $this->operation->readBack( $target, $context );
+
+		$this->assertConformsToOutputSchema(
+			[
+				'target'  => $target,
+				'changed' => array_keys( $planned->afterFields ),
+				'state'   => $after->fields,
+			],
+			$this->registry->definition( 'content-rollback-apply' )->outputSchema
+		);
+	}
 }
 ```
+
+That last test needs `use SiteHelm\Modules\Core\CoreModule;` in `ContentRollbackApplyTest`. It reuses `$this->registry` — the `CapabilityRegistry` `setUp()` already builds to construct the operation — and registers the real module into it, which is what makes the assertion read the schema that actually ships rather than a copy of it. Registering `CoreModule` also supplies the `content-update` definition that `assert_original_capability()` looks up, so this test must **not** additionally call `registerOriginalOperation()`: that helper registers its own stand-in under the same identifier and the registry rejects a duplicate.
 
 Add this to `tests/Unit/Modules/Core/CoreModuleTest.php`:
 
@@ -9600,6 +10529,7 @@ use SiteHelm\Change\TargetState;
 use SiteHelm\Change\WriteOperation;
 use SiteHelm\Contracts\ErrorCode;
 use SiteHelm\Contracts\ModuleHealth;
+use SiteHelm\Contracts\ModuleId;
 use SiteHelm\Contracts\OperationContext;
 use SiteHelm\Contracts\OperationException;
 use SiteHelm\Policy\PolicyEngine;
@@ -9615,10 +10545,12 @@ use SiteHelm\Storage\SnapshotStore;
  * put back before approving it, and the pre-rollback state is captured in a
  * fresh snapshot so the rollback can itself be reversed.
  *
- * Two re-checks happen at restore time, both inside planChange() so they run at
- * preview and again at apply: the capability of the ORIGINAL operation against
- * the concrete target, and the compatibility of the module that recorded the
- * snapshot.
+ * Three re-checks happen at restore time, all inside planChange() so they run at
+ * preview and again at apply: that the snapshot belongs to THIS operation's own
+ * domain, the capability of the ORIGINAL operation against the concrete target,
+ * and the compatibility of the module that recorded the snapshot. The first is
+ * about identity and the third is about health; they are not the same check and
+ * neither substitutes for the other.
  *
  * @package SiteHelm
  */
@@ -9684,6 +10616,7 @@ final class ContentRollbackApply implements WriteOperation {
 		$snapshot  = $this->snapshot( $reference );
 
 		$this->assert_same_site( $snapshot, $context );
+		$this->assert_same_module( $snapshot );
 		$this->assert_original_capability( $snapshot, $current, $context );
 		$this->assert_module_compatibility( $snapshot, $context );
 
@@ -9833,6 +10766,37 @@ final class ContentRollbackApply implements WriteOperation {
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 
 	/**
+	 * Confirms the snapshot belongs to this operation's own domain.
+	 *
+	 * The contract scopes a write dispatcher's rollback to a write "in its own
+	 * domain". Module HEALTH is a different question from module IDENTITY:
+	 * `media-*` snapshots are recorded by a module that will be perfectly
+	 * healthy, and health alone would authorize `content-rollback-apply` to
+	 * restore one. Today only the core module records snapshots, so the check is
+	 * unobservable — which is exactly why it must exist before a second module
+	 * ships and makes it observable as a defect.
+	 *
+	 * `target_not_found` is reused rather than a new code invented: the eleven
+	 * codes are fixed, and from the caller's side a reference it may not act on
+	 * is indistinguishable from one that does not exist. Reusing the same
+	 * message as the missing and cross-site cases also keeps the response from
+	 * becoming a probe for which references exist.
+	 *
+	 * @param array<string, mixed> $snapshot The snapshot row.
+	 *
+	 * @throws OperationException With ErrorCode::TargetNotFound.
+	 */
+	private function assert_same_module( array $snapshot ): void {
+		if ( ModuleId::Core->value !== (string) $snapshot['module_id'] ) {
+			throw new OperationException(
+				ErrorCode::TargetNotFound,
+				'The referenced snapshot does not exist or is not visible to your WordPress user.',
+				'Read the audit log to find a current rollback reference.'
+			);
+		}
+	}
+
+	/**
 	 * Re-checks the capability of the operation that recorded the snapshot,
 	 * against the concrete target, at restore time.
 	 *
@@ -9922,7 +10886,15 @@ final class ContentRollbackApply implements WriteOperation {
 }
 ```
 
-In `src/Modules/Core/CoreModule.php`, add the imports and append the registration inside `register()`:
+In `src/Modules/Core/CoreModule.php`, add the imports and append the registration **inside `register( CapabilityRegistry $registry ): void`, after the `content-create` registration Task 15 added**. Three locals are already in scope at that point and none needs re-creating:
+
+| In scope | Where it came from |
+|---|---|
+| `$registry` | the method parameter |
+| `$fields` | `$fields = new ContentFields();`, the method's opening line (Task 2) |
+| `$targets` | `$targets = new ContentTarget( $fields );` (Task 14) |
+
+`self::WRITE_OUTPUT_SCHEMA` is the private class constant Task 14 added; it is referenced, not redeclared. The `SnapshotStore` and `PolicyEngine` below are constructed inline because nothing else in `register()` needs them.
 
 ```php
 use SiteHelm\Policy\PolicyEngine;
@@ -10197,6 +11169,13 @@ final class AuditReadTest extends TestCase {
 		$this->assertStringContainsString( 'actor_id = %d', $this->wpdb->prepared[0]['query'] );
 	}
 
+	/**
+	 * Defence in depth rather than the primary guard. Since Task 3 the core
+	 * module reports itself inactive when storage is unavailable, so Dispatcher
+	 * refuses this operation before the handler runs. This keeps a direct caller
+	 * — a future WP-CLI path, an internal call — from querying a table that does
+	 * not exist, and keeps the error code the same either way.
+	 */
 	public function test_unavailable_storage_degrades_to_integration_unavailable(): void {
 		$this->options[ Installer::STATUS_OPTION ] = Installer::STATUS_UNAVAILABLE;
 
@@ -10207,8 +11186,29 @@ final class AuditReadTest extends TestCase {
 			$this->assertSame( ErrorCode::IntegrationUnavailable, $e->errorCode );
 		}
 	}
+
+	/**
+	 * Interim mitigation for interpretation I6: nothing validates output against
+	 * outputSchema at runtime, so each operation asserts it here instead. The
+	 * schema is read from the registered definition rather than restated.
+	 */
+	public function test_the_returned_page_conforms_to_the_declared_output_schema(): void {
+		Functions\when( 'get_bloginfo' )->justReturn( '6.8.1' );
+		$this->wpdb->resultQueue = [ [ $this->row() ] ];
+		$this->wpdb->varQueue    = [ 1 ];
+
+		$registry = new CapabilityRegistry();
+		( new CoreModule() )->register( $registry );
+
+		$this->assertConformsToOutputSchema(
+			$this->handler->handle( [], $this->makeContext() ),
+			$registry->definition( 'audit-list' )->outputSchema
+		);
+	}
 }
 ```
+
+`AuditReadTest` needs `use SiteHelm\Modules\Core\CoreModule;` and `use SiteHelm\Registry\CapabilityRegistry;` for that last test.
 
 Add this to `tests/Unit/Modules/Core/CoreModuleTest.php`:
 
@@ -10372,12 +11372,14 @@ final class AuditRead {
 }
 ```
 
-In `src/Modules/Core/CoreModule.php`, add the imports and append the registration inside `register()`:
+In `src/Modules/Core/CoreModule.php`, add the imports and append the registration **inside `register( CapabilityRegistry $registry ): void`, after the `content-rollback-apply` registration Task 16 added**. Only `$registry` (the method parameter) is needed; this operation uses neither `$fields` nor `$targets`. This is `register()`, not `registerWrite()`: `audit-list` is a read.
 
 ```php
 use SiteHelm\Storage\AuditStore;
 use SiteHelm\Storage\Installer;
 ```
+
+`use SiteHelm\Storage\Installer;` is already present from Task 3's `health()` change — add only `AuditStore` if so.
 
 ```php
 		$registry->register(
@@ -10503,6 +11505,19 @@ on read."
 - Consumes: `Installer::install()`, `maybeUpgrade()`; `Retention::schedule()`, `unschedule()`, `prune()`, `CRON_HOOK`; `PlanStore`; `AuditStore`; `SnapshotStore`; `CoreModule`.
 - Produces: `sitehelm_activate()` and `sitehelm_deactivate()` global functions; `Plugin::register()` additionally hooks the schema upgrade check and the retention cron.
 
+- [ ] **Step 0: Confirm the test process can see the global functions**
+
+The two new `PluginTest` methods call `sitehelm_activate()` and `sitehelm_deactivate()`, which are plain global functions defined in `sitehelm.php` — not autoloadable classes. If nothing loaded that file into the PHPUnit process, Step 3 could not turn Step 2 green and the failure would look like a bug in the implementation rather than a missing include.
+
+Open `tests/bootstrap.php` and confirm it contains, in this order:
+
+```php
+require_once dirname(__DIR__) . '/vendor/autoload.php';
+require_once dirname(__DIR__) . '/sitehelm.php';
+```
+
+It does today, which is why `RequirementsTest` can already call `sitehelm_requirements_met()`. Requiring the file only *defines* the functions; the `register_activation_hook` calls live inside `if ( defined( 'ABSPATH' ) )`, which is false under PHPUnit, so nothing executes on include. **If the second line is absent, add it before writing any test in this task** — no other change makes Step 3 work.
+
 - [ ] **Step 1: Write the failing test**
 
 Add these methods to `tests/Unit/Bootstrap/PluginTest.php`, adding `use Brain\Monkey\Functions;`, `use SiteHelm\Storage\Installer;`, `use SiteHelm\Storage\Retention;`, and `use SiteHelm\Tests\Doubles\FakeWpdb;` to its imports:
@@ -10571,7 +11586,7 @@ export PATH="/c/Users/SHAHID ALI/AppData/Roaming/Composer/bin:$PATH"
 vendor/bin/phpunit --filter PluginTest
 ```
 
-Expected: FAIL with `Error: Call to undefined function sitehelm_activate()`.
+Expected: FAIL with `Error: Call to undefined function sitehelm_activate()` — the file is loaded (Step 0), but does not define that function yet. If instead the failure is `Failed opening required '.../sitehelm.php'` or the pre-existing `test_register_boots_the_gateway_and_registers_the_route` has also broken, stop: Step 0 was not completed correctly.
 
 - [ ] **Step 3: Implement**
 
@@ -10675,33 +11690,67 @@ All tests pass, `phpcs` exits 0 with no output, and line coverage on `src/` is a
 
 - [ ] **Step 6: Run the real-site demonstration and record the evidence**
 
-Use the same environment approach recorded in `docs/product/phase-2-demonstration.md`: a WordPress 6.6+ install with this repository copied into `wp-content/plugins/sitehelm`, an Application Password for an administrator, and HTTP requests issued from a PHP script (the Bash `curl` binary is unavailable in this environment; PHP's curl extension is used instead).
+**6a. Prepare the environment.** Reuse the setup recorded in `docs/product/phase-2-demonstration.md` — read that file first and copy its Environment section's shape, so the two demonstrations are comparable:
 
-Deactivate and reactivate the plugin first so the activation hook creates the three tables. Set the meta allowlist to a single key so the read demonstrates permitted metadata:
+- A WordPress `>= 6.6` install on PHP `>= 8.1`, with this repository present at `wp-content/plugins/sitehelm` (including `vendor/`, since the autoloader is loaded from there).
+- An Application Password issued to an administrator account. Requests authenticate with HTTP Basic using `<user>:<application password>`.
+- Requests are issued from a PHP script using the curl extension. The Bash `curl` binary is unavailable in this environment, and `ctx_execute` is not a substitute for evidence that must be recorded verbatim. Post the JSON-RPC body to the plugin's REST route registered by `RestTransport`.
+- Note the exact versions of server, PHP, WordPress, and database, plus how the plugin was installed. These go in the Environment section.
+
+**6b. Force a clean activation.** The three tables are created by the activation hook, which does not run on an already-active plugin. In the WordPress admin, deactivate SiteHelm and reactivate it. Then confirm all three tables exist before proceeding — if they do not, every write below will correctly return `integration_unavailable` and the demonstration is void:
+
+```php
+global $wpdb;
+foreach ( [ 'plans', 'audit', 'snapshots' ] as $suffix ) {
+	$table = $wpdb->prefix . 'sitehelm_' . $suffix;
+	var_dump( $table, $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $table ) ) );
+}
+var_dump( get_option( 'sitehelm_db_status' ) ); // must be 'ready'
+```
+
+Record that output in the Environment section. It is the evidence that `CoreModule::health()` is reporting `active` for the right reason.
+
+**6c. Seed the fixtures.** Set the meta allowlist to a single key so the read demonstrates permitted metadata, and note the post ID used throughout:
 
 ```php
 update_option( 'sitehelm_meta_allowlist', [ 'subtitle' ] );
+update_post_meta( <post>, 'subtitle', 'A permitted custom field' );
 ```
 
-Then perform and record, verbatim, request and response for each step:
+**6d. Perform each step below and record request and response verbatim.** Every step is a `tools/call` unless stated. Do not paraphrase a response, do not elide fields, and do not proceed past a step whose expectation did not hold — a failed expectation is a finding, not a formatting problem.
 
-1. `tools/call` `system-read` with no operation — the catalog now lists `system-environment` and `audit-list`.
-2. `tools/call` `content-write` with no operation — the catalog lists `content-create`, `content-update`, and `content-rollback-apply`, each `available: true`. **This is the Phase 2 residual-risk fix in action: before Task 1 all three would have been absent.**
-3. `tools/call` `content-read` / `content-get` for an existing post — the normalized record with title, content, status, terms, and permitted metadata.
-4. `tools/call` `content-write` / `content-update` with `arguments: { id: <post>, title: "Revised heading" }` and **no** `planToken` — a `plan` with a token, both preview renderings, and a state fingerprint. Confirm with a second `content-get` that the post is **unchanged**.
-5. Repeat step 4's request with `planToken` set to a token from a *different* preview — expect `stale_plan`, and confirm the post is still unchanged.
-6. Repeat step 4's request with the correct `planToken` — expect `verification: "verified"`, an `auditRef`, and a `rollbackRef`. Confirm with a `content-get` that the title changed.
-7. Replay step 6 with the same `planToken` — expect `stale_plan`, proving single use.
-8. `tools/call` `system-read` / `audit-list` — the entry for step 6 with actor, client, operation, target, plan fingerprint, timestamp, outcome `applied`, a summary carrying field names and sizes only, and the `rollbackRef`. Confirm the summary contains no title text.
-9. `tools/call` `content-write` / `content-rollback-apply` with `arguments: { rollbackRef: <ref> }` and no `planToken` — a plan whose preview shows the title reverting.
-10. Repeat step 9 with its `planToken` — expect `verified`. Confirm with a `content-get` that the title is back to its original value, and with `wp_get_post_revisions( <post> )` that the prior revision exists.
-11. `tools/call` `content-write` / `content-create` with `{ type: "post", title: "Phase 3a demonstration", status: "draft" }`, then approve — expect `verified`, an `auditRef`, and **no** `rollbackRef`, because a creation has no prior state.
+1. `system-read` with no operation — the catalog lists `system-environment` and `audit-list`, both `available: true`.
+2. `content-write` with no operation — the catalog lists `content-create`, `content-update`, and `content-rollback-apply`, each `available: true`. **`content-update` is the Task 1 fix in action: it declares only the meta-capability `edit_post`, so before Task 1's mapping it would have been absent from this catalog for every user including this administrator.** The other two declare `edit_posts` and were always visible.
+3. `content-read` / `content-get` for the fixture post — the normalized record with title, content, status, terms, and the permitted `subtitle` metadata.
+4. `content-write` / `content-update` with `arguments: { id: <post>, title: "Revised heading" }` and **no** `planToken` — a `plan` carrying a token, both preview renderings (`human` and `machine`), a state fingerprint, and `snapshotEligibility`. Confirm with a second `content-get` that the post is **unchanged**.
+5. Repeat step 4's request, adding `planToken` set to a token from a *different* preview — expect `stale_plan`. Confirm with `content-get` that the post is still unchanged.
+6. Repeat step 4's request with the correct `planToken` **and the same `arguments`** — expect `verification: "verified"`, an `auditRef`, and a `rollbackRef`. Confirm with a `content-get` that the title changed.
+7. Replay step 6 byte-for-byte — expect `stale_plan`, proving single use.
+8. Generate a fresh preview, then send **only** `{ operation, planToken }` with no `arguments` — expect `invalid_input` whose message states that the arguments must be resent. This is the D5 requirement made visible to a client; record it because it is the most likely thing an integrator gets wrong.
+9. Send a well-formed apply with `plan_token` (underscore) instead of `planToken` — expect `invalid_input`, **not** a preview. Before Task 13's strict-member guard this returned a fresh plan inside a success envelope.
+10. `system-read` / `audit-list` — the entry for step 6, carrying actor, client, operation, target, plan fingerprint, timestamp, outcome `applied`, `rollbackRef`, and a summary of field names and sizes only. Confirm by inspection that the summary contains no fragment of either title.
+11. `content-write` / `content-rollback-apply` with `arguments: { rollbackRef: <ref> }` and no `planToken` — a plan whose preview shows the title reverting.
+12. Repeat step 11 with its `planToken` and the same `arguments` — expect `verified`. Confirm with `content-get` that the title is back to its original value, and record `wp_get_post_revisions( <post> )` output showing the prior revision. **This is the only evidence for REQ-0014's "the prior revision remained available" clause; no unit test covers it.**
+13. `content-write` / `content-create` with `{ type: "post", title: "Phase 3a demonstration", status: "draft" }`, then approve — expect `verified`, an `auditRef`, and **no** `rollbackRef`, because a creation has no prior state to snapshot.
 
-Write all of it to `docs/product/phase-3a-demonstration.md` with an Environment section (server, PHP, WordPress, database, plugin install method) followed by the verbatim requests and responses, and a closing checklist of the eleven steps. Record the plan tokens as `<redacted>`; record the rollback reference verbatim, since it is a non-secret handle and the audit entry publishes it anyway.
+**6e. Write the evidence file.** Create `docs/product/phase-3a-demonstration.md` with, in order:
+
+1. An **Environment** section: server, PHP, WordPress, and database versions; plugin install method; the table-existence and `sitehelm_db_status` output from 6b.
+2. A **Transcript** section: the thirteen steps in order, each with its verbatim request body and verbatim response body under a heading naming the step.
+3. A **Checklist** section: thirteen items, one per step, each checked, each stating the specific claim the step proved rather than restating the request.
+
+Redaction rules for the file: record plan tokens as `<redacted>` (they are bearer credentials); record the Application Password as `<redacted>`; record the rollback reference **verbatim**, because it is a non-secret handle that the audit entry publishes anyway and its exact value is part of the evidence for steps 11 and 12.
 
 - [ ] **Step 7: Close out the phase**
 
-Append a Phase 3a section to `tasks/todo.md` listing each of the eighteen tasks with its validation result and commit range, the final gate status (test count, assertion count, `phpcs` result, coverage percentage), and the demonstration evidence path. State that user approval is required before Phase 3b planning begins.
+Append a `## Phase 3a — Change Engine` section to `tasks/todo.md` containing exactly these four parts:
+
+1. **Task table** — one row per task, eighteen rows, columns: task number, title, result (`pass` / `pass with deviation` / `failed`), and the commit SHA range for that task. Any row that is not `pass` names the deviation in one sentence.
+2. **Gate results** — the numbers from Step 5, not a claim that it passed: total tests, total assertions, `phpcs` exit status and output line count, and the `src/` line-coverage percentage.
+3. **Evidence** — the path `docs/product/phase-3a-demonstration.md` and the count of checklist items confirmed.
+4. **Open items carried forward** — at minimum: runtime `outputSchema` validation is deferred per interpretation I6 and is required before V1 public release; and `OperationError` still has no field for a recovery handle on `verification_failed`, per interpretation I4, so that remains an open candidate for the next contract revision.
+
+Close the section with: **user approval is required before Phase 3b planning begins.** Do not start Phase 3b work in this task.
 
 - [ ] **Step 8: Commit**
 
@@ -10712,8 +11761,10 @@ git commit -m "feat: activation, retention wiring, and Phase 3a demonstration
 Activation creates the three local tables and schedules daily retention
 pruning; deactivation clears the event but leaves audit events and
 snapshots in place. The schema upgrade check runs on admin_init. The
-real-site demonstration records the full flow: preview, rejected token,
-approve, apply, verify, audit read, rollback, and restoration."
+real-site demonstration records the full flow in thirteen steps: catalog,
+read, preview, rejected token, approve, apply, verify, replay refusal,
+the two malformed-approval refusals, audit read, rollback, restoration,
+and creation."
 ```
 
 ---
@@ -10749,15 +11800,15 @@ vendor/bin/phpunit --coverage-text
 
 | Requirement | Delivered by | Evidence |
 |---|---|---|
-| REQ-0005 change preview generation | Task 11 | `ChangeEnginePlanTest`; demonstration step 4 |
-| REQ-0006 token-bound plan execution | Task 12 | `ChangeEngineApplyTest`; demonstration steps 5, 6, 7 |
+| REQ-0005 change preview generation | Task 11 | `ChangeEnginePlanTest`; `ChangeEngineApplyTest::test_an_unpromised_field_change_warns_without_failing_verification`; demonstration step 4 |
+| REQ-0006 token-bound plan execution | Task 12 | `ChangeEngineApplyTest`; demonstration steps 5, 6, 7, 8, 9 |
 | REQ-0007 post-write state verification | Task 12 | `ChangeEngineApplyTest::test_diverged_persisted_state_is_verification_failed`; demonstration step 6 |
-| REQ-0008 rollback execution | Task 16 | `ContentRollbackApplyTest`; demonstration steps 9, 10 |
-| REQ-0009 audit log read | Task 17 | `AuditReadTest`; demonstration step 8 |
+| REQ-0008 rollback execution | Task 16 | `ContentRollbackApplyTest`; demonstration steps 11, 12 |
+| REQ-0009 audit log read | Task 17 | `AuditReadTest`; demonstration step 10 |
 | REQ-0011 content retrieval | Task 2 | `ContentReadTest`; demonstration step 3 |
-| REQ-0013 content creation | Task 15 | `ContentCreateTest`; demonstration step 11 |
-| REQ-0014 content update | Task 14 | `ContentUpdateTest`; demonstration steps 4, 6 |
-| `rollback-apply` on `content-write` | Task 16 | `CoreModuleTest::test_module_registers_the_content_domain_rollback_apply_operation`; demonstration steps 9, 10 |
+| REQ-0013 content creation | Task 15 | `ContentCreateTest`; demonstration step 13 |
+| REQ-0014 content update | Task 14 | `ContentUpdateTest`; demonstration steps 4, 6. Its "prior revision remained available" clause has **no** automated test and is evidenced only by demonstration step 12 — see the note in Task 14. |
+| `rollback-apply` on `content-write` | Task 16 | `CoreModuleTest::test_module_registers_the_content_domain_rollback_apply_operation`; demonstration steps 11, 12 |
 
 **4. Contract field coverage**
 
@@ -10775,7 +11826,7 @@ vendor/bin/phpunit --coverage-text
 
 **5. Real-site demonstration**
 
-`docs/product/phase-3a-demonstration.md` exists with all eleven checklist items checked, including: the write catalog visible to an administrator; a preview leaving the post unchanged; a rejected token leaving the post unchanged; an approved apply returning `verified` with an `auditRef` and a `rollbackRef`; a replayed token returning `stale_plan`; an audit entry containing the required fields with no field values; a rollback restoring the original title with the prior revision intact; and a creation returning no `rollbackRef`.
+`docs/product/phase-3a-demonstration.md` exists with all thirteen checklist items checked, including: `content-update` visible in the administrator's `content-write` catalog despite declaring only a meta-capability; a preview leaving the post unchanged; a rejected token leaving the post unchanged; an approved apply returning `verified` with an `auditRef` and a `rollbackRef`; a replayed token returning `stale_plan`; an apply missing `arguments` returning `invalid_input` with a message that says to resend them; a mistyped `plan_token` returning `invalid_input` rather than a fresh preview; an audit entry containing the required fields with no field values; a rollback restoring the original title with `wp_get_post_revisions()` output showing the prior revision intact; and a creation returning no `rollbackRef`.
 
 **6. Approval**
 

@@ -36,6 +36,10 @@ A ruling here never widens what the contract permits. If a reading would relax a
 
 **Refinement (2026-07-26, from the Phase 3a plan review).** A union whose two property groups are merely optional cannot distinguish the phases — it would also accept a malformed response carrying both `plan` and `target`. The schema must therefore express the exclusivity, with `oneOf` over the two groups rather than one flat object with everything optional. See also I6: the union is currently declared but not enforced at runtime.
 
+**Implemented (2026-07-26).** `CoreModule::WRITE_OUTPUT_SCHEMA` is a `oneOf` of two closed branches — the plan branch requires `plan` alone, the apply branch requires `target`, `changed` and `state` together, and both set `additionalProperties: false`. A response carrying members of both therefore fails each branch and the union rejects it, which is the whole point of the refinement.
+
+The refinement was briefly at risk of being dropped: it arrived after the Phase 3a plan was drafted, so the plan still carried the flat object, and `SchemaValidator` has no `oneOf` support. Reinstating it was cheap once the actual constraint was checked — `outputSchema` is never fed to `SchemaValidator`, which validates input; `CatalogBuilder` passes the declared schema through to clients verbatim, and `oneOf` is ordinary JSON Schema that a client already understands. Only the I6 conformance helper needed teaching, which it now is: it selects the single matching branch and fails when zero or several match. Dropping a ruling because honouring it was inconvenient would have been exactly the widening this document forbids.
+
 ---
 
 ## I3. Rollback is itself a preview-required, snapshotted write
