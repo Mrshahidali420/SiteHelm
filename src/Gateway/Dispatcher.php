@@ -70,10 +70,12 @@ final class Dispatcher {
 			return $this->catalogBuilder->build( $dispatcherName, $context->moduleVersions );
 		}
 
+		// The client's raw operation string is never echoed back: it is untrusted
+		// text that would otherwise flow into an outbound envelope message.
 		if ( ! $this->registry->has( $operation_id ) ) {
 			throw new OperationException(
 				ErrorCode::InvalidInput,
-				sprintf( "Unknown operation '%s' on dispatcher '%s'.", $operation_id, $dispatcherName ),
+				'The requested operation is not available on this dispatcher.',
 				'Call the dispatcher without an operation to list its catalog.'
 			);
 		}
@@ -82,7 +84,7 @@ final class Dispatcher {
 		if ( $definition->dispatcherName() !== $dispatcherName ) {
 			throw new OperationException(
 				ErrorCode::InvalidInput,
-				sprintf( "Unknown operation '%s' on dispatcher '%s'.", $operation_id, $dispatcherName ),
+				'The requested operation is not available on this dispatcher.',
 				'Call the dispatcher without an operation to list its catalog.'
 			);
 		}

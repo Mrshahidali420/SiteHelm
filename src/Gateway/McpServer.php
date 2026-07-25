@@ -56,25 +56,42 @@ final class McpServer {
 	 * @return array<string, mixed>|null Response array, or null for notifications.
 	 *
 	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+	 * phpcs:disable WordPress.PHP.DevelopmentFunctions.error_log_error_log
 	 */
 	public function handle( array $message, string $clientId = 'unknown-client' ): ?array {
-		$id     = $message['id'] ?? null;
-		$method = $message['method'] ?? null;
+		$id = $message['id'] ?? null;
 
-		if ( ! is_string( $method ) ) {
-			return $this->error( $id, -32600, 'Invalid request: missing method.' );
+		// Outermost containment boundary: no transport-level defect may fatal the
+		// gateway, and no internal detail may reach the client.
+		try {
+			$method = $message['method'] ?? null;
+
+			if ( ! is_string( $method ) ) {
+				return $this->error( $id, -32600, 'Invalid request: missing method.' );
+			}
+
+			if ( 'tools/call' === $method ) {
+				$params = $message['params'] ?? [];
+				if ( ! is_array( $params ) ) {
+					return $this->error( $id, -32602, 'Invalid params: params must be an object.' );
+				}
+				return $this->toolCall( $id, $params, $clientId );
+			}
+
+			return match ( $method ) {
+				'initialize'                => $this->result( $id, $this->initializeResult() ),
+				'notifications/initialized' => null,
+				'ping'                      => $this->result( $id, [] ),
+				'tools/list'                => $this->result( $id, [ 'tools' => $this->toolList() ] ),
+				default                     => $this->error( $id, -32601, 'Method not found.' ),
+			};
+		} catch ( Throwable $e ) {
+			error_log( sprintf( 'SiteHelm gateway failure: %s', $e->getMessage() ) );
+			return $this->error( $id, -32603, 'Internal error. The details were logged on the server.' );
 		}
-
-		return match ( $method ) {
-			'initialize'                => $this->result( $id, $this->initializeResult() ),
-			'notifications/initialized' => null,
-			'ping'                      => $this->result( $id, [] ),
-			'tools/list'                => $this->result( $id, [ 'tools' => $this->toolList() ] ),
-			'tools/call'                => $this->toolCall( $id, $message['params'] ?? [], $clientId ),
-			default                     => $this->error( $id, -32601, "Method not found: {$method}." ),
-		};
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+	// phpcs:enable WordPress.PHP.DevelopmentFunctions.error_log_error_log
 
 	/**
 	 * Builds the initialize response envelope.
@@ -147,6 +164,11 @@ final class McpServer {
 	 */
 	private function toolCall( mixed $id, array $params, string $clientId ): array {
 		$tool = $params['name'] ?? '';
+		// Validate the type before any interpolation: a non-string name would
+		// otherwise emit a PHP warning naming this file.
+		if ( ! is_string( $tool ) ) {
+			return $this->error( $id, -32602, 'Invalid params: tool name must be a string.' );
+		}
 		if ( ! in_array( $tool, CapabilityRegistry::DISPATCHERS, true ) ) {
 			return $this->error( $id, -32602, "Unknown tool '{$tool}'." );
 		}
@@ -161,7 +183,7 @@ final class McpServer {
 			return $this->toolResult( $id, $payload, false );
 		} catch ( OperationException $e ) {
 			$correlation = isset( $context ) ? $context->correlationId : 'unresolved';
-			return $this->toolResult( $id, OperationError::fromException( $e, $correlation )->toArray(), true );
+			return $this->safeErrorResult( $id, $e, $correlation );
 		} catch ( Throwable $e ) {
 			error_log( sprintf( 'SiteHelm unexpected failure in %s: %s', $tool, $e->getMessage() ) );
 			$safe = new OperationException(
@@ -169,7 +191,7 @@ final class McpServer {
 				'An unexpected error occurred. The details were logged on the server.',
 				'Check the SiteHelm diagnostics on the site, then retry with a fresh request.'
 			);
-			return $this->toolResult( $id, OperationError::fromException( $safe, 'unresolved' )->toArray(), true );
+			return $this->safeErrorResult( $id, $safe, 'unresolved' );
 		}
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
@@ -177,6 +199,40 @@ final class McpServer {
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 	// phpcs:enable WordPress.PHP.DevelopmentFunctions.error_log_error_log
 	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+
+	/**
+	 * Wraps envelope construction so that a failure to build the error envelope
+	 * can never propagate out of the gateway. Falls back to a hardcoded safe
+	 * execution_failed envelope.
+	 *
+	 * @param mixed              $id            Request ID.
+	 * @param OperationException $exception     The failure to report.
+	 * @param string             $correlationId The request correlation identifier.
+	 *
+	 * @return array<string, mixed> Tool result carrying a safe error envelope.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+	 * phpcs:disable WordPress.PHP.DevelopmentFunctions.error_log_error_log
+	 */
+	private function safeErrorResult( mixed $id, OperationException $exception, string $correlationId ): array {
+		try {
+			$payload = OperationError::fromException( $exception, $correlationId )->toArray();
+		} catch ( Throwable $e ) {
+			error_log( sprintf( 'SiteHelm failed to build an error envelope: %s', $e->getMessage() ) );
+			$payload = [
+				'code'          => ErrorCode::ExecutionFailed->value,
+				'message'       => 'An unexpected error occurred. The details were logged on the server.',
+				'retryable'     => ErrorCode::ExecutionFailed->isRetryable(),
+				'correlationId' => $correlationId,
+			];
+		}
+
+		return $this->toolResult( $id, $payload, true );
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+	// phpcs:enable WordPress.PHP.DevelopmentFunctions.error_log_error_log
 
 	/**
 	 * Builds a tool result envelope.

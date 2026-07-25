@@ -53,24 +53,74 @@ final class EnvelopesTest extends TestCase {
 		$this->assertArrayNotHasKey( 'success', $array );
 	}
 
-	/** @dataProvider leaky_message_provider */
-	public function test_error_rejects_unsafe_messages( string $message ): void {
-		$this->expectException( InvalidArgumentException::class );
-		OperationError::fromException(
+	/**
+	 * C1: the leak guard redacts unsafe content instead of throwing. Throwing
+	 * turned attacker-controlled text into an uncaught fatal at the gateway.
+	 *
+	 * @dataProvider leaky_message_provider
+	 *
+	 * @param string $message The unsafe message.
+	 * @param string $leak    The substring that must not survive.
+	 */
+	public function test_error_redacts_unsafe_messages( string $message, string $leak ): void {
+		$array = OperationError::fromException(
 			new OperationException( ErrorCode::ExecutionFailed, $message ),
 			'corr-1'
 		)->toArray();
+
+		$this->assertStringContainsString( '[redacted]', $array['message'] );
+		$this->assertStringNotContainsString( $leak, $array['message'] );
+		$this->assertSame( 'execution_failed', $array['code'] );
 	}
 
-	/** @return array<string, array{string}> */
+	/** @return array<string, array{string, string}> */
 	public function leaky_message_provider(): array {
 		return [
-			'windows path' => [ 'Failed writing C:\\sites\\wp\\wp-config.php' ],
-			'unix path'    => [ 'Cannot read /var/www/html/index.php' ],
-			'wp-content'   => [ 'Error in wp-content/plugins/foo.php' ],
-			'stack trace'  => [ "Boom\nStack trace:\n#0 main" ],
-			'secret word'  => [ 'Invalid application password: abc123' ],
+			'windows path' => [ 'Failed writing C:\\sites\\wp\\wp-config.php', '\\' ],
+			'unix path'    => [ 'Cannot read /var/www/html/index.php', '/var/' ],
+			'wp-content'   => [ 'Error in wp-content/plugins/foo.php', 'wp-content' ],
+			'stack trace'  => [ "Boom\nStack trace:\n#0 main", 'Stack trace' ],
+			'secret word'  => [ 'Invalid application password: abc123', 'password' ],
+			'api key'      => [ 'Rejected api_key argument', 'api_key' ],
+			'home path'    => [ 'Cannot read /home/site/public/x.php', '/home/' ],
+			'authorization' => [ 'Missing Authorization header', 'Authorization' ],
+			'secret'       => [ 'The secret is wrong', 'secret' ],
 		];
+	}
+
+	/**
+	 * C1: remediation text is redacted on the same terms as the message.
+	 */
+	public function test_error_redacts_unsafe_remediation(): void {
+		$array = OperationError::fromException(
+			new OperationException(
+				ErrorCode::ExecutionFailed,
+				'Execution failed.',
+				'Inspect wp-content/debug.log on the server.'
+			),
+			'corr-2'
+		)->toArray();
+
+		$this->assertSame( 'Execution failed.', $array['message'] );
+		$this->assertStringNotContainsString( 'wp-content', $array['remediation'] );
+		$this->assertStringContainsString( '[redacted]', $array['remediation'] );
+	}
+
+	/**
+	 * C1: safe text passes through untouched.
+	 */
+	public function test_error_leaves_safe_text_untouched(): void {
+		$array = OperationError::fromException(
+			new OperationException(
+				ErrorCode::InvalidInput,
+				'The requested operation is not available on this dispatcher.',
+				'Call the dispatcher without an operation to list its catalog.'
+			),
+			'corr-3'
+		)->toArray();
+
+		$this->assertSame( 'The requested operation is not available on this dispatcher.', $array['message'] );
+		$this->assertSame( 'Call the dispatcher without an operation to list its catalog.', $array['remediation'] );
 	}
 
 	public function test_context_is_immutable_value_object(): void {

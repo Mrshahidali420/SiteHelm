@@ -59,7 +59,9 @@ final class SchemaValidator {
 
 		foreach ( array_keys( $input ) as $key ) {
 			if ( ! array_key_exists( $key, $properties ) ) {
-				$violations[] = "unknown property '{$key}'";
+				// Unknown keys are attacker-controlled: report a sanitized form so
+				// the message stays useful without being an injection vector.
+				$violations[] = "unknown property '" . $this->safe_property_name( (string) $key ) . "'";
 			}
 		}
 		foreach ( $schema['required'] ?? [] as $required ) {
@@ -74,6 +76,21 @@ final class SchemaValidator {
 		}
 
 		return $violations;
+	}
+
+	/**
+	 * Reduce an untrusted property name to a form safe to interpolate.
+	 *
+	 * Keeps only letters, digits, underscores, and hyphens, truncates to 40
+	 * characters, and falls back to a placeholder when nothing survives.
+	 *
+	 * @param string $name The raw property name from the request.
+	 * @return string A safe, bounded rendering of the name.
+	 */
+	private function safe_property_name( string $name ): string {
+		$safe = substr( (string) preg_replace( '/[^A-Za-z0-9_-]/', '', $name ), 0, 40 );
+
+		return '' === $safe ? '<unnamed>' : $safe;
 	}
 
 	/**
