@@ -27,9 +27,25 @@ enum ErrorCode: string {
 	case RollbackUnavailable    = 'rollback_unavailable';
 
 	/**
-	 * Whether a retry can ever help, per the contract's retryability table.
-	 * Retryable here means "retryable after correcting input / refreshing a plan",
-	 * not "safe to blindly retry".
+	 * Whether retrying THIS request can help, per the contract's retryability
+	 * table.
+	 *
+	 * True for exactly the four codes whose condition a corrected or refreshed
+	 * request can clear: `invalid_input` (correct the input), `conflict` and
+	 * `stale_plan` (re-read the target and approve a fresh plan), and
+	 * `execution_failed` (retry with a fresh plan; an automatic retry is
+	 * appropriate only when the operation declares `isIdempotent` true). It never
+	 * means "safe to blindly repeat".
+	 *
+	 * False for every code whose condition can only change outside the request,
+	 * even where the contract describes a corrective action. `authentication_failed`
+	 * is the clearest case: presenting a different credential is a new
+	 * authenticated connection, not a retry of this request, so the contract
+	 * marks it "not retryable with the same credential" and the value is false.
+	 * The same reasoning covers `forbidden`, `integration_unavailable`,
+	 * `unsupported_version`, `target_not_found`, `verification_failed`, and
+	 * `rollback_unavailable`, which need WordPress-side configuration, a
+	 * different target, or operator inspection.
 	 */
 	public function isRetryable(): bool {
 		return match ( $this ) {

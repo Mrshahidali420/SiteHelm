@@ -29,6 +29,12 @@ use SiteHelm\Schema\SchemaValidator;
 final class Dispatcher {
 
 	/**
+	 * The argument that names the concrete target of an operation. Meta-capability
+	 * checks are evaluated against this target.
+	 */
+	private const TARGET_KEY = 'id';
+
+	/**
 	 * Constructs the dispatcher with its dependencies.
 	 *
 	 * @param CapabilityRegistry $registry        The capability registry.
@@ -107,7 +113,7 @@ final class Dispatcher {
 		}
 
 		$arguments = is_array( $args['arguments'] ?? null ) ? $args['arguments'] : [];
-		$target_id = isset( $arguments['id'] ) && is_int( $arguments['id'] ) ? $arguments['id'] : null;
+		$target_id = $this->resolve_target_id( $arguments[ self::TARGET_KEY ] ?? null );
 
 		$this->policy->authorize( $definition, $context, $target_id );
 		$validated = $this->schemaValidator->validate( $arguments, $definition->inputSchema );
@@ -125,4 +131,26 @@ final class Dispatcher {
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+
+	/**
+	 * Resolves the concrete target identifier for meta-capability checks.
+	 *
+	 * JSON clients routinely send numeric identifiers as strings. Accepting only
+	 * integers silently downgraded a target meta-capability check to a generic
+	 * one, which is weaker than the contract requires.
+	 *
+	 * @param mixed $raw The raw target reference from the request arguments.
+	 *
+	 * @return int|null The target identifier, or null when there is no target.
+	 */
+	private function resolve_target_id( mixed $raw ): ?int {
+		if ( is_int( $raw ) ) {
+			return $raw;
+		}
+		if ( is_string( $raw ) && ctype_digit( $raw ) ) {
+			return (int) $raw;
+		}
+
+		return null;
+	}
 }

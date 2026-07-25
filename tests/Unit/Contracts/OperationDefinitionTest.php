@@ -165,6 +165,70 @@ final class OperationDefinitionTest extends TestCase {
 		$this->makeDefinition( [ 'supportedVersions' => [ 'elementor' => '>=3.0' ] ] );
 	}
 
+	/**
+	 * The contract requires "one WordPress core version range, plus one plugin
+	 * version range for elementor, acf, and metabox operations".
+	 *
+	 * @dataProvider plugin_backed_module_provider
+	 */
+	public function test_rejects_plugin_backed_module_without_a_plugin_version_range(
+		ModuleId $module,
+		Domain $domain
+	): void {
+		$this->expectException( InvalidArgumentException::class );
+		$this->makeDefinition(
+			[
+				'id'                => 'field-value-read',
+				'domain'            => $domain,
+				'module'            => $module,
+				'supportedVersions' => [ 'wordpress' => '>=6.6' ],
+			]
+		);
+	}
+
+	/**
+	 * @dataProvider plugin_backed_module_provider
+	 */
+	public function test_accepts_plugin_backed_module_with_a_plugin_version_range(
+		ModuleId $module,
+		Domain $domain
+	): void {
+		$definition = $this->makeDefinition(
+			[
+				'id'                => 'field-value-read',
+				'domain'            => $domain,
+				'module'            => $module,
+				'supportedVersions' => [
+					'wordpress'     => '>=6.6',
+					$module->value  => '>=3.0',
+				],
+			]
+		);
+		$this->assertSame( $domain->value . '-read', $definition->dispatcherName() );
+	}
+
+	/** @return array<string, array{ModuleId, Domain}> */
+	public function plugin_backed_module_provider(): array {
+		return [
+			'elementor' => [ ModuleId::Elementor, Domain::Elementor ],
+			'acf'       => [ ModuleId::Acf, Domain::Fields ],
+			'metabox'   => [ ModuleId::Metabox, Domain::Fields ],
+		];
+	}
+
+	public function test_core_backed_module_needs_no_plugin_version_range(): void {
+		$definition = $this->makeDefinition(
+			[
+				'id'                   => 'content-list',
+				'domain'               => Domain::Content,
+				'module'               => ModuleId::Core,
+				'requiredCapabilities' => [ 'edit_posts' ],
+				'supportedVersions'    => [ 'wordpress' => '>=6.6' ],
+			]
+		);
+		$this->assertSame( 'content-read', $definition->dispatcherName() );
+	}
+
 	public function test_rejects_empty_example(): void {
 		$this->expectException( InvalidArgumentException::class );
 		$this->makeDefinition( [ 'example' => [] ] );

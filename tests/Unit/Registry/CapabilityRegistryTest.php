@@ -115,6 +115,25 @@ final class CapabilityRegistryTest extends TestCase {
 		$this->registry->definition( 'does-not-exist' );
 	}
 
+	/**
+	 * T6: the handler() unknown-operation throw path had no test at all. Nothing
+	 * routes around the registry, so this is the last guard before a call would
+	 * reach a non-existent handler.
+	 */
+	public function test_unknown_operation_handler_lookup_throws(): void {
+		$this->registry->register( $this->makeReadDefinition(), static fn(): array => [] );
+
+		$this->expectException( InvalidArgumentException::class );
+		$this->registry->handler( 'does-not-exist' );
+	}
+
+	public function test_handler_lookup_returns_the_registered_handler(): void {
+		$handler = static fn( array $input, $context ): array => [ 'ok' => true ];
+		$this->registry->register( $this->makeReadDefinition(), $handler );
+
+		$this->assertSame( $handler, $this->registry->handler( 'system-environment' ) );
+	}
+
 	public function test_for_dispatcher_filters_and_preserves_registration_order(): void {
 		// Register three operations: two Content domain, one System domain.
 		$content_list       = $this->makeReadDefinition( 'content-list', Domain::Content );

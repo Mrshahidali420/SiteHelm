@@ -29,6 +29,12 @@ final class OperationDefinition {
 	];
 
 	/**
+	 * Modules whose dependency is a third-party plugin, and which therefore need
+	 * an explicit plugin version range in addition to the WordPress core range.
+	 */
+	private const PLUGIN_BACKED_MODULES = [ ModuleId::Elementor, ModuleId::Acf, ModuleId::Metabox ];
+
+	/**
 	 * @param array<string, mixed>  $inputSchema          Strict input schema.
 	 * @param array<string, mixed>  $outputSchema         Output schema for OperationResult data.
 	 * @param list<string>          $requiredCapabilities WordPress capabilities.
@@ -74,6 +80,14 @@ final class OperationDefinition {
 		}
 		if ( [] === $supportedVersions || ! isset( $supportedVersions['wordpress'] ) ) {
 			throw new InvalidArgumentException( "Operation '{$id}' must declare a WordPress version range." );
+		}
+		// The contract requires one WordPress core range PLUS one plugin range for
+		// every plugin-backed module; without it the operation cannot be
+		// version-blocked and would answer with an unsupported dependency.
+		if ( in_array( $module, self::PLUGIN_BACKED_MODULES, true ) && ! isset( $supportedVersions[ $module->value ] ) ) {
+			throw new InvalidArgumentException(
+				"Operation '{$id}' must declare a '{$module->value}' plugin version range."
+			);
 		}
 		if ( [] === $example ) {
 			throw new InvalidArgumentException( "Operation '{$id}' must provide a usage example." );

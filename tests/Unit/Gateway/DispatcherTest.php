@@ -116,9 +116,83 @@ final class DispatcherTest extends TestCase {
 					'version' => null,
 					'health'  => $diagnostics_health,
 				],
+				'core'        => [
+					'version' => null,
+					'health'  => 'active',
+				],
 			],
 			requestTime: 1_800_000_000,
 		);
+	}
+
+	/**
+	 * Registers a write operation guarded by the edit_post meta-capability.
+	 */
+	private function registerMetaCapabilityOperation(): void {
+		$this->registry->register(
+			new OperationDefinition(
+				id: 'content-update',
+				domain: Domain::Content,
+				mode: Mode::Write,
+				description: 'Update one content item.',
+				inputSchema: [
+					'type'                 => 'object',
+					'properties'           => [ 'id' => [ 'description' => 'Target identifier.' ] ],
+					'additionalProperties' => false,
+				],
+				outputSchema: [
+					'type'                 => 'object',
+					'properties'           => [ 'id' => [ 'type' => 'integer' ] ],
+					'additionalProperties' => false,
+				],
+				schemaVersion: 1,
+				requiredCapabilities: [ 'edit_post' ],
+				risk: Risk::Medium,
+				isReadOnly: false,
+				isDestructive: false,
+				isIdempotent: true,
+				previewPolicy: PreviewPolicy::Required,
+				snapshotPolicy: SnapshotPolicy::Required,
+				rollbackPolicy: RollbackPolicy::Supported,
+				module: ModuleId::Core,
+				supportedVersions: [ 'wordpress' => '>=6.6' ],
+				example: [
+					'operation' => 'content-update',
+					'arguments' => [ 'id' => 42 ],
+				],
+			),
+			static fn( array $input, OperationContext $context ): array => [ 'id' => 42 ]
+		);
+	}
+
+	/**
+	 * Dispatches content-update with the given raw target id, recording every
+	 * user_can call the policy engine makes.
+	 *
+	 * @param mixed $raw_id The raw target identifier from the request.
+	 *
+	 * @return array<int, array{string, mixed}> Capability and target per call.
+	 */
+	private function captureCapabilityChecks( mixed $raw_id ): array {
+		$captured = [];
+		Functions\when( 'user_can' )->alias(
+			static function ( int $user_id, string $capability, ...$extra ) use ( &$captured ): bool {
+				$captured[] = [ $capability, $extra[0] ?? null ];
+				return true;
+			}
+		);
+		$this->registerMetaCapabilityOperation();
+
+		$this->dispatcher->dispatch(
+			'content-write',
+			[
+				'operation' => 'content-update',
+				'arguments' => [ 'id' => $raw_id ],
+			],
+			$this->makeContext()
+		);
+
+		return $captured;
 	}
 
 	/**
@@ -235,6 +309,38 @@ final class DispatcherTest extends TestCase {
 		} catch ( OperationException $e ) {
 			$this->assertSame( ErrorCode::UnsupportedVersion, $e->errorCode );
 		}
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+
+	/**
+	 * An integer target id reaches the meta-capability check.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+	 */
+	public function test_integer_target_reaches_the_meta_capability_check(): void {
+		$this->assertSame( [ [ 'edit_post', 42 ] ], $this->captureCapabilityChecks( 42 ) );
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+
+	/**
+	 * An integer-like string target id must not silently degrade the check to a
+	 * generic capability test: JSON clients routinely send "42".
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+	 */
+	public function test_integer_like_string_target_reaches_the_meta_capability_check(): void {
+		$this->assertSame( [ [ 'edit_post', 42 ] ], $this->captureCapabilityChecks( '42' ) );
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+
+	/**
+	 * A non-numeric target reference resolves to no target, so the policy engine
+	 * falls back to the generic capability check.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+	 */
+	public function test_non_numeric_target_falls_back_to_the_generic_check(): void {
+		$this->assertSame( [ [ 'edit_post', null ] ], $this->captureCapabilityChecks( 'abc' ) );
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 
