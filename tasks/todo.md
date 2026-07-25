@@ -32,3 +32,24 @@ All Phase 1 gates passed on 2026-07-24. Validator outputs, re-run from the repos
 - [x] Phase 2 foundation implementation plan created on 2026-07-25: `docs/superpowers/plans/2026-07-25-phase-2-mcp-gateway-foundation.md` (14 TDD tasks). Approved decisions: PHP 8.1+ / WP 6.6+ platform floor; REQ-0001 included as the end-to-end demo operation.
 
 Next action: Execute the Phase 2 plan (subagent-driven or inline) after user chooses the execution approach.
+
+## Phase 2 Execution
+
+- [x] Task 1: Plugin scaffold and test harness. Validation: PASS. Committed 133a776..c1d020b, review approved.
+- [x] Task 2: Contract enumerations. Validation: PASS. Committed c1d020b..0431b5a, review clean.
+- [x] Task 3: OperationDefinition value object with cross-field validation. Validation: PASS after 1 fix round. Committed 0431b5a..12e5017, review clean.
+- [x] Task 4: Context, result, error, and plan value objects. Validation: PASS. Committed 12e5017..9b6f6a0, review clean.
+- [x] Task 5: Strict schema validator. Validation: PASS after 1 fix round. Committed 9b6f6a0..bf5d286, review clean.
+- [x] Task 6: Capability registry and catalog builder. Validation: PASS after 1 fix round. Committed bf5d286..8415e0a, review clean.
+- [x] Task 7: Policy engine. Validation: PASS after 1 evidence-only round. Committed 8415e0a..2379110, review clean.
+- [x] Task 8: Operation context factory. Validation: PASS after 1 fix round. Committed 2379110..9a84554, review clean.
+- [x] Task 9: Dispatcher routing with catalog behavior. Validation: PASS after 2 fix rounds. Committed 9a84554..279f016, review clean.
+- [x] Task 10: MCP JSON-RPC server core. Validation: PASS, no fix rounds. Committed 279f016..d223640, review clean.
+- [x] Task 11: Integration module interface and isolated module loader. Validation: PASS after 3 fix rounds. Committed d223640..dab17dd, review clean.
+- [x] Task 12: Diagnostics module with system environment discovery (REQ-0001). Validation: PASS, no fix rounds. Committed dab17dd..a1ef178, review clean.
+- [x] Task 13: REST transport and plugin bootstrap wiring. Validation: PASS after 1 fix round. Committed a1ef178..92d26e3, review clean.
+- [x] Task 14: Real-site demonstration and phase close-out. Validation: DONE WITH CONCERNS. 91/91 unit tests pass (`vendor/bin/phpunit`); line coverage could not be measured (no Xdebug/PCOV driver installed, and installing one was out of scope per task instructions) so the >= 80% coverage gate is unverified rather than failed. `vendor/bin/phpcs` was run for visibility and shows pre-existing WPCS naming/escaping findings in `src/` that predate this task and were left untouched (fixing them was outside this task's scope). Real-site demonstration executed against PHP 8.3.32 + WordPress 7.0.2 (PHP built-in server + SQLite via sqlite-database-integration; Docker unavailable). All 7 demonstration checklist items pass. Evidence: `docs/product/phase-2-demonstration.md`.
+
+Minor items deferred across Tasks 2, 4, 6, 8, 9, 10, 11, 12 (docblock/test-fixture nits, non-blocking) are recorded in `.superpowers/sdd/2026-07-25-phase-2-mcp-gateway-foundation/progress.md` and were not re-litigated during Task 14.
+
+Outstanding before Phase 3 planning: (1) user review of the Task 14 evidence and concerns above, (2) explicit user approval recorded in this file per the phase gate, (3) a decision on whether the unmeasured coverage gate and pre-existing phpcs findings block Phase 3 or are accepted as known debt.
