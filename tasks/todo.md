@@ -62,4 +62,6 @@ Next action: Execute the Phase 2 plan (subagent-driven or inline) after user cho
 
 Process lessons from this phase are recorded in `tasks/lessons.md`.
 
-Outstanding before Phase 3 planning: explicit user approval of Phase 2, recorded in this file per the phase gate.
+**Phase 2 approved by the user on 2026-07-25.** The phase gate is closed: all 14 tasks review-clean, whole-branch review findings fixed and re-reviewed, both Critical defects verified closed over real HTTP on a conventional nginx + FastCGI + MySQL stack, 128 tests passing, `phpcs` clean, 88.72% line coverage. Merged to `main` (39 commits); branch `worktree-phase-2-foundation` deleted after `git branch -d` confirmed the merge.
+
+Next action: Phase 3 planning (WordPress content, media, and menu modules) may begin. Before planning, read the "Residual risks inherited by Phase 3" section of `docs/superpowers/plans/2026-07-25-phase-2-mcp-gateway-foundation.md` — in particular the catalog capability-filtering trap, which will silently hide the first registered write operation from every user's catalog, administrators included.
