@@ -38,7 +38,6 @@ final class Dispatcher {
 	 *
 	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
 	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
-	 * phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 	 */
 	public function __construct(
 		private readonly CapabilityRegistry $registry,
@@ -47,6 +46,8 @@ final class Dispatcher {
 		private readonly SchemaValidator $schemaValidator,
 	) {
 	}
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 
 	/**
 	 * Dispatches one MCP tool call through catalog-on-empty or standard routing.
@@ -58,6 +59,10 @@ final class Dispatcher {
 	 * @return array<string, mixed> Catalog or OperationResult envelope.
 	 *
 	 * @throws OperationException On every failure.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+	 * phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 	 */
 	public function dispatch( string $dispatcherName, array $args, OperationContext $context ): array {
 		$operation_id = $args['operation'] ?? '';
@@ -65,8 +70,7 @@ final class Dispatcher {
 			return $this->catalogBuilder->build( $dispatcherName, $context->moduleVersions );
 		}
 
-		if ( ! $this->registry->has( $operation_id )
-			|| $this->registry->definition( $operation_id )->dispatcherName() !== $dispatcherName ) {
+		if ( ! $this->registry->has( $operation_id ) ) {
 			throw new OperationException(
 				ErrorCode::InvalidInput,
 				sprintf( "Unknown operation '%s' on dispatcher '%s'.", $operation_id, $dispatcherName ),
@@ -75,7 +79,14 @@ final class Dispatcher {
 		}
 
 		$definition = $this->registry->definition( $operation_id );
-		$health     = $context->moduleVersions[ $definition->module->value ]['health']
+		if ( $definition->dispatcherName() !== $dispatcherName ) {
+			throw new OperationException(
+				ErrorCode::InvalidInput,
+				sprintf( "Unknown operation '%s' on dispatcher '%s'.", $operation_id, $dispatcherName ),
+				'Call the dispatcher without an operation to list its catalog.'
+			);
+		}
+		$health = $context->moduleVersions[ $definition->module->value ]['health']
 			?? ModuleHealth::Inactive->value;
 
 		if ( ModuleHealth::Inactive->value === $health ) {
