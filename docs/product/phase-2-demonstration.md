@@ -164,3 +164,48 @@ Line coverage of 87.33% clears the brief's >= 80% target. The lower class and me
 - The remaining uncovered methods are `toArray()`/accessor paths on contract value objects not reached by the current operation set.
 
 The plain run reports `OK (91 tests, 199 assertions)` with no warnings.
+
+---
+
+## Second environment: conventional nginx + MySQL stack (2026-07-25)
+
+The demonstration above ran on PHP's built-in server with SQLite. That stack cannot exercise two things real customers depend on, so the demonstration was repeated on a conventional LocalWP stack after the whole-branch review fixes landed.
+
+**Environment**
+
+- WordPress 7.0.2, PHP 8.2.29 (FastCGI via php-cgi), nginx, MySQL 8.4.0 — a LocalWP site on the operator's machine.
+- Plugin installed as `wp-content/plugins/sitehelm` (`sitehelm.php`, `src/`, `vendor/`) and activated alongside an unrelated pre-existing plugin, which was left untouched.
+- `WP_ENVIRONMENT_TYPE` is `local`, so WordPress permits Application Passwords over plain HTTP. One named `sitehelm-demo` was created for the `admin` user, held out-of-band for the run, and revoked afterwards. Its value appears in no file.
+- Endpoint: `http://<site-host>/wp-json/sitehelm/v1/mcp`. Pretty permalinks were already enabled, so no permalink workaround was needed — confirming that the earlier workaround was an artifact of PHP's built-in server, not a plugin requirement.
+
+**Why this environment matters**
+
+1. **The `Authorization` header survives nginx + FastCGI.** nginx frequently strips it, which would break Application Password authentication for real customers — a failure class PHP's built-in server cannot reveal, because it always forwards the header. Every authenticated request below succeeded, so header passthrough is confirmed on a production-shaped stack.
+2. **The whole-branch review's two Critical defects are verified dead over real HTTP**, not merely in unit tests.
+
+**Part A — the six demonstration requests**
+
+| # | Request | Status | Result |
+|---|---|---|---|
+| 1 | `initialize` | 200 | `protocolVersion` `2025-06-18`, `serverInfo.name` `SiteHelm`, version `0.1.0` |
+| 2 | `tools/list` | 200 | exactly 11 tools, in contract order: content-read, content-write, media-read, media-write, menu-read, menu-write, elementor-read, elementor-write, fields-read, fields-write, system-read |
+| 3 | `system-read` catalog | 200 | `system-environment` listed, `available: true`, `blockedReason: null` |
+| 4 | `system-environment` (REQ-0001) | 200 | `success: true`; `wordpress` 7.0.2, `php` 8.2.29, `sitehelm` 0.1.0, `theme` Twenty Twenty-Five 1.5, `permissionMode` safe-write, `modules.diagnostics` active |
+| 5 | `tools/list` with no credentials | **401** | `rest_forbidden` — WordPress rejects at `permission_callback`; no catalog content disclosed |
+| 6 | `system-environment` with unknown property `verbose` | 200 | `isError: true`, code `invalid_input`, message names only the sanitized property |
+
+REQ-0001 reported PHP 8.2.29 — the web server's runtime, not the CLI's — confirming the report reflects live environment state. A leak scan over every response body found no filesystem path, stack trace, or credential.
+
+**Part B — the C1 payloads that previously caused an uncaught fatal**
+
+Before the fix these produced an uncaught `InvalidArgumentException` from the leak guard and, under `WP_DEBUG_DISPLAY`, leaked absolute paths and a stack trace. All now return HTTP 200 with a clean `invalid_input` envelope, leak-scan clean:
+
+`operation` = `password`, `my-secret-op`, `get-api-key`, `wp-content`, `a\b`; and argument keys `password`, `authorization`.
+
+**Part C — the C2 malformed-framing payloads**
+
+All four return JSON-RPC `-32602` with no path disclosure and no PHP warning: `"params":"hello"`, `"params":123`, `"name":["x"]`, `"name":123`.
+
+**Part D — I3, valid JSON Schema on the wire**
+
+The advertised catalog now serializes `"properties":{}` and `"example":{"arguments":{}}`. The malformed `"properties":[]` form is absent from the response. Verified by string inspection of the live payload, not of the source.
