@@ -22,16 +22,16 @@ use Throwable;
  */
 final class ModuleLoader {
 
-	// phpcs:disable Squiz.Commenting.FunctionComment.IncorrectTypeHint -- doc comment specifies list type for clarity while runtime accepts array.
 	/**
 	 * Loads every module in isolation, recording health and handling errors.
 	 *
 	 * @param list<IntegrationModule> $modules Modules to load.
 	 * @param CapabilityRegistry      $registry The capability registry.
 	 * @return array<string, array{version: ?string, health: string}> Health map.
+	 *
+	 * phpcs:disable Squiz.Commenting.FunctionComment.IncorrectTypeHint
 	 */
 	public function load( array $modules, CapabilityRegistry $registry ): array {
-	// phpcs:enable Squiz.Commenting.FunctionComment.IncorrectTypeHint
 		$health_map = [];
 
 		foreach ( $modules as $module ) {
@@ -53,4 +53,5 @@ final class ModuleLoader {
 
 		return $health_map;
 	}
+	// phpcs:enable Squiz.Commenting.FunctionComment.IncorrectTypeHint
 }
