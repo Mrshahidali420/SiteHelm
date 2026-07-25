@@ -14,6 +14,7 @@ use SiteHelm\Gateway\ContextFactory;
 use SiteHelm\Gateway\Dispatcher;
 use SiteHelm\Gateway\McpServer;
 use SiteHelm\Gateway\RestTransport;
+use SiteHelm\Modules\Core\CoreModule;
 use SiteHelm\Modules\Diagnostics\DiagnosticsModule;
 use SiteHelm\Policy\PolicyEngine;
 use SiteHelm\Registry\CapabilityRegistry;
@@ -60,7 +61,7 @@ final class Plugin {
 		// Later phases append module class names here. Class names rather than
 		// instances so that each construction sits inside the isolation boundary:
 		// a throwing constructor must not be able to take down the gateway.
-		$module_classes = [ DiagnosticsModule::class ];
+		$module_classes = [ DiagnosticsModule::class, CoreModule::class ];
 		$module_health  = ( new ModuleLoader() )->load( $this->constructModules( $module_classes ), $registry );
 
 		$server = new McpServer(
