@@ -67,7 +67,7 @@ final class Dispatcher {
 	public function dispatch( string $dispatcherName, array $args, OperationContext $context ): array {
 		$operation_id = $args['operation'] ?? '';
 		if ( ! is_string( $operation_id ) || '' === $operation_id ) {
-			return $this->catalogBuilder->build( $dispatcherName, $context->moduleVersions );
+			return $this->catalogBuilder->build( $dispatcherName, $context );
 		}
 
 		// The client's raw operation string is never echoed back: it is untrusted

@@ -134,6 +134,21 @@ final class DispatcherTest extends TestCase {
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 
 	/**
+	 * I1: the catalog lists only operations the caller is permitted to see.
+	 * An unauthorized caller must not learn that an operation exists at all.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+	 */
+	public function test_catalog_omits_operations_the_caller_may_not_see(): void {
+		Functions\when( 'user_can' )->justReturn( false );
+
+		$response = $this->dispatcher->dispatch( 'system-read', [], $this->makeContext() );
+
+		$this->assertSame( [], $response['operations'] );
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+
+	/**
 	 * Test that successful operation returns result envelope.
 	 *
 	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase

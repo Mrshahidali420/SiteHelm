@@ -194,7 +194,13 @@ final class McpServerTest extends TestCase {
 			]
 		);
 		$this->assertFalse( $response['result']['isError'] );
-		$payload = json_decode( $response['result']['content'][0]['text'], true );
+		$text = $response['result']['content'][0]['text'];
+		// I3: the wire text must be valid JSON Schema, so empty object members
+		// serialize as {} rather than [].
+		$this->assertStringContainsString( '"properties":{}', $text );
+		$this->assertStringContainsString( '"arguments":{}', $text );
+		$this->assertStringNotContainsString( '"properties":[]', $text );
+		$payload = json_decode( $text, true );
 		$this->assertSame( 'system-read', $payload['dispatcher'] );
 	}
 
