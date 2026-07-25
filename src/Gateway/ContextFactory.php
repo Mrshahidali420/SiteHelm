@@ -45,7 +45,7 @@ final class ContextFactory {
 			throw new OperationException(
 				ErrorCode::AuthenticationFailed,
 				'No WordPress user could be resolved for this request.',
-				'Connect with a valid Application Password for a real WordPress user.'
+				'Connect with valid credentials for a real WordPress user.'
 			);
 		}
 
