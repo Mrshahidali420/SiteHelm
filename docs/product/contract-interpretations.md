@@ -34,6 +34,8 @@ A ruling here never widens what the contract permits. If a reading would relax a
 
 **Reversibility.** Moderate. Changing it later is a schema-version increment on every write operation, handled by the contract's own compatibility-layer rule.
 
+**Refinement (2026-07-26, from the Phase 3a plan review).** A union whose two property groups are merely optional cannot distinguish the phases — it would also accept a malformed response carrying both `plan` and `target`. The schema must therefore express the exclusivity, with `oneOf` over the two groups rather than one flat object with everything optional. See also I6: the union is currently declared but not enforced at runtime.
+
 ---
 
 ## I3. Rollback is itself a preview-required, snapshotted write
@@ -62,6 +64,10 @@ A ruling here never widens what the contract permits. If a reading would relax a
 
 **Status.** Open candidate for the next contract revision. If `OperationError` gains an optional `recovery` object, this limitation closes.
 
+**Refinement (2026-07-26, from the Phase 3a plan review).** The load-bearing sentence above — "the audit record exists before execution, so the recovery information is never lost" — holds only where the audit record is completed. On the `verification_failed` path it is, so the ruling stands for the case it addresses. It would be false after a crash between capturing a snapshot and finishing the audit record, which would leave a real snapshot row whose reference no audit row carries, reachable only by direct database access. The rollback reference and snapshot id must therefore be written when the audit record is *opened*, not only when it is finished, so the claim is unconditional rather than true-on-the-happy-path.
+
+This entry also accepts, explicitly rather than by omission, that a non-administrator meeting `verification_failed` cannot obtain a rollback handle without an administrator's help. That is a real reduction in the operator's position and is recorded as such.
+
 ---
 
 ## I5. REQ-0005 to REQ-0007 are engine guarantees, not registrable operations
@@ -74,4 +80,20 @@ A ruling here never widens what the contract permits. If a reading would relax a
 
 **Rationale.** The contract states the anchoring intent explicitly. Registering three pseudo-operations would put non-invocable entries in a catalog whose purpose is to tell a client what it can call.
 
+**Decisive argument (added 2026-07-26, from the Phase 3a plan review).** Stronger than the anchoring rule alone: those three matrix rows carry `domain: system` with `mode: write`, and the contract's dispatcher table defines no `system-write` dispatcher. `OperationDefinition`'s constructor rejects that combination outright. The rows therefore *cannot* be registrable operations — this is not a judgement call but a type-level impossibility.
+
 **Reversibility.** Not applicable — this is a reading of an already-explicit rule rather than a new choice.
+
+---
+
+## I6. Output is not yet validated against `outputSchema`
+
+**Contract says.** Twice: `outputSchema` is the "schema of the `data` payload in a successful `OperationResult`", and "Output is normalized and validated before return."
+
+**Why it needed a ruling.** Nothing validates it. Phase 2 shipped no output validation and Phase 3a adds none, so every declared `outputSchema` — including I2's carefully-constructed union — is advertised to clients but never enforced against what is actually returned.
+
+**Ruling.** Recorded honestly as an open gap rather than quietly ignored. Phase 3a's interim mitigation is per-operation tests asserting that each operation's returned `data` conforms to its own declared `outputSchema`, which catches drift where it originates and costs nothing at runtime. Runtime validation at the dispatcher's return point is required before V1 public release, because that is the point at which the schema becomes a promise to third-party clients.
+
+**Rationale.** The honest position is that this guarantee has been unmet since Phase 2; documenting non-compliance is better than either pretending it holds or bolting hard runtime failure onto a phase that did not plan for it. A non-conforming payload is a developer defect, and a test is the right place to catch a developer defect. Turning it into a client-facing runtime error would convert a minor schema drift into an outage.
+
+**Status.** Open, with a deadline: before V1 public release.
