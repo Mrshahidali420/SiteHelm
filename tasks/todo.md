@@ -27,4 +27,8 @@ All Phase 1 gates passed on 2026-07-24. Validator outputs, re-run from the repos
 - Task 5: `PASS: foundation contract maps all 51 V1 requirements` — `docs/product/phase-2-foundation-contract.md` (11 stable error codes).
 - Task 6: readiness gate ready with clean-room and scope reviews clear — `docs/product/phase-1-readiness-review.md`.
 
-Next action: Create the Phase 2 foundation implementation plan after explicit approval.
+## Phase 2 Planning
+
+- [x] Phase 2 foundation implementation plan created on 2026-07-25: `docs/superpowers/plans/2026-07-25-phase-2-mcp-gateway-foundation.md` (14 TDD tasks). Approved decisions: PHP 8.1+ / WP 6.6+ platform floor; REQ-0001 included as the end-to-end demo operation.
+
+Next action: Execute the Phase 2 plan (subagent-driven or inline) after user chooses the execution approach.
