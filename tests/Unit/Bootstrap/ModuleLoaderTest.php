@@ -68,6 +68,44 @@ final class ModuleLoaderTest extends TestCase {
 		$this->assertSame( 'active', $health['diagnostics']['health'] );
 	}
 
+	/**
+	 * I4: id() was called outside the try, so a module whose id() throws took the
+	 * whole boot down instead of being contained.
+	 */
+	public function test_module_whose_id_throws_is_contained_and_marked_inactive(): void {
+		$broken = new class() implements IntegrationModule {
+			public function id(): ModuleId {
+				throw new RuntimeException( 'id exploded' );
+			}
+			public function displayName(): string {
+				return 'Broken';
+			}
+			public function dependency(): array {
+				return [ 'name' => 'wordpress', 'versionRange' => '>=6.6' ];
+			}
+			public function health(): array {
+				return [ 'version' => null, 'health' => 'active' ];
+			}
+			public function cacheCleanup(): array {
+				return [];
+			}
+			public function register( CapabilityRegistry $registry ): void {
+			}
+		};
+		$survivor = $this->makeModule( ModuleId::Diagnostics );
+
+		$health = ( new ModuleLoader() )->load( [ $broken, $survivor ], new CapabilityRegistry() );
+
+		// The sibling still loads.
+		$this->assertSame( 'active', $health['diagnostics']['health'] );
+
+		// The failure is still recorded, under a stable fallback key.
+		$fallback_keys = array_keys( array_diff_key( $health, [ 'diagnostics' => null ] ) );
+		$this->assertCount( 1, $fallback_keys );
+		$this->assertSame( 'inactive', $health[ $fallback_keys[0] ]['health'] );
+		$this->assertNull( $health[ $fallback_keys[0] ]['version'] );
+	}
+
 	public function test_inactive_module_still_registers_its_operations(): void {
 		$registry   = new CapabilityRegistry();
 		$registered = false;

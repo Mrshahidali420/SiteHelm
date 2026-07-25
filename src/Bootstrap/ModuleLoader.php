@@ -34,8 +34,12 @@ final class ModuleLoader {
 		$health_map = [];
 
 		foreach ( $modules as $module ) {
-			$module_id = $module->id()->value;
+			// The class name is a stable fallback key: id() is module code too, so
+			// it must be called inside the isolation boundary. Without a key the
+			// failure could not be recorded in the health map at all.
+			$module_id = get_class( $module );
 			try {
+				$module_id               = $module->id()->value;
 				$health_map[ $module_id ] = $module->health();
 				// Register definitions even when inactive/version-blocked, so
 				// catalogs can list the operations with their blocking reason.
