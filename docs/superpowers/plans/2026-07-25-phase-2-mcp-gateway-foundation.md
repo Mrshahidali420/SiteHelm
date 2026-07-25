@@ -3298,7 +3298,13 @@ use Throwable;
 final class ModuleLoader {
 
 	/**
-	 * @param list<IntegrationModule> $modules Modules to load.
+	 * PHPDoc note: use `IntegrationModule[]`, not `list<IntegrationModule>`.
+	 * WPCS's Squiz.Commenting.FunctionComment.IncorrectTypeHint sniff understands
+	 * `Foo[]` as array-compatible but not generic `list<Foo>`, and the sequential-key
+	 * guarantee is not load-bearing here (the loader only iterates). Using the
+	 * generic form would require a permanent lint suppression for no benefit.
+	 *
+	 * @param IntegrationModule[] $modules Modules to load.
 	 * @return array<string, array{version: ?string, health: string}> Health map.
 	 */
 	public function load( array $modules, CapabilityRegistry $registry ): array {
