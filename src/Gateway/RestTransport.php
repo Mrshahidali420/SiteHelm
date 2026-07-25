@@ -25,6 +25,7 @@ final class RestTransport {
 	public const ROUTE                 = '/mcp';
 	public const MAX_BODY_BYTES        = 1_048_576;
 	public const RATE_LIMIT_PER_MINUTE = 60;
+	public const RPC_RATE_LIMITED      = -32000;
 
 	/**
 	 * Initialize the REST transport with an MCP server instance.
@@ -51,7 +52,7 @@ final class RestTransport {
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 
-	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid, WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 	/**
 	 * Handle an incoming REST request to the MCP endpoint.
 	 *
@@ -64,7 +65,7 @@ final class RestTransport {
 
 		if ( ! $this->withinRateLimit( get_current_user_id() ) ) {
 			return new WP_REST_Response(
-				$this->rpcError( -32600, 'Rate limit exceeded. Retry after a short pause.' ),
+				$this->rpcError( self::RPC_RATE_LIMITED, 'Rate limit exceeded. Retry after a short pause.' ),
 				429
 			);
 		}
@@ -73,7 +74,7 @@ final class RestTransport {
 
 		return new WP_REST_Response( $processed['body'], $processed['status'] );
 	}
-	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid, WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 
 	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid, WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
 	/**

@@ -134,4 +134,23 @@ final class RestTransportTest extends TestCase {
 		$this->assertTrue( $this->transport->withinRateLimit( 7 ) );
 		$this->assertSame( [ 'sitehelm_rate_7', 4, 60 ], $stored );
 	}
+
+	/**
+	 * Test that rate-limit and oversized-body error codes are distinct.
+	 */
+	public function test_rate_limit_and_oversized_body_use_distinct_rpc_codes(): void {
+		// Rate limit uses -32000 (implementation-defined server error).
+		$this->assertSame( -32000, RestTransport::RPC_RATE_LIMITED );
+
+		// Oversized body uses -32600 (invalid request, same as bad JSON).
+		$oversized_response = $this->transport->processRawBody(
+			str_repeat( 'x', RestTransport::MAX_BODY_BYTES + 1 ),
+			'unknown-client'
+		);
+		$oversized_code     = $oversized_response['body']['error']['code'];
+		$this->assertSame( -32600, $oversized_code );
+
+		// Verify they are different.
+		$this->assertNotSame( RestTransport::RPC_RATE_LIMITED, $oversized_code );
+	}
 }
