@@ -3938,11 +3938,13 @@ And enforce it at the top of `handleRequest()` (before `processRawBody`):
 ```php
 		if ( ! $this->withinRateLimit( get_current_user_id() ) ) {
 			return new WP_REST_Response(
-				$this->rpcError( -32600, 'Rate limit exceeded. Retry after a short pause.' ),
+				$this->rpcError( self::RPC_RATE_LIMITED, 'Rate limit exceeded. Retry after a short pause.' ),
 				429
 			);
 		}
 ```
+
+Error-code note (amended 2026-07-25 after Task 13 review): throttling is NOT a malformed request, so it must not reuse `-32600` ("Invalid Request") — that would make a throttled call indistinguishable from a bad one. JSON-RPC 2.0 reserves `-32000..-32099` for implementation-defined server errors, which is what a rate limit is. Declare `public const RPC_RATE_LIMITED = -32000;` on `RestTransport` and use it here. The oversized-body case keeps `-32600` (the request as presented is genuinely unprocessable) and is further disambiguated by its HTTP 413.
 
 Run: `vendor/bin/phpunit --filter RestTransportTest` → all six tests PASS.
 
