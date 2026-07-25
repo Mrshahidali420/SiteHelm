@@ -12,7 +12,7 @@ use InvalidArgumentException;
  *
  * @package SiteHelm
  */
-final readonly class OperationDefinition {
+final class OperationDefinition {
 
 	private const ID_PATTERN = '/^[a-z0-9]+(?:-[a-z0-9]+)*$/';
 
@@ -36,24 +36,24 @@ final readonly class OperationDefinition {
 	 * @param array<string, mixed>  $example              At least one usage example.
 	 */
 	public function __construct(
-		public string $id,
-		public Domain $domain,
-		public Mode $mode,
-		public string $description,
-		public array $inputSchema,
-		public array $outputSchema,
-		public int $schemaVersion,
-		public array $requiredCapabilities,
-		public Risk $risk,
-		public bool $isReadOnly,
-		public bool $isDestructive,
-		public bool $isIdempotent,
-		public PreviewPolicy $previewPolicy,
-		public SnapshotPolicy $snapshotPolicy,
-		public RollbackPolicy $rollbackPolicy,
-		public ModuleId $module,
-		public array $supportedVersions,
-		public array $example,
+		public readonly string $id,
+		public readonly Domain $domain,
+		public readonly Mode $mode,
+		public readonly string $description,
+		public readonly array $inputSchema,
+		public readonly array $outputSchema,
+		public readonly int $schemaVersion,
+		public readonly array $requiredCapabilities,
+		public readonly Risk $risk,
+		public readonly bool $isReadOnly,
+		public readonly bool $isDestructive,
+		public readonly bool $isIdempotent,
+		public readonly PreviewPolicy $previewPolicy,
+		public readonly SnapshotPolicy $snapshotPolicy,
+		public readonly RollbackPolicy $rollbackPolicy,
+		public readonly ModuleId $module,
+		public readonly array $supportedVersions,
+		public readonly array $example,
 	) {
 		if ( 1 !== preg_match( self::ID_PATTERN, $id ) ) {
 			throw new InvalidArgumentException( "Operation id '{$id}' is not lower-case kebab-case." );

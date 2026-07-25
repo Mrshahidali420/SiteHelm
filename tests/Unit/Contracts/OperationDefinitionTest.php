@@ -149,4 +149,43 @@ final class OperationDefinitionTest extends TestCase {
 		$this->expectException( InvalidArgumentException::class );
 		$this->makeDefinition( [ 'schemaVersion' => 0 ] );
 	}
+
+	public function test_rejects_empty_description(): void {
+		$this->expectException( InvalidArgumentException::class );
+		$this->makeDefinition( [ 'description' => '   ' ] );
+	}
+
+	public function test_rejects_empty_capabilities(): void {
+		$this->expectException( InvalidArgumentException::class );
+		$this->makeDefinition( [ 'requiredCapabilities' => [] ] );
+	}
+
+	public function test_rejects_missing_wordpress_version_range(): void {
+		$this->expectException( InvalidArgumentException::class );
+		$this->makeDefinition( [ 'supportedVersions' => [ 'elementor' => '>=3.0' ] ] );
+	}
+
+	public function test_rejects_empty_example(): void {
+		$this->expectException( InvalidArgumentException::class );
+		$this->makeDefinition( [ 'example' => [] ] );
+	}
+
+	public function test_valid_write_definition_reports_write_dispatcher(): void {
+		$definition = $this->makeDefinition(
+			[
+				'id'             => 'content-update',
+				'domain'         => Domain::Content,
+				'mode'           => Mode::Write,
+				'isReadOnly'     => false,
+				'isDestructive'  => false,
+				'isIdempotent'   => true,
+				'previewPolicy'  => PreviewPolicy::Required,
+				'snapshotPolicy' => SnapshotPolicy::Required,
+				'rollbackPolicy' => RollbackPolicy::Supported,
+				'module'         => ModuleId::Core,
+				'requiredCapabilities' => [ 'edit_posts' ],
+			]
+		);
+		$this->assertSame( 'content-write', $definition->dispatcherName() );
+	}
 }
