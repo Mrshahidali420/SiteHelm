@@ -57,7 +57,6 @@ final class ContentFields {
 	 */
 	private const MAX_META_KEY_LENGTH = 255;
 
-	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 	/**
 	 * The stable target key for one existing post.
 	 *
@@ -66,21 +65,26 @@ final class ContentFields {
 	 * @return string The target key, for example 'post:42'.
 	 *
 	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+	 * phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 	 */
 	public function targetKey( int $postId ): string {
 		return self::POST_PREFIX . $postId;
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 
 	/**
 	 * The target key used before a post exists, so a creation plan still binds
 	 * to a concrete, stable target string.
 	 *
 	 * @return string The pending target key.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 	 */
 	public function pendingTargetKey(): string {
 		return self::POST_PREFIX . 'new';
 	}
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 
 	/**
 	 * The post identifier a target key refers to.
@@ -90,6 +94,7 @@ final class ContentFields {
 	 * @return int The post identifier, or 0 when the key names no existing post.
 	 *
 	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+	 * phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 	 */
 	public function postIdFromTargetKey( string $targetKey ): int {
 		if ( ! str_starts_with( $targetKey, self::POST_PREFIX ) ) {
