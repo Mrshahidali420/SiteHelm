@@ -119,8 +119,8 @@ final class Dispatcher {
 			verification: VerificationStatus::NotApplicable,
 			correlationId: $context->correlationId,
 		) )->toArray();
-		// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
-		// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
-		// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 	}
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 }
