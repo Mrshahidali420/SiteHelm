@@ -28,8 +28,8 @@ final class ContextFactory {
 	/**
 	 * Builds the per-request operation context from WordPress state.
 	 *
-	 * @param array<string, array{version: ?string, health: string}> $module_versions Module health map.
-	 * @param string                                                 $client_id Client identifier from MCP handshake.
+	 * @param array<string, array{version: ?string, health: string}> $moduleVersions Module health map.
+	 * @param string                                                 $clientId       Client identifier from MCP handshake.
 	 *
 	 * @return OperationContext The constructed operation context.
 	 *
@@ -39,7 +39,7 @@ final class ContextFactory {
 	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 	 * phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 	 */
-	public function create( array $module_versions, string $client_id = 'unknown-client' ): OperationContext {
+	public function create( array $moduleVersions, string $clientId = 'unknown-client' ): OperationContext {
 		$user_id = get_current_user_id();
 		if ( $user_id <= 0 ) {
 			throw new OperationException(
@@ -56,14 +56,14 @@ final class ContextFactory {
 		return new OperationContext(
 			siteId: (string) wp_parse_url( home_url(), PHP_URL_HOST ),
 			userId: $user_id,
-			clientId: $client_id,
+			clientId: $clientId,
 			correlationId: wp_generate_uuid4(),
 			permissionMode: $mode,
-			moduleVersions: $module_versions,
+			moduleVersions: $moduleVersions,
 			requestTime: time(),
 		);
+		// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+		// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+		// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 	}
 }
-// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
-// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
-// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped

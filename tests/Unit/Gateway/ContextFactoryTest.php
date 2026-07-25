@@ -18,8 +18,6 @@ use SiteHelm\Tests\TestCase;
 
 /**
  * Tests ContextFactory.
- *
- * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
  */
 final class ContextFactoryTest extends TestCase {
 
@@ -41,6 +39,8 @@ final class ContextFactoryTest extends TestCase {
 
 	/**
 	 * Test that context is built for authenticated users.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 	 */
 	public function test_builds_context_for_authenticated_user(): void {
 		$this->stubWordPress( 7 );
@@ -61,9 +61,12 @@ final class ContextFactoryTest extends TestCase {
 		$this->assertSame( 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee', $context->correlationId );
 		$this->assertGreaterThan( 0, $context->requestTime );
 	}
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 
 	/**
 	 * Test that unauthenticated requests are rejected.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 	 */
 	public function test_unauthenticated_request_is_rejected(): void {
 		$this->stubWordPress( 0 );
@@ -74,23 +77,29 @@ final class ContextFactoryTest extends TestCase {
 			$this->assertSame( ErrorCode::AuthenticationFailed, $e->errorCode );
 		}
 	}
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 
 	/**
 	 * Test that invalid stored modes fall back to safe-write.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 	 */
 	public function test_invalid_stored_mode_falls_back_to_safe_write(): void {
 		$this->stubWordPress( 7, 'yolo-mode' );
 		$context = ( new ContextFactory() )->create( [] );
 		$this->assertSame( PermissionMode::SafeWrite, $context->permissionMode );
 	}
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 
 	/**
 	 * Test that read-only mode is honored.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 	 */
 	public function test_read_only_mode_is_honored(): void {
 		$this->stubWordPress( 7, 'read-only' );
 		$context = ( new ContextFactory() )->create( [] );
 		$this->assertSame( PermissionMode::ReadOnly, $context->permissionMode );
 	}
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 }
-// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
