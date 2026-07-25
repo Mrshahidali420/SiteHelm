@@ -4080,3 +4080,27 @@ Run before declaring Phase 2 complete:
 
 
 
+
+---
+
+## Residual risks inherited by Phase 3
+
+Phase 2 merged with the findings below parked as Minor. Each was adjudicated by the controller after the fix wave's scoped re-review; none blocks Phase 2, and all are recorded here because Phase 3 is where they become reachable.
+
+**1. Catalog capability filtering will hide every meta-capability operation from every user, including administrators.** `CatalogBuilder` filters operations with `user_can( $userId, $capability )` and no object id. For the contract's target meta-capabilities — `edit_post`, `delete_post`, `assign_terms` (contract line 95) — WordPress's `map_meta_cap` resolves a target-less check to `do_not_allow`, so it returns false for everyone. No Phase 2 operation declares a meta-capability, so this is currently unreachable and it fails closed (nothing is disclosed). The moment Phase 3 registers `content-update` or `content-trash`, those operations vanish from every catalog and the cause will be non-obvious.
+
+*Required in Phase 3:* exclude meta-capabilities from the catalog filter entirely — a target-less catalog listing cannot evaluate them, so it must not pretend to. Filter only on non-meta capabilities and let `PolicyEngine` perform the real target-bound check at invocation. The comment at `CatalogBuilder.php` claiming the check answers "could this user ever perform this operation" is inverted for meta-capabilities and must be corrected in the same change.
+
+**2. Module health is reported before authorization, so hidden operations are still confirmable.** `Dispatcher` evaluates module health before calling `policy->authorize()`. An unauthorized caller who guesses an operation name gets `integration_unavailable` or `unsupported_version` — confirming the operation exists and leaking its dependency state — where they should get `forbidden`. Harmless in Phase 2 (one always-active module, one operation whose capability every administrator holds), but it undoes part of the I1 hardening.
+
+*Required in Phase 3:* move `policy->authorize()` above the module-health checks so authorization failures always win.
+
+**3. `McpServer` still echoes the client's tool name.** `"Unknown tool '{$tool}'."` interpolates caller input, while the sibling path deliberately stopped echoing `method`. The value is type-checked so there is no fatal risk and no server state is disclosed — it is an inconsistency, not a vulnerability. Align it when convenient.
+
+**4. Redaction removes separators, not path components.** `OperationError`'s guard turns `C:\sites\wp\wp-config.php` into `C:[redacted]sites[redacted]wp[redacted]wp-config.php` — the path is mangled but its components survive. This is bounded today because arbitrary `Throwable` text is replaced with hardcoded text before reaching the guard, so only SiteHelm-authored `OperationException` messages are redacted. **Module authors must never place a filesystem path in an `OperationException` message.** If a future path could reach the guard, the redaction must replace whole matches, not just the pattern's separators.
+
+**5. Two API changes Phase 3 must follow.**
+- `CatalogBuilder::build( string $dispatcher, OperationContext $context )` — the health map is no longer a separate parameter; it is read from the context, so the two can never drift.
+- `Plugin::register()` lists module **class names**, not instances, so each construction sits inside its own try/catch. Append `SomeModule::class`, never `new SomeModule()`.
+
+**6. Smaller notes.** `normalize_object_shapes()` normalizes an `arguments` key only when its direct parent is `example`; an `example` holding a *list* of examples would not be normalized. `ModuleLoader`'s fallback health-map key is the fully-qualified class name, which can surface in integration-health output. `Plugin::constructModules()`'s throw path is untestable only because the class list is hardcoded — an optional parameter on `register()` would make it injectable cheaply.
