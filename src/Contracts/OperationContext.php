@@ -1,4 +1,9 @@
 <?php
+/**
+ * The immutable per-request operation context.
+ *
+ * @package SiteHelm
+ */
 
 declare(strict_types=1);
 
@@ -14,7 +19,20 @@ use InvalidArgumentException;
 final class OperationContext {
 
 	/**
-	 * @param array<string, array{version: ?string, health: string}> $moduleVersions Module health map.
+	 * Constructs one validated request context.
+	 *
+	 * @param string         $siteId         Stable identifier of the operated site.
+	 * @param int            $userId         The resolved WordPress user.
+	 * @param string         $clientId       The MCP client making the request.
+	 * @param string         $correlationId  Gateway-generated request identifier.
+	 * @param PermissionMode $permissionMode The site-level permission mode in force.
+	 * @param array          $moduleVersions Module health map: module id to version and health.
+	 * @param int            $requestTime    Server-side UTC acceptance timestamp.
+	 *
+	 * @throws InvalidArgumentException When any context invariant is violated.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 	 */
 	public function __construct(
 		public readonly string $siteId,
@@ -38,4 +56,6 @@ final class OperationContext {
 			throw new InvalidArgumentException( 'OperationContext requires a server-side request time.' );
 		}
 	}
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 }

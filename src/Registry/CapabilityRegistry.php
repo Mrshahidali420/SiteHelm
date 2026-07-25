@@ -1,4 +1,9 @@
 <?php
+/**
+ * The capability registry: the single source of routable operations.
+ *
+ * @package SiteHelm
+ */
 
 declare(strict_types=1);
 
@@ -15,6 +20,9 @@ use SiteHelm\Contracts\OperationDefinition;
  */
 final class CapabilityRegistry {
 
+	/**
+	 * The eleven dispatchers the contract defines. No other top-level tools exist.
+	 */
 	public const DISPATCHERS = [
 		'content-read',
 		'content-write',
@@ -29,12 +37,32 @@ final class CapabilityRegistry {
 		'system-read',
 	];
 
-	/** @var array<string, OperationDefinition> */
+	/**
+	 * Registered definitions, keyed by operation identifier.
+	 *
+	 * @var array<string, OperationDefinition>
+	 */
 	private array $definitions = [];
 
-	/** @var array<string, callable> */
+	/**
+	 * Registered handlers, keyed by operation identifier.
+	 *
+	 * @var array<string, callable>
+	 */
 	private array $handlers = [];
 
+	/**
+	 * Registers one operation and its handler.
+	 *
+	 * @param OperationDefinition $definition The operation definition.
+	 * @param callable            $handler    The handler that executes it.
+	 *
+	 * @return void
+	 *
+	 * @throws InvalidArgumentException When the identifier is already registered.
+	 *
+	 * phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+	 */
 	public function register( OperationDefinition $definition, callable $handler ): void {
 		if ( isset( $this->definitions[ $definition->id ] ) ) {
 			throw new InvalidArgumentException( "Operation '{$definition->id}' is already registered; identifiers are permanent." );
@@ -42,23 +70,78 @@ final class CapabilityRegistry {
 		$this->definitions[ $definition->id ] = $definition;
 		$this->handlers[ $definition->id ]    = $handler;
 	}
+	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 
+	/**
+	 * Whether an operation is registered.
+	 *
+	 * @param string $operationId The operation identifier.
+	 *
+	 * @return bool True when the operation is registered.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+	 */
 	public function has( string $operationId ): bool {
 		return isset( $this->definitions[ $operationId ] );
 	}
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
 
+	/**
+	 * Looks up one registered definition.
+	 *
+	 * @param string $operationId The operation identifier.
+	 *
+	 * @return OperationDefinition The registered definition.
+	 *
+	 * @throws InvalidArgumentException When the operation is not registered.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.InterpolatedVariableNotSnakeCase
+	 * phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+	 */
 	public function definition( string $operationId ): OperationDefinition {
 		return $this->definitions[ $operationId ]
 			?? throw new InvalidArgumentException( "Unknown operation '{$operationId}'." );
 	}
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.InterpolatedVariableNotSnakeCase
+	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 
+	/**
+	 * Looks up one registered handler.
+	 *
+	 * @param string $operationId The operation identifier.
+	 *
+	 * @return callable The registered handler.
+	 *
+	 * @throws InvalidArgumentException When the operation is not registered.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.InterpolatedVariableNotSnakeCase
+	 * phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+	 */
 	public function handler( string $operationId ): callable {
 		return $this->handlers[ $operationId ]
 			?? throw new InvalidArgumentException( "Unknown operation '{$operationId}'." );
 	}
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.InterpolatedVariableNotSnakeCase
+	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 
 	/**
-	 * @return list<OperationDefinition>
+	 * Every registered operation exposed on one dispatcher, in registration order.
+	 *
+	 * PHPDoc uses array shorthand rather than generic list syntax because WPCS's
+	 * IncorrectTypeHint sniff does not understand generics.
+	 *
+	 * @param string $dispatcher The dispatcher name.
+	 *
+	 * @return OperationDefinition[] The dispatcher's definitions.
+	 *
+	 * @throws InvalidArgumentException When the dispatcher is not one of the eleven.
+	 *
+	 * phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+	 * phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 	 */
 	public function forDispatcher( string $dispatcher ): array {
 		if ( ! in_array( $dispatcher, self::DISPATCHERS, true ) ) {
@@ -71,4 +154,6 @@ final class CapabilityRegistry {
 			)
 		);
 	}
+	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 }

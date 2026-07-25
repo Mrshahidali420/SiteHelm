@@ -27,6 +27,8 @@ final class SchemaValidator {
 	 * @return array<string, mixed> The validated input, unchanged.
 	 * @throws OperationException With ErrorCode::InvalidInput on any violation.
 	 * @throws InvalidArgumentException If schema is not strict (lacks additionalProperties: false or type !== 'object').
+	 *
+	 * phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 	 */
 	public function validate( array $input, array $schema ): array {
 		if ( ( $schema['type'] ?? '' ) !== 'object' || ( $schema['additionalProperties'] ?? null ) !== false ) {
@@ -45,6 +47,7 @@ final class SchemaValidator {
 
 		return $input;
 	}
+	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 
 	/**
 	 * Collect all violations for input against schema without throwing.

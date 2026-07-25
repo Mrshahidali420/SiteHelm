@@ -1,4 +1,9 @@
 <?php
+/**
+ * One registered operation definition.
+ *
+ * @package SiteHelm
+ */
 
 declare(strict_types=1);
 
@@ -35,11 +40,36 @@ final class OperationDefinition {
 	private const PLUGIN_BACKED_MODULES = [ ModuleId::Elementor, ModuleId::Acf, ModuleId::Metabox ];
 
 	/**
+	 * Constructs one definition, enforcing every contract cross-field rule.
+	 *
+	 * PHPDoc uses array shorthand rather than generic list syntax because WPCS's
+	 * IncorrectTypeHint sniff does not understand generics.
+	 *
+	 * @param string                $id                   Stable kebab-case operation identifier.
+	 * @param Domain                $domain               The product domain.
+	 * @param Mode                  $mode                 Whether the operation reads or writes.
+	 * @param string                $description          Safe human-readable outcome statement.
 	 * @param array<string, mixed>  $inputSchema          Strict input schema.
 	 * @param array<string, mixed>  $outputSchema         Output schema for OperationResult data.
-	 * @param list<string>          $requiredCapabilities WordPress capabilities.
+	 * @param int                   $schemaVersion        Version of the schema pair, minimum 1.
+	 * @param string[]              $requiredCapabilities WordPress capabilities.
+	 * @param Risk                  $risk                 Blast-radius classification.
+	 * @param bool                  $isReadOnly           True when nothing is mutated.
+	 * @param bool                  $isDestructive        True when state could be lost without a snapshot.
+	 * @param bool                  $isIdempotent         True when re-applying yields the same state.
+	 * @param PreviewPolicy         $previewPolicy        Whether the plan phase is mandatory.
+	 * @param SnapshotPolicy        $snapshotPolicy       Whether pre-change state is captured.
+	 * @param RollbackPolicy        $rollbackPolicy       Whether the write can be reversed.
+	 * @param ModuleId              $module               The single implementing module.
 	 * @param array<string, string> $supportedVersions    Dependency version ranges.
 	 * @param array<string, mixed>  $example              At least one usage example.
+	 *
+	 * @throws InvalidArgumentException When any contract rule is violated.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.InterpolatedVariableNotSnakeCase
+	 * phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 	 */
 	public function __construct(
 		public readonly string $id,
@@ -124,11 +154,20 @@ final class OperationDefinition {
 			throw new InvalidArgumentException( "Operation '{$id}': rollbackPolicy required forces snapshotPolicy required." );
 		}
 	}
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.InterpolatedVariableNotSnakeCase
+	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 
 	/**
 	 * The dispatcher this operation is exposed on, e.g. 'content-write'.
+	 *
+	 * @return string The dispatcher name.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 	 */
 	public function dispatcherName(): string {
 		return $this->domain->value . '-' . $this->mode->value;
 	}
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 }

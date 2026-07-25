@@ -39,7 +39,7 @@ final class ModuleLoader {
 			// failure could not be recorded in the health map at all.
 			$module_id = get_class( $module );
 			try {
-				$module_id               = $module->id()->value;
+				$module_id                = $module->id()->value;
 				$health_map[ $module_id ] = $module->health();
 				// Register definitions even when inactive/version-blocked, so
 				// catalogs can list the operations with their blocking reason.

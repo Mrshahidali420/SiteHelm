@@ -1,4 +1,9 @@
 <?php
+/**
+ * The single operation-failure exception type.
+ *
+ * @package SiteHelm
+ */
 
 declare(strict_types=1);
 
@@ -15,7 +20,19 @@ use RuntimeException;
 final class OperationException extends RuntimeException {
 
 	/**
-	 * @param list<string> $completedSteps Steps completed before a multi-step write failed.
+	 * Constructs one operation failure.
+	 *
+	 * PHPDoc uses array shorthand rather than generic list syntax because WPCS's
+	 * IncorrectTypeHint sniff does not understand generics.
+	 *
+	 * @param ErrorCode   $errorCode      The stable public error code.
+	 * @param string      $message        Safe, human-readable explanation.
+	 * @param string|null $remediation    Optional remediation guidance.
+	 * @param string[]    $completedSteps Steps completed before a multi-step write failed.
+	 * @param string|null $compensation   Compensation outcome for a failed multi-step write.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 	 */
 	public function __construct(
 		public readonly ErrorCode $errorCode,
@@ -26,4 +43,6 @@ final class OperationException extends RuntimeException {
 	) {
 		parent::__construct( $message );
 	}
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 }

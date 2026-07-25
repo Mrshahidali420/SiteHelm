@@ -16,7 +16,7 @@ namespace SiteHelm\Contracts;
  */
 final class OperationError {
 
-	/*
+	/**
 	 * The leak guard. Anything matching this pattern is redacted before it can
 	 * reach an MCP client: Windows path separators, common absolute unix roots,
 	 * the WordPress content directory, stack traces, and credential words.
@@ -64,6 +64,8 @@ final class OperationError {
 	 * The request's correlation identifier.
 	 *
 	 * @var string
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.PropertyNotSnakeCase
 	 */
 	private readonly string $correlationId;
 
@@ -73,6 +75,7 @@ final class OperationError {
 	 * @var string[]
 	 */
 	private readonly array $completedSteps;
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.PropertyNotSnakeCase
 
 	/**
 	 * Compensation outcome for a failed multi-step write.
@@ -140,6 +143,7 @@ final class OperationError {
 	 *
 	 * phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 	 */
 	public static function fromException( OperationException $exception, string $correlationId ): self {
 		return new self(
@@ -153,6 +157,7 @@ final class OperationError {
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 
 	/**
 	 * Overwrites every leak-pattern match with the redaction marker.
@@ -169,6 +174,9 @@ final class OperationError {
 	 * Serializes the envelope for transport.
 	 *
 	 * @return array<string, mixed> The wire envelope.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 	 */
 	public function toArray(): array {
 		$envelope = [
@@ -188,4 +196,6 @@ final class OperationError {
 		}
 		return $envelope;
 	}
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 }

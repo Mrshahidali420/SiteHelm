@@ -88,6 +88,7 @@ final class Plugin {
 	 * @return IntegrationModule[] Successfully constructed modules.
 	 *
 	 * phpcs:disable WordPress.PHP.DevelopmentFunctions.error_log_error_log
+	 * phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 	 */
 	private function constructModules( array $module_classes ): array {
 		$modules = [];
@@ -109,4 +110,5 @@ final class Plugin {
 		return $modules;
 	}
 	// phpcs:enable WordPress.PHP.DevelopmentFunctions.error_log_error_log
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 }

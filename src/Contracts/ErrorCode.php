@@ -46,6 +46,10 @@ enum ErrorCode: string {
 	 * `unsupported_version`, `target_not_found`, `verification_failed`, and
 	 * `rollback_unavailable`, which need WordPress-side configuration, a
 	 * different target, or operator inspection.
+	 *
+	 * @return bool True when this request can be corrected and retried.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 	 */
 	public function isRetryable(): bool {
 		return match ( $this ) {
@@ -53,4 +57,5 @@ enum ErrorCode: string {
 			default => false,
 		};
 	}
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 }
