@@ -68,7 +68,7 @@ final class ModuleLoaderTest extends TestCase {
 		$this->assertSame( 'active', $health['diagnostics']['health'] );
 	}
 
-	public function test_inactive_module_operations_are_not_registered(): void {
+	public function test_inactive_module_still_registers_its_operations(): void {
 		$registry   = new CapabilityRegistry();
 		$registered = false;
 		$inactive   = $this->makeModule(
