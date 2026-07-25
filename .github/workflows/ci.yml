@@ -1,0 +1,99 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Tests (PHP ${{ matrix.php }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 8.1 is the plugin's declared floor (sitehelm.php: Requires PHP 8.1).
+        # Keep this list in step with that floor and with composer.json.
+        php: ['8.1', '8.2', '8.3']
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: mbstring
+          coverage: none
+          tools: none
+
+      - name: Install dependencies
+        uses: ramsey/composer-install@v3
+
+      - name: Run unit tests
+        run: vendor/bin/phpunit --colors=never
+
+  lint:
+    name: WordPress Coding Standards
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: mbstring
+          coverage: none
+          tools: none
+
+      - name: Install dependencies
+        uses: ramsey/composer-install@v3
+
+      # Must pass repo-wide, not per-changed-file. Phase 2 accumulated 203
+      # errors precisely because every check was file-scoped.
+      - name: Run phpcs across the repository
+        run: vendor/bin/phpcs
+
+  coverage:
+    name: Line coverage (>= 80%)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up PHP with coverage driver
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: mbstring
+          coverage: pcov
+
+      - name: Install dependencies
+        uses: ramsey/composer-install@v3
+
+      - name: Generate coverage
+        run: vendor/bin/phpunit --coverage-clover=coverage.xml --colors=never
+
+      # PHPUnit 9 has no built-in minimum-coverage gate, so enforce it here.
+      - name: Enforce the coverage floor
+        run: |
+          php -r '
+            $min = 80.0;
+            $xml = @simplexml_load_file("coverage.xml");
+            if ($xml === false) { fwrite(STDERR, "cannot read coverage.xml\n"); exit(1); }
+            $m = $xml->project->metrics;
+            $statements = (int) $m["statements"];
+            $covered = (int) $m["coveredstatements"];
+            if ($statements === 0) { fwrite(STDERR, "no statements measured\n"); exit(1); }
+            $pct = round($covered / $statements * 100, 2);
+            printf("line coverage: %.2f%% (%d/%d), floor %.1f%%\n", $pct, $covered, $statements, $min);
+            exit($pct + 0.005 < $min ? 1 : 0);
+          '
