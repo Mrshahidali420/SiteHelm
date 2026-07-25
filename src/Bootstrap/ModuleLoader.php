@@ -22,14 +22,13 @@ use Throwable;
  */
 final class ModuleLoader {
 
+	// PHPDoc uses IntegrationModule[] rather than list<IntegrationModule>: WPCS's IncorrectTypeHint sniff does not understand generic list syntax, and sequential keys are not required here.
 	/**
 	 * Loads every module in isolation, recording health and handling errors.
 	 *
-	 * @param list<IntegrationModule> $modules Modules to load.
-	 * @param CapabilityRegistry      $registry The capability registry.
+	 * @param IntegrationModule[] $modules Modules to load.
+	 * @param CapabilityRegistry  $registry The capability registry.
 	 * @return array<string, array{version: ?string, health: string}> Health map.
-	 *
-	 * phpcs:disable Squiz.Commenting.FunctionComment.IncorrectTypeHint
 	 */
 	public function load( array $modules, CapabilityRegistry $registry ): array {
 		$health_map = [];
@@ -53,5 +52,4 @@ final class ModuleLoader {
 
 		return $health_map;
 	}
-	// phpcs:enable Squiz.Commenting.FunctionComment.IncorrectTypeHint
 }
