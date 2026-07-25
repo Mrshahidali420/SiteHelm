@@ -94,6 +94,14 @@ final class Dispatcher {
 				'Call the dispatcher without an operation to list its catalog.'
 			);
 		}
+		$arguments = is_array( $args['arguments'] ?? null ) ? $args['arguments'] : [];
+		$target_id = $this->resolve_target_id( $arguments[ self::TARGET_KEY ] ?? null );
+
+		// Authorization is decided before module health. An unauthorized caller
+		// must not learn that an operation exists, nor learn its dependency
+		// state, by guessing an operation name.
+		$this->policy->authorize( $definition, $context, $target_id );
+
 		$health = $context->moduleVersions[ $definition->module->value ]['health']
 			?? ModuleHealth::Inactive->value;
 
@@ -112,10 +120,6 @@ final class Dispatcher {
 			);
 		}
 
-		$arguments = is_array( $args['arguments'] ?? null ) ? $args['arguments'] : [];
-		$target_id = $this->resolve_target_id( $arguments[ self::TARGET_KEY ] ?? null );
-
-		$this->policy->authorize( $definition, $context, $target_id );
 		$validated = $this->schemaValidator->validate( $arguments, $definition->inputSchema );
 
 		$handler = $this->registry->handler( $operation_id );

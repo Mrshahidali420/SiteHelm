@@ -244,4 +244,164 @@ final class CatalogBuilderTest extends TestCase {
 			],
 		);
 	}
+
+	/**
+	 * A target meta-capability cannot be evaluated without a concrete target:
+	 * WordPress's map_meta_cap resolves a target-less check to do_not_allow, so
+	 * user_can() returns false for every user including administrators. The
+	 * catalog therefore filters on the meta-capability's PRIMITIVE equivalent —
+	 * edit_post becomes edit_posts — so a caller who could plausibly perform the
+	 * operation still sees it.
+	 */
+	public function test_meta_capability_only_operation_stays_in_the_catalog(): void {
+		$this->allowCapabilities( [ 'edit_posts' ] );
+		$this->registry->register(
+			new OperationDefinition(
+				id: 'content-update',
+				domain: Domain::Content,
+				mode: Mode::Write,
+				description: 'Revise the title, body, or excerpt of one existing content item.',
+				inputSchema: [
+					'type'                 => 'object',
+					'properties'           => [ 'id' => [ 'type' => 'integer' ] ],
+					'additionalProperties' => false,
+				],
+				outputSchema: [
+					'type'                 => 'object',
+					'properties'           => [ 'id' => [ 'type' => 'integer' ] ],
+					'additionalProperties' => false,
+				],
+				schemaVersion: 1,
+				requiredCapabilities: [ 'edit_post' ],
+				risk: Risk::Medium,
+				isReadOnly: false,
+				isDestructive: false,
+				isIdempotent: true,
+				previewPolicy: PreviewPolicy::Required,
+				snapshotPolicy: SnapshotPolicy::Required,
+				rollbackPolicy: RollbackPolicy::Supported,
+				module: ModuleId::Core,
+				supportedVersions: [ 'wordpress' => '>=6.6' ],
+				example: [
+					'operation' => 'content-update',
+					'arguments' => [ 'id' => 42 ],
+				],
+			),
+			static fn(): array => []
+		);
+
+		$catalog = $this->builder->build( 'content-write', $this->makeContext() );
+
+		$this->assertSame(
+			[ 'content-update' ],
+			array_column( $catalog['operations'], 'operation' )
+		);
+	}
+
+	/**
+	 * Mapping meta-capabilities must not weaken the non-meta filter: an
+	 * operation that also needs a primitive capability the user does not hold
+	 * stays hidden.
+	 */
+	public function test_missing_primitive_capability_still_hides_a_meta_capability_operation(): void {
+		$this->allowCapabilities( [] );
+		$this->registry->register(
+			new OperationDefinition(
+				id: 'content-term-assign',
+				domain: Domain::Content,
+				mode: Mode::Write,
+				description: 'Assign existing taxonomy terms to one content item.',
+				inputSchema: [
+					'type'                 => 'object',
+					'properties'           => [ 'id' => [ 'type' => 'integer' ] ],
+					'additionalProperties' => false,
+				],
+				outputSchema: [
+					'type'                 => 'object',
+					'properties'           => [ 'id' => [ 'type' => 'integer' ] ],
+					'additionalProperties' => false,
+				],
+				schemaVersion: 1,
+				requiredCapabilities: [ 'edit_post', 'edit_posts' ],
+				risk: Risk::Medium,
+				isReadOnly: false,
+				isDestructive: false,
+				isIdempotent: true,
+				previewPolicy: PreviewPolicy::Required,
+				snapshotPolicy: SnapshotPolicy::Required,
+				rollbackPolicy: RollbackPolicy::Supported,
+				module: ModuleId::Core,
+				supportedVersions: [ 'wordpress' => '>=6.6' ],
+				example: [
+					'operation' => 'content-term-assign',
+					'arguments' => [ 'id' => 42 ],
+				],
+			),
+			static fn(): array => []
+		);
+
+		$catalog = $this->builder->build( 'content-write', $this->makeContext() );
+
+		$this->assertSame( [], $catalog['operations'] );
+	}
+
+	/**
+	 * The failure mode a naive "skip meta-capabilities entirely" fix would
+	 * introduce: content-update declares only edit_post, so skipping would leave
+	 * it with no filterable capability at all and it would be advertised to
+	 * every authenticated caller, a subscriber's catalog included. Mapping
+	 * edit_post to edit_posts keeps a real visibility boundary.
+	 */
+	public function test_a_caller_without_capabilities_sees_no_write_operations_while_an_editor_does(): void {
+		$this->registry->register(
+			new OperationDefinition(
+				id: 'content-update',
+				domain: Domain::Content,
+				mode: Mode::Write,
+				description: 'Revise the title, body, or excerpt of one existing content item.',
+				inputSchema: [
+					'type'                 => 'object',
+					'properties'           => [ 'id' => [ 'type' => 'integer' ] ],
+					'additionalProperties' => false,
+				],
+				outputSchema: [
+					'type'                 => 'object',
+					'properties'           => [ 'id' => [ 'type' => 'integer' ] ],
+					'additionalProperties' => false,
+				],
+				schemaVersion: 1,
+				requiredCapabilities: [ 'edit_post' ],
+				risk: Risk::Medium,
+				isReadOnly: false,
+				isDestructive: false,
+				isIdempotent: true,
+				previewPolicy: PreviewPolicy::Required,
+				snapshotPolicy: SnapshotPolicy::Required,
+				rollbackPolicy: RollbackPolicy::Supported,
+				module: ModuleId::Core,
+				supportedVersions: [ 'wordpress' => '>=6.6' ],
+				example: [
+					'operation' => 'content-update',
+					'arguments' => [ 'id' => 42 ],
+				],
+			),
+			static fn(): array => []
+		);
+
+		$this->allowCapabilities( [] );
+		$this->assertSame(
+			[],
+			$this->builder->build( 'content-write', $this->makeContext() )['operations'],
+			'A subscriber must not be told the site can be written to.'
+		);
+
+		$this->allowCapabilities( [ 'edit_posts' ] );
+		$this->assertSame(
+			[ 'content-update' ],
+			array_column(
+				$this->builder->build( 'content-write', $this->makeContext() )['operations'],
+				'operation'
+			)
+		);
+	}
 }

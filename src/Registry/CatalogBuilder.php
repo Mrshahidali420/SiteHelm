@@ -21,6 +21,9 @@ use stdClass;
  * - Operations the caller may not SEE (a required capability is not held) are
  *   omitted entirely, per the contract's "every operation the caller is
  *   permitted to see". Advertising them would disclose the site's surface area.
+ *   A required target meta-capability is evaluated through its primitive
+ *   stand-in, because a listing has no target to evaluate it against; see
+ *   is_permitted().
  * - Operations blocked by a module dependency stay listed with `available:false`
  *   and a `blockedReason`, because the contract requires blocked operations to
  *   remain explainable rather than silently disappear.
@@ -40,6 +43,27 @@ final class CatalogBuilder {
 	 * Members of a usage example whose value must serialize as an object.
 	 */
 	private const OBJECT_VALUED_EXAMPLE_KEYS = [ 'arguments' ];
+
+	/**
+	 * Target meta-capabilities from the foundation contract, each mapped to the
+	 * primitive capability that stands in for it when there is no target.
+	 *
+	 * WordPress resolves a meta-capability through map_meta_cap against a
+	 * concrete object. A catalog listing has no object, so a target-less check
+	 * is meaningless: map_meta_cap returns do_not_allow and user_can() answers
+	 * false for every user, administrators included.
+	 *
+	 * Skipping meta-capabilities instead of mapping them would be worse than
+	 * the bug it fixes. `content-update` declares only `edit_post`, so with the
+	 * skip it would have no filterable capability left and would be advertised
+	 * to every authenticated caller — a subscriber's catalog included. Mapping
+	 * keeps a real, if coarser, visibility boundary.
+	 */
+	private const META_CAPABILITY_MAP = [
+		'edit_post'    => 'edit_posts',
+		'delete_post'  => 'delete_posts',
+		'assign_terms' => 'edit_posts',
+	];
 
 	/**
 	 * Constructs the builder.
@@ -76,13 +100,15 @@ final class CatalogBuilder {
 	}
 
 	/**
-	 * Whether the resolved user holds every capability the operation requires.
+	 * Whether the resolved user holds every capability the operation requires,
+	 * with target meta-capabilities evaluated through their primitive stand-ins.
 	 *
-	 * Target meta-capabilities (`edit_post`, `delete_post`, `assign_terms`) are
-	 * checked generically: no concrete target exists at catalog time, so the
-	 * check answers "could this user ever perform this" rather than "may this
-	 * user perform it on that target". The policy engine re-checks with the
-	 * concrete target at invocation time and remains authoritative.
+	 * This answers "could this caller plausibly perform this operation at all",
+	 * which is the only question a target-less catalog listing can answer. It is
+	 * deliberately NOT an authorization decision: PolicyEngine performs the real
+	 * target-bound check at invocation time and remains authoritative, so an
+	 * operation listed here may still be refused with `forbidden` when invoked
+	 * against a specific target.
 	 *
 	 * @param OperationDefinition $definition The operation to test.
 	 * @param OperationContext    $context    The request context.
@@ -93,7 +119,9 @@ final class CatalogBuilder {
 	 */
 	private function is_permitted( OperationDefinition $definition, OperationContext $context ): bool {
 		foreach ( $definition->requiredCapabilities as $capability ) {
-			if ( ! user_can( $context->userId, $capability ) ) {
+			$effective = self::META_CAPABILITY_MAP[ $capability ] ?? $capability;
+
+			if ( ! user_can( $context->userId, $effective ) ) {
 				return false;
 			}
 		}

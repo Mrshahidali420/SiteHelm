@@ -400,4 +400,25 @@ final class McpServerTest extends TestCase {
 			'int'   => [ 123 ],
 		];
 	}
+
+	/**
+	 * The client's tool name is untrusted text and must never be echoed. The
+	 * sibling method path already stopped echoing; this aligns the two.
+	 */
+	public function test_unknown_tool_message_does_not_echo_the_client_value(): void {
+		$response = $this->server->handle(
+			[
+				'jsonrpc' => '2.0',
+				'id'      => 5,
+				'method'  => 'tools/call',
+				'params'  => [
+					'name'      => 'plugins-write',
+					'arguments' => [],
+				],
+			]
+		);
+
+		$this->assertSame( -32602, $response['error']['code'] );
+		$this->assertStringNotContainsString( 'plugins-write', $response['error']['message'] );
+	}
 }

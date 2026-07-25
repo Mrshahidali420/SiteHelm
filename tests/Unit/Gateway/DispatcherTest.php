@@ -365,4 +365,43 @@ final class DispatcherTest extends TestCase {
 		}
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+
+	/**
+	 * Authorization must be decided before module health. Otherwise an
+	 * unauthorized caller who guesses an operation name learns the operation
+	 * exists and learns its dependency state, where it should learn nothing.
+	 */
+	public function test_authorization_failure_wins_over_module_health(): void {
+		Functions\when( 'user_can' )->justReturn( false );
+		$this->registerMetaCapabilityOperation();
+
+		$context = new OperationContext(
+			siteId: 'example.com',
+			userId: 7,
+			clientId: 'client',
+			correlationId: 'corr-1',
+			permissionMode: PermissionMode::SafeWrite,
+			moduleVersions: [
+				'core' => [
+					'version' => null,
+					'health'  => 'inactive',
+				],
+			],
+			requestTime: 1_800_000_000,
+		);
+
+		try {
+			$this->dispatcher->dispatch(
+				'content-write',
+				[
+					'operation' => 'content-update',
+					'arguments' => [ 'id' => 42 ],
+				],
+				$context
+			);
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::Forbidden, $e->errorCode );
+		}
+	}
 }

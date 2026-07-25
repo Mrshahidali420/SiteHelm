@@ -170,7 +170,7 @@ final class McpServer {
 			return $this->error( $id, -32602, 'Invalid params: tool name must be a string.' );
 		}
 		if ( ! in_array( $tool, CapabilityRegistry::DISPATCHERS, true ) ) {
-			return $this->error( $id, -32602, "Unknown tool '{$tool}'." );
+			return $this->error( $id, -32602, 'Invalid params: unknown tool. Call tools/list for the available dispatchers.' );
 		}
 
 		try {
