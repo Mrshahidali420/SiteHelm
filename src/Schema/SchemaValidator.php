@@ -26,13 +26,34 @@ final class SchemaValidator {
 	 * @param array<string, mixed> $schema Operation input schema.
 	 * @return array<string, mixed> The validated input, unchanged.
 	 * @throws OperationException With ErrorCode::InvalidInput on any violation.
-	 * @throws InvalidArgumentException If schema is not strict (lacks additionalProperties: false).
+	 * @throws InvalidArgumentException If schema is not strict (lacks additionalProperties: false or type !== 'object').
 	 */
 	public function validate( array $input, array $schema ): array {
 		if ( ( $schema['type'] ?? '' ) !== 'object' || ( $schema['additionalProperties'] ?? null ) !== false ) {
 			throw new InvalidArgumentException( 'Operation input schemas must be objects with additionalProperties: false.' );
 		}
 
+		$violations = $this->collect_violations( $input, $schema );
+
+		if ( [] !== $violations ) {
+			throw new OperationException(
+				ErrorCode::InvalidInput,
+				'Input validation failed: ' . implode( '; ', $violations ) . '.',
+				'Correct the listed properties and retry. Identical input always fails identically.'
+			);
+		}
+
+		return $input;
+	}
+
+	/**
+	 * Collect all violations for input against schema without throwing.
+	 *
+	 * @param array<string, mixed> $input  Request arguments.
+	 * @param array<string, mixed> $schema Operation input schema (must be strict).
+	 * @return list<string> All violations found.
+	 */
+	private function collect_violations( array $input, array $schema ): array {
 		$violations = [];
 		$properties = $schema['properties'] ?? [];
 
@@ -52,15 +73,7 @@ final class SchemaValidator {
 			}
 		}
 
-		if ( [] !== $violations ) {
-			throw new OperationException(
-				ErrorCode::InvalidInput,
-				'Input validation failed: ' . implode( '; ', $violations ) . '.',
-				'Correct the listed properties and retry. Identical input always fails identically.'
-			);
-		}
-
-		return $input;
+		return $violations;
 	}
 
 	/**
@@ -103,17 +116,16 @@ final class SchemaValidator {
 			}
 		}
 		if ( 'object' === $type && isset( $spec['properties'] ) && is_array( $value ) ) {
-			$nested = array_merge(
+			$nested            = array_merge(
 				$spec,
 				[
 					'type'                 => 'object',
 					'additionalProperties' => false,
 				]
 			);
-			try {
-				$this->validate( $value, $nested );
-			} catch ( OperationException $e ) {
-				$violations[] = "property '{$key}': " . $e->getMessage();
+			$nested_violations = $this->collect_violations( $value, $nested );
+			foreach ( $nested_violations as $violation ) {
+				$violations[] = "property '{$key}': " . $violation;
 			}
 		}
 

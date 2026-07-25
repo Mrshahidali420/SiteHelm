@@ -168,4 +168,107 @@ final class SchemaValidatorTest extends TestCase {
 			]
 		);
 	}
+
+	/**
+	 * Boolean and number types should be validated correctly.
+	 */
+	public function test_boolean_and_number_types_validated(): void {
+		$schema = [
+			'type'                 => 'object',
+			'properties'           => [
+				'flag'  => [ 'type' => 'boolean' ],
+				'ratio' => [ 'type' => 'number' ],
+			],
+			'required'             => [],
+			'additionalProperties' => false,
+		];
+
+		// Valid input should pass.
+		$input = [
+			'flag'  => true,
+			'ratio' => 3.14,
+		];
+		$this->assertSame( $input, $this->validator->validate( $input, $schema ) );
+
+		// Invalid type for boolean should fail.
+		try {
+			$this->validator->validate( [ 'flag' => 'yes' ], $schema );
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			$this->assertStringContainsString( 'flag', $e->getMessage() );
+		}
+	}
+
+	/**
+	 * Array items should be validated recursively.
+	 */
+	public function test_array_items_are_validated_recursively(): void {
+		$schema = [
+			'type'                 => 'object',
+			'properties'           => [
+				'tags' => [
+					'type'  => 'array',
+					'items' => [ 'type' => 'string' ],
+				],
+			],
+			'required'             => [],
+			'additionalProperties' => false,
+		];
+
+		// Valid array should pass.
+		$input = [ 'tags' => [ 'a', 'b' ] ];
+		$this->assertSame( $input, $this->validator->validate( $input, $schema ) );
+
+		// Invalid item type should fail with indexed path.
+		try {
+			$this->validator->validate( [ 'tags' => [ 'a', 5 ] ], $schema );
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			$this->assertStringContainsString( 'tags[1]', $e->getMessage() );
+		}
+	}
+
+	/**
+	 * Nested object violations should be reported once, not doubled.
+	 */
+	public function test_nested_object_violations_are_reported_once(): void {
+		$schema = [
+			'type'                 => 'object',
+			'properties'           => [
+				'meta' => [
+					'type'                 => 'object',
+					'properties'           => [
+						'key' => [ 'type' => 'string' ],
+					],
+					'additionalProperties' => false,
+				],
+			],
+			'required'             => [],
+			'additionalProperties' => false,
+		];
+
+		try {
+			$this->validator->validate( [ 'meta' => [ 'key' => 7 ] ], $schema );
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			$this->assertStringContainsString( "property 'meta'", $e->getMessage() );
+			// Ensure no doubled "Input validation failed" messages.
+			$count = substr_count( $e->getMessage(), 'Input validation failed' );
+			$this->assertSame( 1, $count );
+		}
+	}
+
+	/**
+	 * Non-object schema should throw InvalidArgumentException.
+	 */
+	public function test_non_object_schema_is_a_programming_error(): void {
+		$this->expectException( InvalidArgumentException::class );
+		$this->validator->validate(
+			[],
+			[
+				'type'                 => 'string',
+				'additionalProperties' => false,
+			]
+		);
+	}
 }
