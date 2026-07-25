@@ -20,6 +20,7 @@ use SiteHelm\Contracts\Risk;
 use SiteHelm\Contracts\RollbackPolicy;
 use SiteHelm\Contracts\SnapshotPolicy;
 use SiteHelm\Registry\CapabilityRegistry;
+use SiteHelm\Storage\Installer;
 
 /**
  * WordPress content operations and the shared change, snapshot, and audit
@@ -62,9 +63,26 @@ final class CoreModule implements IntegrationModule {
 	/**
 	 * The detected version and health status.
 	 *
+	 * The module's own local tables are a dependency exactly like a third-party
+	 * plugin would be, so their absence is reported the same way: inactive, with
+	 * no detected version. Reporting it here rather than at each call site is
+	 * what keeps the three surfaces that read health in agreement — the
+	 * dispatcher catalog marks every core operation `available: false` with
+	 * `blockedReason: integration_unavailable`, system-read integration health
+	 * reports the module inactive, and Dispatcher refuses invocation with
+	 * `integration_unavailable`. A catalog that advertised a write the engine
+	 * would then refuse is the failure this prevents.
+	 *
 	 * @return array<string, mixed> Version and health.
 	 */
 	public function health(): array {
+		if ( ! ( new Installer() )->isAvailable() ) {
+			return [
+				'version' => null,
+				'health'  => ModuleHealth::Inactive->value,
+			];
+		}
+
 		return [
 			'version' => (string) get_bloginfo( 'version' ),
 			'health'  => ModuleHealth::Active->value,
