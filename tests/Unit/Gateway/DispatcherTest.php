@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace SiteHelm\Tests\Unit\Gateway;
 
 use Brain\Monkey\Functions;
+use SiteHelm\Change\ChangeEngine;
 use SiteHelm\Contracts\Domain;
 use SiteHelm\Contracts\ErrorCode;
 use SiteHelm\Contracts\Mode;
@@ -27,6 +28,9 @@ use SiteHelm\Policy\PolicyEngine;
 use SiteHelm\Registry\CapabilityRegistry;
 use SiteHelm\Registry\CatalogBuilder;
 use SiteHelm\Schema\SchemaValidator;
+use SiteHelm\Storage\Installer;
+use SiteHelm\Tests\Doubles\FakeWpdb;
+use SiteHelm\Tests\Doubles\StubWriteOperation;
 use SiteHelm\Tests\TestCase;
 
 /**
@@ -55,12 +59,7 @@ final class DispatcherTest extends TestCase {
 		parent::setUp();
 		Functions\when( 'user_can' )->justReturn( true );
 		$this->registry   = new CapabilityRegistry();
-		$this->dispatcher = new Dispatcher(
-			$this->registry,
-			new CatalogBuilder( $this->registry ),
-			new PolicyEngine(),
-			new SchemaValidator(),
-		);
+		$this->dispatcher = $this->buildDispatcher();
 		$this->registry->register(
 			new OperationDefinition(
 				id: 'system-environment',
@@ -98,6 +97,67 @@ final class DispatcherTest extends TestCase {
 	}
 
 	/**
+	 * Replaces the Dispatcher construction in setUp(). The change engine is a
+	 * real one over the FakeWpdb double, so write routing is exercised end to
+	 * end without a database.
+	 */
+	private function buildDispatcher(): Dispatcher {
+		return new Dispatcher(
+			$this->registry,
+			new CatalogBuilder( $this->registry ),
+			new PolicyEngine(),
+			new SchemaValidator(),
+			ChangeEngine::create()
+		);
+	}
+
+	/**
+	 * Registers content-update as a real write operation backed by the stub.
+	 */
+	private function registerStubWrite(): StubWriteOperation {
+		$operation = new StubWriteOperation();
+		$this->registry->registerWrite(
+			new OperationDefinition(
+				id: 'content-update',
+				domain: Domain::Content,
+				mode: Mode::Write,
+				description: 'Revise the title, body, or excerpt of one existing content item.',
+				inputSchema: [
+					'type'                 => 'object',
+					'properties'           => [
+						'id'    => [ 'type' => 'integer' ],
+						'title' => [ 'type' => 'string' ],
+					],
+					'additionalProperties' => false,
+				],
+				outputSchema: [
+					'type'                 => 'object',
+					'properties'           => [ 'plan' => [ 'type' => 'object' ] ],
+					'additionalProperties' => false,
+				],
+				schemaVersion: 1,
+				requiredCapabilities: [ 'edit_post' ],
+				risk: Risk::Medium,
+				isReadOnly: false,
+				isDestructive: false,
+				isIdempotent: true,
+				previewPolicy: PreviewPolicy::Required,
+				snapshotPolicy: SnapshotPolicy::Required,
+				rollbackPolicy: RollbackPolicy::Supported,
+				module: ModuleId::Core,
+				supportedVersions: [ 'wordpress' => '>=6.6' ],
+				example: [
+					'operation' => 'content-update',
+					'arguments' => [ 'id' => 42 ],
+				],
+			),
+			$operation
+		);
+
+		return $operation;
+	}
+
+	/**
 	 * Constructs a test operation context.
 	 *
 	 * @param string $diagnostics_health The module health status.
@@ -127,9 +187,14 @@ final class DispatcherTest extends TestCase {
 
 	/**
 	 * Registers a write operation guarded by the edit_post meta-capability.
+	 *
+	 * Registered through registerWrite() rather than the bare read path: since
+	 * CapabilityRegistry::register() now refuses a Mode::Write definition, this
+	 * is the only route left to exercise the capability check and health checks
+	 * with a write-mode operation.
 	 */
 	private function registerMetaCapabilityOperation(): void {
-		$this->registry->register(
+		$this->registry->registerWrite(
 			new OperationDefinition(
 				id: 'content-update',
 				domain: Domain::Content,
@@ -161,13 +226,19 @@ final class DispatcherTest extends TestCase {
 					'arguments' => [ 'id' => 42 ],
 				],
 			),
-			static fn( array $input, OperationContext $context ): array => [ 'id' => 42 ]
+			new StubWriteOperation()
 		);
 	}
 
 	/**
 	 * Dispatches content-update with the given raw target id, recording every
 	 * user_can call the policy engine makes.
+	 *
+	 * Authorization runs before the change engine is ever reached, so what
+	 * happens afterward is irrelevant to what this helper verifies. The engine's
+	 * local storage is deliberately left unavailable (get_option is stubbed to
+	 * report it so) and the resulting refusal is swallowed, rather than standing
+	 * up a full FakeWpdb fixture this helper's callers do not need.
 	 *
 	 * @param mixed $raw_id The raw target identifier from the request.
 	 *
@@ -181,16 +252,22 @@ final class DispatcherTest extends TestCase {
 				return true;
 			}
 		);
+		Functions\when( 'get_option' )->justReturn( false );
 		$this->registerMetaCapabilityOperation();
 
-		$this->dispatcher->dispatch(
-			'content-write',
-			[
-				'operation' => 'content-update',
-				'arguments' => [ 'id' => $raw_id ],
-			],
-			$this->makeContext()
-		);
+		try {
+			$this->dispatcher->dispatch(
+				'content-write',
+				[
+					'operation' => 'content-update',
+					'arguments' => [ 'id' => $raw_id ],
+				],
+				$this->makeContext()
+			);
+		} catch ( OperationException $e ) {
+			// The change engine refuses for lack of storage; only the
+			// authorization step above is under test here.
+		}
 
 		return $captured;
 	}
@@ -403,5 +480,149 @@ final class DispatcherTest extends TestCase {
 		} catch ( OperationException $e ) {
 			$this->assertSame( ErrorCode::Forbidden, $e->errorCode );
 		}
+	}
+
+	public function test_a_write_without_a_plan_token_returns_a_plan_and_mutates_nothing(): void {
+		$wpdb                  = new FakeWpdb();
+		$GLOBALS['wpdb']       = $wpdb;
+		$wpdb->queryRowsQueue  = [ 0 ];
+		Functions\when( 'get_option' )->alias(
+			static fn( string $key, mixed $fallback = false ): mixed => Installer::STATUS_OPTION === $key
+				? Installer::STATUS_READY
+				: $fallback
+		);
+		Functions\when( 'wp_json_encode' )->alias( 'json_encode' );
+
+		$operation                 = $this->registerStubWrite();
+		$operation->snapshot       = [ 'post_title' => 'Original title' ];
+		$response                  = $this->buildDispatcher()->dispatch(
+			'content-write',
+			[
+				'operation' => 'content-update',
+				'arguments' => [
+					'id'    => 42,
+					'title' => 'Edited title',
+				],
+			],
+			$this->makeContext()
+		);
+
+		$this->assertTrue( $response['success'] );
+		$this->assertArrayHasKey( 'plan', $response['data'] );
+		$this->assertSame( 'not-applicable', $response['verification'] );
+		$this->assertSame( 0, $operation->applyCalls );
+		unset( $GLOBALS['wpdb'] );
+	}
+
+	public function test_a_malformed_plan_token_is_stale_plan(): void {
+		$this->registerStubWrite();
+
+		try {
+			$this->buildDispatcher()->dispatch(
+				'content-write',
+				[
+					'operation' => 'content-update',
+					'planToken' => 'not-a-token',
+					'arguments' => [ 'id' => 42 ],
+				],
+				$this->makeContext()
+			);
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::StalePlan, $e->errorCode );
+		}
+	}
+
+	public function test_a_non_string_plan_token_is_stale_plan(): void {
+		$this->registerStubWrite();
+
+		try {
+			$this->buildDispatcher()->dispatch(
+				'content-write',
+				[
+					'operation' => 'content-update',
+					'planToken' => [ 'nested' => true ],
+					'arguments' => [ 'id' => 42 ],
+				],
+				$this->makeContext()
+			);
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::StalePlan, $e->errorCode );
+		}
+	}
+
+	public function test_the_plan_token_is_not_part_of_the_operation_input_schema(): void {
+		$this->registerStubWrite();
+
+		$this->assertArrayNotHasKey(
+			'planToken',
+			$this->registry->definition( 'content-update' )->inputSchema['properties']
+		);
+	}
+
+	/**
+	 * Nothing stores the payload — plan_body holds only the preview renderings
+	 * and payload_hash is a one-way digest — so the apply call must carry the
+	 * same arguments the preview was generated from. A client that sends only
+	 * the token is on the primary happy path and must be told exactly that,
+	 * not handed a bare "missing required property 'id'".
+	 */
+	public function test_approving_a_plan_without_resending_arguments_says_so(): void {
+		$this->registerStubWrite();
+
+		try {
+			$this->buildDispatcher()->dispatch(
+				'content-write',
+				[
+					'operation' => 'content-update',
+					'planToken' => str_repeat( 'a', 64 ),
+				],
+				$this->makeContext()
+			);
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::InvalidInput, $e->errorCode );
+			$this->assertStringContainsString( 'resent', $e->getMessage() );
+		}
+	}
+
+	/**
+	 * Unknown siblings are rejected rather than ignored. Silently dropping them
+	 * means a client that mistypes `plan_token` gets a brand-new preview and a
+	 * success envelope while believing it just approved a change.
+	 */
+	public function test_an_unknown_top_level_member_is_invalid_input(): void {
+		$this->registerStubWrite();
+
+		try {
+			$this->buildDispatcher()->dispatch(
+				'content-write',
+				[
+					'operation'  => 'content-update',
+					'plan_token' => str_repeat( 'a', 64 ),
+					'arguments'  => [ 'id' => 42 ],
+				],
+				$this->makeContext()
+			);
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::InvalidInput, $e->errorCode );
+			// The client's raw member name is untrusted text and is never echoed.
+			$this->assertStringNotContainsString( 'plan_token', $e->getMessage() );
+		}
+	}
+
+	public function test_the_read_path_still_routes_to_a_bare_handler(): void {
+		$response = $this->buildDispatcher()->dispatch(
+			'system-read',
+			[
+				'operation' => 'system-environment',
+				'arguments' => [],
+			],
+			$this->makeContext()
+		);
+
+		$this->assertSame( [ 'wordpress' => '6.8.1' ], $response['data'] );
 	}
 }

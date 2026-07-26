@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace SiteHelm\Bootstrap;
 
+use SiteHelm\Change\ChangeEngine;
 use SiteHelm\Contracts\IntegrationModule;
 use SiteHelm\Gateway\ContextFactory;
 use SiteHelm\Gateway\Dispatcher;
@@ -69,7 +70,8 @@ final class Plugin {
 				$registry,
 				new CatalogBuilder( $registry ),
 				new PolicyEngine(),
-				new SchemaValidator()
+				new SchemaValidator(),
+				ChangeEngine::create()
 			),
 			new ContextFactory(),
 			$module_health

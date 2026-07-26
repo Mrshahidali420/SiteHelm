@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace SiteHelm\Tests\Unit\Gateway;
 
 use Brain\Monkey\Functions;
+use SiteHelm\Change\ChangeEngine;
 use SiteHelm\Gateway\ContextFactory;
 use SiteHelm\Gateway\Dispatcher;
 use SiteHelm\Gateway\McpServer;
@@ -43,7 +44,7 @@ final class RestTransportTest extends TestCase {
 		$registry        = new CapabilityRegistry();
 		$this->transport = new RestTransport(
 			new McpServer(
-				new Dispatcher( $registry, new CatalogBuilder( $registry ), new PolicyEngine(), new SchemaValidator() ),
+				new Dispatcher( $registry, new CatalogBuilder( $registry ), new PolicyEngine(), new SchemaValidator(), ChangeEngine::create() ),
 				new ContextFactory(),
 				[],
 			)

@@ -17,6 +17,7 @@ use SiteHelm\Contracts\RollbackPolicy;
 use SiteHelm\Contracts\SnapshotPolicy;
 use SiteHelm\Registry\CapabilityRegistry;
 use SiteHelm\Registry\CatalogBuilder;
+use SiteHelm\Tests\Doubles\StubWriteOperation;
 use SiteHelm\Tests\TestCase;
 
 /**
@@ -166,9 +167,9 @@ final class CatalogBuilderTest extends TestCase {
 	 * I1: an operation is hidden unless EVERY required capability is held.
 	 */
 	public function test_partial_capability_hold_still_hides_the_operation(): void {
-		$this->registry->register(
+		$this->registry->registerWrite(
 			$this->makeMultiCapabilityDefinition(),
-			static fn(): array => []
+			new StubWriteOperation()
 		);
 		$this->allowCapabilities( [ 'edit_posts' ] );
 
@@ -194,9 +195,9 @@ final class CatalogBuilderTest extends TestCase {
 	 * I3: list-valued schema members such as required stay JSON arrays.
 	 */
 	public function test_required_list_still_serializes_as_a_json_array(): void {
-		$this->registry->register(
+		$this->registry->registerWrite(
 			$this->makeMultiCapabilityDefinition(),
-			static fn(): array => []
+			new StubWriteOperation()
 		);
 		$this->allowCapabilities( [ 'edit_posts', 'publish_posts' ] );
 
@@ -255,7 +256,7 @@ final class CatalogBuilderTest extends TestCase {
 	 */
 	public function test_meta_capability_only_operation_stays_in_the_catalog(): void {
 		$this->allowCapabilities( [ 'edit_posts' ] );
-		$this->registry->register(
+		$this->registry->registerWrite(
 			new OperationDefinition(
 				id: 'content-update',
 				domain: Domain::Content,
@@ -287,7 +288,7 @@ final class CatalogBuilderTest extends TestCase {
 					'arguments' => [ 'id' => 42 ],
 				],
 			),
-			static fn(): array => []
+			new StubWriteOperation()
 		);
 
 		$catalog = $this->builder->build( 'content-write', $this->makeContext() );
@@ -305,7 +306,7 @@ final class CatalogBuilderTest extends TestCase {
 	 */
 	public function test_missing_primitive_capability_still_hides_a_meta_capability_operation(): void {
 		$this->allowCapabilities( [] );
-		$this->registry->register(
+		$this->registry->registerWrite(
 			new OperationDefinition(
 				id: 'content-term-assign',
 				domain: Domain::Content,
@@ -337,7 +338,7 @@ final class CatalogBuilderTest extends TestCase {
 					'arguments' => [ 'id' => 42 ],
 				],
 			),
-			static fn(): array => []
+			new StubWriteOperation()
 		);
 
 		$catalog = $this->builder->build( 'content-write', $this->makeContext() );
@@ -353,7 +354,7 @@ final class CatalogBuilderTest extends TestCase {
 	 * edit_post to edit_posts keeps a real visibility boundary.
 	 */
 	public function test_a_caller_without_capabilities_sees_no_write_operations_while_an_editor_does(): void {
-		$this->registry->register(
+		$this->registry->registerWrite(
 			new OperationDefinition(
 				id: 'content-update',
 				domain: Domain::Content,
@@ -385,7 +386,7 @@ final class CatalogBuilderTest extends TestCase {
 					'arguments' => [ 'id' => 42 ],
 				],
 			),
-			static fn(): array => []
+			new StubWriteOperation()
 		);
 
 		$this->allowCapabilities( [] );

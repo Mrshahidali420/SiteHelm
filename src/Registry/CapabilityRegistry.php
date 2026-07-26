@@ -68,33 +68,32 @@ final class CapabilityRegistry {
 	/**
 	 * Registers one operation and its handler.
 	 *
-	 * KNOWN GAP, closing in Task 13. A Mode::Write definition registered here
-	 * with a bare callable lands in the catalog and on its write dispatcher
-	 * while hasWriteOperation() stays false, so the dispatcher would call the
-	 * callable directly and skip preview, plan token, snapshot, verification and
-	 * audit for an operation whose own definition advertises previewPolicy
-	 * required. Nothing in production does this — every Phase 3a write uses
-	 * registerWrite() — but a module author could.
-	 *
-	 * The guard belongs here and was written, then reverted: until the
-	 * dispatcher can route a registerWrite()-registered operation, refusing
-	 * writes here leaves no way to exercise a write-mode definition at all, and
-	 * four existing fixtures legitimately depend on the read path to reach the
-	 * capability and health checks. Task 13 adds write routing and closes this
-	 * in the same change that makes the alternative available.
+	 * Refuses a Mode::Write definition. A write registered here with a bare
+	 * callable would land in the catalog and on its write dispatcher while
+	 * hasWriteOperation() stayed false, so the dispatcher would call the
+	 * callable directly and skip preview, plan token, snapshot, verification,
+	 * and audit for an operation whose own definition advertises previewPolicy
+	 * required — the catalog would keep promising a guarantee this path never
+	 * applies. The check runs before either map is written, so a refused call
+	 * leaves the registry exactly as it was: `has()` false, not a definition
+	 * with no handler behind it.
 	 *
 	 * @param OperationDefinition $definition The operation definition.
 	 * @param callable            $handler    The handler that executes it.
 	 *
 	 * @return void
 	 *
-	 * @throws InvalidArgumentException When the identifier is already registered.
+	 * @throws InvalidArgumentException When the identifier is already registered,
+	 *                                 or the definition is a write.
 	 *
 	 * phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 	 */
 	public function register( OperationDefinition $definition, callable $handler ): void {
 		if ( isset( $this->definitions[ $definition->id ] ) ) {
 			throw new InvalidArgumentException( "Operation '{$definition->id}' is already registered; identifiers are permanent." );
+		}
+		if ( Mode::Write === $definition->mode ) {
+			throw new InvalidArgumentException( "Operation '{$definition->id}' is a write and must be registered through registerWrite(), not register()." );
 		}
 		$this->definitions[ $definition->id ] = $definition;
 		$this->handlers[ $definition->id ]    = $handler;

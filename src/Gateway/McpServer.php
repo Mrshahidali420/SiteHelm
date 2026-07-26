@@ -134,6 +134,10 @@ final class McpServer {
 							'type'        => 'string',
 							'description' => 'Operation identifier from this dispatcher catalog. Omit to receive the catalog.',
 						],
+						'planToken' => [
+							'type'        => 'string',
+							'description' => 'Approval token from a previous preview. Omit on a write to receive a plan instead of executing. When supplied, resend the SAME arguments the preview was generated from: the token authorizes those arguments and is checked against them, and the server does not store them.',
+						],
 						'arguments' => [
 							'type'        => 'object',
 							'description' => 'Arguments matching the operation input schema.',

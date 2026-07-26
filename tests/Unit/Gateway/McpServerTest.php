@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace SiteHelm\Tests\Unit\Gateway;
 
 use Brain\Monkey\Functions;
+use SiteHelm\Change\ChangeEngine;
 use SiteHelm\Contracts\Domain;
 use SiteHelm\Contracts\Mode;
 use SiteHelm\Contracts\ModuleId;
@@ -91,7 +92,7 @@ final class McpServerTest extends TestCase {
 		);
 
 		$this->server = new McpServer(
-			new Dispatcher( $registry, new CatalogBuilder( $registry ), new PolicyEngine(), new SchemaValidator() ),
+			new Dispatcher( $registry, new CatalogBuilder( $registry ), new PolicyEngine(), new SchemaValidator(), ChangeEngine::create() ),
 			new ContextFactory(),
 			[
 				'diagnostics' => [
@@ -420,5 +421,20 @@ final class McpServerTest extends TestCase {
 
 		$this->assertSame( -32602, $response['error']['code'] );
 		$this->assertStringNotContainsString( 'plugins-write', $response['error']['message'] );
+	}
+
+	public function test_every_dispatcher_tool_advertises_the_reserved_plan_token(): void {
+		$response = $this->server->handle(
+			[
+				'jsonrpc' => '2.0',
+				'id'      => 9,
+				'method'  => 'tools/list',
+			]
+		);
+
+		foreach ( $response['result']['tools'] as $tool ) {
+			$this->assertArrayHasKey( 'planToken', $tool['inputSchema']['properties'] );
+			$this->assertFalse( $tool['inputSchema']['additionalProperties'] );
+		}
 	}
 }

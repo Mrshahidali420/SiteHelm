@@ -235,6 +235,41 @@ final class CapabilityRegistryTest extends TestCase {
 		$this->assertFalse( $registry->hasWriteOperation( 'content-get' ) );
 	}
 
+	/**
+	 * The read path must refuse a write-mode definition rather than silently
+	 * accepting a bare callable for it: doing so would let the dispatcher call
+	 * that callable directly and skip preview, plan token, snapshot,
+	 * verification, and audit for an operation whose own definition advertises
+	 * previewPolicy required.
+	 */
+	public function test_register_refuses_a_write_mode_definition(): void {
+		$registry = new CapabilityRegistry();
+
+		$this->expectException( InvalidArgumentException::class );
+		$registry->register( $this->makeWriteDefinition( 'content-update' ), static fn(): array => [] );
+	}
+
+	/**
+	 * The guard must run before either internal map is written. A refusal that
+	 * landed after the definition was stored would leave the operation `has()`
+	 * true with no handler and no write operation behind it — a half-populated
+	 * entry that is exactly the bypass this guard exists to close.
+	 */
+	public function test_a_refused_write_registration_leaves_the_registry_untouched(): void {
+		$registry = new CapabilityRegistry();
+
+		try {
+			$registry->register( $this->makeWriteDefinition( 'content-update' ), static fn(): array => [] );
+			$this->fail( 'Expected InvalidArgumentException' );
+		} catch ( InvalidArgumentException ) {
+			// Expected; the registry state is asserted below.
+		}
+
+		$this->assertFalse( $registry->has( 'content-update' ) );
+		$this->assertFalse( $registry->hasWriteOperation( 'content-update' ) );
+		$this->assertSame( [], $registry->forDispatcher( 'content-write' ) );
+	}
+
 	public function test_register_write_rejects_a_duplicate_identifier(): void {
 		$registry = new CapabilityRegistry();
 		$registry->registerWrite( $this->makeWriteDefinition( 'content-update' ), new StubWriteOperation() );
