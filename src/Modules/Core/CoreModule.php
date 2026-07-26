@@ -19,8 +19,10 @@ use SiteHelm\Contracts\PreviewPolicy;
 use SiteHelm\Contracts\Risk;
 use SiteHelm\Contracts\RollbackPolicy;
 use SiteHelm\Contracts\SnapshotPolicy;
+use SiteHelm\Policy\PolicyEngine;
 use SiteHelm\Registry\CapabilityRegistry;
 use SiteHelm\Storage\Installer;
+use SiteHelm\Storage\SnapshotStore;
 
 /**
  * WordPress content operations and the shared change, snapshot, and audit
@@ -332,6 +334,50 @@ final class CoreModule implements IntegrationModule {
 				],
 			),
 			new ContentCreate( $fields, $targets )
+		);
+
+		$registry->registerWrite(
+			new OperationDefinition(
+				id: 'content-rollback-apply',
+				domain: Domain::Content,
+				mode: Mode::Write,
+				description: 'Restore a recorded snapshot for a previously executed content write, re-checking the original permission at restore time.',
+				inputSchema: [
+					'type'                 => 'object',
+					'properties'           => [
+						'rollbackRef' => [
+							'type'        => 'string',
+							'maxLength'   => 64,
+							'description' => 'Rollback reference offered on a previous write result or audit entry.',
+						],
+					],
+					'required'             => [ 'rollbackRef' ],
+					'additionalProperties' => false,
+				],
+				outputSchema: self::WRITE_OUTPUT_SCHEMA,
+				schemaVersion: 1,
+				requiredCapabilities: [ 'edit_posts' ],
+				risk: Risk::Medium,
+				isReadOnly: false,
+				isDestructive: false,
+				isIdempotent: true,
+				previewPolicy: PreviewPolicy::Required,
+				snapshotPolicy: SnapshotPolicy::Required,
+				rollbackPolicy: RollbackPolicy::Supported,
+				module: ModuleId::Core,
+				supportedVersions: [ 'wordpress' => '>=' . SITEHELM_MIN_WP ],
+				example: [
+					'operation' => 'content-rollback-apply',
+					'arguments' => [ 'rollbackRef' => 'rb-0123456789abcdef01234567' ],
+				],
+			),
+			new ContentRollbackApply(
+				$fields,
+				$targets,
+				new SnapshotStore(),
+				$registry,
+				new PolicyEngine()
+			)
 		);
 	}
 }

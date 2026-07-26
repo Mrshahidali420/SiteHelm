@@ -108,4 +108,19 @@ final class CoreModuleTest extends TestCase {
 		$this->assertSame( 'supported', $definition->rollbackPolicy->value );
 		$this->assertFalse( $definition->isIdempotent );
 	}
+
+	public function test_module_registers_the_content_domain_rollback_apply_operation(): void {
+		Functions\when( 'get_bloginfo' )->justReturn( '6.8.1' );
+		$registry = new CapabilityRegistry();
+
+		( new CoreModule() )->register( $registry );
+
+		$this->assertTrue( $registry->hasWriteOperation( 'content-rollback-apply' ) );
+		$definition = $registry->definition( 'content-rollback-apply' );
+		$this->assertSame( 'content-write', $definition->dispatcherName() );
+		$this->assertSame( [ 'edit_posts' ], $definition->requiredCapabilities );
+		$this->assertSame( 'required', $definition->previewPolicy->value );
+		$this->assertSame( 'required', $definition->snapshotPolicy->value );
+		$this->assertSame( 'supported', $definition->rollbackPolicy->value );
+	}
 }
