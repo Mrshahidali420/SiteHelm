@@ -21,6 +21,7 @@ use SiteHelm\Contracts\RollbackPolicy;
 use SiteHelm\Contracts\SnapshotPolicy;
 use SiteHelm\Policy\PolicyEngine;
 use SiteHelm\Registry\CapabilityRegistry;
+use SiteHelm\Storage\AuditStore;
 use SiteHelm\Storage\Installer;
 use SiteHelm\Storage\SnapshotStore;
 
@@ -378,6 +379,85 @@ final class CoreModule implements IntegrationModule {
 				$registry,
 				new PolicyEngine()
 			)
+		);
+
+		$registry->register(
+			new OperationDefinition(
+				id: 'audit-list',
+				domain: Domain::System,
+				mode: Mode::Read,
+				description: 'List recorded change events with actor, MCP client, operation, target, plan fingerprint, timestamp, and outcome.',
+				inputSchema: [
+					'type'                 => 'object',
+					'properties'           => [
+						'operationId'   => [
+							'type'        => 'string',
+							'maxLength'   => 64,
+							'description' => 'Return only events for this operation identifier.',
+						],
+						'correlationId' => [
+							'type'        => 'string',
+							'maxLength'   => 64,
+							'description' => 'Return only events for this request correlation identifier.',
+						],
+						'actorId'       => [
+							'type'        => 'integer',
+							'minimum'     => 1,
+							'description' => 'Return only events performed by this WordPress user.',
+						],
+						'since'         => [
+							'type'        => 'integer',
+							'minimum'     => 0,
+							'description' => 'Return only events recorded at or after this UTC instant.',
+						],
+						'until'         => [
+							'type'        => 'integer',
+							'minimum'     => 0,
+							'description' => 'Return only events recorded at or before this UTC instant.',
+						],
+						'limit'         => [
+							'type'        => 'integer',
+							'minimum'     => 1,
+							'description' => 'Page size, clamped to 100.',
+						],
+						'offset'        => [
+							'type'        => 'integer',
+							'minimum'     => 0,
+							'description' => 'Events to skip before the page begins.',
+						],
+					],
+					'additionalProperties' => false,
+				],
+				outputSchema: [
+					'type'                 => 'object',
+					'properties'           => [
+						'entries' => [
+							'type'  => 'array',
+							'items' => [ 'type' => 'object' ],
+						],
+						'total'   => [ 'type' => 'integer' ],
+						'limit'   => [ 'type' => 'integer' ],
+						'offset'  => [ 'type' => 'integer' ],
+					],
+					'additionalProperties' => false,
+				],
+				schemaVersion: 1,
+				requiredCapabilities: [ 'manage_options' ],
+				risk: Risk::Low,
+				isReadOnly: true,
+				isDestructive: false,
+				isIdempotent: true,
+				previewPolicy: PreviewPolicy::NotApplicable,
+				snapshotPolicy: SnapshotPolicy::NotApplicable,
+				rollbackPolicy: RollbackPolicy::NotApplicable,
+				module: ModuleId::Core,
+				supportedVersions: [ 'wordpress' => '>=' . SITEHELM_MIN_WP ],
+				example: [
+					'operation' => 'audit-list',
+					'arguments' => [ 'limit' => 20 ],
+				],
+			),
+			[ new AuditRead( new AuditStore(), new Installer() ), 'handle' ]
 		);
 	}
 }

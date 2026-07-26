@@ -123,4 +123,19 @@ final class CoreModuleTest extends TestCase {
 		$this->assertSame( 'required', $definition->snapshotPolicy->value );
 		$this->assertSame( 'supported', $definition->rollbackPolicy->value );
 	}
+
+	public function test_module_registers_audit_list_on_the_system_read_dispatcher(): void {
+		Functions\when( 'get_bloginfo' )->justReturn( '6.8.1' );
+		$registry = new CapabilityRegistry();
+
+		( new CoreModule() )->register( $registry );
+
+		$this->assertTrue( $registry->has( 'audit-list' ) );
+		$definition = $registry->definition( 'audit-list' );
+		$this->assertSame( 'system-read', $definition->dispatcherName() );
+		$this->assertSame( ModuleId::Core, $definition->module );
+		$this->assertSame( [ 'manage_options' ], $definition->requiredCapabilities );
+		$this->assertTrue( $definition->isReadOnly );
+		$this->assertFalse( $registry->hasWriteOperation( 'audit-list' ) );
+	}
 }
