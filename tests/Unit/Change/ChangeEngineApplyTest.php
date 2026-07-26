@@ -18,6 +18,7 @@ use SiteHelm\Change\PlannedChange;
 use SiteHelm\Change\PreviewRenderer;
 use SiteHelm\Change\StateFingerprint;
 use SiteHelm\Change\TargetState;
+use SiteHelm\Change\WriteVerifier;
 use SiteHelm\Contracts\Domain;
 use SiteHelm\Contracts\ErrorCode;
 use SiteHelm\Contracts\Mode;
@@ -77,7 +78,8 @@ final class ChangeEngineApplyTest extends TestCase {
 			$this->normalizer,
 			new StateFingerprint( $this->normalizer ),
 			new PreviewRenderer(),
-			new Installer()
+			new Installer(),
+			new WriteVerifier( $this->normalizer )
 		);
 
 		$this->operation           = new StubWriteOperation();
@@ -498,8 +500,12 @@ final class ChangeEngineApplyTest extends TestCase {
 		}
 	}
 
-	public function test_diverged_persisted_state_is_verification_failed(): void {
-		$this->operation->readBackState = new TargetState( 'post:42', true, [ 'post_title' => 'Something else' ] );
+	/**
+	 * The stored value still being the prior value is the one divergence that
+	 * means the write did not take.
+	 */
+	public function test_a_field_still_holding_its_prior_value_is_verification_failed(): void {
+		$this->operation->readBackState = new TargetState( 'post:42', true, [ 'post_title' => 'Original title' ] );
 
 		try {
 			$this->apply();
@@ -513,6 +519,185 @@ final class ChangeEngineApplyTest extends TestCase {
 			AuditRecorder::OUTCOME_VERIFICATION_FAILED,
 			$this->wpdb->updates[0]['data']['outcome']
 		);
+	}
+
+	/**
+	 * The defect this contract change exists to fix. WordPress adjusting a value
+	 * on save — trimming a title, uniquifying a slug, turning a publish into a
+	 * future — used to raise verification_failed with no rollbackRef and a
+	 * remediation telling the operator to restore the snapshot, for a write that
+	 * had landed perfectly. It must now succeed, disclose what was stored, and
+	 * hand back the recovery handle.
+	 */
+	public function test_a_value_wordpress_adjusted_succeeds_with_adjustments(): void {
+		$this->operation->readBackState = new TargetState( 'post:42', true, [ 'post_title' => 'Adjusted by WordPress' ] );
+
+		$result = $this->apply();
+
+		$this->assertSame( VerificationStatus::VerifiedWithAdjustments, $result->verification );
+		$this->assertNotNull( $result->rollbackRef );
+		$this->assertSame( 'Adjusted by WordPress', $result->data['state']['post_title'] );
+		$this->assertSame(
+			AuditRecorder::OUTCOME_APPLIED,
+			$this->wpdb->updates[0]['data']['outcome']
+		);
+
+		$joined = implode( "\n", $result->warnings );
+		$this->assertStringContainsString( 'post_title', $joined );
+		$this->assertStringNotContainsString( 'Adjusted by WordPress', $joined );
+	}
+
+	/**
+	 * The response's disclosure of an adjusted value is ephemeral; the audit
+	 * record is permanent. Recording the PROMISED value against outcome
+	 * `applied` would leave the audit asserting a clean apply for a value
+	 * WordPress never stored — a false permanent record of exactly the kind
+	 * auditability exists to prevent, and one that did not exist before this
+	 * contract change, because the case used to record verification_failed.
+	 *
+	 * The summary carries names and sizes only, so this asserts the measured
+	 * length: the stored 'Adjusted by WordPress' is 21 characters, the prior
+	 * 'Original title' is 14, and the promised 'Edited title' — which must NOT
+	 * be what is recorded — is 12.
+	 */
+	public function test_the_audit_record_measures_the_stored_value_not_the_promised_one(): void {
+		$this->operation->readBackState = new TargetState( 'post:42', true, [ 'post_title' => 'Adjusted by WordPress' ] );
+
+		$this->apply();
+
+		$this->assertSame(
+			AuditRecorder::OUTCOME_APPLIED,
+			$this->wpdb->updates[0]['data']['outcome']
+		);
+
+		$summary = json_decode( (string) $this->wpdb->updates[0]['data']['summary'], true );
+
+		$this->assertSame( [ 'post_title' ], $summary['changed'] );
+		$this->assertSame( 14, $summary['metrics']['post_title']['before'] );
+		$this->assertSame( 21, $summary['metrics']['post_title']['after'] );
+	}
+
+	/**
+	 * The sibling above covers a promised field stored with a DIFFERENT value.
+	 * This covers a promised field the after-state does not carry at all, which
+	 * is the one shape where taking the intersection of the two field sets and
+	 * falling back to the plan would quietly record the PROMISED value — the
+	 * same false audit record, reached by a different route.
+	 *
+	 * The prior value is non-null, so the missing field matches neither the
+	 * promise nor the prior value and the write still classifies as adjusted:
+	 * the applied path runs and writes this row. The recorded after-state must
+	 * measure the field as absent — size 0 — never as the promised 'Edited
+	 * title', which would measure 12.
+	 *
+	 * Like its counterpart in WriteVerifierTest, this pins a KNOWN WEAKNESS
+	 * rather than a desirable behaviour: a promised field the re-read does not
+	 * carry at all still reports success. Nobody should read this green test as
+	 * that case being handled — it is not. All this pins is that the permanent
+	 * audit row does not lie about the value when it happens. The real guard is
+	 * interpretation I7's rule that an operation accepting a reference to
+	 * another object validate that it resolves while PLANNING, returning
+	 * invalid_input; the classifier is a backstop, not the intended guard.
+	 */
+	public function test_the_audit_record_measures_a_promised_field_missing_from_the_after_state_as_absent(): void {
+		$this->operation->readBackState = new TargetState( 'post:42', true, [] );
+
+		$result = $this->apply();
+
+		$this->assertSame( VerificationStatus::VerifiedWithAdjustments, $result->verification );
+		$this->assertSame(
+			AuditRecorder::OUTCOME_APPLIED,
+			$this->wpdb->updates[0]['data']['outcome']
+		);
+
+		$summary = json_decode( (string) $this->wpdb->updates[0]['data']['summary'], true );
+
+		$this->assertSame( [ 'post_title' ], $summary['changed'] );
+		$this->assertSame( 14, $summary['metrics']['post_title']['before'] );
+		$this->assertSame( 0, $summary['metrics']['post_title']['after'] );
+	}
+
+	/**
+	 * Arranges and applies a partial write: of two promised fields, `post_title`
+	 * is stored and `post_excerpt` is reverted, leaving the target in neither its
+	 * prior nor its promised state. Asserts only the refusal itself, so each
+	 * caller can assert the property it is pinning.
+	 *
+	 * The plan promises two fields, so the resolved before-state carries two
+	 * fields as well — which means the stored row's state_fingerprint has to be
+	 * recomputed from that state. planRow()'s default fingerprint is computed
+	 * from the single-field fixture, and leaving it in place would refuse this
+	 * plan as a `conflict` long before verification is reached. The stored
+	 * payload_hash still matches: planChange()'s returned payload is unchanged.
+	 */
+	private function applyPartialWrite(): void {
+		$this->operation->planned = new PlannedChange(
+			[ 'title' => 'Edited title' ],
+			[
+				'post_title'   => 'Edited title',
+				'post_excerpt' => 'Edited excerpt',
+			],
+			[ 'post_title', 'post_excerpt' ]
+		);
+		$this->operation->target        = new TargetState(
+			'post:42',
+			true,
+			[
+				'post_title'   => 'Original title',
+				'post_excerpt' => 'Original excerpt',
+			]
+		);
+		$this->operation->readBackState = new TargetState(
+			'post:42',
+			true,
+			[
+				'post_title'   => 'Edited title',
+				'post_excerpt' => 'Original excerpt',
+			]
+		);
+
+		try {
+			$this->apply(
+				[
+					'state_fingerprint' => ( new StateFingerprint( $this->normalizer ) )
+						->compute( $this->operation->target, $this->makeContext() ),
+				]
+			);
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::VerificationFailed, $e->errorCode );
+		}
+	}
+
+	public function test_a_partial_write_is_verification_failed(): void {
+		$this->applyPartialWrite();
+
+		$this->assertSame(
+			AuditRecorder::OUTCOME_VERIFICATION_FAILED,
+			$this->wpdb->updates[0]['data']['outcome']
+		);
+	}
+
+	/**
+	 * A partial write is the case where recording the promise does the most
+	 * damage: both promised fields would be listed as changed, at their promised
+	 * sizes, hiding which of the two actually landed — the one fact someone
+	 * recovering from a partial write needs. The row must measure the STORED
+	 * state, so `post_excerpt` — reverted to its prior value — does not appear
+	 * as changed at all, and `post_title` measures 12 for the value core kept.
+	 *
+	 * Recording the promise instead would list both fields and measure
+	 * `post_excerpt` at the promised 14 rather than the stored 16.
+	 */
+	public function test_a_partial_writes_audit_record_measures_the_stored_values(): void {
+		$this->applyPartialWrite();
+
+		$summary = json_decode( (string) $this->wpdb->updates[0]['data']['summary'], true );
+
+		$this->assertSame( [ 'post_title' ], $summary['changed'] );
+		$this->assertArrayNotHasKey( 'post_excerpt', $summary['metrics'] );
+		$this->assertSame( 14, $summary['metrics']['post_title']['before'] );
+		$this->assertSame( 12, $summary['metrics']['post_title']['after'] );
 	}
 
 	/**
@@ -613,6 +798,11 @@ final class ChangeEngineApplyTest extends TestCase {
 		$this->assertStringNotContainsString( 'Rewritten by another plugin', $joined );
 		// post_modified_gmt changes on every write and must never be reported.
 		$this->assertStringNotContainsString( 'post_modified_gmt', $joined );
+		// The engine cannot tell core from a third-party hook — trashing a post
+		// renames the slug in core — so the warning must not name a culprit.
+		// Case-insensitive: a rewording that capitalises the word at the start
+		// of a sentence names a culprit exactly as much as a lowercase one.
+		$this->assertStringNotContainsStringIgnoringCase( 'plugin', $joined );
 	}
 
 	public function test_a_write_that_changes_only_what_it_promised_warns_about_nothing(): void {

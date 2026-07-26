@@ -18,6 +18,7 @@ use SiteHelm\Change\PlannedChange;
 use SiteHelm\Change\PreviewRenderer;
 use SiteHelm\Change\StateFingerprint;
 use SiteHelm\Change\TargetState;
+use SiteHelm\Change\WriteVerifier;
 use SiteHelm\Contracts\Domain;
 use SiteHelm\Contracts\ErrorCode;
 use SiteHelm\Contracts\Mode;
@@ -70,7 +71,8 @@ final class ChangeEnginePlanTest extends TestCase {
 			$normalizer,
 			new StateFingerprint( $normalizer ),
 			new PreviewRenderer(),
-			new Installer()
+			new Installer(),
+			new WriteVerifier( $normalizer )
 		);
 		$this->operation = new StubWriteOperation();
 	}

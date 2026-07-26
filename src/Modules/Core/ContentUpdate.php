@@ -23,8 +23,12 @@ use SiteHelm\Contracts\OperationException;
  * The promised after-state is the payload passed through the same sanitizers
  * WordPress applies on save, because verification compares the persisted state
  * against the promise. If WordPress applies a further transformation the plan
- * did not anticipate, verification reports it as `verification_failed` — which
- * is the contract's designed behaviour, not a defect to paper over.
+ * did not anticipate, that is reported as an adjustment rather than a failure:
+ * the write succeeds as `verified-with-adjustments`, each adjusted field is
+ * named in a warning, and the value WordPress actually stored is disclosed in
+ * `data.state`. `verification_failed` is reserved for a promised field still
+ * holding its prior value, which means the write did not take. See
+ * interpretation I7.
  *
  * @package SiteHelm
  */

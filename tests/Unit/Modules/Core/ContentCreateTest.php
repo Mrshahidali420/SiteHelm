@@ -165,9 +165,11 @@ final class ContentCreateTest extends TestCase {
 	}
 
 	/**
-	 * Core registers `add_filter( 'title_save_pre', 'trim' )` unconditionally, so
-	 * a creation promising an untrimmed title reports `verification_failed` on a
-	 * write that landed perfectly. Verified against WordPress 7.0.2.
+	 * WordPress core registers `add_filter( 'title_save_pre', 'trim' )` in
+	 * default-filters.php. Promising the untrimmed title made a correct creation
+	 * report `verification_failed`: the read-back saw the trimmed title core had
+	 * actually stored, disagreed with the promise, and told the operator to undo
+	 * a change that had landed perfectly. Verified against WordPress 7.0.2.
 	 */
 	public function test_the_promised_title_is_trimmed_exactly_as_wordpress_stores_it(): void {
 		$input            = $this->input();
