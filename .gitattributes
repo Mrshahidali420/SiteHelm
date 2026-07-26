@@ -1,0 +1,10 @@
+# Normalize all text files to LF in the repository.
+# WPCS enforces LF line endings (Generic.Files.LineEndings); without this,
+# a fresh checkout on Windows converts to CRLF and every PHP file fails lint.
+* text=auto eol=lf
+
+# Binary files must never be converted.
+*.png binary
+*.jpg binary
+*.gif binary
+*.zip binary

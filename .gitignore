@@ -5,3 +5,8 @@
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# SiteHelm build/tooling
+vendor/
+.phpunit.result.cache
+.superpowers/
