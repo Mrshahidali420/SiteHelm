@@ -948,15 +948,23 @@ rollback previewed the recorded prior state, and approving it restored
 `Phase 3a fixture post` with `verification: verified`. The snapshot is the
 recovery mechanism precisely because WordPress revisions did not hold that state.
 
-**Residual gap.** This session does not demonstrate the narrower reading of the
-clause — that WordPress's own revision history retains the pre-update version
-across a SiteHelm update. The probe above shows that holding for an item with
-existing revision history and *not* holding for a freshly created one, so the
-clause is true only conditionally, and no recorded MCP session in this document
-exercises the conditional case. Recorded as an open item in `tasks/todo.md` rather
-than claimed here. No unit test can close it either: revisions are created inside
-`wp_update_post()`, which Brain Monkey stubs, so a unit assertion would be
-testing the stub.
+**Withdrawn, not left open.** This session does not demonstrate the narrower
+reading of the clause — that WordPress's own revision history retains the
+pre-update version across a SiteHelm update — and no future session needs to,
+because that reading has since been withdrawn from the requirement. REQ-0014's
+`acceptance_evidence` in `v1-requirements-matrix.csv` now names the captured
+snapshot and the returned `rollbackRef`, which is precisely what steps 6, 11 and
+12 demonstrate end to end. The reading was withdrawn because WordPress cannot
+guarantee it, not merely because this session did not exercise it: the probe
+table above shows a first update leaving the prior version in no revision at all;
+`WP_POST_REVISIONS` can be defined as `false` to disable revisions for the entire
+site; and the `wp_save_post_revision_post_has_changed` filter lets any plugin
+suppress a revision for any save. An acceptance clause that holds only when all
+three go the right way is not a clause the product can promise, so it was
+corrected rather than carried forward as a gap. The probe table stays as the
+evidence for that withdrawal. No unit test could have closed it either: revisions
+are created inside `wp_update_post()`, which Brain Monkey stubs, so a unit
+assertion would be testing the stub.
 
 ## Checklist
 

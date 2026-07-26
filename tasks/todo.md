@@ -124,32 +124,24 @@ and response recorded verbatim.
   `verification_failed` cannot self-serve a rollback reference and must ask an
   administrator to locate the record by `correlationId`. Recorded interpretation
   I4; an open candidate for the next contract revision.
-- **REQ-0014's "the prior revision remained available" clause is not evidenced by
-  WordPress revisions, and is recorded as an honest gap.** The demonstration's
-  revision table shows revision 14 holding the *new* title: WordPress's
-  `wp_save_post_revision()` records the state *after* each save, so a freshly
-  created item's first update leaves the prior version in no revision at all.
-  Probed directly against WordPress 7.0.2 (create → no revisions; update A→B →
-  one revision holding B; update B→C → revisions holding B and C). What is
-  evidenced end to end is that recovery comes from SiteHelm's own snapshot and
-  `rollbackRef`, which is the product's actual mechanism. The narrower reading —
-  that WordPress's revision history retains the pre-update version across a
-  SiteHelm update — holds only for an item that already has revision history, and
-  no recorded MCP session exercises that conditional case. No unit test can close
-  it: revisions are created inside `wp_update_post()`, which Brain Monkey stubs.
-  Needs either a second recorded session on a post with existing revision history,
-  or a decision to reword the requirement around the snapshot mechanism.
-- `ContentUpdate`'s verification models `kses` and core's unconditional
-  `title_save_pre` trim. It does **not** model the two further filters core
-  registers unconditionally on `content_save_pre` and `excerpt_save_pre`:
-  `convert_invalid_entities` (verified live to rewrite `&#133;` to `&#8230;`) and
-  `balanceTags` (a no-op while `use_balanceTags` is `'0'`, which is the default).
-  Faithfully modelling `content_save_pre` means replicating a five-callback
-  priority-ordered chain, three of whose members are capability-gated
-  (`wp_strip_custom_css_from_blocks` at 8 on `edit_css`, new in WP 7.0;
-  `wp_filter_global_styles_post` at 9; `wp_filter_post_kses` at 10) and one
-  option-gated. Third-party `content_save_pre` filters remain out of scope
-  entirely. Needs a decision about how much filter behaviour to model.
+- **REQ-0014's revision-evidence gap is closed, not carried.** Its
+  `acceptance_evidence` column was corrected in the write-verification-contract
+  plan (`.superpowers/sdd/2026-07-26-write-verification-contract/`) to name the
+  captured snapshot and returned `rollbackRef` — the product's actual recovery
+  mechanism — instead of a WordPress revision, which the platform cannot
+  guarantee. See interpretation I7 and the withdrawal note under the revision
+  table in `docs/product/phase-3a-demonstration.md`.
+- **`ContentUpdate`'s unmodelled `content_save_pre` filters are closed, not
+  deferred.** Decision 1 of the write-verification-contract plan bounds preview
+  modelling to pure, input-only transformations — core's unconditional trim and
+  the kses pass — and deliberately leaves transformations that depend on database
+  state, the clock, or capability-gated filter members unmodelled, because no pure
+  function of the input can predict them. Interpretation I7 removes the harm of
+  that: a value WordPress adjusts now succeeds as `verified-with-adjustments`,
+  names the field in a warning and discloses the stored value, so an unmodelled
+  filter no longer turns a correct write into a false `verification_failed`.
+  `convert_invalid_entities` and `balanceTags` therefore need no modelling
+  decision.
 - **Dead phpcs suppressions across the tree (pre-existing).** Thirteen files
   declare `phpcs:disable` for sniffs that never fire, verified by reconciling
   `vendor/bin/phpcs --ignore-annotations` output against the annotations per
