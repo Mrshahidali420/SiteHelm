@@ -589,6 +589,15 @@ final class ChangeEngineApplyTest extends TestCase {
 	 * the applied path runs and writes this row. The recorded after-state must
 	 * measure the field as absent — size 0 — never as the promised 'Edited
 	 * title', which would measure 12.
+	 *
+	 * Like its counterpart in WriteVerifierTest, this pins a KNOWN WEAKNESS
+	 * rather than a desirable behaviour: a promised field the re-read does not
+	 * carry at all still reports success. Nobody should read this green test as
+	 * that case being handled — it is not. All this pins is that the permanent
+	 * audit row does not lie about the value when it happens. The real guard is
+	 * interpretation I7's rule that an operation accepting a reference to
+	 * another object validate that it resolves while PLANNING, returning
+	 * invalid_input; the classifier is a backstop, not the intended guard.
 	 */
 	public function test_the_audit_record_measures_a_promised_field_missing_from_the_after_state_as_absent(): void {
 		$this->operation->readBackState = new TargetState( 'post:42', true, [] );
@@ -791,8 +800,9 @@ final class ChangeEngineApplyTest extends TestCase {
 		$this->assertStringNotContainsString( 'post_modified_gmt', $joined );
 		// The engine cannot tell core from a third-party hook — trashing a post
 		// renames the slug in core — so the warning must not name a culprit.
-		$this->assertStringNotContainsString( 'Another plugin', $joined );
-		$this->assertStringNotContainsString( 'plugin', $joined );
+		// Case-insensitive: a rewording that capitalises the word at the start
+		// of a sentence names a culprit exactly as much as a lowercase one.
+		$this->assertStringNotContainsStringIgnoringCase( 'plugin', $joined );
 	}
 
 	public function test_a_write_that_changes_only_what_it_promised_warns_about_nothing(): void {
