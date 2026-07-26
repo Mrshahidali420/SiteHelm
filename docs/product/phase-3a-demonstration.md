@@ -904,12 +904,56 @@ Response:
 
 ### Post revisions after the rollback
 
-This is the only evidence for REQ-0014's "the prior revision remained available" clause. No unit test covers it: revisions are created inside `wp_update_post()`, which Brain Monkey stubs, so a unit assertion would be testing the stub.
-
 | Revision ID | Date (GMT) | Title |
 |---|---|---|
 | 15 | 2026-07-26 11:26:19 | `Phase 3a fixture post` |
 | 14 | 2026-07-26 11:26:12 | `Revised heading` |
+
+**What this table shows, and what it does not.** An earlier version of this
+section presented the table as evidence for REQ-0014's "the prior revision
+remained available" clause. It is not. Revision 14 holds the **new** title, not
+the prior one:
+
+- Revision 14 was created by the **update** and records the state the update
+  wrote (`Revised heading`).
+- Revision 15 was created by the **rollback** and records the state the rollback
+  wrote (`Phase 3a fixture post`).
+
+At the moment of the update, the prior title existed in **no** revision at all.
+WordPress's `wp_save_post_revision()` records the post's state *after* each save,
+and the fixture post had no revision history when the update ran.
+
+Probed directly against this install (WordPress 7.0.2), reading `wp_posts` rather
+than `get_post()`, because a CLI process's object cache does not see what a
+separate HTTP request wrote:
+
+| Step | Live title | Revisions |
+|---|---|---|
+| after create | `State A` | *(none)* |
+| after update 1 (A → B) | `State B` | `25: State B` |
+| after update 2 (B → C) | `State C` | `25: State B`, `26: State C` |
+
+So the pre-update state reaches a revision only from the *second* save onward,
+and even then it is the revision the *previous* save created, not one the update
+creates. For a freshly created item — exactly this fixture — the first update
+leaves the prior version in no revision.
+
+**What actually satisfies the clause.** Recovery of the prior version is provided
+by SiteHelm's own snapshot, not by WordPress revisions. That is what steps 6, 11
+and 12 above evidence end to end: the applied write returned a `rollbackRef`, the
+rollback previewed the recorded prior state, and approving it restored
+`Phase 3a fixture post` with `verification: verified`. The snapshot is the
+recovery mechanism precisely because WordPress revisions did not hold that state.
+
+**Residual gap.** This session does not demonstrate the narrower reading of the
+clause — that WordPress's own revision history retains the pre-update version
+across a SiteHelm update. The probe above shows that holding for an item with
+existing revision history and *not* holding for a freshly created one, so the
+clause is true only conditionally, and no recorded MCP session in this document
+exercises the conditional case. Recorded as an open item in `tasks/todo.md` rather
+than claimed here. No unit test can close it either: revisions are created inside
+`wp_update_post()`, which Brain Monkey stubs, so a unit assertion would be
+testing the stub.
 
 ## Checklist
 
@@ -924,5 +968,5 @@ This is the only evidence for REQ-0014's "the prior revision remained available"
 - [x] **9.** Approving with `plan_token` misspelled returns `invalid_input`, not a fresh preview inside a success envelope.
 - [x] **10.** `audit-list` returns the entry for the applied write with actor, client, operation, target, plan fingerprint, timestamp, outcome `applied`, and `rollbackRef`. Its summary carries field names and byte counts only — no fragment of either title appears anywhere in the response.
 - [x] **11.** `content-rollback-apply` with a `rollbackRef` and no token returns a plan: a rollback is itself preview-required, per interpretation I3.
-- [x] **12.** Approving the rollback returns `verified`, and a follow-up read shows the original title restored. The revision table above shows the prior revision intact.
+- [x] **12.** Approving the rollback returns `verified`, and a follow-up read shows the original title restored — from SiteHelm's recorded snapshot, which is what made the prior version recoverable. The revision table above does **not** evidence the prior version being retained by WordPress; see the note under it.
 - [x] **13.** `content-create` verifies with an `auditRef` and **no** `rollbackRef`, because a creation has no prior state to snapshot.
