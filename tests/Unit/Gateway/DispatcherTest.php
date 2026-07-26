@@ -97,6 +97,18 @@ final class DispatcherTest extends TestCase {
 	}
 
 	/**
+	 * Removes the wpdb global here rather than at the end of the one test body
+	 * that installs it. Unsetting it inline leaked the double into every later
+	 * test as soon as an earlier assertion failed, which is exactly when a clean
+	 * teardown matters most. Eleven of the thirteen peer test classes already do
+	 * it this way.
+	 */
+	protected function tearDown(): void {
+		unset( $GLOBALS['wpdb'] );
+		parent::tearDown();
+	}
+
+	/**
 	 * Replaces the Dispatcher construction in setUp(). The change engine is a
 	 * real one over the FakeWpdb double, so write routing is exercised end to
 	 * end without a database.
@@ -567,7 +579,6 @@ final class DispatcherTest extends TestCase {
 		$this->assertArrayHasKey( 'plan', $response['data'] );
 		$this->assertSame( 'not-applicable', $response['verification'] );
 		$this->assertSame( 0, $operation->applyCalls );
-		unset( $GLOBALS['wpdb'] );
 	}
 
 	public function test_a_malformed_plan_token_is_stale_plan(): void {

@@ -142,14 +142,32 @@ final class AuditReadTest extends TestCase {
 		);
 	}
 
-	public function test_the_summary_carries_names_and_sizes_but_no_values(): void {
+	/**
+	 * This operation relays the stored summary; it does not build one. The
+	 * guarantee that no field value ever enters a summary belongs to the write
+	 * side and is proven there, by
+	 * AuditRedactorTest::test_no_field_value_reaches_the_summary. Naming this test
+	 * for that guarantee overclaimed what it could show, so it asserts the whole
+	 * relayed structure instead of one member of it.
+	 */
+	public function test_the_summary_relays_the_recorded_names_and_sizes_intact(): void {
 		$this->wpdb->resultQueue = [ [ $this->row() ] ];
 		$this->wpdb->varQueue    = [ 1 ];
 
 		$entry = $this->handler->handle( [], $this->makeContext() )['entries'][0];
 
-		$this->assertSame( [ 'post_title' ], $entry['summary']['changed'] );
-		$this->assertSame( 14, $entry['summary']['metrics']['post_title']['before'] );
+		$this->assertSame(
+			[
+				'changed' => [ 'post_title' ],
+				'metrics' => [
+					'post_title' => [
+						'before' => 14,
+						'after'  => 12,
+					],
+				],
+			],
+			$entry['summary']
+		);
 	}
 
 	public function test_a_row_without_a_snapshot_offers_no_rollback_reference(): void {

@@ -115,7 +115,12 @@ final class Installer {
 	/**
 	 * Whether the storage-dependent surfaces may run.
 	 *
-	 * @return bool True when the tables were confirmed present.
+	 * This reads the status option recorded by the last install attempt; it does
+	 * not re-check the tables. A table dropped since that attempt is therefore
+	 * still reported available until an install runs again, which is what
+	 * maybeUpgrade() exists to trigger.
+	 *
+	 * @return bool True when the last install attempt recorded storage as ready.
 	 */
 	public function isAvailable(): bool {
 		return self::STATUS_READY === get_option( self::STATUS_OPTION, self::STATUS_UNAVAILABLE );
