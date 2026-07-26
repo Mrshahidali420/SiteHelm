@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace SiteHelm\Tests\Unit\Registry;
 
 use InvalidArgumentException;
+use SiteHelm\Change\WriteOperation;
 use SiteHelm\Contracts\Domain;
 use SiteHelm\Contracts\Mode;
 use SiteHelm\Contracts\ModuleId;
@@ -14,6 +15,7 @@ use SiteHelm\Contracts\Risk;
 use SiteHelm\Contracts\RollbackPolicy;
 use SiteHelm\Contracts\SnapshotPolicy;
 use SiteHelm\Registry\CapabilityRegistry;
+use SiteHelm\Tests\Doubles\StubWriteOperation;
 use SiteHelm\Tests\TestCase;
 
 /**
@@ -158,5 +160,110 @@ final class CapabilityRegistryTest extends TestCase {
 		$system_read = $this->registry->forDispatcher( 'system-read' );
 		$this->assertSame( [ 'system-environment' ], array_map( static fn( OperationDefinition $d ): string => $d->id, $system_read ) );
 		$this->assertSame( [ 0 ], array_keys( $system_read ) );
+	}
+
+	/**
+	 * Builds a write definition with the given policies.
+	 *
+	 * @param string        $id             The operation identifier.
+	 * @param Mode          $mode           Read or write.
+	 * @param PreviewPolicy $preview_policy The preview policy.
+	 */
+	private function makeWriteDefinition(
+		string $id,
+		Mode $mode = Mode::Write,
+		PreviewPolicy $preview_policy = PreviewPolicy::Required
+	): OperationDefinition {
+		$read_shape = Mode::Read === $mode;
+
+		return new OperationDefinition(
+			id: $id,
+			domain: Domain::Content,
+			mode: $mode,
+			description: 'Revise the title, body, or excerpt of one existing content item.',
+			inputSchema: [
+				'type'                 => 'object',
+				'properties'           => [ 'id' => [ 'type' => 'integer' ] ],
+				'additionalProperties' => false,
+			],
+			outputSchema: [
+				'type'                 => 'object',
+				'properties'           => [ 'id' => [ 'type' => 'integer' ] ],
+				'additionalProperties' => false,
+			],
+			schemaVersion: 1,
+			requiredCapabilities: [ 'edit_post' ],
+			risk: Risk::Medium,
+			isReadOnly: $read_shape,
+			isDestructive: false,
+			isIdempotent: true,
+			previewPolicy: $read_shape ? PreviewPolicy::NotApplicable : $preview_policy,
+			snapshotPolicy: $read_shape ? SnapshotPolicy::NotApplicable : SnapshotPolicy::Required,
+			rollbackPolicy: $read_shape ? RollbackPolicy::NotApplicable : RollbackPolicy::Supported,
+			module: ModuleId::Core,
+			supportedVersions: [ 'wordpress' => '>=6.6' ],
+			example: [
+				'operation' => $id,
+				'arguments' => [ 'id' => 42 ],
+			],
+		);
+	}
+
+	public function test_register_write_exposes_the_definition_and_the_write_operation(): void {
+		$registry  = new CapabilityRegistry();
+		$operation = new StubWriteOperation();
+
+		$registry->registerWrite( $this->makeWriteDefinition( 'content-update' ), $operation );
+
+		$this->assertTrue( $registry->has( 'content-update' ) );
+		$this->assertTrue( $registry->hasWriteOperation( 'content-update' ) );
+		$this->assertSame( $operation, $registry->writeOperation( 'content-update' ) );
+		$this->assertSame(
+			[ 'content-update' ],
+			array_map(
+				static fn( OperationDefinition $d ): string => $d->id,
+				$registry->forDispatcher( 'content-write' )
+			)
+		);
+	}
+
+	public function test_a_read_registration_is_not_a_write_operation(): void {
+		$registry = new CapabilityRegistry();
+		$registry->register( $this->makeWriteDefinition( 'content-get', Mode::Read ), static fn(): array => [] );
+
+		$this->assertTrue( $registry->has( 'content-get' ) );
+		$this->assertFalse( $registry->hasWriteOperation( 'content-get' ) );
+	}
+
+	public function test_register_write_rejects_a_duplicate_identifier(): void {
+		$registry = new CapabilityRegistry();
+		$registry->registerWrite( $this->makeWriteDefinition( 'content-update' ), new StubWriteOperation() );
+
+		$this->expectException( InvalidArgumentException::class );
+		$registry->registerWrite( $this->makeWriteDefinition( 'content-update' ), new StubWriteOperation() );
+	}
+
+	public function test_register_write_rejects_a_read_definition(): void {
+		$registry = new CapabilityRegistry();
+
+		$this->expectException( InvalidArgumentException::class );
+		$registry->registerWrite( $this->makeWriteDefinition( 'content-get', Mode::Read ), new StubWriteOperation() );
+	}
+
+	public function test_register_write_rejects_a_definition_without_required_preview(): void {
+		$registry = new CapabilityRegistry();
+
+		$this->expectException( InvalidArgumentException::class );
+		$registry->registerWrite(
+			$this->makeWriteDefinition( 'content-update', Mode::Write, PreviewPolicy::NotApplicable ),
+			new StubWriteOperation()
+		);
+	}
+
+	public function test_write_operation_lookup_rejects_an_unknown_identifier(): void {
+		$registry = new CapabilityRegistry();
+
+		$this->expectException( InvalidArgumentException::class );
+		$registry->writeOperation( 'content-nuke' );
 	}
 }
