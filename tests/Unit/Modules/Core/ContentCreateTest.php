@@ -199,6 +199,85 @@ final class ContentCreateTest extends TestCase {
 		}
 	}
 
+	/**
+	 * A content type whose own `cap` object cannot be read is refused, and no
+	 * capability check happens at all.
+	 *
+	 * This is the half of the earlier capability fix that prevents falling back to
+	 * a generic capability: without it, a type whose `cap` is missing or malformed
+	 * would be treated as creatable and checked against something generic, letting
+	 * a caller create content of a type they hold no capability for. A reviewer
+	 * mutated the branch away and the full suite still passed.
+	 *
+	 * @dataProvider unresolvableTypeObjects
+	 *
+	 * @param mixed $type_object What get_post_type_object() returns.
+	 */
+	public function test_plan_change_refuses_a_type_whose_capabilities_cannot_be_resolved( mixed $type_object ): void {
+		Functions\when( 'get_post_type_object' )->justReturn( $type_object );
+
+		$checked = [];
+		Functions\when( 'user_can' )->alias(
+			static function ( int $user_id, string $capability ) use ( &$checked ): bool {
+				$checked[] = $capability;
+
+				return true;
+			}
+		);
+
+		$current = $this->operation->resolveTarget( $this->input(), $this->makeContext() );
+
+		try {
+			$this->operation->planChange( $current, $this->input(), $this->makeContext() );
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::InvalidInput, $e->errorCode );
+		}
+
+		$this->assertSame(
+			[],
+			$checked,
+			'An unresolvable type must be refused outright, never checked against a generic capability.'
+		);
+	}
+
+	/**
+	 * Post type objects that are public but whose capability names cannot be read.
+	 *
+	 * @return array<string, array{mixed}> The type object each case returns.
+	 */
+	public static function unresolvableTypeObjects(): array {
+		$no_cap         = new stdClass();
+		$no_cap->public = true;
+
+		$cap_not_object      = new stdClass();
+		$cap_not_object->cap = 'edit_posts';
+
+		$missing_create      = new stdClass();
+		$missing_create->cap = new stdClass();
+
+		$missing_publish                    = new stdClass();
+		$missing_publish->cap               = new stdClass();
+		$missing_publish->cap->create_posts = 'edit_posts';
+
+		$non_string_create                    = new stdClass();
+		$non_string_create->cap               = new stdClass();
+		$non_string_create->cap->create_posts = true;
+		$non_string_create->cap->publish_posts = 'publish_posts';
+
+		foreach ( [ $cap_not_object, $missing_create, $missing_publish, $non_string_create ] as $type ) {
+			$type->public = true;
+		}
+
+		return [
+			'no cap object at all'         => [ $no_cap ],
+			'cap is not an object'         => [ $cap_not_object ],
+			'cap omits create_posts'       => [ $missing_create ],
+			'cap omits publish_posts'      => [ $missing_publish ],
+			'create_posts is not a string' => [ $non_string_create ],
+		];
+	}
+
 	public function test_plan_change_rejects_a_non_public_content_type(): void {
 		$type         = new stdClass();
 		$type->public = false;

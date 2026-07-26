@@ -337,6 +337,48 @@ final class DispatcherTest extends TestCase {
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 
 	/**
+	 * The client's raw operation string is never echoed back.
+	 *
+	 * It is untrusted text that would otherwise flow into an outbound envelope
+	 * message. A reviewer mutated the guard to interpolate the operation id into
+	 * the refusal and the full suite still passed, so nothing pinned it.
+	 *
+	 * Both refusal sites are covered: an operation that exists nowhere, and one
+	 * that exists on another dispatcher. Message and remediation are both checked,
+	 * because remediation is surfaced in the same envelope.
+	 *
+	 * @dataProvider unechoableOperationCalls
+	 *
+	 * @param string $dispatcher   The dispatcher receiving the call.
+	 * @param string $operation_id The raw operation string the client sent.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+	 */
+	public function test_the_raw_operation_string_is_never_echoed_back( string $dispatcher, string $operation_id ): void {
+		try {
+			$this->dispatcher->dispatch( $dispatcher, [ 'operation' => $operation_id ], $this->makeContext() );
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::InvalidInput, $e->errorCode );
+			$this->assertStringNotContainsString( $operation_id, $e->getMessage() );
+			$this->assertStringNotContainsString( $operation_id, (string) $e->remediation );
+			$this->assertStringNotContainsString( $operation_id, implode( ' ', $e->completedSteps ) );
+			$this->assertStringNotContainsString( $operation_id, (string) $e->compensation );
+		}
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+
+	/**
+	 * @return array<string, array{string, string}> Dispatcher and raw operation string.
+	 */
+	public static function unechoableOperationCalls(): array {
+		return [
+			'unregistered operation'          => [ 'system-read', '<script>alert(1)</script>' ],
+			'operation on another dispatcher' => [ 'content-read', 'system-environment' ],
+		];
+	}
+
+	/**
 	 * Test that operation on wrong dispatcher throws InvalidInput exception.
 	 *
 	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase

@@ -129,4 +129,39 @@ final class InstallerTest extends TestCase {
 		$this->assertTrue( ( new Installer() )->maybeUpgrade() );
 		$this->assertCount( 3, $this->delta );
 	}
+
+	/**
+	 * The retry-when-storage-is-broken branch: the stored version is current, so
+	 * the version test alone would skip, but storage is recorded unavailable.
+	 *
+	 * This is the only self-healing path for an install whose tables went missing
+	 * after a successful install — a restore from a partial backup, a dropped
+	 * table, a failed migration — and it is live through Plugin.php. A reviewer
+	 * removed the isAvailable() half of the condition and the full suite still
+	 * passed, so nothing pinned it.
+	 */
+	public function test_maybe_upgrade_retries_when_the_version_is_current_but_storage_is_unavailable(): void {
+		$this->options[ Installer::DB_VERSION_OPTION ] = (string) Installer::DB_VERSION;
+		$this->options[ Installer::STATUS_OPTION ]     = Installer::STATUS_UNAVAILABLE;
+		$this->allTablesPresent();
+
+		$installer = new Installer();
+		$this->assertTrue( $installer->maybeUpgrade(), 'A broken install must be retried, not skipped.' );
+		$this->assertCount( 3, $this->delta );
+		$this->assertSame( Installer::STATUS_READY, $this->options[ Installer::STATUS_OPTION ] );
+		$this->assertTrue( $installer->isAvailable() );
+	}
+
+	/**
+	 * The retry reports failure rather than throwing when the tables still cannot
+	 * be created, leaving storage recorded unavailable for the next attempt.
+	 */
+	public function test_a_retry_that_still_fails_leaves_storage_unavailable(): void {
+		$this->options[ Installer::DB_VERSION_OPTION ] = (string) Installer::DB_VERSION;
+		$this->options[ Installer::STATUS_OPTION ]     = Installer::STATUS_UNAVAILABLE;
+
+		$installer = new Installer();
+		$this->assertFalse( $installer->maybeUpgrade() );
+		$this->assertSame( Installer::STATUS_UNAVAILABLE, $this->options[ Installer::STATUS_OPTION ] );
+	}
 }
