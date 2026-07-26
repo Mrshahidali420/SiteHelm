@@ -44,7 +44,7 @@ final class EnumsTest extends TestCase {
 			PermissionMode::class     => [ 'read-only', 'safe-write', 'trusted-write' ],
 			ModuleHealth::class       => [ 'active', 'inactive', 'version-blocked' ],
 			ModuleId::class           => [ 'core', 'diagnostics', 'media', 'menus', 'elementor', 'acf', 'metabox' ],
-			VerificationStatus::class => [ 'verified', 'not-applicable' ],
+			VerificationStatus::class => [ 'verified', 'verified-with-adjustments', 'not-applicable' ],
 			ErrorCode::class          => [
 				'authentication_failed',
 				'forbidden',
