@@ -1038,5 +1038,5 @@ Before declaring the plan complete:
 - [ ] `verified()` no longer exists in `ChangeEngine`; the three-way rule exists in exactly one place
 - [ ] A live probe confirms a title WordPress adjusts no longer returns `verification_failed`
 - [ ] No warning anywhere attributes a field change to a plugin
-- [ ] `grep -rn "revision" docs/product/v1-requirements-matrix.csv` shows no requirement resting its evidence on revisions
+- [ ] `grep -rn "revision" docs/product/v1-requirements-matrix.csv` returns exactly two rows, both adjudicated: **REQ-0042** (Elementor, unbuilt) rests its evidence on a revision trail and is the same defect class, but its `user_outcome` promises that trail from external sources (SRC-0006/0009/0011, EMCP-CAP-004), so correcting evidence alone would desync the row — deliberately left for a Phase 5 decision covering both columns, and tracked as an open item in `tasks/todo.md`. **REQ-0008**'s "restored revision content" names the content version restored rather than asserting a WordPress revision row exists, and the mechanism it cites as evidence — re-reading the target — does deliver. *Corrected after Task 5: the original wording demanded zero hits, which contradicts these two rulings.*
 - [ ] No Application Password beginning `SiteHelm` remains on the live site
