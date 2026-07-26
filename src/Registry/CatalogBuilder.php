@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace SiteHelm\Registry;
 
 use SiteHelm\Contracts\ModuleHealth;
+use SiteHelm\Policy\PolicyEngine;
 use SiteHelm\Contracts\OperationContext;
 use SiteHelm\Contracts\OperationDefinition;
 use stdClass;
@@ -44,26 +45,6 @@ final class CatalogBuilder {
 	 */
 	private const OBJECT_VALUED_EXAMPLE_KEYS = [ 'arguments' ];
 
-	/**
-	 * Target meta-capabilities from the foundation contract, each mapped to the
-	 * primitive capability that stands in for it when there is no target.
-	 *
-	 * WordPress resolves a meta-capability through map_meta_cap against a
-	 * concrete object. A catalog listing has no object, so a target-less check
-	 * is meaningless: map_meta_cap returns do_not_allow and user_can() answers
-	 * false for every user, administrators included.
-	 *
-	 * Skipping meta-capabilities instead of mapping them would be worse than
-	 * the bug it fixes. `content-update` declares only `edit_post`, so with the
-	 * skip it would have no filterable capability left and would be advertised
-	 * to every authenticated caller — a subscriber's catalog included. Mapping
-	 * keeps a real, if coarser, visibility boundary.
-	 */
-	private const META_CAPABILITY_MAP = [
-		'edit_post'    => 'edit_posts',
-		'delete_post'  => 'delete_posts',
-		'assign_terms' => 'edit_posts',
-	];
 
 	/**
 	 * Constructs the builder.
@@ -119,7 +100,7 @@ final class CatalogBuilder {
 	 */
 	private function is_permitted( OperationDefinition $definition, OperationContext $context ): bool {
 		foreach ( $definition->requiredCapabilities as $capability ) {
-			$effective = self::META_CAPABILITY_MAP[ $capability ] ?? $capability;
+			$effective = PolicyEngine::META_CAPABILITY_MAP[ $capability ] ?? $capability;
 
 			if ( ! user_can( $context->userId, $effective ) ) {
 				return false;

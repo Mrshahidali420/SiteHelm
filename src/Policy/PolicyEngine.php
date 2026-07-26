@@ -24,7 +24,20 @@ use SiteHelm\Contracts\PermissionMode;
  */
 final class PolicyEngine {
 
-	private const META_CAPABILITIES = [ 'edit_post', 'delete_post', 'assign_terms' ];
+	/**
+	 * The primitive that governs each meta-capability.
+	 *
+	 * This is the canonical map. `CatalogBuilder` consumes it rather than
+	 * keeping a second copy: when the catalog and this gate encoded the same
+	 * knowledge separately they disagreed, and a target-less invocation of a
+	 * meta-capability operation was refused for every user including
+	 * administrators while the catalog still advertised it as available.
+	 */
+	public const META_CAPABILITY_MAP = [
+		'edit_post'    => 'edit_posts',
+		'delete_post'  => 'delete_posts',
+		'assign_terms' => 'edit_posts',
+	];
 
 	/**
 	 * Authorizes one dispatch. Returns void on success; throws OperationException(Forbidden) otherwise.
@@ -51,10 +64,30 @@ final class PolicyEngine {
 		}
 
 		foreach ( $definition->requiredCapabilities as $capability ) {
-			$is_meta = in_array( $capability, self::META_CAPABILITIES, true ) && null !== $targetId;
-			$allowed = $is_meta
-				? user_can( $context->userId, $capability, $targetId )
-				: user_can( $context->userId, $capability );
+			$is_meta = array_key_exists( $capability, self::META_CAPABILITY_MAP );
+
+			if ( $is_meta && null !== $targetId ) {
+				// The precise check: WordPress resolves the meta-capability
+				// against this specific post through map_meta_cap.
+				$allowed = user_can( $context->userId, $capability, $targetId );
+			} elseif ( $is_meta ) {
+				// No target to check against. WordPress resolves a target-less
+				// meta-capability to do_not_allow, so asking it directly would
+				// refuse every user including administrators — which is what
+				// broke content-rollback-apply, whose arguments carry a rollback
+				// reference rather than a post id. Fall back to the governing
+				// primitive, exactly as the catalog does, so the gate and the
+				// catalog cannot disagree.
+				//
+				// This is deliberately coarse. It is safe because an operation
+				// reaching here has no target for anyone to check, and the
+				// operations that resolve a target later re-check it precisely:
+				// content-rollback-apply calls authorize() again from inside
+				// itself with the concrete target id taken from the snapshot.
+				$allowed = user_can( $context->userId, self::META_CAPABILITY_MAP[ $capability ] );
+			} else {
+				$allowed = user_can( $context->userId, $capability );
+			}
 
 			if ( ! $allowed ) {
 				throw new OperationException(

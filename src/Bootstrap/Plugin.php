@@ -21,6 +21,11 @@ use SiteHelm\Policy\PolicyEngine;
 use SiteHelm\Registry\CapabilityRegistry;
 use SiteHelm\Registry\CatalogBuilder;
 use SiteHelm\Schema\SchemaValidator;
+use SiteHelm\Storage\AuditStore;
+use SiteHelm\Storage\Installer;
+use SiteHelm\Storage\PlanStore;
+use SiteHelm\Storage\Retention;
+use SiteHelm\Storage\SnapshotStore;
 use Throwable;
 
 /**
@@ -79,7 +84,32 @@ final class Plugin {
 
 		$transport = new RestTransport( $server );
 		add_action( 'rest_api_init', [ $transport, 'registerRoute' ] );
+
+		$this->registerMaintenance();
 	}
+
+	/**
+	 * Hooks the schema upgrade check and the retention pruning event.
+	 *
+	 * The upgrade check runs on `admin_init` rather than on every request. It is
+	 * a cheap option read on a healthy site, but `maybeUpgrade()` has no backoff:
+	 * while storage is unavailable every call re-runs three `dbDelta` statements
+	 * and three `SHOW TABLES` queries. Binding it to anonymous front-end traffic
+	 * would turn a broken install into a load problem, and an administrator visit
+	 * is guaranteed after an update anyway.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+	 */
+	private function registerMaintenance(): void {
+		add_action( 'admin_init', [ new Installer(), 'maybeUpgrade' ] );
+		add_action(
+			Retention::CRON_HOOK,
+			static function (): void {
+				( new Retention( new PlanStore(), new AuditStore(), new SnapshotStore() ) )->prune( time() );
+			}
+		);
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 
 	/**
 	 * Constructs each module inside its own isolation boundary. A module whose

@@ -65,3 +65,75 @@ Process lessons from this phase are recorded in `tasks/lessons.md`.
 **Phase 2 approved by the user on 2026-07-25.** The phase gate is closed: all 14 tasks review-clean, whole-branch review findings fixed and re-reviewed, both Critical defects verified closed over real HTTP on a conventional nginx + FastCGI + MySQL stack, 128 tests passing, `phpcs` clean, 88.72% line coverage. Merged to `main` (39 commits); branch `worktree-phase-2-foundation` deleted after `git branch -d` confirmed the merge.
 
 Next action: Phase 3 planning (WordPress content, media, and menu modules) may begin. Before planning, read the "Residual risks inherited by Phase 3" section of `docs/superpowers/plans/2026-07-25-phase-2-mcp-gateway-foundation.md` — in particular the catalog capability-filtering trap, which will silently hide the first registered write operation from every user's catalog, administrators included.
+
+## Phase 3a — Change Engine
+
+Branch `worktree-phase-3a-change-engine`, base `7c3fc3e`. Executed with the
+subagent-driven-development process: a fresh implementer per task, then a
+reviewer gating spec compliance and quality, then fix rounds until clean.
+
+### 1. Task table
+
+| # | Title | Result | Commits |
+|---|---|---|---|
+| 1 | Close Phase 2 residual risks | pass | `fb8282d` |
+| 2 | Core module and content retrieval (REQ-0011) | pass with deviation | `fee1457`, `86be8fd` — a lint suppression spanned three methods, contradicting the plan's own Global Constraint; split per method. |
+| 3 | Database installer for three tables | pass | `1f92d77` |
+| 4 | Plan store with hashed single-use tokens | pass with deviation | `d14bbc7`, `deadef7` — the suite survived weakening the single-use check and inverting the digest lookup; both now pinned. |
+| 5 | Audit store | pass | `a82f3a7` |
+| 6 | Snapshot store and retention pruning | pass with deviation | `a6bb543`, `6d4ac28` — no test asserted which table a statement targeted; four mutations survived. |
+| 7 | Deterministic state layer and fingerprint | pass with deviation | `5113848`, `9ec9e9c` — a clock-dependent field could be added to the hash with the suite green. |
+| 8 | Preview renderer | pass with deviation | `d545efc`, `f5b5948` — escaping covered ASCII newlines only; Unicode line separators and bidi overrides passed through. |
+| 9 | Audit redactor and recorder | pass with deviation | `c2eba9e`, `282ceba` — `finish()` cleared the recovery handle `start()` wrote, orphaning a real snapshot. |
+| 10 | Write-operation contract and registry write path | pass with deviation | `41cf314`, `fa0e6cf` — a write registered through the read path bypassed the engine; guard deferred to Task 13 and documented in code. |
+| 11 | Change engine plan phase (REQ-0005) | pass with deviation | `900a5fe`, `3037825` — nothing pinned which state was fingerprinted. |
+| 12 | Change engine apply phase (REQ-0006, REQ-0007) | pass with deviation | `b8d5cbb`, `c8bfeb8` — `readBack()` sat outside the try/catch, so a write that landed but could not be re-read left the audit row open. |
+| 13 | Dispatcher write routing and plan-token argument | pass with deviation | `3614301`, `22c91e3` — closed Task 10's bypass and converted nine fixtures; a non-array `arguments` was coerced rather than refused. |
+| 14 | Content update (REQ-0014) | pass | `f39a5da` |
+| 15 | Content creation (REQ-0013) | pass with deviation | `69cd9cb`, `f9b66cd` — two capability bypasses: `private` status was ungated, and post-type capabilities were ignored. |
+| 16 | Rollback execution (REQ-0008) | pass with deviation | `e5f7849`, `a021a7c` — a chained rollback escaped the target-bound capability check. |
+| 17 | Audit log read (REQ-0009) | pass | `ef2e8f3` |
+| 18 | Activation, retention wiring, real-site demonstration | pass with deviation | this commit — the live run found that a target-less meta-capability check refused every user, making rollback unusable through the gateway. Fixed in `PolicyEngine`. |
+
+### 2. Gate results
+
+| Gate | Result |
+|---|---|
+| `vendor/bin/phpunit` | 411 tests, 986 assertions, exit 0 |
+| `vendor/bin/phpcs` (no path argument, repo-wide) | exit 0, 0 error/warning lines |
+| Line coverage on `src/` | 94.11% (1951/2073), floor 80% |
+
+Coverage measured with LocalWP's bundled Xdebug loaded via CLI flags only; no
+configuration file was modified.
+
+### 3. Evidence
+
+`docs/product/phase-3a-demonstration.md` — 13 of 13 checklist items confirmed
+against a live WordPress 7.0.2 / PHP 8.2.29 / MySQL 8.4.0 install, every request
+and response recorded verbatim.
+
+### 4. Open items carried forward
+
+- **Runtime `outputSchema` validation is deferred** per recorded interpretation I6.
+  Phase 2 shipped none and Phase 3a adds none; the interim mitigation is a
+  per-operation conformance test for each of the five registered operations,
+  covering both branches of the write union. Validation at the dispatcher's
+  return point is **required before V1 public release**, because that is the
+  point at which the declared schema becomes a promise to third-party clients.
+- **`OperationError` has no field for a recovery handle**, so a caller meeting
+  `verification_failed` cannot self-serve a rollback reference and must ask an
+  administrator to locate the record by `correlationId`. Recorded interpretation
+  I4; an open candidate for the next contract revision.
+- `ContentUpdate`'s verification models only `kses`, so a third-party
+  `content_save_pre` filter would make a write that actually landed report
+  `verification_failed`. Needs a decision about how much filter behaviour to
+  model.
+- `AuditRecorder::finish()` accepts any outcome string, so a typo persists and
+  returns true. The `OUTCOME_*` constants exist but are not enforced.
+- `AuditStore`'s audit query carries no `site_id` constraint (pre-existing).
+- An object field value reaches an uncaught `Error` in both `AuditRedactor` and
+  `PreviewRenderer`.
+- The machine diff in a preview is unbounded, deliberately, because the apply
+  phase needs literal values. No input `maxLength` is declared anywhere yet.
+
+**User approval is required before Phase 3b planning begins.**

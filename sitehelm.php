@@ -58,6 +58,37 @@ function sitehelm_boot(): void {
 	\SiteHelm\Bootstrap\Plugin::instance()->register();
 }
 
+/**
+ * Create the plugin's local tables and schedule retention pruning.
+ *
+ * The autoloader is required here explicitly: `plugins_loaded` has already
+ * fired by the time an activation callback runs, so `sitehelm_boot()` has not
+ * loaded it for this request.
+ */
+function sitehelm_activate(): void {
+	if ( file_exists( __DIR__ . '/vendor/autoload.php' ) ) {
+		require_once __DIR__ . '/vendor/autoload.php';
+	}
+
+	( new \SiteHelm\Storage\Installer() )->install();
+	\SiteHelm\Storage\Retention::schedule();
+}
+
+/**
+ * Clear the retention pruning event. Recorded audit events and snapshots are
+ * deliberately left in place: deactivating a plugin must not destroy an
+ * accountability record.
+ */
+function sitehelm_deactivate(): void {
+	if ( file_exists( __DIR__ . '/vendor/autoload.php' ) ) {
+		require_once __DIR__ . '/vendor/autoload.php';
+	}
+
+	\SiteHelm\Storage\Retention::unschedule();
+}
+
 if ( defined( 'ABSPATH' ) ) {
 	add_action( 'plugins_loaded', 'sitehelm_boot' );
+	register_activation_hook( __FILE__, 'sitehelm_activate' );
+	register_deactivation_hook( __FILE__, 'sitehelm_deactivate' );
 }

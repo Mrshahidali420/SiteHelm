@@ -412,12 +412,26 @@ final class DispatcherTest extends TestCase {
 
 	/**
 	 * A non-numeric target reference resolves to no target, so the policy engine
-	 * falls back to the generic capability check.
+	 * falls back to the primitive that governs the meta-capability.
+	 *
+	 * It must NOT ask WordPress for a target-less `edit_post`. WordPress resolves
+	 * a meta-capability with no object to `do_not_allow`, so that check refuses
+	 * every user including administrators. The live demonstration found this the
+	 * hard way: `content-rollback-apply` identifies its target by a rollback
+	 * reference rather than a post id, so the dispatcher had no id to pass and
+	 * the operation was unusable by anyone, while the catalog — which already
+	 * mapped to the primitive — still advertised it as available.
+	 *
+	 * Falling back to `edit_posts` is deliberately coarse. It is safe because
+	 * there is no target for anyone to check against at this point, and the
+	 * operations that do resolve one re-check it precisely: rollback calls
+	 * authorize() again from inside itself with the concrete target id taken
+	 * from the snapshot.
 	 *
 	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 	 */
-	public function test_non_numeric_target_falls_back_to_the_generic_check(): void {
-		$this->assertSame( [ [ 'edit_post', null ] ], $this->captureCapabilityChecks( 'abc' ) );
+	public function test_non_numeric_target_falls_back_to_the_governing_primitive(): void {
+		$this->assertSame( [ [ 'edit_posts', null ] ], $this->captureCapabilityChecks( 'abc' ) );
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 
