@@ -156,8 +156,10 @@ final class FakeWpdb {
 		$rows            = array_shift( $this->queryRowsQueue );
 
 		if ( false === $rows ) {
-			$this->rows_affected = 0;
-
+			// rows_affected is deliberately left holding its previous value.
+			// Real wpdb::query() returns false before flush() when the
+			// connection is not ready, so a caller that trusts the count
+			// without checking the return reads a stale success.
 			return false;
 		}
 		$this->rows_affected = is_int( $rows ) ? $rows : 0;

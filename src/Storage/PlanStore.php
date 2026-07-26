@@ -93,7 +93,6 @@ final class PlanStore {
 	 * @return bool True when the row was written.
 	 *
 	 * phpcs:disable WordPress.DB.DirectDatabaseQuery.DirectQuery
-	 * phpcs:disable WordPress.DB.DirectDatabaseQuery.NoCaching
 	 */
 	public function store( array $row ): bool {
 		global $wpdb;
@@ -121,7 +120,6 @@ final class PlanStore {
 		return false !== $inserted;
 	}
 	// phpcs:enable WordPress.DB.DirectDatabaseQuery.DirectQuery
-	// phpcs:enable WordPress.DB.DirectDatabaseQuery.NoCaching
 
 	/**
 	 * Resolves one plan row by token digest.
@@ -161,6 +159,21 @@ final class PlanStore {
 	/**
 	 * Claims one plan for single use.
 	 *
+	 * Exactly one row must be affected. The UNIQUE index on token_hash bounds
+	 * the match to at most one row, and `consumed_at IS NULL` is re-evaluated
+	 * under InnoDB's row lock, so of two concurrent applies presenting the same
+	 * token the winner sees 1 and the loser sees 0. Reading first and writing
+	 * second would race; this does not.
+	 *
+	 * The expiry condition is defence in depth. ChangeEngine::apply() already
+	 * refuses an expired plan with the shared stale_plan exception before it
+	 * reaches this method, and does so at least as strictly (it compares
+	 * `expires_at <= requestTime` against the same clock). Repeating the check
+	 * here keeps a stale row that outlived the prune grace from binding for a
+	 * direct caller that forgot it. This method still reports failure the same
+	 * way for every cause, so nothing here lets a caller distinguish an expired
+	 * plan from an unknown or already-claimed one.
+	 *
 	 * @param string $tokenDigest The stored digest of the client's token.
 	 * @param int    $now         The server-side request time.
 	 *
@@ -174,16 +187,20 @@ final class PlanStore {
 	public function consume( string $tokenDigest, int $now ): bool {
 		global $wpdb;
 
-		$table = Installer::tableName( Installer::TABLE_PLANS );
-		$wpdb->query(
+		$table    = Installer::tableName( Installer::TABLE_PLANS );
+		$affected = $wpdb->query(
 			$wpdb->prepare(
-				"UPDATE {$table} SET consumed_at = %d WHERE token_hash = %s AND consumed_at IS NULL",
+				"UPDATE {$table} SET consumed_at = %d WHERE token_hash = %s AND consumed_at IS NULL AND expires_at >= %d",
 				$now,
-				$tokenDigest
+				$tokenDigest,
+				$now
 			)
 		);
 
-		return 1 === $wpdb->rows_affected;
+		// A failed query leaves rows_affected holding whatever the previous
+		// statement set, so the count is only meaningful once the query itself
+		// is known to have run.
+		return false !== $affected && 1 === $wpdb->rows_affected;
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
 	// phpcs:enable WordPress.DB.DirectDatabaseQuery.DirectQuery
@@ -208,7 +225,7 @@ final class PlanStore {
 		$table   = Installer::tableName( Installer::TABLE_PLANS );
 		$deleted = $wpdb->query(
 			$wpdb->prepare(
-				"DELETE FROM {$table} WHERE expires_at < %d LIMIT %d",
+				"DELETE FROM {$table} WHERE expires_at < %d ORDER BY expires_at LIMIT %d",
 				$now - self::GRACE_SECONDS,
 				self::PRUNE_LIMIT
 			)

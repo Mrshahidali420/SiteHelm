@@ -122,11 +122,96 @@ final class PlanStoreTest extends TestCase {
 
 		$prepared = $this->wpdb->prepared[0];
 		$this->assertStringContainsString( 'consumed_at IS NULL', $prepared['query'] );
-		$this->assertSame( [ 1_800_000_100, $digest ], $prepared['args'] );
+		$this->assertSame( [ 1_800_000_100, $digest, 1_800_000_100 ], $prepared['args'] );
+	}
+
+	/**
+	 * Single use means exactly one row, not at least one.
+	 *
+	 * Without this, weakening the check to `0 < $wpdb->rows_affected` passes the
+	 * whole suite: the replay test only ever supplies 1 then 0, and both
+	 * comparisons agree on those two values. A count above 1 means the WHERE
+	 * clause matched more rows than the unique index should allow, which is a
+	 * corrupted index or a rewritten query — either way the claim is not
+	 * exclusive and must not be reported as success.
+	 */
+	public function test_consume_refuses_when_more_than_one_row_was_affected(): void {
+		$this->wpdb->queryRowsQueue = [ 2 ];
+
+		$this->assertFalse( $this->store->consume( str_repeat( 'e', 64 ), 1_800_000_100 ) );
+	}
+
+	/**
+	 * A failed query must not be read as a successful claim.
+	 *
+	 * rows_affected still holds the previous statement's count when wpdb returns
+	 * false before flushing, so a caller that trusts the count alone claims a
+	 * plan that was never marked consumed. The first consume here sets the count
+	 * to 1; the second query fails, and the stale 1 must not be believed.
+	 */
+	public function test_consume_refuses_when_the_query_itself_fails(): void {
+		$digest                     = str_repeat( 'e', 64 );
+		$this->wpdb->queryRowsQueue = [ 1, false ];
+
+		$this->assertTrue( $this->store->consume( $digest, 1_800_000_100 ) );
+		$this->assertSame( 1, $this->wpdb->rows_affected );
+		$this->assertFalse( $this->store->consume( $digest, 1_800_000_200 ) );
+	}
+
+	/**
+	 * Expiry is re-checked in the claim itself, as defence in depth.
+	 *
+	 * ChangeEngine::apply() refuses an expired plan before reaching this method
+	 * and does so at least as strictly, so this can never reject a plan the
+	 * engine accepted. It exists so a row that outlived the prune grace cannot
+	 * bind for a direct caller that forgot the check.
+	 */
+	public function test_consume_requires_the_plan_to_be_unexpired(): void {
+		$this->wpdb->queryRowsQueue = [ 1 ];
+
+		$this->store->consume( str_repeat( 'e', 64 ), 1_800_000_100 );
+
+		$this->assertStringContainsString( 'expires_at >= %d', $this->wpdb->prepared[0]['query'] );
 	}
 
 	public function test_find_returns_null_when_no_row_matches(): void {
 		$this->assertNull( $this->store->find( str_repeat( 'f', 64 ) ) );
+	}
+
+	/**
+	 * The digest is matched by equality, and the query is the only place that
+	 * can be asserted.
+	 *
+	 * FakeWpdb replays a queued row regardless of the SQL it is handed, so a
+	 * test that only checks the returned row passes even if the comparison is
+	 * inverted to `!=` — which would hand the caller somebody else's plan. The
+	 * assertion therefore has to be on the prepared statement itself.
+	 */
+	public function test_find_binds_the_digest_with_an_equality_comparison(): void {
+		$digest = str_repeat( 'f', 64 );
+
+		$this->store->find( $digest );
+
+		$prepared = $this->wpdb->prepared[0];
+		$this->assertStringContainsString( 'WHERE token_hash = %s', $prepared['query'] );
+		$this->assertStringNotContainsString( '!=', $prepared['query'] );
+		$this->assertSame( [ $digest ], $prepared['args'] );
+	}
+
+	/**
+	 * A bounded DELETE needs a deterministic order.
+	 *
+	 * `DELETE ... LIMIT` without `ORDER BY` is unsafe for statement-based
+	 * replication and warns on hosts running binlog_format=STATEMENT. Ordering
+	 * by expires_at also makes the bounded prune remove the longest-expired
+	 * rows first, which is the useful order.
+	 */
+	public function test_prune_orders_before_limiting(): void {
+		$this->wpdb->queryRowsQueue = [ 3 ];
+
+		$this->store->pruneExpired( 1_800_000_100 );
+
+		$this->assertStringContainsString( 'ORDER BY expires_at LIMIT', $this->wpdb->prepared[0]['query'] );
 	}
 
 	public function test_find_returns_the_matching_row(): void {
