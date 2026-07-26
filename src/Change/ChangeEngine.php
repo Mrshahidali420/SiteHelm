@@ -443,14 +443,15 @@ final class ChangeEngine {
 			);
 		}
 
-		// The operation kept every promise it made, but something else may have
-		// changed fields the preview never showed — a third-party save_post hook
-		// rewriting post_content, retagging terms, or regenerating the slug. The
-		// caller approved a preview that did not mention them, so each is named
-		// here. Names only, never values, exactly as in the audit summary.
+		// The operation kept every promise it made, but fields the preview never
+		// showed may still have changed — WordPress renames a slug when a post is
+		// trashed, and a save_post hook can rewrite content. The caller approved a
+		// preview that did not mention them, so each is named here. Names only,
+		// never values, exactly as in the audit summary. The engine cannot tell
+		// which actor changed the field, so it does not guess.
 		foreach ( $this->unpromised_changes( $planned, $current, $after ) as $field ) {
 			$warnings[] = sprintf(
-				'The write also changed %s, which the approved plan did not promise. Another plugin on this site is likely modifying content on save.',
+				'The write also changed %s, which the approved plan did not promise. Compare the reported state against the preview you approved.',
 				$field
 			);
 		}
