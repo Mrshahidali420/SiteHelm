@@ -47,6 +47,33 @@ final class StateFingerprintTest extends TestCase {
 		);
 	}
 
+	/**
+	 * The fingerprint of a known state is pinned to a known value.
+	 *
+	 * Every other test here compares two fingerprints to each other, which
+	 * proves the hash reacts to a change but says nothing about what goes into
+	 * it. A golden value pins the whole structure at once: adding a key,
+	 * removing one, reordering them, changing the algorithm, or altering the
+	 * JSON encoding all move this hash.
+	 *
+	 * It closes the specific hole a review found — injecting a clock-dependent
+	 * value such as time() into the hashed array left every comparison test
+	 * passing, because both calls in a sub-second test read the same second.
+	 * A fingerprint that drifts with the clock would fail apply with `conflict`
+	 * for a target nobody touched, which is the failure mode most likely to
+	 * make operators stop trusting the check.
+	 *
+	 * If a deliberate change to the hashed shape breaks this, recompute the
+	 * value — but only after confirming the change was intended, because every
+	 * previously issued plan token's stored fingerprint stops matching.
+	 */
+	public function test_the_fingerprint_of_a_known_state_is_a_known_value(): void {
+		$this->assertSame(
+			'b45b517426e6dc7c623371f846eaa06e65637367de9c1df3009b801660df76d0',
+			$this->fingerprint->compute( $this->makeState(), $this->makeContext() )
+		);
+	}
+
 	private function makeState( string $title = 'Original title' ): TargetState {
 		return new TargetState(
 			'post:42',
