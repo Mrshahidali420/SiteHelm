@@ -140,6 +140,19 @@ final class ContentFields {
 	 * Both content write operations call this. They previously held a
 	 * byte-identical private copy each, and the trim was absent from both.
 	 *
+	 * The boundary is deliberate and bounded: this models only PURE, INPUT-ONLY
+	 * transformations — deterministic functions of the requested value alone,
+	 * being core's unconditional trim and the kses pass. It does NOT model
+	 * transformations that depend on database state, other rows, the clock, or
+	 * capability-gated filter members, because those cannot be known when the
+	 * preview is generated. A slug is uniquified against whatever else exists at
+	 * the moment of the insert; a publish becomes a future depending on the post's
+	 * date; a featured media id is dropped if no such attachment exists. No pure
+	 * function of the input can predict them, so attempting to would manufacture
+	 * a guarantee that cannot be kept. WriteVerifier is what makes leaving them
+	 * unmodelled safe: a value WordPress adjusts succeeds and is disclosed rather
+	 * than reported as a failure.
+	 *
 	 * @param string $field  The normalized field name.
 	 * @param string $value  The requested value.
 	 * @param int    $userId The acting WordPress user.
