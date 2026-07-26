@@ -164,6 +164,29 @@ final class ContentCreateTest extends TestCase {
 		);
 	}
 
+	/**
+	 * Core registers `add_filter( 'title_save_pre', 'trim' )` unconditionally, so
+	 * a creation promising an untrimmed title reports `verification_failed` on a
+	 * write that landed perfectly. Verified against WordPress 7.0.2.
+	 */
+	public function test_the_promised_title_is_trimmed_exactly_as_wordpress_stores_it(): void {
+		$input            = $this->input();
+		$input['title']   = "  Brand new page \n";
+		$input['content'] = "  Padded body \n";
+		$input['excerpt'] = "  Padded excerpt \n";
+
+		$current = $this->operation->resolveTarget( $input, $this->makeContext() );
+		$planned = $this->operation->planChange( $current, $input, $this->makeContext() );
+
+		$this->assertSame( 'Brand new page', $planned->afterFields['post_title'] );
+		$this->assertSame( 'Brand new page', $planned->payload['post_title'] );
+
+		// Core registers no trim for content or excerpt, so promising a trimmed
+		// value for either would create the divergence, not remove it.
+		$this->assertSame( "  Padded body \n", $planned->afterFields['post_content'] );
+		$this->assertSame( "  Padded excerpt \n", $planned->afterFields['post_excerpt'] );
+	}
+
 	public function test_plan_change_rejects_an_unregistered_content_type(): void {
 		Functions\when( 'post_type_exists' )->justReturn( false );
 		$current = $this->operation->resolveTarget( $this->input(), $this->makeContext() );

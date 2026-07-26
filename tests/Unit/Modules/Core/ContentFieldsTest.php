@@ -53,6 +53,61 @@ final class ContentFieldsTest extends TestCase {
 		$this->assertSame( 0, $this->fields->postIdFromTargetKey( 'snapshot:9' ) );
 	}
 
+	/**
+	 * Both content write operations share one sanitizer, because they each held a
+	 * byte-identical private copy and the missing title trim was missing from
+	 * both. Core's own order is `trim` then kses, both at priority 10 on
+	 * `title_save_pre`, so this mirrors that order.
+	 */
+	public function test_sanitize_for_save_trims_the_title_then_applies_kses(): void {
+		Functions\when( 'user_can' )->justReturn( false );
+		Functions\when( 'wp_kses_data' )->alias( static fn( string $v ): string => str_replace( '<script>', '', $v ) );
+
+		$this->assertSame(
+			'Clean new heading',
+			$this->fields->sanitizeForSave( 'post_title', '  Clean new heading  ', 7 )
+		);
+		$this->assertSame(
+			'Clean new heading',
+			$this->fields->sanitizeForSave( 'post_title', "Clean new heading\n", 7 )
+		);
+		$this->assertSame(
+			'bad()</script>Heading',
+			$this->fields->sanitizeForSave( 'post_title', "  <script>bad()</script>Heading \n", 7 )
+		);
+	}
+
+	/**
+	 * Core registers the title trim in default-filters.php, outside
+	 * kses_init_filters(), so it is not part of the unfiltered_html bypass.
+	 */
+	public function test_sanitize_for_save_trims_the_title_for_unfiltered_html_too(): void {
+		Functions\when( 'user_can' )->justReturn( true );
+
+		$this->assertSame(
+			'<script>kept</script>',
+			$this->fields->sanitizeForSave( 'post_title', "  <script>kept</script> \n", 7 )
+		);
+	}
+
+	/**
+	 * Core registers no trim on `content_save_pre` or `excerpt_save_pre`.
+	 * Verified against WordPress 7.0.2: both are stored byte-identical.
+	 */
+	public function test_sanitize_for_save_does_not_trim_content_or_excerpt(): void {
+		Functions\when( 'user_can' )->justReturn( false );
+		Functions\when( 'wp_kses_post' )->alias( static fn( string $v ): string => $v );
+
+		$this->assertSame(
+			"  Padded body \n",
+			$this->fields->sanitizeForSave( 'post_content', "  Padded body \n", 7 )
+		);
+		$this->assertSame(
+			"  Padded excerpt \n",
+			$this->fields->sanitizeForSave( 'post_excerpt', "  Padded excerpt \n", 7 )
+		);
+	}
+
 	public function test_allowlist_rejects_protected_and_malformed_keys_and_sorts(): void {
 		Functions\when( 'get_option' )->justReturn(
 			[ 'subtitle', '_thumbnail_id', 'ok_key', 'bad key!', 'subtitle', 42 ]

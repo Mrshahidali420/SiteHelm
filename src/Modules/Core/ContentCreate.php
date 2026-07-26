@@ -119,9 +119,9 @@ final class ContentCreate implements WriteOperation {
 		$promised = [
 			'post_type'    => $type,
 			'post_status'  => $status,
-			'post_title'   => $this->sanitize( 'post_title', (string) ( $input['title'] ?? '' ), $context ),
-			'post_content' => $this->sanitize( 'post_content', (string) ( $input['content'] ?? '' ), $context ),
-			'post_excerpt' => $this->sanitize( 'post_excerpt', (string) ( $input['excerpt'] ?? '' ), $context ),
+			'post_title'   => $this->fields->sanitizeForSave( 'post_title', (string) ( $input['title'] ?? '' ), $context->userId ),
+			'post_content' => $this->fields->sanitizeForSave( 'post_content', (string) ( $input['content'] ?? '' ), $context->userId ),
+			'post_excerpt' => $this->fields->sanitizeForSave( 'post_excerpt', (string) ( $input['excerpt'] ?? '' ), $context->userId ),
 		];
 		ksort( $promised, SORT_STRING );
 
@@ -251,27 +251,4 @@ final class ContentCreate implements WriteOperation {
 
 		return $object;
 	}
-
-	/**
-	 * Applies the same sanitizer WordPress applies to this field on save.
-	 *
-	 * @param string           $field   The normalized field name.
-	 * @param string           $value   The requested value.
-	 * @param OperationContext $context The request context.
-	 *
-	 * @return string The value as WordPress will store it.
-	 *
-	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
-	 */
-	private function sanitize( string $field, string $value, OperationContext $context ): string {
-		if ( user_can( $context->userId, 'unfiltered_html' ) ) {
-			return $value;
-		}
-
-		return match ( $field ) {
-			'post_title' => (string) wp_kses_data( $value ),
-			default      => (string) wp_kses_post( $value ),
-		};
-	}
-	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 }

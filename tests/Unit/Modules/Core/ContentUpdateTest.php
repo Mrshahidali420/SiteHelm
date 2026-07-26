@@ -168,6 +168,86 @@ final class ContentUpdateTest extends TestCase {
 		$this->assertSame( '<script>bad()</script>', $planned->afterFields['post_content'] );
 	}
 
+	/**
+	 * WordPress core registers `add_filter( 'title_save_pre', 'trim' )` in
+	 * default-filters.php. Promising the untrimmed title made a correct write
+	 * report `verification_failed`: the read-back saw the trimmed title core had
+	 * actually stored, disagreed with the promise, and told the operator to undo
+	 * a change that had landed perfectly. Verified against WordPress 7.0.2.
+	 */
+	public function test_the_promised_title_is_trimmed_exactly_as_wordpress_stores_it(): void {
+		$current = $this->operation->resolveTarget( [ 'id' => 42 ], $this->makeContext() );
+		$planned = $this->operation->planChange(
+			$current,
+			[
+				'id'    => 42,
+				'title' => '  Clean new heading  ',
+			],
+			$this->makeContext()
+		);
+
+		$this->assertSame( 'Clean new heading', $planned->afterFields['post_title'] );
+		$this->assertSame( 'Clean new heading', $planned->payload['post_title'] );
+	}
+
+	/**
+	 * A trailing newline is the routine case: it is ordinary language-model
+	 * output, and this product's primary client is a language model.
+	 */
+	public function test_a_promised_title_with_a_trailing_newline_is_trimmed(): void {
+		$current = $this->operation->resolveTarget( [ 'id' => 42 ], $this->makeContext() );
+		$planned = $this->operation->planChange(
+			$current,
+			[
+				'id'    => 42,
+				'title' => "Clean new heading\n",
+			],
+			$this->makeContext()
+		);
+
+		$this->assertSame( 'Clean new heading', $planned->afterFields['post_title'] );
+	}
+
+	/**
+	 * Core registers the title trim OUTSIDE kses_init_filters(), so it applies on
+	 * every branch. Returning early for unfiltered_html therefore skipped it.
+	 */
+	public function test_the_promised_title_is_trimmed_for_unfiltered_html_too(): void {
+		Functions\when( 'user_can' )->justReturn( true );
+		$current = $this->operation->resolveTarget( [ 'id' => 42 ], $this->makeContext() );
+		$planned = $this->operation->planChange(
+			$current,
+			[
+				'id'    => 42,
+				'title' => "  Clean new heading \n",
+			],
+			$this->makeContext()
+		);
+
+		$this->assertSame( 'Clean new heading', $planned->afterFields['post_title'] );
+	}
+
+	/**
+	 * Core registers no trim on `content_save_pre` or `excerpt_save_pre`, so
+	 * trimming those would introduce the very divergence the title trim removes.
+	 * Verified against WordPress 7.0.2: both were stored byte-identical.
+	 */
+	public function test_the_promised_content_and_excerpt_keep_their_surrounding_whitespace(): void {
+		$current = $this->operation->resolveTarget( [ 'id' => 42 ], $this->makeContext() );
+		$planned = $this->operation->planChange(
+			$current,
+			[
+				'id'      => 42,
+				'content' => "  Padded body \n",
+				'excerpt' => "  Padded excerpt \n",
+			],
+			$this->makeContext()
+		);
+
+		$this->assertSame( "  Padded body \n", $planned->afterFields['post_content'] );
+		$this->assertSame( "  Padded excerpt \n", $planned->afterFields['post_excerpt'] );
+	}
+
 	public function test_plan_change_requires_at_least_one_changeable_field(): void {
 		$current = $this->operation->resolveTarget( [ 'id' => 42 ], $this->makeContext() );
 

@@ -79,6 +79,7 @@ final class ContentUpdate implements WriteOperation {
 	 * @throws OperationException With ErrorCode::InvalidInput when nothing
 	 *                           changeable was supplied.
 	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 	 * phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 	 */
 	public function planChange( TargetState $current, array $input, OperationContext $context ): PlannedChange {
@@ -88,7 +89,11 @@ final class ContentUpdate implements WriteOperation {
 			if ( ! array_key_exists( $property, $input ) ) {
 				continue;
 			}
-			$promised[ $field ] = $this->sanitize( $field, (string) $input[ $property ], $context );
+			$promised[ $field ] = $this->fields->sanitizeForSave(
+				$field,
+				(string) $input[ $property ],
+				$context->userId
+			);
 		}
 
 		if ( [] === $promised ) {
@@ -103,6 +108,7 @@ final class ContentUpdate implements WriteOperation {
 
 		return new PlannedChange( $promised, $promised, ContentFields::FIELD_ORDER );
 	}
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 
 	/**
@@ -192,30 +198,4 @@ final class ContentUpdate implements WriteOperation {
 		return $this->targets->restoreFields( $restoreState );
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
-
-	/**
-	 * Applies the same sanitizer WordPress applies to this field on save.
-	 *
-	 * A user holding unfiltered_html bypasses kses in WordPress, so the promise
-	 * must bypass it too or verification would fail for that user.
-	 *
-	 * @param string           $field   The normalized field name.
-	 * @param string           $value   The requested value.
-	 * @param OperationContext $context The request context.
-	 *
-	 * @return string The value as WordPress will store it.
-	 *
-	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
-	 */
-	private function sanitize( string $field, string $value, OperationContext $context ): string {
-		if ( user_can( $context->userId, 'unfiltered_html' ) ) {
-			return $value;
-		}
-
-		return match ( $field ) {
-			'post_title' => (string) wp_kses_data( $value ),
-			default      => (string) wp_kses_post( $value ),
-		};
-	}
-	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 }

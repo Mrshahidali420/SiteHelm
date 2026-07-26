@@ -58,6 +58,20 @@ final class ContentFields {
 	private const MAX_META_KEY_LENGTH = 255;
 
 	/**
+	 * The fields WordPress trims unconditionally when it stores them.
+	 *
+	 * Core registers `add_filter( 'title_save_pre', 'trim' )` in
+	 * default-filters.php, OUTSIDE kses_init_filters(). That placement is the
+	 * whole point: the trim applies on every branch, including a user holding
+	 * unfiltered_html for whom kses never runs, and `wp_kses_data` does not trim.
+	 *
+	 * Verified against WordPress 7.0.2: a title sent as "  Padded title \n" is
+	 * stored as "Padded title", while `content_save_pre` and `excerpt_save_pre`
+	 * register no trim at all and stored the same padding byte-identically.
+	 */
+	private const TRIMMED_FIELDS = [ 'post_title' ];
+
+	/**
 	 * The stable target key for one existing post.
 	 *
 	 * @param int $postId The post identifier.
@@ -103,6 +117,51 @@ final class ContentFields {
 		$suffix = substr( $targetKey, strlen( self::POST_PREFIX ) );
 
 		return ctype_digit( $suffix ) ? (int) $suffix : 0;
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+
+	/**
+	 * One content field's value exactly as WordPress will store it.
+	 *
+	 * The promised after-state must model what WordPress actually persists,
+	 * because verification re-reads the item and compares it against that
+	 * promise. A transformation core applies that the promise does not model
+	 * makes a perfectly correct write report `verification_failed` and invites
+	 * the operator to undo it — which is precisely what the missing title trim
+	 * did. So this models core's save filters in core's own order: the
+	 * unconditional trim first, then kses, matching the registration order of
+	 * the two priority-10 callbacks on `title_save_pre`.
+	 *
+	 * A user holding unfiltered_html bypasses kses in WordPress, so the promise
+	 * bypasses it too or verification would fail for that user. The trim is not
+	 * part of that bypass, because core does not register it with the kses set.
+	 *
+	 * Both content write operations call this. They previously held a
+	 * byte-identical private copy each, and the trim was absent from both.
+	 *
+	 * @param string $field  The normalized field name.
+	 * @param string $value  The requested value.
+	 * @param int    $userId The acting WordPress user.
+	 *
+	 * @return string The value as WordPress will store it.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+	 * phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+	 */
+	public function sanitizeForSave( string $field, string $value, int $userId ): string {
+		if ( in_array( $field, self::TRIMMED_FIELDS, true ) ) {
+			$value = trim( $value );
+		}
+
+		if ( user_can( $userId, 'unfiltered_html' ) ) {
+			return $value;
+		}
+
+		return match ( $field ) {
+			'post_title' => (string) wp_kses_data( $value ),
+			default      => (string) wp_kses_post( $value ),
+		};
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
 	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
