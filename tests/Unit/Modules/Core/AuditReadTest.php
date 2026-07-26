@@ -110,6 +110,38 @@ final class AuditReadTest extends TestCase {
 		$this->assertSame( 1, $data['total'] );
 	}
 
+	/**
+	 * The output schema declares `entries.items` as an open `{type: object}`,
+	 * so nothing in the schema itself resists an entry surfacing a raw,
+	 * unredacted column. Audit rows summarize real content changes, so the
+	 * exact key set the operation returns must be pinned here: every key is
+	 * either request metadata or the redactor's own structured output, never
+	 * a raw stored column exposed unfiltered.
+	 */
+	public function test_the_entry_exposes_exactly_the_declared_keys_and_nothing_else(): void {
+		$this->wpdb->resultQueue = [ [ $this->row() ] ];
+		$this->wpdb->varQueue    = [ 1 ];
+
+		$entry = $this->handler->handle( [], $this->makeContext() )['entries'][0];
+
+		$this->assertSame(
+			[
+				'auditRef',
+				'correlationId',
+				'actor',
+				'client',
+				'operation',
+				'target',
+				'planFingerprint',
+				'outcome',
+				'summary',
+				'rollbackRef',
+				'timestamp',
+			],
+			array_keys( $entry )
+		);
+	}
+
 	public function test_the_summary_carries_names_and_sizes_but_no_values(): void {
 		$this->wpdb->resultQueue = [ [ $this->row() ] ];
 		$this->wpdb->varQueue    = [ 1 ];

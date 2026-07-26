@@ -160,7 +160,10 @@ final class ContentRollbackApply implements WriteOperation {
 
 		$snapshot = $this->snapshots->findByRef( (string) ( $planned->payload['rollbackRef'] ?? '' ) );
 		if ( null !== $snapshot ) {
-			$this->snapshots->markRestored( (int) $snapshot['id'], $context->requestTime );
+			$snapshot_id = (int) $snapshot['id'];
+			if ( ! $this->snapshots->markRestored( $snapshot_id, $context->requestTime ) ) {
+				$this->log_unmarked_snapshot( $snapshot_id );
+			}
 		}
 
 		return $target_key;
@@ -378,4 +381,23 @@ final class ContentRollbackApply implements WriteOperation {
 
 		return is_array( $decoded ) ? $decoded : [];
 	}
+
+	/**
+	 * Logs server-side when a restored snapshot could not be stamped
+	 * `restored_at`, so the failure is at least discoverable rather than
+	 * silently dropped. The restoration itself already succeeded by this
+	 * point — restoreFields() ran first and would have thrown had it
+	 * failed — so this is a bookkeeping failure only, not a reason to
+	 * report the write itself as failed or to attempt any compensation.
+	 *
+	 * @param int $snapshotId The snapshot row identifier.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+	 * phpcs:disable WordPress.PHP.DevelopmentFunctions.error_log_error_log
+	 */
+	private function log_unmarked_snapshot( int $snapshotId ): void {
+		error_log( sprintf( 'SiteHelm restored a rollback snapshot but could not mark it restored (id: %d).', $snapshotId ) );
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+	// phpcs:enable WordPress.PHP.DevelopmentFunctions.error_log_error_log
 }

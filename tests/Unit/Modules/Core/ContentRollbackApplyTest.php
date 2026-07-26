@@ -241,6 +241,86 @@ final class ContentRollbackApplyTest extends TestCase {
 		$this->assertContains( [ 'edit_post', 42 ], $checked );
 	}
 
+	/**
+	 * A second-generation rollback reference — one whose ORIGIN was itself a
+	 * rollback — must re-check the same target-bound capability every other
+	 * write does. content-rollback-apply's own declared capability supplies
+	 * that check when it is itself the origin, so it must be the target-bound
+	 * meta capability edit_post, not the site-wide primitive edit_posts: a
+	 * user holding blanket edit_posts but lacking edit_post on THIS post must
+	 * be refused, exactly as they already are through a content-update-origin
+	 * reference.
+	 */
+	public function test_a_second_generation_rollback_reference_rechecks_the_target_bound_capability(): void {
+		Functions\when( 'get_bloginfo' )->justReturn( '6.8.1' );
+		$registry = new CapabilityRegistry();
+		( new CoreModule() )->register( $registry );
+
+		$checked = [];
+		Functions\when( 'user_can' )->alias(
+			static function ( int $user_id, string $capability, ...$extra ) use ( &$checked ): bool {
+				$checked[] = [ $capability, $extra[0] ?? null ];
+
+				// Allowed only for the target-bound meta capability on THIS
+				// post — never for the generic, target-less primitive.
+				return 'edit_post' === $capability && 42 === ( $extra[0] ?? null );
+			}
+		);
+
+		$fields    = new ContentFields();
+		$operation = new ContentRollbackApply(
+			$fields,
+			new ContentTarget( $fields ),
+			new SnapshotStore(),
+			$registry,
+			new PolicyEngine()
+		);
+
+		$this->queueSnapshot( [ 'operation_id' => 'content-rollback-apply' ], 2 );
+		$current = $operation->resolveTarget( [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+		$planned = $operation->planChange( $current, [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+
+		$this->assertContains( [ 'edit_post', 42 ], $checked );
+		$this->assertSame( self::REFERENCE, $planned->payload['rollbackRef'] );
+	}
+
+	/**
+	 * The exploit the CRITICAL finding named directly: a caller holding only
+	 * the site-wide primitive edit_posts, without edit_post on this specific
+	 * post, must be refused restoring through a chained (rollback-origin)
+	 * reference — the same caller who is already refused through a
+	 * content-update-origin reference for the identical post and state.
+	 */
+	public function test_a_second_generation_rollback_reference_refuses_a_caller_without_the_target_bound_capability(): void {
+		Functions\when( 'get_bloginfo' )->justReturn( '6.8.1' );
+		$registry = new CapabilityRegistry();
+		( new CoreModule() )->register( $registry );
+
+		// Holds the generic site-wide primitive but not edit_post on this post.
+		Functions\when( 'user_can' )->alias(
+			static fn( int $user_id, string $capability, ...$extra ): bool => 'edit_posts' === $capability
+		);
+
+		$fields    = new ContentFields();
+		$operation = new ContentRollbackApply(
+			$fields,
+			new ContentTarget( $fields ),
+			new SnapshotStore(),
+			$registry,
+			new PolicyEngine()
+		);
+
+		$this->queueSnapshot( [ 'operation_id' => 'content-rollback-apply' ], 2 );
+		$current = $operation->resolveTarget( [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+
+		try {
+			$operation->planChange( $current, [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::Forbidden, $e->errorCode );
+		}
+	}
+
 	public function test_a_missing_original_capability_is_forbidden(): void {
 		Functions\when( 'user_can' )->justReturn( false );
 		$this->queueSnapshot( [], 2 );
@@ -311,6 +391,48 @@ final class ContentRollbackApplyTest extends TestCase {
 	}
 
 	/**
+	 * The cross-site check must run before the capability re-check. If it
+	 * ran later, a cross-site reference paired with a failing capability
+	 * would answer `forbidden` instead of `target_not_found`, disclosing
+	 * that the snapshot exists (just on another site) to a caller who
+	 * should learn nothing about it at all.
+	 */
+	public function test_the_cross_site_check_runs_before_the_capability_recheck(): void {
+		Functions\when( 'user_can' )->justReturn( false );
+		$this->queueSnapshot( [ 'site_id' => 'other.example' ], 2 );
+		$current = $this->operation->resolveTarget( [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+
+		try {
+			$this->operation->planChange( $current, [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::TargetNotFound, $e->errorCode );
+		}
+	}
+
+	/**
+	 * The cross-site check must also run before the module-compatibility
+	 * check. If it ran later, a cross-site reference paired with an inactive
+	 * owning module would answer `rollback_unavailable` instead of
+	 * `target_not_found`, again disclosing that the snapshot exists.
+	 */
+	public function test_the_cross_site_check_runs_before_the_module_compatibility_check(): void {
+		$this->queueSnapshot( [ 'site_id' => 'other.example' ], 2 );
+		$current = $this->operation->resolveTarget( [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+
+		try {
+			$this->operation->planChange(
+				$current,
+				[ 'rollbackRef' => self::REFERENCE ],
+				$this->makeContext( '6.8.1', 'inactive' )
+			);
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::TargetNotFound, $e->errorCode );
+		}
+	}
+
+	/**
 	 * The contract scopes a write dispatcher's rollback to its OWN domain. A
 	 * snapshot recorded by another module can be perfectly healthy — the module
 	 * compatibility check would pass it — and still not be this operation's to
@@ -358,15 +480,19 @@ final class ContentRollbackApplyTest extends TestCase {
 	/**
 	 * A missing reference, a reference belonging to another site, and a
 	 * reference recorded by another module must be indistinguishable from the
-	 * caller's side: the same code AND the same message, or the response
-	 * becomes a probe for which rollback references exist.
+	 * caller's side: the same code, the same message, AND the same
+	 * remediation, or the response becomes a probe for which rollback
+	 * references exist. remediation is a separate property surfaced in the
+	 * same error envelope (OperationError::toArray()), so comparing message
+	 * alone would still let a divergent remediation leak which case fired.
 	 */
 	public function test_missing_cross_site_and_cross_module_refusals_share_one_message(): void {
 		try {
 			$this->operation->resolveTarget( [ 'rollbackRef' => 'rb-missing' ], $this->makeContext() );
 			$this->fail( 'Expected OperationException' );
 		} catch ( OperationException $missing ) {
-			$missing_message = $missing->getMessage();
+			$missing_message     = $missing->getMessage();
+			$missing_remediation = $missing->remediation;
 		}
 
 		$this->queueSnapshot( [ 'site_id' => 'other.example' ], 2 );
@@ -375,7 +501,8 @@ final class ContentRollbackApplyTest extends TestCase {
 			$this->operation->planChange( $cross_site_current, [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
 			$this->fail( 'Expected OperationException' );
 		} catch ( OperationException $cross_site ) {
-			$cross_site_message = $cross_site->getMessage();
+			$cross_site_message     = $cross_site->getMessage();
+			$cross_site_remediation = $cross_site->remediation;
 		}
 
 		$this->queueSnapshot( [ 'module_id' => 'elementor' ], 2 );
@@ -384,11 +511,14 @@ final class ContentRollbackApplyTest extends TestCase {
 			$this->operation->planChange( $cross_module_current, [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
 			$this->fail( 'Expected OperationException' );
 		} catch ( OperationException $cross_module ) {
-			$cross_module_message = $cross_module->getMessage();
+			$cross_module_message     = $cross_module->getMessage();
+			$cross_module_remediation = $cross_module->remediation;
 		}
 
 		$this->assertSame( $missing_message, $cross_site_message );
 		$this->assertSame( $missing_message, $cross_module_message );
+		$this->assertSame( $missing_remediation, $cross_site_remediation );
+		$this->assertSame( $missing_remediation, $cross_module_remediation );
 	}
 
 	public function test_capture_snapshot_records_the_pre_rollback_state(): void {
@@ -409,6 +539,34 @@ final class ContentRollbackApplyTest extends TestCase {
 		$this->assertSame( 'Original title', $this->writes[0]['post_title'] );
 		$this->assertSame( [ 'id' => 5 ], $this->wpdb->updates[0]['where'] );
 		$this->assertSame( 1_800_000_500, $this->wpdb->updates[0]['data']['restored_at'] );
+	}
+
+	/**
+	 * markRestored()'s boolean return must be checked, not discarded: a
+	 * snapshot that silently fails to be marked restored would go
+	 * unnoticed. The restoration itself already succeeded by this point, so
+	 * the failure is logged server-side rather than turning a successful
+	 * write into a reported failure.
+	 */
+	public function test_a_failed_snapshot_stamp_is_logged_not_silently_dropped(): void {
+		$this->queueSnapshot( [], 3 );
+		$current = $this->operation->resolveTarget( [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+		$planned = $this->operation->planChange( $current, [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+
+		$logged = [];
+		Functions\when( 'error_log' )->alias(
+			static function ( string $message ) use ( &$logged ): bool {
+				$logged[] = $message;
+
+				return true;
+			}
+		);
+		$this->wpdb->failUpdate = true;
+
+		$target = $this->operation->applyChange( $current, $planned, $this->makeContext() );
+
+		$this->assertSame( 'post:42', $target );
+		$this->assertNotSame( [], $logged );
 	}
 
 	public function test_restore_undoes_a_failed_rollback(): void {
@@ -468,6 +626,22 @@ final class ContentRollbackApplyTest extends TestCase {
 				'changed' => array_keys( $planned->afterFields ),
 				'state'   => $after->fields,
 			],
+			$registry->definition( 'content-rollback-apply' )->outputSchema
+		);
+	}
+
+	/**
+	 * Covers the other half of the `oneOf` union: WRITE_OUTPUT_SCHEMA's plan
+	 * branch, which the apply-phase test above never exercises. previewPolicy
+	 * is Required, so the plan branch is the one every caller sees first.
+	 */
+	public function test_the_plan_phase_payload_conforms_to_the_declared_output_schema(): void {
+		Functions\when( 'get_bloginfo' )->justReturn( '6.8.1' );
+		$registry = new CapabilityRegistry();
+		( new CoreModule() )->register( $registry );
+
+		$this->assertConformsToOutputSchema(
+			[ 'plan' => [ 'token' => 'plan-token' ] ],
 			$registry->definition( 'content-rollback-apply' )->outputSchema
 		);
 	}

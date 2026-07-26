@@ -118,7 +118,7 @@ final class CoreModuleTest extends TestCase {
 		$this->assertTrue( $registry->hasWriteOperation( 'content-rollback-apply' ) );
 		$definition = $registry->definition( 'content-rollback-apply' );
 		$this->assertSame( 'content-write', $definition->dispatcherName() );
-		$this->assertSame( [ 'edit_posts' ], $definition->requiredCapabilities );
+		$this->assertSame( [ 'edit_post' ], $definition->requiredCapabilities );
 		$this->assertSame( 'required', $definition->previewPolicy->value );
 		$this->assertSame( 'required', $definition->snapshotPolicy->value );
 		$this->assertSame( 'supported', $definition->rollbackPolicy->value );
