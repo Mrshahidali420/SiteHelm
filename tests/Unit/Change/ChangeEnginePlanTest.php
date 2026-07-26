@@ -329,4 +329,132 @@ final class ChangeEnginePlanTest extends TestCase {
 			$this->assertSame( 0, preg_match( '/\\\\|\/var\/|\/home\/|wp-content|password|secret|authorization/i', $text ) );
 		}
 	}
+	/**
+	 * The stored fingerprint covers the resolved state's actual contents.
+	 *
+	 * A review found nothing pinned *which* state was fingerprinted: computing
+	 * it over an empty field map left the whole suite green. That makes the
+	 * fingerprint content-independent, so an edit between preview and apply is
+	 * never detected and REQ-0006's staleness check silently passes for a target
+	 * somebody else changed. Comparing against StateFingerprint's own output for
+	 * the resolved state pins the input, not just the presence of a hash.
+	 */
+	public function test_the_stored_fingerprint_covers_the_resolved_state(): void {
+		$this->operation->snapshot = [ 'post_title' => 'Original title' ];
+		$state                   = new TargetState( 'post:42', true, [ 'post_title' => 'Original title' ] );
+		$this->operation->target = $state;
+		$context                 = $this->makeContext();
+
+		$this->engine->preview( $this->makeDefinition(), $this->operation, [ 'id' => 42 ], $context );
+
+		$expected = ( new StateFingerprint( new PayloadNormalizer() ) )->compute( $state, $context );
+		$this->assertSame( $expected, $this->wpdb->inserts[0]['data']['state_fingerprint'] );
+	}
+
+	/**
+	 * Two different current states fingerprint differently.
+	 *
+	 * The assertion above would still pass if compute() ignored the fields and
+	 * hashed only the target key, because the expectation is computed the same
+	 * way. This one pins that the field contents actually participate.
+	 */
+	public function test_a_different_current_state_stores_a_different_fingerprint(): void {
+		$this->operation->snapshot = [ 'post_title' => 'Original title' ];
+		$this->operation->target = new TargetState( 'post:42', true, [ 'post_title' => 'First' ] );
+		$this->engine->preview( $this->makeDefinition(), $this->operation, [ 'id' => 42 ], $this->makeContext() );
+
+		$this->operation->target = new TargetState( 'post:42', true, [ 'post_title' => 'Second' ] );
+		$this->engine->preview( $this->makeDefinition(), $this->operation, [ 'id' => 42 ], $this->makeContext() );
+
+		$this->assertNotSame(
+			$this->wpdb->inserts[0]['data']['state_fingerprint'],
+			$this->wpdb->inserts[1]['data']['state_fingerprint']
+		);
+	}
+
+	/**
+	 * The approved preview is persisted, not just returned.
+	 *
+	 * A review found plan_body's contents unasserted: dropping previewSummary
+	 * from the stored body entirely left the suite green. The stored body is
+	 * what an apply re-reads to prove the operator approved this exact diff, so
+	 * losing it would surface later as an unexplained Task 12 failure rather
+	 * than as a plan-phase defect.
+	 */
+	public function test_the_stored_plan_body_carries_the_preview_and_the_eligibility(): void {
+		$this->operation->snapshot = [ 'post_title' => 'Original title' ];
+		$this->operation->target  = new TargetState( 'post:42', true, [ 'post_title' => 'Original title' ] );
+		$this->operation->planned = new PlannedChange(
+			[ 'id' => 42, 'title' => 'Revised title' ],
+			[ 'post_title' => 'Revised title' ],
+			[ 'post_title' ]
+		);
+
+		$result = $this->engine->preview( $this->makeDefinition(), $this->operation, [ 'id' => 42 ], $this->makeContext() );
+
+		$body = json_decode( $this->wpdb->inserts[0]['data']['plan_body'], true );
+		$this->assertSame( [ 'previewSummary', 'snapshotEligibility' ], array_keys( $body ) );
+		// assertEquals, not assertSame: the stored body goes through
+		// canonicalJson, which ksorts every level so two identical plans store
+		// byte-identically. The wire response keeps declaration order. Same
+		// content, different key order — comparing order-sensitively would be
+		// asserting the canonicalization away.
+		$this->assertEquals( $result->data['plan']['previewSummary'], $body['previewSummary'] );
+		$this->assertStringContainsString( 'post_title', $body['previewSummary']['human'] );
+		$this->assertSame( ChangeEngine::SNAPSHOT_WILL_CAPTURE, $body['snapshotEligibility']['snapshot'] );
+	}
+
+	/**
+	 * The payload hash binds the normalized planned payload, not the raw input.
+	 *
+	 * A review found this source unpinned: hashing the caller's raw arguments
+	 * instead of the planned payload survived the suite, and would then fail
+	 * every apply, because apply recomputes the hash from the planned payload.
+	 * The two are deliberately different here so only the right source matches.
+	 */
+	public function test_the_payload_hash_binds_the_planned_payload(): void {
+		$this->operation->snapshot = [ 'post_title' => 'Original title' ];
+		$planned_payload          = [ 'id' => 42, 'title' => 'Revised title' ];
+		$raw_payload              = [ 'id' => 42 ];
+		$this->operation->planned = new PlannedChange(
+			$planned_payload,
+			[ 'post_title' => 'Revised title' ],
+			[ 'post_title' ]
+		);
+
+		$this->engine->preview( $this->makeDefinition(), $this->operation, $raw_payload, $this->makeContext() );
+
+		$normalizer = new PayloadNormalizer();
+		$this->assertSame(
+			$normalizer->fingerprint( $planned_payload ),
+			$this->wpdb->inserts[0]['data']['payload_hash']
+		);
+		$this->assertNotSame(
+			$normalizer->fingerprint( $raw_payload ),
+			$this->wpdb->inserts[0]['data']['payload_hash']
+		);
+	}
+
+	/**
+	 * A refusal after a token was minted still says nothing about the token.
+	 *
+	 * The existing hygiene test only covers the path where no token exists yet.
+	 * The failed-store path runs after issueToken(), so it is the one place a
+	 * raw token could plausibly reach an operator-visible message.
+	 */
+	public function test_a_failed_store_does_not_leak_the_minted_token(): void {
+		// The snapshot fixture matters: without it the eligibility check refuses
+		// before a token is ever minted, so the path under test is unreachable.
+		$this->operation->snapshot = [ 'post_title' => 'Original title' ];
+		$this->wpdb->failInsert = true;
+
+		try {
+			$this->engine->preview( $this->makeDefinition(), $this->operation, [ 'id' => 42 ], $this->makeContext() );
+			$this->fail( 'A refused plan store should have thrown.' );
+		} catch ( OperationException $exception ) {
+			$this->assertSame( ErrorCode::IntegrationUnavailable, $exception->errorCode );
+			$this->assertDoesNotMatchRegularExpression( '/[0-9a-f]{64}/', $exception->getMessage() );
+			$this->assertDoesNotMatchRegularExpression( '/[0-9a-f]{64}/', $exception->remediation );
+		}
+	}
 }
