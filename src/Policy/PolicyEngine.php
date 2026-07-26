@@ -90,15 +90,70 @@ final class PolicyEngine {
 			}
 
 			if ( ! $allowed ) {
-				throw new OperationException(
-					ErrorCode::Forbidden,
-					sprintf( "Your WordPress user lacks the '%s' capability required by '%s'.", $capability, $definition->id ),
-					'Ask a site administrator to grant the capability or use a different account.'
-				);
+				throw $this->refuse( $capability, $definition->id );
 			}
 		}
 		// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
 		// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 		// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+	}
+
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+	/**
+	 * Authorizes one capability against one concrete target.
+	 *
+	 * A restore-time re-check needs this rather than authorize(): the capability
+	 * it must enforce is derived from the target being overwritten, not read off
+	 * an operation definition, so no declaration made elsewhere can weaken it.
+	 * Passing the capability explicitly is the point — authorize() answers "may
+	 * this caller run this operation", while this answers "may this caller act on
+	 * this object", and a restore needs the second question asked about the post
+	 * it is about to overwrite.
+	 *
+	 * @param string           $capability  The capability to require.
+	 * @param int              $targetId    The concrete target it is evaluated against.
+	 * @param string           $operationId The operation named in a refusal.
+	 * @param OperationContext $context     The operation context.
+	 *
+	 * @return void
+	 *
+	 * @throws OperationException With ErrorCode::Forbidden when not authorized.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+	 * phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+	 */
+	public function authorizeTargetCapability(
+		string $capability,
+		int $targetId,
+		string $operationId,
+		OperationContext $context
+	): void {
+		if ( ! user_can( $context->userId, $capability, $targetId ) ) {
+			throw $this->refuse( $capability, $operationId );
+		}
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+
+	/**
+	 * The one refusal shape for a capability shortfall.
+	 *
+	 * Both entry points raise the identical message, so a caller cannot tell the
+	 * front-gate check from a restore-time re-check by reading the envelope.
+	 *
+	 * @param string $capability   The capability that was not held.
+	 * @param string $operation_id The operation requiring it.
+	 *
+	 * @return OperationException The refusal to throw.
+	 */
+	private function refuse( string $capability, string $operation_id ): OperationException {
+		return new OperationException(
+			ErrorCode::Forbidden,
+			sprintf( "Your WordPress user lacks the '%s' capability required by '%s'.", $capability, $operation_id ),
+			'Ask a site administrator to grant the capability or use a different account.'
+		);
 	}
 }

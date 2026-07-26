@@ -339,17 +339,19 @@ final class CoreModule implements IntegrationModule {
 
 		// requiredCapabilities is the target-bound meta capability edit_post,
 		// matching content-update, rather than the site-wide primitive
-		// edit_posts. This declaration is what assert_original_capability()
-		// re-checks for a CHAINED reference — a snapshot whose own origin is
-		// content-rollback-apply — so a generic primitive here would let a
-		// user holding blanket edit_posts restore a post they cannot
-		// edit_post, through a second-generation reference only. The request
-		// itself carries no post id (only rollbackRef), so PolicyEngine's own
-		// front-gate check for a direct invocation falls back to the
-		// target-less generic evaluation, exactly as it already does for
-		// content-update when the caller sends a non-numeric id; that
-		// fallback is pre-existing Dispatcher/PolicyEngine behaviour, not
-		// something introduced here.
+		// edit_posts. It is the front-gate and catalog declaration only:
+		// assert_original_capability() derives the capability it re-checks
+		// from the resolved target itself, so no declaration here or on any
+		// origin operation can weaken the restore-time check.
+		//
+		// The request carries no post id (only rollbackRef), so PolicyEngine's
+		// front-gate check for a direct invocation cannot evaluate edit_post
+		// against a target and falls back to the governing primitive. That
+		// target-less fallback was introduced in this phase, to stop a
+		// target-less meta-capability resolving to do_not_allow and refusing
+		// every user including administrators. It is deliberately coarse and
+		// is safe precisely because the restore-time re-check inside this
+		// operation is target-bound.
 		$registry->registerWrite(
 			new OperationDefinition(
 				id: 'content-rollback-apply',

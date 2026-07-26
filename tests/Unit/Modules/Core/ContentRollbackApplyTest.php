@@ -30,6 +30,7 @@ use SiteHelm\Policy\PolicyEngine;
 use SiteHelm\Registry\CapabilityRegistry;
 use SiteHelm\Storage\SnapshotStore;
 use SiteHelm\Tests\Doubles\FakeWpdb;
+use SiteHelm\Tests\Doubles\StubWriteOperation;
 use SiteHelm\Tests\TestCase;
 use stdClass;
 
@@ -90,12 +91,14 @@ final class ContentRollbackApplyTest extends TestCase {
 	}
 
 	private function registerOriginalOperation(): void {
-		$this->registry->register(
+		$this->registry->registerWrite(
 			new OperationDefinition(
 				id: 'content-update',
 				domain: Domain::Content,
-				mode: Mode::Read,
-				description: 'Stand-in definition supplying the original operation capability.',
+				// A write, as the real content-update is: a snapshot's origin is
+				// always a write, and the restore-time re-check requires it.
+				mode: Mode::Write,
+				description: 'Stand-in definition standing for the original write operation.',
 				inputSchema: [
 					'type'                 => 'object',
 					'properties'           => [ 'id' => [ 'type' => 'integer' ] ],
@@ -109,12 +112,12 @@ final class ContentRollbackApplyTest extends TestCase {
 				schemaVersion: 1,
 				requiredCapabilities: [ 'edit_post' ],
 				risk: Risk::Low,
-				isReadOnly: true,
+				isReadOnly: false,
 				isDestructive: false,
 				isIdempotent: true,
-				previewPolicy: PreviewPolicy::NotApplicable,
-				snapshotPolicy: SnapshotPolicy::NotApplicable,
-				rollbackPolicy: RollbackPolicy::NotApplicable,
+				previewPolicy: PreviewPolicy::Required,
+				snapshotPolicy: SnapshotPolicy::Required,
+				rollbackPolicy: RollbackPolicy::Supported,
 				module: ModuleId::Core,
 				supportedVersions: [ 'wordpress' => '>=6.6' ],
 				example: [
@@ -122,7 +125,7 @@ final class ContentRollbackApplyTest extends TestCase {
 					'arguments' => [ 'id' => 42 ],
 				],
 			),
-			static fn(): array => []
+			new StubWriteOperation()
 		);
 	}
 
@@ -321,6 +324,128 @@ final class ContentRollbackApplyTest extends TestCase {
 		}
 	}
 
+	/**
+	 * Registers a write operation whose declaration names only the site-wide
+	 * primitive, standing in for a future write that is not target-bound.
+	 *
+	 * @param Mode $mode The declared mode.
+	 */
+	private function registerSitewideOrigin( Mode $mode = Mode::Write ): void {
+		$register = Mode::Write === $mode
+			? fn( OperationDefinition $d ): mixed => $this->registry->registerWrite( $d, new StubWriteOperation() )
+			: fn( OperationDefinition $d ): mixed => $this->registry->register( $d, static fn(): array => [] );
+
+		$register(
+			new OperationDefinition(
+				id: 'content-sitewide-touch',
+				domain: Domain::Content,
+				mode: $mode,
+				description: 'Stand-in origin declaring only the site-wide primitive.',
+				inputSchema: [
+					'type'                 => 'object',
+					'properties'           => [ 'id' => [ 'type' => 'integer' ] ],
+					'additionalProperties' => false,
+				],
+				outputSchema: [
+					'type'                 => 'object',
+					'properties'           => [ 'id' => [ 'type' => 'integer' ] ],
+					'additionalProperties' => false,
+				],
+				schemaVersion: 1,
+				requiredCapabilities: [ 'edit_posts' ],
+				risk: Risk::Low,
+				isReadOnly: Mode::Read === $mode,
+				isDestructive: false,
+				isIdempotent: true,
+				previewPolicy: Mode::Write === $mode ? PreviewPolicy::Required : PreviewPolicy::NotApplicable,
+				snapshotPolicy: SnapshotPolicy::NotApplicable,
+				rollbackPolicy: RollbackPolicy::NotApplicable,
+				module: ModuleId::Core,
+				supportedVersions: [ 'wordpress' => '>=6.6' ],
+				example: [
+					'operation' => 'content-sitewide-touch',
+					'arguments' => [ 'id' => 42 ],
+				],
+			)
+		);
+	}
+
+	/**
+	 * The restore-time re-check must derive the capability it enforces from the
+	 * resolved target, never from what the origin operation happens to declare.
+	 *
+	 * A reviewer probed the previous behaviour: a Contributor holding only the
+	 * site-wide primitive edit_posts was allowed to overwrite post 42 whenever the
+	 * origin's declaration named that primitive, because the re-check simply
+	 * re-authorized the origin's own definition. It is unreachable today — reads
+	 * cannot record snapshots and a creation's captureSnapshot() returns null —
+	 * but it goes live the moment REQ-0018 ships. This is the same Critical as
+	 * the chained-reference case through a different door: changing the declared
+	 * capability closed one entrance, and this closes the other.
+	 */
+	public function test_an_origin_declaring_only_a_site_wide_primitive_cannot_weaken_the_recheck(): void {
+		$this->registerSitewideOrigin();
+
+		// Holds the site-wide primitive the origin declares, but not edit_post on
+		// this post.
+		Functions\when( 'user_can' )->alias(
+			static fn( int $user_id, string $capability, ...$extra ): bool => 'edit_posts' === $capability
+		);
+
+		$this->queueSnapshot( [ 'operation_id' => 'content-sitewide-touch' ], 2 );
+		$current = $this->operation->resolveTarget( [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+
+		try {
+			$this->operation->planChange( $current, [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::Forbidden, $e->errorCode );
+		}
+	}
+
+	/**
+	 * The target-bound capability is checked against the resolved post, so a
+	 * caller who does hold it is still allowed through even when the origin's own
+	 * declaration is only the site-wide primitive.
+	 */
+	public function test_a_site_wide_origin_still_admits_a_caller_holding_the_target_bound_capability(): void {
+		$this->registerSitewideOrigin();
+
+		$checked = [];
+		Functions\when( 'user_can' )->alias(
+			static function ( int $user_id, string $capability, ...$extra ) use ( &$checked ): bool {
+				$checked[] = [ $capability, $extra[0] ?? null ];
+
+				return 'edit_post' === $capability && 42 === ( $extra[0] ?? null );
+			}
+		);
+
+		$this->queueSnapshot( [ 'operation_id' => 'content-sitewide-touch' ], 2 );
+		$current = $this->operation->resolveTarget( [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+		$planned = $this->operation->planChange( $current, [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+
+		$this->assertSame( 'Original title', $planned->afterFields['post_title'] );
+		$this->assertContains( [ 'edit_post', 42 ], $checked );
+	}
+
+	/**
+	 * A snapshot whose origin is not a write is not something a restore may act
+	 * on. Reads cannot record snapshots, so such a reference is malformed, and it
+	 * must be refused rather than have its declaration consulted.
+	 */
+	public function test_an_origin_that_is_not_a_write_operation_is_target_not_found(): void {
+		$this->registerSitewideOrigin( Mode::Read );
+		$this->queueSnapshot( [ 'operation_id' => 'content-sitewide-touch' ], 2 );
+		$current = $this->operation->resolveTarget( [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+
+		try {
+			$this->operation->planChange( $current, [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::TargetNotFound, $e->errorCode );
+		}
+	}
+
 	public function test_a_missing_original_capability_is_forbidden(): void {
 		Functions\when( 'user_can' )->justReturn( false );
 		$this->queueSnapshot( [], 2 );
@@ -478,13 +603,14 @@ final class ContentRollbackApplyTest extends TestCase {
 	}
 
 	/**
-	 * A missing reference, a reference belonging to another site, and a
-	 * reference recorded by another module must be indistinguishable from the
-	 * caller's side: the same code, the same message, AND the same
-	 * remediation, or the response becomes a probe for which rollback
-	 * references exist. remediation is a separate property surfaced in the
-	 * same error envelope (OperationError::toArray()), so comparing message
-	 * alone would still let a divergent remediation leak which case fired.
+	 * A missing reference, a reference belonging to another site, a reference
+	 * recorded by another module, and a reference whose origin is not a write
+	 * must all be indistinguishable from the caller's side: the same code, the
+	 * same message, AND the same remediation, or the response becomes a probe for
+	 * which rollback references exist. remediation is a separate property
+	 * surfaced in the same error envelope (OperationError::toArray()), so
+	 * comparing message alone would still let a divergent remediation leak which
+	 * case fired.
 	 */
 	public function test_missing_cross_site_and_cross_module_refusals_share_one_message(): void {
 		try {
@@ -515,10 +641,23 @@ final class ContentRollbackApplyTest extends TestCase {
 			$cross_module_remediation = $cross_module->remediation;
 		}
 
+		$this->registerSitewideOrigin( Mode::Read );
+		$this->queueSnapshot( [ 'operation_id' => 'content-sitewide-touch' ], 2 );
+		$non_write_current = $this->operation->resolveTarget( [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+		try {
+			$this->operation->planChange( $non_write_current, [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $non_write ) {
+			$non_write_message     = $non_write->getMessage();
+			$non_write_remediation = $non_write->remediation;
+		}
+
 		$this->assertSame( $missing_message, $cross_site_message );
 		$this->assertSame( $missing_message, $cross_module_message );
+		$this->assertSame( $missing_message, $non_write_message );
 		$this->assertSame( $missing_remediation, $cross_site_remediation );
 		$this->assertSame( $missing_remediation, $cross_module_remediation );
+		$this->assertSame( $missing_remediation, $non_write_remediation );
 	}
 
 	public function test_capture_snapshot_records_the_pre_rollback_state(): void {

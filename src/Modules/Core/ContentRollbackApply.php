@@ -13,6 +13,7 @@ use SiteHelm\Change\PlannedChange;
 use SiteHelm\Change\TargetState;
 use SiteHelm\Change\WriteOperation;
 use SiteHelm\Contracts\ErrorCode;
+use SiteHelm\Contracts\Mode;
 use SiteHelm\Contracts\ModuleHealth;
 use SiteHelm\Contracts\ModuleId;
 use SiteHelm\Contracts\OperationContext;
@@ -32,10 +33,10 @@ use SiteHelm\Storage\SnapshotStore;
  *
  * Three re-checks happen at restore time, all inside planChange() so they run at
  * preview and again at apply: that the snapshot belongs to THIS operation's own
- * domain, the capability of the ORIGINAL operation against the concrete target,
- * and the compatibility of the module that recorded the snapshot. The first is
- * about identity and the third is about health; they are not the same check and
- * neither substitutes for the other.
+ * domain, that this caller holds the target-bound capability for the post about
+ * to be overwritten, and that the module which recorded the snapshot is still
+ * compatible. The first is about identity and the third is about health; they are
+ * not the same check and neither substitutes for the other.
  *
  * @package SiteHelm
  */
@@ -45,6 +46,22 @@ final class ContentRollbackApply implements WriteOperation {
 	 * The fields a content snapshot restores.
 	 */
 	private const RESTORED_FIELDS = [ 'post_title', 'post_content', 'post_excerpt' ];
+
+	/**
+	 * This operation's own identifier, named in a restore-time refusal.
+	 */
+	private const OPERATION_ID = 'content-rollback-apply';
+
+	/**
+	 * The target-bound capability that overwriting one post requires.
+	 *
+	 * Every target this operation resolves is a post, so the capability the
+	 * restore-time re-check enforces is derived from that fact rather than from
+	 * any operation's declaration. `edit_post` is a meta-capability: WordPress
+	 * resolves it against the specific post through map_meta_cap, which is what
+	 * makes it target-bound rather than a blanket site-wide grant.
+	 */
+	private const RESTORE_CAPABILITY = 'edit_post';
 
 	/**
 	 * Constructs the operation.
@@ -291,15 +308,40 @@ final class ContentRollbackApply implements WriteOperation {
 	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 
 	/**
-	 * Re-checks the capability of the operation that recorded the snapshot,
-	 * against the concrete target, at restore time.
+	 * Re-checks, at restore time, that this caller may overwrite this post.
+	 *
+	 * The capability is derived from the RESOLVED TARGET, not from what the
+	 * origin operation declares. That distinction is the whole check. Deriving it
+	 * from the origin's declaration meant the strength of the re-check was set by
+	 * whichever operation happened to record the snapshot: a reviewer probed the
+	 * previous behaviour and found a Contributor holding only the site-wide
+	 * primitive `edit_posts` was allowed to overwrite post 42 whenever the origin
+	 * declared that primitive. Unreachable today, because reads cannot record
+	 * snapshots and a creation's captureSnapshot() returns null, but live the
+	 * moment REQ-0018 ships. Changing one operation's declared capability closed
+	 * the chained-reference entrance to that hole; this closes the general one,
+	 * because a target-bound capability evaluated against the target itself cannot
+	 * be weakened by a declaration made anywhere else.
+	 *
+	 * The origin is still required to exist, so a retired operation cannot be
+	 * restored blind, and is now also required to be a WRITE: a snapshot's origin
+	 * is always a write, so a reference naming anything else is malformed and is
+	 * not something a restore may act on.
+	 *
+	 * That refusal reuses the missing-snapshot message verbatim. The eleven codes
+	 * are fixed, and from the caller's side a reference it may not act on is
+	 * indistinguishable from one that does not exist; keeping every such refusal
+	 * identical stops the response from becoming a probe for which references
+	 * exist.
 	 *
 	 * @param array<string, mixed> $snapshot The snapshot row.
 	 * @param TargetState          $current  The resolved current state.
 	 * @param OperationContext     $context  The request context.
 	 *
 	 * @throws OperationException With ErrorCode::RollbackUnavailable when the
-	 *                           original operation no longer exists, or
+	 *                           original operation no longer exists,
+	 *                           ErrorCode::TargetNotFound when the reference is
+	 *                           not one a restore may act on, or
 	 *                           ErrorCode::Forbidden from the policy engine.
 	 *
 	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
@@ -320,10 +362,21 @@ final class ContentRollbackApply implements WriteOperation {
 			);
 		}
 
-		$this->policy->authorize(
-			$this->registry->definition( $original ),
-			$context,
-			$this->fields->postIdFromTargetKey( $current->targetKey )
+		$post_id = $this->fields->postIdFromTargetKey( $current->targetKey );
+
+		if ( Mode::Write !== $this->registry->definition( $original )->mode || $post_id <= 0 ) {
+			throw new OperationException(
+				ErrorCode::TargetNotFound,
+				'The referenced snapshot does not exist or is not visible to your WordPress user.',
+				'Read the audit log to find a current rollback reference.'
+			);
+		}
+
+		$this->policy->authorizeTargetCapability(
+			self::RESTORE_CAPABILITY,
+			$post_id,
+			self::OPERATION_ID,
+			$context
 		);
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
