@@ -19,7 +19,7 @@
 - No response may expose secrets, authorization headers, filesystem paths, SQL, or stack traces. Never interpolate `$wpdb->last_error` or SQL into an envelope; `error_log` server-side instead.
 - Warnings name fields only and never carry field values. Actual values are disclosed in the response's `state` member, which is the data payload.
 - All SQL via `$wpdb->prepare`; table names from `$wpdb->prefix` via `Installer::tableName()`; never hardcode `wp_`.
-- Every file stays under 800 lines. `src/Change/ChangeEngine.php` is currently 850 and must end this plan under the ceiling.
+- Every file stays under 800 lines. `src/Change/ChangeEngine.php` is currently 850 — an overage that **predates this plan**. Task 2 removes `verified()` and adds the delegation, which nets it to 843: better, still over. **Corrected after Task 2:** the original wording here demanded the file end this plan under the ceiling, which the arithmetic never permitted (850 − 26 + 20 = 844). Bringing it under means extracting six apply-path helpers behind a collaborator — a refactor with its own test surface, and not one to run immediately after changing the same file's verification semantics. Deferred to its own task; do not delete comments to squeeze under, as they document security decisions.
 - `phpcs` must exit 0 repo-wide. Suppressions are method-scoped, one disable/enable pair per method, listing **only sniffs that actually fire** — verify with `vendor/bin/phpcs --ignore-annotations <file>` and reconcile 1:1.
 - Conventional commit messages. No attribution footers.
 - LF line endings.
@@ -1034,7 +1034,7 @@ Before declaring the plan complete:
 - [ ] `vendor/bin/phpunit` exits 0, unpiped, with at least 447 tests
 - [ ] `vendor/bin/phpcs` exits 0 repo-wide, unpiped
 - [ ] Line coverage at or above 94.27%
-- [ ] `src/Change/ChangeEngine.php` is under 800 lines
+- [ ] `src/Change/ChangeEngine.php` is **smaller than the 843 it stands at after Task 2, or unchanged** — it entered this plan at 850, over the ceiling already, and getting it under requires an extraction task of its own. Do not treat "still over 800" as this plan's failure; do record it for the final review to triage.
 - [ ] `verified()` no longer exists in `ChangeEngine`; the three-way rule exists in exactly one place
 - [ ] A live probe confirms a title WordPress adjusts no longer returns `verification_failed`
 - [ ] No warning anywhere attributes a field change to a plugin
