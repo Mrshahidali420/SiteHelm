@@ -808,6 +808,7 @@ would accuse a plugin on every trash. Name the field, not a culprit."
 
 **Files:**
 - Modify: `src/Modules/Core/ContentFields.php` — the `sanitizeForSave()` docblock (around line 124-151)
+- Modify: `docs/product/phase-2-foundation-contract.md:149` — the `verification` row of the `OperationResult` table
 - Modify: `docs/product/contract-interpretations.md` — add I7
 - Modify: `docs/product/v1-requirements-matrix.csv` — REQ-0014's `acceptance_evidence`
 - Modify: `docs/product/phase-3a-demonstration.md` — the residual-gap note under the revision table
@@ -835,6 +836,24 @@ In `src/Modules/Core/ContentFields.php`, add to the `sanitizeForSave()` docblock
 	 * unmodelled safe: a value WordPress adjusts succeeds and is disclosed rather
 	 * than reported as a failure.
 ```
+
+- [ ] **Step 1b: Update the frozen foundation contract**
+
+*Added after Task 1's review found this gap.* `tests/Unit/Contracts/EnumsTest.php:31` says its value lists are "copied verbatim from the frozen foundation contract" — and Task 1 updated the copy while the source still says otherwise. `docs/product/phase-2-foundation-contract.md:149` is that source. It currently reads:
+
+> Post-write verification status: `verified` when the engine re-read WordPress state and confirmed it matches the approved plan payload; `not-applicable` for reads. A write whose re-read diverges from the plan never returns a result; it returns `verification_failed`.
+
+That final sentence is exactly the behaviour this plan removes, so the document would contradict the shipped code and a later reader would "correct" the code back to it. Replace the whole cell with:
+
+> Post-write verification status: `verified` when the engine re-read WordPress state and confirmed every promised field matches the approved plan payload; `verified-with-adjustments` when the write landed but WordPress stored a different value for one or more promised fields, in which case each adjusted field is named in `warnings` and the stored values are disclosed in `data.state`; `not-applicable` for reads. A write returns `verification_failed` only when a promised field still holds its prior value, meaning the write did not take.
+
+Change nothing else in that document. Then confirm the copy and the source now agree:
+
+```bash
+grep -n "verified-with-adjustments" docs/product/phase-2-foundation-contract.md tests/Unit/Contracts/EnumsTest.php
+```
+
+Both files must appear.
 
 - [ ] **Step 2: Add interpretation I7**
 
