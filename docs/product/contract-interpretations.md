@@ -58,7 +58,7 @@ The refinement was briefly at risk of being dropped: it arrived after the Phase 
 
 ## I4. `verification_failed` cannot carry a recovery handle — accepted limitation
 
-**Contract says.** `OperationError` has exactly seven fields; none is `auditRef` or `rollbackRef`. `verification_failed` means execution completed but the re-read state diverged from the approved plan — precisely the case where a caller most wants a rollback handle.
+**Contract says.** `OperationError` has exactly seven fields; none is `auditRef` or `rollbackRef`. Before the amendment recorded in I7 below, `verification_failed` meant execution completed but the re-read state diverged from the approved plan — precisely the case where a caller most wants a rollback handle.
 
 **Why it needed a ruling.** The recovery path for the error is the least self-serve of any code.
 
@@ -71,6 +71,8 @@ The refinement was briefly at risk of being dropped: it arrived after the Phase 
 **Refinement (2026-07-26, from the Phase 3a plan review).** The load-bearing sentence above — "the audit record exists before execution, so the recovery information is never lost" — holds only where the audit record is completed. On the `verification_failed` path it is, so the ruling stands for the case it addresses. It would be false after a crash between capturing a snapshot and finishing the audit record, which would leave a real snapshot row whose reference no audit row carries, reachable only by direct database access. The rollback reference and snapshot id must therefore be written when the audit record is *opened*, not only when it is finished, so the claim is unconditional rather than true-on-the-happy-path.
 
 This entry also accepts, explicitly rather than by omission, that a non-administrator meeting `verification_failed` cannot obtain a rollback handle without an administrator's help. That is a real reduction in the operator's position and is recorded as such.
+
+**Refinement (2026-07-26, from the write-verification-contract design).** I7 narrows `verification_failed` to a write that did not take — a promised field still holding its prior value — so the limitation recorded here now has a much smaller reach. A write WordPress adjusted no longer returns this error at all: it succeeds as `verified-with-adjustments` and carries its `rollbackRef` like any other successful write. What remains uncovered is only the case where nothing was written, which is also the case with least to undo. The reduction is not theoretical: the live failure that prompted the redesign — a title with trailing whitespace — was a landed write that this entry left with no recovery handle, and it now returns one.
 
 ---
 
@@ -101,3 +103,23 @@ This entry also accepts, explicitly rather than by omission, that a non-administ
 **Rationale.** The honest position is that this guarantee has been unmet since Phase 2; documenting non-compliance is better than either pretending it holds or bolting hard runtime failure onto a phase that did not plan for it. A non-conforming payload is a developer defect, and a test is the right place to catch a developer defect. Turning it into a client-facing runtime error would convert a minor schema drift into an outage.
 
 **Status.** Open, with a deadline: before V1 public release.
+
+---
+
+## I7. A value WordPress adjusts on save is a disclosed success, not a verification failure
+
+**Contract says.** The apply phase "executes, verifies the resulting WordPress state, records the audit event, and returns an `OperationResult`" (write mechanics). Before the amendment recorded below, `verification_failed` meant "Execution completed but the re-read WordPress state does not match the approved plan payload. The discrepancy is reported rather than hidden."
+
+**Why it needed a ruling.** Both statements compare the persisted state against the approved plan without saying what happens when the platform itself stores a value the plan did not promise. Read as byte-equality, every WordPress-side adjustment of a value the operator did ask for becomes a failure of a write that in fact landed — and the failure path carries no `rollbackRef` (I4), so the caller is told to undo a change they have no handle to reach.
+
+**Ruling.** The comparison is made per promised field, against the prior state as well as against the plan. A promised field still holding its prior value means the write did not take: that remains `verification_failed`. A promised field holding some *other* value means WordPress adjusted it, and the operation succeeds: `verification` is `verified-with-adjustments`, the result returns its `rollbackRef`, each adjusted field is named in a `warnings` entry, and the stored values are disclosed in `data.state`. The audit record measures the stored value, not the promised one.
+
+**Rationale.** The promise is computed at preview time, but slug uniquification, featured-media resolution and the publish-to-future transition all depend on apply-time database state, so no amount of modelling can make byte-equality correct — which is why Decision 1 bounds preview modelling to pure, input-only transformations rather than chasing the rest. Reproduced live on WordPress 7.0.2: a title with trailing whitespace made a perfectly correct write report `verification_failed` with no `rollbackRef` and a remediation telling the operator to restore the snapshot. Reporting a landed write as failed while withholding the handle that would reverse it is the worst answer available. This ruling widens no guarantee: nothing is hidden, the adjustment is named and the stored state is disclosed, so the caller learns strictly more than byte-equality told them.
+
+**Recorded in the contract (2026-07-26).** `verified-with-adjustments` is a sanctioned `VerificationStatus` case, so three places in `phase-2-foundation-contract.md` were amended together, because correcting one and not the others would leave a reader of either table with the removed rule: the `verification` row of the `OperationResult` table now states all three cases and no longer says a diverging re-read never returns a result; the `verification_failed` error row is narrowed to a promised field still holding its prior value; and the document's Status carries a dated amendment line, so an auditor reading the contract alone sees the change in place rather than only here. The `verification` row is the cited source for the frozen enum lists copied into `tests/Unit/Contracts/EnumsTest.php`; leaving it contradicting the shipped code would have invited a later reader to correct the code back to it. Nothing else is added — the eleven dispatchers and eleven error codes are unchanged.
+
+The amendment is also out of order against the contract's own Change Policy, which requires an approved revision *before* any implementation change; here Tasks 1-3 shipped first. The Status line says so plainly rather than implying the revision came first. A ruling recorded here cannot repair that ordering, which is why the contract itself had to carry the marker.
+
+**Binding rule for Phase 3b (Decision 3).** An operation that accepts a reference to another object — an attachment id for REQ-0017, term ids for REQ-0016, a parent id — MUST validate that the reference resolves while *planning*, and return `invalid_input` when it does not. A bad reference must never reach verification: WordPress silently drops an unresolvable one, and under this ruling a dropped value classifies as an adjustment and therefore succeeds. Plan-time validation is the only place that separates operator error from platform adjustment; `WriteVerifier` cannot tell them apart, and a test pins that it does not try to.
+
+**Reversibility.** Expensive. `verified-with-adjustments` is a third enum case a client may branch on, and reverting would reinstate a false failure on writes that landed. The narrower alternative — keeping byte-equality and modelling every adjustment in the preview — is not reversible-to either, because Decision 1 records why it cannot be built.

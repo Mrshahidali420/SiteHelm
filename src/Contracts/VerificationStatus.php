@@ -13,6 +13,7 @@ namespace SiteHelm\Contracts;
  * Verification status for operations.
  */
 enum VerificationStatus: string {
-	case Verified      = 'verified';
-	case NotApplicable = 'not-applicable';
+	case Verified                = 'verified';
+	case VerifiedWithAdjustments = 'verified-with-adjustments';
+	case NotApplicable           = 'not-applicable';
 }
