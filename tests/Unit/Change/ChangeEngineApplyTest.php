@@ -212,6 +212,34 @@ final class ChangeEngineApplyTest extends TestCase {
 		$this->assertSame( PlanStore::digest( self::TOKEN ), $consume['args'][1] );
 	}
 
+	/**
+	 * When the engine's own local tables are missing, apply() must refuse
+	 * with integration_unavailable BEFORE even looking up the plan — not
+	 * stale_plan, which would falsely tell the caller their approval expired
+	 * or was already used when the real problem is that the plugin's storage
+	 * is gone.
+	 */
+	public function test_unavailable_storage_refuses_before_any_plan_lookup(): void {
+		$this->options[ Installer::STATUS_OPTION ] = Installer::STATUS_UNAVAILABLE;
+
+		try {
+			$this->engine->apply(
+				$this->makeDefinition(),
+				$this->operation,
+				[ 'id' => 42, 'title' => 'Edited title' ],
+				self::TOKEN,
+				$this->makeContext()
+			);
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::IntegrationUnavailable, $e->errorCode );
+		}
+
+		// No plan lookup was even attempted: require_storage() runs first.
+		$this->assertSame( [], $this->wpdb->prepared );
+		$this->assertSame( 0, $this->operation->resolveCalls );
+	}
+
 	public function test_an_unknown_token_is_stale_plan(): void {
 		$this->wpdb->rowQueue = [];
 
@@ -249,6 +277,23 @@ final class ChangeEngineApplyTest extends TestCase {
 			$this->wpdb->prepared,
 			'consume() must not run before the expiry check has passed.'
 		);
+	}
+
+	/**
+	 * The expiry check is `expires_at <= requestTime`, not `<`: a plan
+	 * expiring in the SAME instant as the request must still be refused.
+	 * Flipping the operator to `<` would leave a one-second window where an
+	 * already-expired plan applies successfully.
+	 */
+	public function test_a_plan_expiring_exactly_at_the_request_time_is_stale_plan(): void {
+		try {
+			// makeContext()'s default requestTime is 1_800_000_100.
+			$this->apply( [ 'expires_at' => 1_800_000_100 ] );
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::StalePlan, $e->errorCode );
+			$this->assertSame( 0, $this->operation->applyCalls );
+		}
 	}
 
 	public function test_an_already_consumed_token_is_stale_plan(): void {
@@ -307,9 +352,23 @@ final class ChangeEngineApplyTest extends TestCase {
 		}
 	}
 
+	/**
+	 * Exercises the path a real client actually takes: it resends genuinely
+	 * DIFFERENT arguments on apply (simulated here via planChange()'s
+	 * returned payload, since resolveTarget()'s current state — and so the
+	 * fingerprint — is unchanged), rather than tampering with the stored
+	 * hash directly. The stored plan's payload_hash was computed from a
+	 * different payload than the one this call resolves to.
+	 */
 	public function test_a_different_payload_is_stale_plan(): void {
+		$this->operation->planned = new PlannedChange(
+			[ 'title' => 'A completely different edit' ],
+			[ 'post_title' => 'A completely different edit' ],
+			[ 'post_title' ]
+		);
+
 		try {
-			$this->apply( [ 'payload_hash' => str_repeat( '0', 64 ) ] );
+			$this->apply();
 			$this->fail( 'Expected OperationException' );
 		} catch ( OperationException $e ) {
 			$this->assertSame( ErrorCode::StalePlan, $e->errorCode );
@@ -376,6 +435,17 @@ final class ChangeEngineApplyTest extends TestCase {
 			$this->assertSame( 0, $this->operation->applyCalls );
 			$this->assertSame( 0, $this->operation->snapshotCalls );
 		}
+
+		// consume() must never run for a plan whose fingerprint no longer
+		// matches: only the plan lookup's prepare() call may have happened.
+		// If consume() ran ahead of the fingerprint check, a concurrent edit
+		// would both answer `conflict` AND burn the token, leaving the caller
+		// unable to re-preview and retry with a fresh plan.
+		$this->assertCount(
+			1,
+			$this->wpdb->prepared,
+			'consume() must not run before the fingerprint check has passed.'
+		);
 	}
 
 	/**
@@ -439,6 +509,35 @@ final class ChangeEngineApplyTest extends TestCase {
 			$this->assertStringContainsString( 'corr-2', (string) $e->remediation );
 		}
 
+		$this->assertSame(
+			AuditRecorder::OUTCOME_VERIFICATION_FAILED,
+			$this->wpdb->updates[0]['data']['outcome']
+		);
+	}
+
+	/**
+	 * A write that lands but cannot be re-read must still surface as
+	 * verification_failed with the audit row finalized — never as the
+	 * underlying operation's own error code (a real readBack() might throw
+	 * target_not_found rather than verification_failed), and never with the
+	 * audit row stranded at 'started' for a write that actually happened.
+	 */
+	public function test_a_readback_failure_after_a_successful_write_is_verification_failed_with_audit_finalized(): void {
+		$this->operation->readBackThrows = new OperationException(
+			ErrorCode::TargetNotFound,
+			'The content item could not be found.'
+		);
+
+		try {
+			$this->apply();
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::VerificationFailed, $e->errorCode );
+			$this->assertStringContainsString( 'corr-2', (string) $e->remediation );
+		}
+
+		// The write itself succeeded before readBack() failed.
+		$this->assertSame( 1, $this->operation->applyCalls );
 		$this->assertSame(
 			AuditRecorder::OUTCOME_VERIFICATION_FAILED,
 			$this->wpdb->updates[0]['data']['outcome']
@@ -520,6 +619,78 @@ final class ChangeEngineApplyTest extends TestCase {
 		$this->assertSame( [], $this->apply()->warnings );
 	}
 
+	/**
+	 * post_modified_gmt must never be reported even when it is present in
+	 * BOTH the before-state and the after-state with genuinely different
+	 * values — the realistic case for every single write. The prior
+	 * regression only tested post_modified_gmt appearing in the after-state
+	 * with no counterpart in the before-state, where the separate "present in
+	 * both states" guard already excludes it regardless of VOLATILE_FIELD, so
+	 * deleting the VOLATILE_FIELD check left that test green. This fixture
+	 * removes that confound.
+	 */
+	public function test_the_volatile_modified_timestamp_is_never_reported_even_when_present_in_both_states(): void {
+		$current = new TargetState(
+			'post:42',
+			true,
+			[
+				'post_title'        => 'Original title',
+				'post_modified_gmt' => '2026-07-26 09:00:00',
+			]
+		);
+
+		$this->operation->target        = $current;
+		$this->operation->readBackState = new TargetState(
+			'post:42',
+			true,
+			[
+				'post_title'        => 'Edited title',
+				'post_modified_gmt' => '2026-07-26 11:00:00',
+			]
+		);
+
+		$this->wpdb->rowQueue       = [
+			$this->planRow(
+				[
+					'state_fingerprint' => ( new StateFingerprint( $this->normalizer ) )
+						->compute( $current, $this->makeContext() ),
+				]
+			),
+		];
+		$this->wpdb->queryRowsQueue = [ 1 ];
+
+		$result = $this->engine->apply(
+			$this->makeDefinition(),
+			$this->operation,
+			[ 'id' => 42, 'title' => 'Edited title' ],
+			self::TOKEN,
+			$this->makeContext()
+		);
+
+		$this->assertSame( [], $result->warnings );
+	}
+
+	/**
+	 * `changed` in the response must reflect only what the plan promised, not
+	 * every field the re-read after-state happens to carry. readBack() often
+	 * returns the full record, so an after-state with an untouched field the
+	 * plan never mentioned must not leak into `changed`.
+	 */
+	public function test_changed_reports_only_the_fields_the_plan_promised(): void {
+		$this->operation->readBackState = new TargetState(
+			'post:42',
+			true,
+			[
+				'post_title'   => 'Edited title',
+				'post_excerpt' => 'Untouched excerpt',
+			]
+		);
+
+		$result = $this->apply();
+
+		$this->assertSame( [ 'post_title' ], $result->data['changed'] );
+	}
+
 	public function test_a_failed_execution_restores_the_snapshot_and_reports_compensation(): void {
 		$this->operation->applyThrows = new OperationException(
 			ErrorCode::ExecutionFailed,
@@ -586,6 +757,81 @@ final class ChangeEngineApplyTest extends TestCase {
 		// But the token itself was already claimed before capture() ran.
 		$consume = $this->wpdb->prepared[1];
 		$this->assertStringContainsString( 'consumed_at IS NULL', $consume['query'] );
+	}
+
+	/**
+	 * The plan's snapshot policy is Required and captureSnapshot() returns
+	 * data (unlike the sibling test above), but the SNAPSHOT ROW ITSELF
+	 * cannot be stored. That must still refuse with rollback_unavailable
+	 * rather than let the write land with no snapshot, a null rollbackRef,
+	 * and no warning to explain why.
+	 */
+	public function test_a_snapshot_row_that_cannot_be_stored_is_rollback_unavailable(): void {
+		$this->wpdb->rowQueue         = [ $this->planRow() ];
+		$this->wpdb->queryRowsQueue   = [ 1 ];
+		$this->wpdb->failInsertTables = [ Installer::tableName( Installer::TABLE_SNAPSHOTS ) ];
+
+		try {
+			$this->engine->apply(
+				$this->makeDefinition(),
+				$this->operation,
+				[ 'id' => 42, 'title' => 'Edited title' ],
+				self::TOKEN,
+				$this->makeContext()
+			);
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::RollbackUnavailable, $e->errorCode );
+		}
+
+		$this->assertSame( 0, $this->operation->applyCalls );
+	}
+
+	/**
+	 * The audit summary's `changed` list and metrics are direction-sensitive:
+	 * summarize() diffs the promised after-state against the resolved
+	 * before-state. This fixture is deliberately asymmetric — the before-state
+	 * carries a field ('post_excerpt') the plan never touches — so that
+	 * swapping the two arguments at the call site is observable: swapped, the
+	 * untouched field would spuriously appear in `changed` (it exists only on
+	 * one side, so a swap makes summarize() treat its disappearance as a
+	 * change) and the direction of every reported metric would invert.
+	 */
+	public function test_the_audit_summary_reports_before_and_after_fields_in_the_correct_direction(): void {
+		$current = new TargetState(
+			'post:42',
+			true,
+			[
+				'post_title'   => 'Original title',
+				'post_excerpt' => 'Original excerpt',
+			]
+		);
+		$this->operation->target = $current;
+
+		$this->wpdb->rowQueue       = [
+			$this->planRow(
+				[
+					'state_fingerprint' => ( new StateFingerprint( $this->normalizer ) )
+						->compute( $current, $this->makeContext() ),
+				]
+			),
+		];
+		$this->wpdb->queryRowsQueue = [ 1 ];
+
+		$this->engine->apply(
+			$this->makeDefinition(),
+			$this->operation,
+			[ 'id' => 42, 'title' => 'Edited title' ],
+			self::TOKEN,
+			$this->makeContext()
+		);
+
+		$summary = json_decode( (string) $this->wpdb->updates[0]['data']['summary'], true );
+
+		// Only the promised field (post_title) may be reported as changed. A
+		// swap would additionally report post_excerpt — present only in the
+		// "before" state — as a spurious change.
+		$this->assertSame( [ 'post_title' ], $summary['changed'] );
 	}
 
 	public function test_a_refused_audit_record_refuses_to_execute(): void {

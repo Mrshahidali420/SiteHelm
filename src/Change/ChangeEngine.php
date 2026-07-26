@@ -387,26 +387,41 @@ final class ChangeEngine {
 			);
 		}
 
-		$after = $operation->readBack( $target_key, $context );
+		// readBack() runs inside its own protection: the write already landed
+		// by this point, so ANY failure re-reading it — including an operation
+		// that throws its OWN error code, such as target_not_found, when the
+		// freshly-written target cannot be re-read — must still finalize the
+		// audit row and surface as verification_failed. Without this, a write
+		// that lands but cannot be re-read escapes with the operation's own
+		// error code, the audit row is stranded at 'started' forever for a
+		// write that actually happened, and the caller gets no indication the
+		// change landed.
+		try {
+			$after = $operation->readBack( $target_key, $context );
+		} catch ( Throwable $unreadable ) {
+			$this->log_unexpected( $unreadable );
+
+			throw $this->verification_failed(
+				$audit_id,
+				$snapshot,
+				$target_key,
+				$current,
+				$planned,
+				$context,
+				'The write completed but the change engine could not re-read the target to verify it.',
+				[ 'applied' ]
+			);
+		}
 
 		if ( ! $this->verified( $planned, $after ) ) {
-			$this->audit->finish(
+			throw $this->verification_failed(
 				$audit_id,
-				AuditRecorder::OUTCOME_VERIFICATION_FAILED,
-				$snapshot['id'],
-				$snapshot['reference'],
+				$snapshot,
 				$target_key,
-				$current->fields,
-				$planned->afterFields
-			);
-
-			throw new OperationException(
-				ErrorCode::VerificationFailed,
-				'The write completed but the stored state does not match the approved plan.',
-				sprintf(
-					'Ask a site administrator to review the audit entry for correlation %s and restore the recorded snapshot.',
-					$context->correlationId
-				)
+				$current,
+				$planned,
+				$context,
+				'The write completed but the stored state does not match the approved plan.'
 			);
 		}
 
@@ -455,6 +470,69 @@ final class ChangeEngine {
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+
+	/**
+	 * Finalizes the audit record and builds the shared verification_failed
+	 * refusal.
+	 *
+	 * Used both when the post-write re-read itself fails — the write landed,
+	 * but nothing can confirm what it left behind, and that must never surface
+	 * as the underlying operation's own error code, since a real WriteOperation
+	 * might throw target_not_found from readBack() rather than
+	 * verification_failed — and when the re-read succeeds but does not match
+	 * the approved plan.
+	 *
+	 * Per interpretation I4 the envelope carries no recovery handle: the
+	 * remediation directs an administrator to the audit entry by
+	 * correlationId rather than exposing the rollback reference here, even
+	 * though a snapshot may exist and the audit row already references it.
+	 *
+	 * @param int                  $auditId        The opened audit row.
+	 * @param array<string, mixed> $snapshot       Keys 'id' and 'reference' from capture().
+	 * @param string               $targetKey      The concrete target key.
+	 * @param TargetState          $current        The resolved pre-write state.
+	 * @param PlannedChange        $planned        The promised change.
+	 * @param OperationContext     $context        The request context.
+	 * @param string               $message        The safe, human-readable explanation.
+	 * @param string[]             $completedSteps Steps completed before this failure.
+	 *
+	 * @return OperationException The failure to throw.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+	 */
+	private function verification_failed(
+		int $auditId,
+		array $snapshot,
+		string $targetKey,
+		TargetState $current,
+		PlannedChange $planned,
+		OperationContext $context,
+		string $message,
+		array $completedSteps = []
+	): OperationException {
+		$this->audit->finish(
+			$auditId,
+			AuditRecorder::OUTCOME_VERIFICATION_FAILED,
+			$snapshot['id'],
+			$snapshot['reference'],
+			$targetKey,
+			$current->fields,
+			$planned->afterFields
+		);
+
+		return new OperationException(
+			ErrorCode::VerificationFailed,
+			$message,
+			sprintf(
+				'Ask a site administrator to review the audit entry for correlation %s and restore the recorded snapshot.',
+				$context->correlationId
+			),
+			$completedSteps
+		);
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 
 	/**
 	 * Captures the snapshot the plan promised.

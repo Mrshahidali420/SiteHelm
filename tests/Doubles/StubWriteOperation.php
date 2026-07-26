@@ -41,6 +41,7 @@ final class StubWriteOperation implements WriteOperation {
 	public ?Throwable $resolveThrows = null;
 	public ?Throwable $planThrows = null;
 	public ?Throwable $applyThrows = null;
+	public ?Throwable $readBackThrows = null;
 	public ?Throwable $restoreThrows = null;
 
 	/**
@@ -104,6 +105,9 @@ final class StubWriteOperation implements WriteOperation {
 	 */
 	public function readBack( string $targetKey, OperationContext $context ): TargetState {
 		++$this->readBackCalls;
+		if ( null !== $this->readBackThrows ) {
+			throw $this->readBackThrows;
+		}
 
 		return $this->readBackState ?? new TargetState( $targetKey, true, [ 'post_title' => 'Edited title' ] );
 	}
