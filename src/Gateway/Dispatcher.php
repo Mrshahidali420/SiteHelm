@@ -116,6 +116,20 @@ final class Dispatcher {
 			);
 		}
 
+		// A present but non-array `arguments` is refused rather than coerced to
+		// an empty array. Coercing it means the operation runs against arguments
+		// the caller never sent, and on a write that produces a preview of
+		// nothing while reporting success. This is decided on the call's shape
+		// alone, before the registry is consulted, so it reveals nothing about
+		// which operations exist.
+		if ( array_key_exists( 'arguments', $args ) && ! is_array( $args['arguments'] ) ) {
+			throw new OperationException(
+				ErrorCode::InvalidInput,
+				'The arguments member must be an object.',
+				'Send arguments as a JSON object, or omit it entirely for an operation that takes none.'
+			);
+		}
+
 		// The client's raw operation string is never echoed back: it is untrusted
 		// text that would otherwise flow into an outbound envelope message.
 		if ( ! $this->registry->has( $operation_id ) ) {

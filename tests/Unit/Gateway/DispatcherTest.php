@@ -609,7 +609,11 @@ final class DispatcherTest extends TestCase {
 		} catch ( OperationException $e ) {
 			$this->assertSame( ErrorCode::InvalidInput, $e->errorCode );
 			// The client's raw member name is untrusted text and is never echoed.
+			// Both fields are checked: remediation is a separate property that
+			// ships in the same error envelope, so asserting only the message
+			// leaves echoing the name there passing green.
 			$this->assertStringNotContainsString( 'plan_token', $e->getMessage() );
+			$this->assertStringNotContainsString( 'plan_token', (string) $e->remediation );
 		}
 	}
 
@@ -624,5 +628,102 @@ final class DispatcherTest extends TestCase {
 		);
 
 		$this->assertSame( [ 'wordpress' => '6.8.1' ], $response['data'] );
+	}
+	/**
+	 * The unknown-member guard does not depend on `arguments` being present.
+	 *
+	 * A review found no test covered this shape, so gating the guard on
+	 * isset( $args['arguments'] ) would pass. The consequence is the exact defect
+	 * the guard exists to prevent: a client that mistypes the token key and sends
+	 * nothing else gets a brand-new preview and a success envelope while
+	 * believing it approved a change.
+	 */
+	public function test_an_unknown_top_level_member_is_refused_without_arguments(): void {
+		$this->registerStubWrite();
+
+		try {
+			$this->buildDispatcher()->dispatch(
+				'content-write',
+				[
+					'operation'  => 'content-update',
+					'plan_token' => str_repeat( 'a', 64 ),
+				],
+				$this->makeContext()
+			);
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::InvalidInput, $e->errorCode );
+			$this->assertStringNotContainsString( 'plan_token', $e->getMessage() );
+		}
+	}
+
+	/**
+	 * A falsy-but-present plan token is refused, never treated as absent.
+	 *
+	 * A review found nothing pinned this, so a future `if ( ! $raw )` shortcut in
+	 * resolve_plan_token() would silently turn an approval into a fresh preview
+	 * and return success: the caller believes the change was applied, and it
+	 * never was. Every one of these values is falsy in PHP.
+	 *
+	 * @dataProvider falsyPlanTokens
+	 *
+	 * @param mixed $token The token value a client might send.
+	 */
+	public function test_a_falsy_plan_token_is_refused_rather_than_ignored( mixed $token ): void {
+		$this->registerStubWrite();
+
+		try {
+			$this->buildDispatcher()->dispatch(
+				'content-write',
+				[
+					'operation'  => 'content-update',
+					'planToken'  => $token,
+					'arguments'  => [ 'id' => 42 ],
+				],
+				$this->makeContext()
+			);
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::StalePlan, $e->errorCode );
+		}
+	}
+
+	/**
+	 * @return array<string, mixed[]> Label to the falsy token value.
+	 */
+	public static function falsyPlanTokens(): array {
+		return [
+			'empty string'     => [ '' ],
+			'string zero'      => [ '0' ],
+			'integer zero'     => [ 0 ],
+			'boolean false'    => [ false ],
+			'empty array'      => [ [] ],
+		];
+	}
+
+	/**
+	 * A present but non-array `arguments` is refused, not coerced.
+	 *
+	 * Coercing it to an empty array runs the operation against arguments the
+	 * caller never sent. On a write that produces a preview of nothing while
+	 * reporting success.
+	 */
+	public function test_a_non_array_arguments_member_is_invalid_input(): void {
+		$this->registerStubWrite();
+
+		try {
+			$this->buildDispatcher()->dispatch(
+				'content-write',
+				[
+					'operation' => 'content-update',
+					'arguments' => 'id=42',
+				],
+				$this->makeContext()
+			);
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::InvalidInput, $e->errorCode );
+			$this->assertStringNotContainsString( 'id=42', $e->getMessage() );
+		}
 	}
 }
