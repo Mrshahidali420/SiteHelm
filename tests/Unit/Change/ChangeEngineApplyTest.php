@@ -609,8 +609,10 @@ final class ChangeEngineApplyTest extends TestCase {
 	}
 
 	/**
-	 * One promised field stored and another reverted leaves the target in neither
-	 * its prior nor its promised state.
+	 * Arranges and applies a partial write: of two promised fields, `post_title`
+	 * is stored and `post_excerpt` is reverted, leaving the target in neither its
+	 * prior nor its promised state. Asserts only the refusal itself, so each
+	 * caller can assert the property it is pinning.
 	 *
 	 * The plan promises two fields, so the resolved before-state carries two
 	 * fields as well — which means the stored row's state_fingerprint has to be
@@ -619,7 +621,7 @@ final class ChangeEngineApplyTest extends TestCase {
 	 * plan as a `conflict` long before verification is reached. The stored
 	 * payload_hash still matches: planChange()'s returned payload is unchanged.
 	 */
-	public function test_a_partial_write_is_verification_failed(): void {
+	private function applyPartialWrite(): void {
 		$this->operation->planned = new PlannedChange(
 			[ 'title' => 'Edited title' ],
 			[
@@ -656,11 +658,37 @@ final class ChangeEngineApplyTest extends TestCase {
 		} catch ( OperationException $e ) {
 			$this->assertSame( ErrorCode::VerificationFailed, $e->errorCode );
 		}
+	}
+
+	public function test_a_partial_write_is_verification_failed(): void {
+		$this->applyPartialWrite();
 
 		$this->assertSame(
 			AuditRecorder::OUTCOME_VERIFICATION_FAILED,
 			$this->wpdb->updates[0]['data']['outcome']
 		);
+	}
+
+	/**
+	 * A partial write is the case where recording the promise does the most
+	 * damage: both promised fields would be listed as changed, at their promised
+	 * sizes, hiding which of the two actually landed — the one fact someone
+	 * recovering from a partial write needs. The row must measure the STORED
+	 * state, so `post_excerpt` — reverted to its prior value — does not appear
+	 * as changed at all, and `post_title` measures 12 for the value core kept.
+	 *
+	 * Recording the promise instead would list both fields and measure
+	 * `post_excerpt` at the promised 14 rather than the stored 16.
+	 */
+	public function test_a_partial_writes_audit_record_measures_the_stored_values(): void {
+		$this->applyPartialWrite();
+
+		$summary = json_decode( (string) $this->wpdb->updates[0]['data']['summary'], true );
+
+		$this->assertSame( [ 'post_title' ], $summary['changed'] );
+		$this->assertArrayNotHasKey( 'post_excerpt', $summary['metrics'] );
+		$this->assertSame( 14, $summary['metrics']['post_title']['before'] );
+		$this->assertSame( 12, $summary['metrics']['post_title']['after'] );
 	}
 
 	/**
