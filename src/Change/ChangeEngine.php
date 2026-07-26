@@ -426,7 +426,7 @@ final class ChangeEngine {
 				$current,
 				$planned,
 				$context,
-				'The write completed but the stored state does not match the approved plan.'
+				'The write completed but a field the approved plan promised to change still holds its previous value, so the change did not take.'
 			);
 		}
 
@@ -455,6 +455,20 @@ final class ChangeEngine {
 			);
 		}
 
+		// The audit record must state what was STORED, not what was promised.
+		// This row carries outcome `applied` and it is permanent, so recording an
+		// adjusted write against the promised value would assert a clean apply for
+		// a value WordPress never stored. The response discloses the same thing in
+		// 'state', but a response is ephemeral and this is what an administrator
+		// reviews later. Only promised keys are read from the after-state, so
+		// unpromised fields stay out of the summary and remain warnings; and when
+		// nothing was adjusted every stored value equals its promise, making this
+		// byte-identical to $planned->afterFields on the unadjusted path.
+		$recorded_after = array_replace(
+			$planned->afterFields,
+			array_intersect_key( $after->fields, $planned->afterFields )
+		);
+
 		$finished = $this->audit->finish(
 			$audit_id,
 			AuditRecorder::OUTCOME_APPLIED,
@@ -462,7 +476,7 @@ final class ChangeEngine {
 			$snapshot['reference'],
 			$target_key,
 			$current->fields,
-			$planned->afterFields
+			$recorded_after
 		);
 		if ( ! $finished ) {
 			$warnings[] = 'The audit record was created but its outcome could not be updated.';
@@ -499,8 +513,14 @@ final class ChangeEngine {
 	 * but nothing can confirm what it left behind, and that must never surface
 	 * as the underlying operation's own error code, since a real WriteOperation
 	 * might throw target_not_found from readBack() rather than
-	 * verification_failed — and when the re-read succeeds but does not match
-	 * the approved plan.
+	 * verification_failed — and when a promised field still holds its prior
+	 * value, which means the write did not take.
+	 *
+	 * A promised field holding some THIRD value is not a failure and never
+	 * reaches here: WordPress adjusting a value as it stores it is the platform
+	 * behaving normally, and WriteVerifier classifies it as applied. That
+	 * distinction is the whole reason this refusal is narrower than a
+	 * whole-state comparison.
 	 *
 	 * Per interpretation I4 the envelope carries no recovery handle: the
 	 * remediation directs an administrator to the audit entry by
