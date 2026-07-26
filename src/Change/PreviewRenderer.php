@@ -180,7 +180,7 @@ final class PreviewRenderer {
 
 		$raw    = (string) $value;
 		$length = mb_strlen( $raw );
-		$text   = str_replace( [ "\r\n", "\r", "\n" ], '\\n', $raw );
+		$text   = $this->escape_line_control( $raw );
 
 		if ( $length <= self::MAX_VALUE_CHARS ) {
 			return '"' . $text . '"';
@@ -191,6 +191,40 @@ final class PreviewRenderer {
 			mb_substr( $text, 0, self::MAX_VALUE_CHARS ),
 			self::ELLIPSIS,
 			$length
+		);
+	}
+
+	/**
+	 * Renders every character that could forge a line, or visually reorder one,
+	 * as a visible escape.
+	 *
+	 * An operator approving a preview is authorizing what the preview said, and
+	 * on a multi-author site the field values in it are attacker-influenceable.
+	 * A value carrying a line break can forge an extra line in the human
+	 * summary, so the operator reads one change and approves another.
+	 *
+	 * ASCII CR and LF are the obvious carriers, but they are not the only ones.
+	 * U+2028 and U+2029 are line and paragraph separators, U+0085 is NEL, and
+	 * vertical tab and form feed break lines in some renderers — all of which
+	 * many terminals and chat clients display as a break. The bidirectional
+	 * controls (U+200E/U+200F and the embedding, override and isolate ranges)
+	 * need no break at all: they reorder the visible text in place, so a
+	 * rendered before/after pair can be made to read backwards.
+	 *
+	 * Each is escaped rather than stripped, so the operator sees that something
+	 * was there instead of the character silently vanishing.
+	 *
+	 * @param string $raw The attacker-influenceable value.
+	 *
+	 * @return string The value with line and direction controls made visible.
+	 */
+	private function escape_line_control( string $raw ): string {
+		$text = str_replace( [ "\r\n", "\r", "\n" ], '\\n', $raw );
+
+		return (string) preg_replace_callback(
+			'/[\x{000B}\x{000C}\x{0085}\x{2028}\x{2029}\x{200E}\x{200F}\x{202A}-\x{202E}\x{2066}-\x{2069}]/u',
+			static fn( array $matches ): string => sprintf( '\\u{%04X}', (int) mb_ord( $matches[0], 'UTF-8' ) ),
+			$text
 		);
 	}
 }
