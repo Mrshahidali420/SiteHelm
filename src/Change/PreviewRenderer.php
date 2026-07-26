@@ -1,0 +1,196 @@
+<?php
+/**
+ * Human-readable and machine-readable change previews.
+ *
+ * @package SiteHelm
+ */
+
+declare(strict_types=1);
+
+namespace SiteHelm\Change;
+
+/**
+ * Renders the two previews the contract requires: a summary an MCP client can
+ * present for confirmation, and a machine-readable before/after diff.
+ *
+ * Both are pure functions of the current field map and the promised after-state,
+ * and field order comes from the plan rather than from PHP array insertion
+ * order, so the same target state and payload always render identically. The
+ * renderer knows nothing about any particular domain, so a later module's
+ * writes render through exactly this code.
+ *
+ * @package SiteHelm
+ */
+final class PreviewRenderer {
+
+	/**
+	 * Characters of a text value shown before it is truncated in the human
+	 * summary. Bounded so a large body does not swamp a confirmation prompt.
+	 */
+	private const MAX_VALUE_CHARS = 80;
+
+	/**
+	 * Marker appended to a truncated value.
+	 */
+	private const ELLIPSIS = '…';
+
+	/**
+	 * Rendering used when a field has no prior value at all.
+	 */
+	private const ABSENT = '(absent)';
+
+	/**
+	 * Renders both previews for one planned change.
+	 *
+	 * @param string        $operationId The operation being previewed.
+	 * @param TargetState   $current     The resolved current state.
+	 * @param PlannedChange $planned     The promised change.
+	 *
+	 * @return array<string, mixed> Keys 'human' and 'machine'.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+	 */
+	public function render( string $operationId, TargetState $current, PlannedChange $planned ): array {
+		$changes = [];
+
+		foreach ( $this->ordered_fields( array_keys( $planned->afterFields ), $planned->fieldOrder ) as $field ) {
+			$before = $current->fields[ $field ] ?? null;
+			$after  = $planned->afterFields[ $field ];
+			if ( $before === $after ) {
+				continue;
+			}
+			$changes[] = [
+				'field'  => $field,
+				'before' => $before,
+				'after'  => $after,
+			];
+		}
+
+		return [
+			'human'   => $this->human_summary( $operationId, $current, $changes ),
+			'machine' => [
+				'target'  => $current->targetKey,
+				'exists'  => $current->exists,
+				'changes' => $changes,
+			],
+		];
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+
+	/**
+	 * Orders promised fields by the plan's declared order, appending anything
+	 * unlisted in alphabetical order so the result never depends on insertion.
+	 *
+	 * @param string[] $fields   The promised field names.
+	 * @param string[] $declared The plan's declared presentation order.
+	 *
+	 * @return string[] The fields in presentation order.
+	 */
+	private function ordered_fields( array $fields, array $declared ): array {
+		$ranked = [];
+		$rest   = [];
+
+		foreach ( $fields as $field ) {
+			$position = array_search( $field, $declared, true );
+			if ( false === $position ) {
+				$rest[] = $field;
+				continue;
+			}
+			$ranked[ $position ] = $field;
+		}
+
+		ksort( $ranked, SORT_NUMERIC );
+		sort( $rest, SORT_STRING );
+
+		return array_merge( array_values( $ranked ), $rest );
+	}
+
+	/**
+	 * The confirmation summary: one header line, then one line per change.
+	 *
+	 * @param string                           $operation_id The operation name.
+	 * @param TargetState                      $current      The current state.
+	 * @param array<int, array<string, mixed>> $changes      The ordered changes.
+	 *
+	 * @return string The plain-text summary.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+	 */
+	private function human_summary( string $operation_id, TargetState $current, array $changes ): string {
+		$lines = [
+			sprintf(
+				'%s on %s (%s).',
+				$operation_id,
+				$current->targetKey,
+				$current->exists ? 'existing target' : 'new target'
+			),
+		];
+
+		if ( [] === $changes ) {
+			$lines[] = '  No field changes: the target already matches the requested state.';
+
+			return implode( "\n", $lines );
+		}
+
+		foreach ( $changes as $change ) {
+			$lines[] = sprintf(
+				'  %s: %s -> %s',
+				$change['field'],
+				$this->render_value( $change['before'] ),
+				$this->render_value( $change['after'] )
+			);
+		}
+
+		return implode( "\n", $lines );
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+
+	/**
+	 * Renders one value for the human summary, bounded in length.
+	 *
+	 * Field values are attacker-influenceable (post titles, excerpts, body
+	 * text on a multi-author site). Embedded newlines are normalized to a
+	 * literal `\n` marker before the value is placed on its one-line-per-change
+	 * summary row, so a crafted value cannot inject what looks like additional
+	 * change lines into the confirmation text an operator reads before
+	 * approving. The character count reported for a truncated value reflects
+	 * the original, unescaped length.
+	 *
+	 * @param mixed $value The value to render.
+	 *
+	 * @return string The bounded rendering.
+	 */
+	private function render_value( mixed $value ): string {
+		if ( null === $value ) {
+			return self::ABSENT;
+		}
+		if ( is_bool( $value ) ) {
+			return $value ? 'true' : 'false';
+		}
+		if ( is_int( $value ) || is_float( $value ) ) {
+			return (string) $value;
+		}
+		if ( is_array( $value ) ) {
+			$count = count( $value );
+
+			return sprintf( '(%d item%s)', $count, 1 === $count ? '' : 's' );
+		}
+
+		$raw    = (string) $value;
+		$length = mb_strlen( $raw );
+		$text   = str_replace( [ "\r\n", "\r", "\n" ], '\\n', $raw );
+
+		if ( $length <= self::MAX_VALUE_CHARS ) {
+			return '"' . $text . '"';
+		}
+
+		return sprintf(
+			'"%s%s" (%d characters)',
+			mb_substr( $text, 0, self::MAX_VALUE_CHARS ),
+			self::ELLIPSIS,
+			$length
+		);
+	}
+}
