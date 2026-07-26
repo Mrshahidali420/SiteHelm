@@ -271,5 +271,67 @@ final class CoreModule implements IntegrationModule {
 			),
 			new ContentUpdate( $fields, $targets )
 		);
+
+		$registry->registerWrite(
+			new OperationDefinition(
+				id: 'content-create',
+				domain: Domain::Content,
+				mode: Mode::Write,
+				description: 'Create one new content item with a title, body, excerpt, and initial status.',
+				inputSchema: [
+					'type'                 => 'object',
+					'properties'           => [
+						'type'    => [
+							'type'        => 'string',
+							'maxLength'   => 32,
+							'description' => 'A public content type this site registers, for example post or page.',
+						],
+						'title'   => [
+							'type'        => 'string',
+							'maxLength'   => 255,
+							'description' => 'Title of the new content item.',
+						],
+						'content' => [
+							'type'        => 'string',
+							'maxLength'   => 500000,
+							'description' => 'Body of the new content item.',
+						],
+						'excerpt' => [
+							'type'        => 'string',
+							'maxLength'   => 5000,
+							'description' => 'Excerpt of the new content item.',
+						],
+						'status'  => [
+							'type'        => 'string',
+							'enum'        => [ 'draft', 'pending', 'private', 'publish' ],
+							'description' => 'Initial status. Requesting publish additionally requires the publish capability.',
+						],
+					],
+					'required'             => [ 'type', 'title', 'status' ],
+					'additionalProperties' => false,
+				],
+				outputSchema: self::WRITE_OUTPUT_SCHEMA,
+				schemaVersion: 1,
+				requiredCapabilities: [ 'edit_posts' ],
+				risk: Risk::Medium,
+				isReadOnly: false,
+				isDestructive: false,
+				isIdempotent: false,
+				previewPolicy: PreviewPolicy::Required,
+				snapshotPolicy: SnapshotPolicy::Supported,
+				rollbackPolicy: RollbackPolicy::Supported,
+				module: ModuleId::Core,
+				supportedVersions: [ 'wordpress' => '>=' . SITEHELM_MIN_WP ],
+				example: [
+					'operation' => 'content-create',
+					'arguments' => [
+						'type'   => 'post',
+						'title'  => 'Launch announcement',
+						'status' => 'draft',
+					],
+				],
+			),
+			new ContentCreate( $fields, $targets )
+		);
 	}
 }
