@@ -136,4 +136,14 @@ and response recorded verbatim.
 - The machine diff in a preview is unbounded, deliberately, because the apply
   phase needs literal values. No input `maxLength` is declared anywhere yet.
 
-**User approval is required before Phase 3b planning begins.**
+### 5. Approval
+
+**Approved by the user on 2026-07-26.** Phase 3b planning is cleared to begin
+once the whole-branch review is closed and the integration decision is taken.
+
+Two items were surfaced at approval time and remain the user's to action:
+
+- The Application Password named "SiteHelm Phase 3a demonstration" issued to
+  `admin` on `emcp-license-test` should be revoked when the site is no longer
+  used to drive the plugin from an MCP client.
+- The branch is unpushed and unmerged pending the integration decision.
