@@ -74,4 +74,22 @@ final class CoreModuleTest extends TestCase {
 		$this->assertSame( [ 'edit_posts' ], $definition->requiredCapabilities );
 		$this->assertTrue( $definition->isReadOnly );
 	}
+
+	public function test_module_registers_content_update_as_a_write_operation(): void {
+		Functions\when( 'get_bloginfo' )->justReturn( '6.8.1' );
+		$registry = new CapabilityRegistry();
+
+		( new CoreModule() )->register( $registry );
+
+		$this->assertTrue( $registry->hasWriteOperation( 'content-update' ) );
+		$definition = $registry->definition( 'content-update' );
+		$this->assertSame( 'content-write', $definition->dispatcherName() );
+		$this->assertSame( [ 'edit_post' ], $definition->requiredCapabilities );
+		$this->assertSame( 'required', $definition->previewPolicy->value );
+		$this->assertSame( 'required', $definition->snapshotPolicy->value );
+		$this->assertSame( 'supported', $definition->rollbackPolicy->value );
+		$this->assertSame( 'medium', $definition->risk->value );
+		$this->assertTrue( $definition->isIdempotent );
+		$this->assertFalse( $definition->isDestructive );
+	}
 }
