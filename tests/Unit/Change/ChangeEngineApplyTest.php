@@ -548,6 +548,36 @@ final class ChangeEngineApplyTest extends TestCase {
 	}
 
 	/**
+	 * The response's disclosure of an adjusted value is ephemeral; the audit
+	 * record is permanent. Recording the PROMISED value against outcome
+	 * `applied` would leave the audit asserting a clean apply for a value
+	 * WordPress never stored — a false permanent record of exactly the kind
+	 * auditability exists to prevent, and one that did not exist before this
+	 * contract change, because the case used to record verification_failed.
+	 *
+	 * The summary carries names and sizes only, so this asserts the measured
+	 * length: the stored 'Adjusted by WordPress' is 21 characters, the prior
+	 * 'Original title' is 14, and the promised 'Edited title' — which must NOT
+	 * be what is recorded — is 12.
+	 */
+	public function test_the_audit_record_measures_the_stored_value_not_the_promised_one(): void {
+		$this->operation->readBackState = new TargetState( 'post:42', true, [ 'post_title' => 'Adjusted by WordPress' ] );
+
+		$this->apply();
+
+		$this->assertSame(
+			AuditRecorder::OUTCOME_APPLIED,
+			$this->wpdb->updates[0]['data']['outcome']
+		);
+
+		$summary = json_decode( (string) $this->wpdb->updates[0]['data']['summary'], true );
+
+		$this->assertSame( [ 'post_title' ], $summary['changed'] );
+		$this->assertSame( 14, $summary['metrics']['post_title']['before'] );
+		$this->assertSame( 21, $summary['metrics']['post_title']['after'] );
+	}
+
+	/**
 	 * One promised field stored and another reverted leaves the target in neither
 	 * its prior nor its promised state.
 	 *
@@ -595,6 +625,11 @@ final class ChangeEngineApplyTest extends TestCase {
 		} catch ( OperationException $e ) {
 			$this->assertSame( ErrorCode::VerificationFailed, $e->errorCode );
 		}
+
+		$this->assertSame(
+			AuditRecorder::OUTCOME_VERIFICATION_FAILED,
+			$this->wpdb->updates[0]['data']['outcome']
+		);
 	}
 
 	/**
