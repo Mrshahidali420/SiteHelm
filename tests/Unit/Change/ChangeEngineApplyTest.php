@@ -578,6 +578,37 @@ final class ChangeEngineApplyTest extends TestCase {
 	}
 
 	/**
+	 * The sibling above covers a promised field stored with a DIFFERENT value.
+	 * This covers a promised field the after-state does not carry at all, which
+	 * is the one shape where taking the intersection of the two field sets and
+	 * falling back to the plan would quietly record the PROMISED value — the
+	 * same false audit record, reached by a different route.
+	 *
+	 * The prior value is non-null, so the missing field matches neither the
+	 * promise nor the prior value and the write still classifies as adjusted:
+	 * the applied path runs and writes this row. The recorded after-state must
+	 * measure the field as absent — size 0 — never as the promised 'Edited
+	 * title', which would measure 12.
+	 */
+	public function test_the_audit_record_measures_a_promised_field_missing_from_the_after_state_as_absent(): void {
+		$this->operation->readBackState = new TargetState( 'post:42', true, [] );
+
+		$result = $this->apply();
+
+		$this->assertSame( VerificationStatus::VerifiedWithAdjustments, $result->verification );
+		$this->assertSame(
+			AuditRecorder::OUTCOME_APPLIED,
+			$this->wpdb->updates[0]['data']['outcome']
+		);
+
+		$summary = json_decode( (string) $this->wpdb->updates[0]['data']['summary'], true );
+
+		$this->assertSame( [ 'post_title' ], $summary['changed'] );
+		$this->assertSame( 14, $summary['metrics']['post_title']['before'] );
+		$this->assertSame( 0, $summary['metrics']['post_title']['after'] );
+	}
+
+	/**
 	 * One promised field stored and another reverted leaves the target in neither
 	 * its prior nor its promised state.
 	 *

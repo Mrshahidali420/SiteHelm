@@ -460,14 +460,23 @@ final class ChangeEngine {
 		// adjusted write against the promised value would assert a clean apply for
 		// a value WordPress never stored. The response discloses the same thing in
 		// 'state', but a response is ephemeral and this is what an administrator
-		// reviews later. Only promised keys are read from the after-state, so
-		// unpromised fields stay out of the summary and remain warnings; and when
-		// nothing was adjusted every stored value equals its promise, making this
-		// byte-identical to $planned->afterFields on the unadjusted path.
-		$recorded_after = array_replace(
-			$planned->afterFields,
-			array_intersect_key( $after->fields, $planned->afterFields )
-		);
+		// reviews later.
+		//
+		// Every promised key is read from the after-state individually, defaulting
+		// to null rather than to the promise. Intersecting the two field sets and
+		// letting the plan fill the gaps would look equivalent, but it records the
+		// PROMISED value for a promised field the after-state does not carry at
+		// all — the same false record, by a narrower route. null measures as size
+		// 0, which is honest and visibly not the promise.
+		//
+		// Only promised keys are read, so unpromised fields stay out of the
+		// summary and remain warnings. When nothing was adjusted every stored
+		// value equals its promise, making this identical to $planned->afterFields
+		// on the unadjusted path.
+		$recorded_after = [];
+		foreach ( array_keys( $planned->afterFields ) as $field ) {
+			$recorded_after[ $field ] = $after->fields[ $field ] ?? null;
+		}
 
 		$finished = $this->audit->finish(
 			$audit_id,
