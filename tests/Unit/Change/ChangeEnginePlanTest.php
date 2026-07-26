@@ -16,6 +16,7 @@ use SiteHelm\Change\ChangeEngine;
 use SiteHelm\Change\PayloadNormalizer;
 use SiteHelm\Change\PlannedChange;
 use SiteHelm\Change\PreviewRenderer;
+use SiteHelm\Change\SnapshotLifecycle;
 use SiteHelm\Change\StateFingerprint;
 use SiteHelm\Change\TargetState;
 use SiteHelm\Change\WriteVerifier;
@@ -72,7 +73,8 @@ final class ChangeEnginePlanTest extends TestCase {
 			new StateFingerprint( $normalizer ),
 			new PreviewRenderer(),
 			new Installer(),
-			new WriteVerifier( $normalizer )
+			new WriteVerifier( $normalizer ),
+			new SnapshotLifecycle( new SnapshotStore(), $normalizer )
 		);
 		$this->operation = new StubWriteOperation();
 	}

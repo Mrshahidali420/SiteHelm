@@ -69,6 +69,7 @@ final class ChangeEngine {
 	 * @param PreviewRenderer   $preview     Both preview renderings.
 	 * @param Installer         $installer   Storage availability probe.
 	 * @param WriteVerifier     $verifier    Post-write state classification.
+	 * @param SnapshotLifecycle $lifecycle   Snapshot eligibility, capture, and compensation.
 	 */
 	public function __construct(
 		private readonly PlanStore $plans,
@@ -79,6 +80,7 @@ final class ChangeEngine {
 		private readonly PreviewRenderer $preview,
 		private readonly Installer $installer,
 		private readonly WriteVerifier $verifier,
+		private readonly SnapshotLifecycle $lifecycle,
 	) {
 	}
 
@@ -101,7 +103,8 @@ final class ChangeEngine {
 			new StateFingerprint( $normalizer ),
 			new PreviewRenderer(),
 			new Installer(),
-			new WriteVerifier( $normalizer )
+			new WriteVerifier( $normalizer ),
+			new SnapshotLifecycle( new SnapshotStore(), $normalizer )
 		);
 	}
 
@@ -135,7 +138,7 @@ final class ChangeEngine {
 		$current     = $operation->resolveTarget( $payload, $context );
 		$planned     = $operation->planChange( $current, $payload, $context );
 		$fingerprint = $this->fingerprint->compute( $current, $context );
-		$eligibility = $this->eligibility( $definition, $operation, $current, $context );
+		$eligibility = $this->lifecycle->eligibility( $definition, $operation, $current, $context );
 		$rendering   = $this->preview->render( $definition->id, $current, $planned );
 
 		$token        = PlanStore::issueToken();
@@ -325,7 +328,7 @@ final class ChangeEngine {
 		}
 
 		$warnings = $planned->warnings;
-		$snapshot = $this->capture( $definition, $operation, $current, $context );
+		$snapshot = $this->lifecycle->capture( $definition, $operation, $current, $context );
 		$restore  = $snapshot['restore'];
 
 		// The snapshot handle goes onto the OPENING audit row. Both values are
@@ -350,7 +353,7 @@ final class ChangeEngine {
 		try {
 			$target_key = $operation->applyChange( $current, $planned, $context );
 		} catch ( OperationException $failure ) {
-			$compensation = $this->compensate( $operation, $restore, $context );
+			$compensation = $this->lifecycle->compensate( $operation, $restore, $context );
 			$this->audit->finish(
 				$audit_id,
 				AuditRecorder::OUTCOME_EXECUTION_FAILED,
@@ -369,8 +372,8 @@ final class ChangeEngine {
 				$compensation
 			);
 		} catch ( Throwable $unexpected ) {
-			$this->log_unexpected( $unexpected );
-			$compensation = $this->compensate( $operation, $restore, $context );
+			EngineLog::unexpected( $unexpected );
+			$compensation = $this->lifecycle->compensate( $operation, $restore, $context );
 			$this->audit->finish(
 				$audit_id,
 				AuditRecorder::OUTCOME_EXECUTION_FAILED,
@@ -402,7 +405,7 @@ final class ChangeEngine {
 		try {
 			$after = $operation->readBack( $target_key, $context );
 		} catch ( Throwable $unreadable ) {
-			$this->log_unexpected( $unreadable );
+			EngineLog::unexpected( $unreadable );
 
 			// No after-state exists to record: the read that would have produced
 			// one is what failed. The promise is all there is. See the helper's
@@ -626,89 +629,6 @@ final class ChangeEngine {
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 
 	/**
-	 * Captures the snapshot the plan promised.
-	 *
-	 * @param OperationDefinition $definition The operation being applied.
-	 * @param WriteOperation      $operation  The six-phase implementation.
-	 * @param TargetState         $current    The resolved current state.
-	 * @param OperationContext    $context    The request context.
-	 *
-	 * @return array<string, mixed> Keys 'restore', 'id', and 'reference'.
-	 *
-	 * @throws OperationException With ErrorCode::RollbackUnavailable when a
-	 *                           required snapshot could not be recorded.
-	 *
-	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
-	 * phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped
-	 */
-	private function capture(
-		OperationDefinition $definition,
-		WriteOperation $operation,
-		TargetState $current,
-		OperationContext $context
-	): array {
-		$empty = [
-			'restore'   => null,
-			'id'        => null,
-			'reference' => null,
-		];
-
-		if ( SnapshotPolicy::NotApplicable === $definition->snapshotPolicy ) {
-			return $empty;
-		}
-
-		$restore = $operation->captureSnapshot( $current, $context );
-		if ( null === $restore ) {
-			if ( SnapshotPolicy::Required === $definition->snapshotPolicy ) {
-				throw new OperationException(
-					ErrorCode::RollbackUnavailable,
-					'No recoverable snapshot can be captured for this target, so the change was not applied.',
-					'Recover through WordPress revisions or the trash instead.'
-				);
-			}
-
-			return $empty;
-		}
-
-		$captured = $this->snapshots->capture(
-			[
-				'site_id'         => $context->siteId,
-				'user_id'         => $context->userId,
-				'operation_id'    => $definition->id,
-				'module_id'       => $definition->module->value,
-				'target_key'      => $current->targetKey,
-				'restore_state'   => $this->normalizer->canonicalJson( $restore ),
-				'module_versions' => $this->normalizer->canonicalJson( $context->moduleVersions ),
-				'created_at'      => $context->requestTime,
-			]
-		);
-
-		if ( null === $captured ) {
-			if ( SnapshotPolicy::Required === $definition->snapshotPolicy ) {
-				throw new OperationException(
-					ErrorCode::RollbackUnavailable,
-					'The snapshot this change requires could not be recorded, so the change was not applied.',
-					'A site administrator should deactivate and reactivate SiteHelm to rebuild its local storage.'
-				);
-			}
-
-			return [
-				'restore'   => $restore,
-				'id'        => null,
-				'reference' => null,
-			];
-		}
-
-		return [
-			'restore'   => $restore,
-			'id'        => $captured['id'],
-			'reference' => $captured['reference'],
-		];
-	}
-	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
-	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
-
-	/**
 	 * Field names that changed although the approved plan never promised them.
 	 *
 	 * Verifying only the promised keys would let a third-party save_post hook
@@ -752,34 +672,6 @@ final class ChangeEngine {
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 
 	/**
-	 * Attempts to restore the captured snapshot after a failed write.
-	 *
-	 * The restore attempt has its own containment, because an exception thrown
-	 * inside a catch block is not caught by a sibling catch on the same try.
-	 *
-	 * @param WriteOperation            $operation The six-phase implementation.
-	 * @param array<string, mixed>|null $restore   The captured restore state.
-	 * @param OperationContext          $context   The request context.
-	 *
-	 * @return string One of 'restored', 'failed', or 'not-attempted'.
-	 */
-	private function compensate( WriteOperation $operation, ?array $restore, OperationContext $context ): string {
-		if ( null === $restore ) {
-			return 'not-attempted';
-		}
-
-		try {
-			$operation->restore( $restore, $context );
-
-			return 'restored';
-		} catch ( Throwable $failure ) {
-			$this->log_unexpected( $failure );
-
-			return 'failed';
-		}
-	}
-
-	/**
 	 * The single stale-plan failure, used for every binding refusal so a caller
 	 * cannot learn which element of the binding was wrong.
 	 *
@@ -792,21 +684,6 @@ final class ChangeEngine {
 			'Generate a fresh preview and approve that plan token instead.'
 		);
 	}
-
-	/**
-	 * Logs an unexpected failure server-side.
-	 *
-	 * The message never reaches the client, so it may carry technical detail;
-	 * nothing derived from it is placed in an envelope.
-	 *
-	 * @param Throwable $failure The failure to log.
-	 *
-	 * phpcs:disable WordPress.PHP.DevelopmentFunctions.error_log_error_log
-	 */
-	private function log_unexpected( Throwable $failure ): void {
-		error_log( sprintf( 'SiteHelm change engine failure: %s', $failure->getMessage() ) );
-	}
-	// phpcs:enable WordPress.PHP.DevelopmentFunctions.error_log_error_log
 
 	/**
 	 * Serializes a change plan for the wire.
@@ -833,59 +710,6 @@ final class ChangeEngine {
 		];
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
-
-	/**
-	 * Declares the recovery position before anything executes.
-	 *
-	 * `captureSnapshot()` is contractually side-effect free, so probing it here
-	 * is safe. When the snapshot policy is `required` and nothing can be
-	 * captured, the plan is refused with `rollback_unavailable` rather than
-	 * offering a preview that could never safely execute. A `required` rollback
-	 * policy needs no separate branch: the registry already forces a `required`
-	 * snapshot policy alongside it.
-	 *
-	 * @param OperationDefinition $definition The operation being previewed.
-	 * @param WriteOperation      $operation  The six-phase implementation.
-	 * @param TargetState         $current    The resolved current state.
-	 * @param OperationContext    $context    The request context.
-	 *
-	 * @return array<string, string> Keys 'snapshot' and 'rollback'.
-	 *
-	 * @throws OperationException With ErrorCode::RollbackUnavailable.
-	 *
-	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
-	 * phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped
-	 */
-	private function eligibility(
-		OperationDefinition $definition,
-		WriteOperation $operation,
-		TargetState $current,
-		OperationContext $context
-	): array {
-		if ( SnapshotPolicy::NotApplicable === $definition->snapshotPolicy ) {
-			return [
-				'snapshot' => self::SNAPSHOT_NOT_APPLICABLE,
-				'rollback' => self::ROLLBACK_NOT_OFFERED,
-			];
-		}
-
-		$capturable = null !== $operation->captureSnapshot( $current, $context );
-
-		if ( ! $capturable && SnapshotPolicy::Required === $definition->snapshotPolicy ) {
-			throw new OperationException(
-				ErrorCode::RollbackUnavailable,
-				'No recoverable snapshot can be captured for this target, so the change is refused before it executes.',
-				'Recover through WordPress revisions or the trash instead, or choose a target that supports snapshots.'
-			);
-		}
-
-		return [
-			'snapshot' => $capturable ? self::SNAPSHOT_WILL_CAPTURE : self::SNAPSHOT_NO_PRIOR_STATE,
-			'rollback' => $capturable ? self::ROLLBACK_WILL_OFFER : self::ROLLBACK_NOT_OFFERED,
-		];
-	}
-	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
-	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 
 	/**
 	 * Refuses to proceed when the engine's own local tables are missing.
