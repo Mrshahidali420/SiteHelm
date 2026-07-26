@@ -23,6 +23,7 @@ use SiteHelm\Storage\AuditStore;
 use SiteHelm\Storage\Installer;
 use SiteHelm\Storage\PlanStore;
 use SiteHelm\Storage\SnapshotStore;
+use Throwable;
 
 /**
  * The shared change engine every write dispatcher routes through.
@@ -48,6 +49,14 @@ final class ChangeEngine {
 	public const SNAPSHOT_NOT_APPLICABLE = 'not-applicable';
 	public const ROLLBACK_WILL_OFFER     = 'will-offer';
 	public const ROLLBACK_NOT_OFFERED    = 'not-offered';
+
+	/**
+	 * The one field that changes on every write regardless of what was planned.
+	 * It is in the state fingerprint, because that is how a concurrent edit is
+	 * detected, but it is never promised and never reported as an unpromised
+	 * change — it would be reported on every single write.
+	 */
+	private const VOLATILE_FIELD = 'post_modified_gmt';
 
 	/**
 	 * Constructs the engine over its collaborators.
@@ -185,6 +194,477 @@ final class ChangeEngine {
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+
+	/**
+	 * Routes one write call: no token previews, a token applies.
+	 *
+	 * There is no third branch. Trusted-write enrollment would be that branch,
+	 * and it is deliberately absent: no operation in this phase is risk `low`,
+	 * so nothing is eligible for single-call execution.
+	 *
+	 * @param OperationDefinition  $definition The operation being invoked.
+	 * @param WriteOperation       $operation  The six-phase implementation.
+	 * @param array<string, mixed> $payload    The validated arguments.
+	 * @param string|null          $planToken  The approval token, when supplied.
+	 * @param OperationContext     $context    The request context.
+	 *
+	 * @return OperationResult The plan or the applied result.
+	 *
+	 * @throws OperationException On any failure.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+	 */
+	public function handle(
+		OperationDefinition $definition,
+		WriteOperation $operation,
+		array $payload,
+		?string $planToken,
+		OperationContext $context
+	): OperationResult {
+		return null === $planToken
+			? $this->preview( $definition, $operation, $payload, $context )
+			: $this->apply( $definition, $operation, $payload, $planToken, $context );
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+
+	/**
+	 * The apply phase: execute exactly the previewed change.
+	 *
+	 * Order matters and is deliberate:
+	 *
+	 * - Every binding and freshness check runs BEFORE the plan is consumed, so a
+	 *   plan rejected for a reason the caller can fix costs nothing but a retry.
+	 * - The state fingerprint is checked BEFORE the payload hash. Both refuse a
+	 *   plan that no longer matches, but they refuse it with different codes, and
+	 *   a concurrent edit can invalidate both at once: the target changed, so the
+	 *   fingerprint differs, and the normalized payload derived from that target
+	 *   differs too. The contract names that situation `conflict`, so the
+	 *   fingerprint must be the check that fires. Reversing them would report
+	 *   `stale_plan` for a concurrent edit.
+	 * - Consumption is the last thing that happens before the audit record opens,
+	 *   and the audit record opens before anything executes.
+	 *
+	 * Two refusals deliberately occur AFTER consumption, because neither is
+	 * something the caller can correct by resubmitting the same plan: capture()
+	 * can raise `rollback_unavailable` when a required snapshot cannot be
+	 * recorded, and start() raises `integration_unavailable` when the audit row
+	 * cannot be opened. Both leave the target untouched — nothing has executed
+	 * yet — but the plan token is already spent, so the caller must generate a
+	 * fresh preview. This is stated rather than glossed: burning a token on a
+	 * storage failure is a real cost, and the alternative (executing without a
+	 * snapshot or without an audit record) would break a contract guarantee.
+	 *
+	 * @param OperationDefinition  $definition The operation being applied.
+	 * @param WriteOperation       $operation  The six-phase implementation.
+	 * @param array<string, mixed> $payload    The validated arguments.
+	 * @param string               $planToken  The approval token.
+	 * @param OperationContext     $context    The request context.
+	 *
+	 * @return OperationResult The verified result.
+	 *
+	 * @throws OperationException On any failure.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+	 * phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+	 */
+	public function apply(
+		OperationDefinition $definition,
+		WriteOperation $operation,
+		array $payload,
+		string $planToken,
+		OperationContext $context
+	): OperationResult {
+		$this->require_storage();
+
+		$digest = PlanStore::digest( $planToken );
+		$row    = $this->plans->find( $digest );
+
+		if ( null === $row
+			|| null !== $row['consumed_at']
+			|| (int) $row['expires_at'] <= $context->requestTime
+			|| (string) $row['site_id'] !== $context->siteId
+			|| (int) $row['user_id'] !== $context->userId
+			|| (string) $row['operation_id'] !== $definition->id
+			|| (int) $row['schema_version'] !== $definition->schemaVersion ) {
+			throw $this->stale_plan();
+		}
+
+		$current = $operation->resolveTarget( $payload, $context );
+		if ( (string) $row['target_key'] !== $current->targetKey ) {
+			throw $this->stale_plan();
+		}
+
+		// planChange() runs again here so the apply executes exactly what was
+		// previewed, and so every guard inside it is re-evaluated. The payload is
+		// the one the CLIENT re-supplied on this call; the digest comparison below
+		// is what proves it is the payload the preview was generated from.
+		$planned = $operation->planChange( $current, $payload, $context );
+
+		// The fingerprint is checked first, and deliberately. A concurrent edit
+		// invalidates both this and the payload hash at once, and the contract
+		// names that case `conflict`; checking the payload first would answer
+		// `stale_plan` for a situation the contract has a different code for.
+		if ( (string) $row['state_fingerprint'] !== $this->fingerprint->compute( $current, $context ) ) {
+			throw new OperationException(
+				ErrorCode::Conflict,
+				'The target changed between the preview and this approval, so nothing was applied.',
+				'Read the target again and generate a fresh preview.'
+			);
+		}
+
+		if ( (string) $row['payload_hash'] !== $this->normalizer->fingerprint( $planned->payload ) ) {
+			throw $this->stale_plan();
+		}
+
+		if ( ! $this->plans->consume( $digest, $context->requestTime ) ) {
+			throw $this->stale_plan();
+		}
+
+		$warnings = $planned->warnings;
+		$snapshot = $this->capture( $definition, $operation, $current, $context );
+		$restore  = $snapshot['restore'];
+
+		// The snapshot handle goes onto the OPENING audit row. Both values are
+		// already known here, and deferring them to finish() would let a fatal
+		// inside applyChange() strand a captured snapshot no audit row names.
+		$audit_id = $this->audit->start(
+			$definition,
+			$context,
+			$current->targetKey,
+			(string) $row['state_fingerprint'],
+			$snapshot['id'],
+			$snapshot['reference']
+		);
+		if ( 0 === $audit_id ) {
+			throw new OperationException(
+				ErrorCode::IntegrationUnavailable,
+				'The change engine could not open an audit record, so the change was not applied.',
+				'A site administrator should deactivate and reactivate SiteHelm to rebuild its local storage.'
+			);
+		}
+
+		try {
+			$target_key = $operation->applyChange( $current, $planned, $context );
+		} catch ( OperationException $failure ) {
+			$compensation = $this->compensate( $operation, $restore, $context );
+			$this->audit->finish(
+				$audit_id,
+				AuditRecorder::OUTCOME_EXECUTION_FAILED,
+				$snapshot['id'],
+				$snapshot['reference'],
+				$current->targetKey,
+				$current->fields,
+				$planned->afterFields
+			);
+
+			throw new OperationException(
+				$failure->errorCode,
+				$failure->getMessage(),
+				$failure->remediation,
+				$failure->completedSteps,
+				$compensation
+			);
+		} catch ( Throwable $unexpected ) {
+			$this->log_unexpected( $unexpected );
+			$compensation = $this->compensate( $operation, $restore, $context );
+			$this->audit->finish(
+				$audit_id,
+				AuditRecorder::OUTCOME_EXECUTION_FAILED,
+				$snapshot['id'],
+				$snapshot['reference'],
+				$current->targetKey,
+				$current->fields,
+				$planned->afterFields
+			);
+
+			throw new OperationException(
+				ErrorCode::ExecutionFailed,
+				'The write failed unexpectedly. The details were logged on the server.',
+				'Generate a fresh preview and retry; check SiteHelm diagnostics if it recurs.',
+				[],
+				$compensation
+			);
+		}
+
+		$after = $operation->readBack( $target_key, $context );
+
+		if ( ! $this->verified( $planned, $after ) ) {
+			$this->audit->finish(
+				$audit_id,
+				AuditRecorder::OUTCOME_VERIFICATION_FAILED,
+				$snapshot['id'],
+				$snapshot['reference'],
+				$target_key,
+				$current->fields,
+				$planned->afterFields
+			);
+
+			throw new OperationException(
+				ErrorCode::VerificationFailed,
+				'The write completed but the stored state does not match the approved plan.',
+				sprintf(
+					'Ask a site administrator to review the audit entry for correlation %s and restore the recorded snapshot.',
+					$context->correlationId
+				)
+			);
+		}
+
+		// The operation kept every promise it made, but something else may have
+		// changed fields the preview never showed — a third-party save_post hook
+		// rewriting post_content, retagging terms, or regenerating the slug. The
+		// caller approved a preview that did not mention them, so each is named
+		// here. Names only, never values, exactly as in the audit summary.
+		foreach ( $this->unpromised_changes( $planned, $current, $after ) as $field ) {
+			$warnings[] = sprintf(
+				'The write also changed %s, which the approved plan did not promise. Another plugin on this site is likely modifying content on save.',
+				$field
+			);
+		}
+
+		$finished = $this->audit->finish(
+			$audit_id,
+			AuditRecorder::OUTCOME_APPLIED,
+			$snapshot['id'],
+			$snapshot['reference'],
+			$target_key,
+			$current->fields,
+			$planned->afterFields
+		);
+		if ( ! $finished ) {
+			$warnings[] = 'The audit record was created but its outcome could not be updated.';
+		}
+		if ( null === $snapshot['reference'] && SnapshotPolicy::Supported === $definition->snapshotPolicy ) {
+			$warnings[] = 'No snapshot was captured for this change, so no rollback reference is offered.';
+		}
+
+		return new OperationResult(
+			operationId: $definition->id,
+			data: [
+				'target'  => $target_key,
+				'changed' => array_keys( $planned->afterFields ),
+				'state'   => $after->fields,
+			],
+			verification: VerificationStatus::Verified,
+			correlationId: $context->correlationId,
+			auditRef: AuditRecorder::reference( $audit_id ),
+			rollbackRef: $snapshot['reference'],
+			warnings: $warnings,
+		);
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+
+	/**
+	 * Captures the snapshot the plan promised.
+	 *
+	 * @param OperationDefinition $definition The operation being applied.
+	 * @param WriteOperation      $operation  The six-phase implementation.
+	 * @param TargetState         $current    The resolved current state.
+	 * @param OperationContext    $context    The request context.
+	 *
+	 * @return array<string, mixed> Keys 'restore', 'id', and 'reference'.
+	 *
+	 * @throws OperationException With ErrorCode::RollbackUnavailable when a
+	 *                           required snapshot could not be recorded.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+	 * phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+	 */
+	private function capture(
+		OperationDefinition $definition,
+		WriteOperation $operation,
+		TargetState $current,
+		OperationContext $context
+	): array {
+		$empty = [
+			'restore'   => null,
+			'id'        => null,
+			'reference' => null,
+		];
+
+		if ( SnapshotPolicy::NotApplicable === $definition->snapshotPolicy ) {
+			return $empty;
+		}
+
+		$restore = $operation->captureSnapshot( $current, $context );
+		if ( null === $restore ) {
+			if ( SnapshotPolicy::Required === $definition->snapshotPolicy ) {
+				throw new OperationException(
+					ErrorCode::RollbackUnavailable,
+					'No recoverable snapshot can be captured for this target, so the change was not applied.',
+					'Recover through WordPress revisions or the trash instead.'
+				);
+			}
+
+			return $empty;
+		}
+
+		$captured = $this->snapshots->capture(
+			[
+				'site_id'         => $context->siteId,
+				'user_id'         => $context->userId,
+				'operation_id'    => $definition->id,
+				'module_id'       => $definition->module->value,
+				'target_key'      => $current->targetKey,
+				'restore_state'   => $this->normalizer->canonicalJson( $restore ),
+				'module_versions' => $this->normalizer->canonicalJson( $context->moduleVersions ),
+				'created_at'      => $context->requestTime,
+			]
+		);
+
+		if ( null === $captured ) {
+			if ( SnapshotPolicy::Required === $definition->snapshotPolicy ) {
+				throw new OperationException(
+					ErrorCode::RollbackUnavailable,
+					'The snapshot this change requires could not be recorded, so the change was not applied.',
+					'A site administrator should deactivate and reactivate SiteHelm to rebuild its local storage.'
+				);
+			}
+
+			return [
+				'restore'   => $restore,
+				'id'        => null,
+				'reference' => null,
+			];
+		}
+
+		return [
+			'restore'   => $restore,
+			'id'        => $captured['id'],
+			'reference' => $captured['reference'],
+		];
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+
+	/**
+	 * Whether the persisted state matches every field the plan promised.
+	 *
+	 * Only the promised keys are compared, and both sides go through the
+	 * canonical fingerprint so key order and nesting cannot cause a false
+	 * mismatch. Fields the plan did not promise are handled separately by
+	 * unpromised_changes(), which warns rather than fails: an operation that
+	 * kept every promise it made has not failed verification.
+	 *
+	 * @param PlannedChange $planned The promised change.
+	 * @param TargetState   $after   The persisted state.
+	 *
+	 * @return bool True when every promised field matches.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+	 */
+	private function verified( PlannedChange $planned, TargetState $after ): bool {
+		$observed = [];
+		foreach ( array_keys( $planned->afterFields ) as $field ) {
+			$observed[ $field ] = $after->fields[ $field ] ?? null;
+		}
+
+		return $this->normalizer->fingerprint( $observed )
+			=== $this->normalizer->fingerprint( $planned->afterFields );
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+
+	/**
+	 * Field names that changed although the approved plan never promised them.
+	 *
+	 * Verifying only the promised keys would let a third-party save_post hook
+	 * rewrite post_content, retag terms, or regenerate the slug during the write
+	 * and pass silently — a change the operator approved a preview that never
+	 * showed it, which is the opposite of REQ-0005's "inspects exactly what a
+	 * proposed write will change". The engine already holds both the full
+	 * before-state and the full after-state, so the comparison is free.
+	 *
+	 * Only fields present in BOTH states are considered, so a creation (whose
+	 * before-state is empty) produces no warnings, and a field the after-state
+	 * newly exposes is not reported as a change. post_modified_gmt is excluded
+	 * because every write changes it, exactly as D3 says.
+	 *
+	 * @param PlannedChange $planned The promised change.
+	 * @param TargetState   $before  The state resolved immediately before the write.
+	 * @param TargetState   $after   The persisted state.
+	 *
+	 * @return string[] The unpromised field names that changed.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+	 */
+	private function unpromised_changes( PlannedChange $planned, TargetState $before, TargetState $after ): array {
+		$changed = [];
+
+		foreach ( $after->fields as $field => $value ) {
+			if ( self::VOLATILE_FIELD === $field
+				|| array_key_exists( $field, $planned->afterFields )
+				|| ! array_key_exists( $field, $before->fields ) ) {
+				continue;
+			}
+
+			if ( $this->normalizer->fingerprint( [ $field => $value ] )
+				!== $this->normalizer->fingerprint( [ $field => $before->fields[ $field ] ] ) ) {
+				$changed[] = (string) $field;
+			}
+		}
+
+		return $changed;
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+
+	/**
+	 * Attempts to restore the captured snapshot after a failed write.
+	 *
+	 * The restore attempt has its own containment, because an exception thrown
+	 * inside a catch block is not caught by a sibling catch on the same try.
+	 *
+	 * @param WriteOperation            $operation The six-phase implementation.
+	 * @param array<string, mixed>|null $restore   The captured restore state.
+	 * @param OperationContext          $context   The request context.
+	 *
+	 * @return string One of 'restored', 'failed', or 'not-attempted'.
+	 */
+	private function compensate( WriteOperation $operation, ?array $restore, OperationContext $context ): string {
+		if ( null === $restore ) {
+			return 'not-attempted';
+		}
+
+		try {
+			$operation->restore( $restore, $context );
+
+			return 'restored';
+		} catch ( Throwable $failure ) {
+			$this->log_unexpected( $failure );
+
+			return 'failed';
+		}
+	}
+
+	/**
+	 * The single stale-plan failure, used for every binding refusal so a caller
+	 * cannot learn which element of the binding was wrong.
+	 *
+	 * @return OperationException The failure to throw.
+	 */
+	private function stale_plan(): OperationException {
+		return new OperationException(
+			ErrorCode::StalePlan,
+			'This plan token is expired, already used, or bound to a different request.',
+			'Generate a fresh preview and approve that plan token instead.'
+		);
+	}
+
+	/**
+	 * Logs an unexpected failure server-side.
+	 *
+	 * The message never reaches the client, so it may carry technical detail;
+	 * nothing derived from it is placed in an envelope.
+	 *
+	 * @param Throwable $failure The failure to log.
+	 *
+	 * phpcs:disable WordPress.PHP.DevelopmentFunctions.error_log_error_log
+	 */
+	private function log_unexpected( Throwable $failure ): void {
+		error_log( sprintf( 'SiteHelm change engine failure: %s', $failure->getMessage() ) );
+	}
+	// phpcs:enable WordPress.PHP.DevelopmentFunctions.error_log_error_log
 
 	/**
 	 * Serializes a change plan for the wire.
