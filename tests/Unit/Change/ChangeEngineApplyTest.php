@@ -761,6 +761,10 @@ final class ChangeEngineApplyTest extends TestCase {
 		$this->assertStringNotContainsString( 'Rewritten by another plugin', $joined );
 		// post_modified_gmt changes on every write and must never be reported.
 		$this->assertStringNotContainsString( 'post_modified_gmt', $joined );
+		// The engine cannot tell core from a third-party hook — trashing a post
+		// renames the slug in core — so the warning must not name a culprit.
+		$this->assertStringNotContainsString( 'Another plugin', $joined );
+		$this->assertStringNotContainsString( 'plugin', $joined );
 	}
 
 	public function test_a_write_that_changes_only_what_it_promised_warns_about_nothing(): void {
