@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<ruleset name="SiteHelm">
+    <description>SiteHelm coding standard: WPCS with PSR-4 file naming.</description>
+    <file>src</file>
+    <file>sitehelm.php</file>
+    <arg name="extensions" value="php"/>
+    <arg value="sp"/>
+    <config name="minimum_wp_version" value="6.6"/>
+    <rule ref="WordPress">
+        <!-- PSR-4 class files (src/Foo/Bar.php) instead of class-bar.php -->
+        <exclude name="WordPress.Files.FileName"/>
+        <!-- Short array syntax and PSR-4 are project conventions -->
+        <exclude name="Universal.Arrays.DisallowShortArraySyntax"/>
+    </rule>
+    <rule ref="WordPress.WP.I18n">
+        <properties>
+            <property name="text_domain" type="array" value="sitehelm"/>
+        </properties>
+    </rule>
+</ruleset>

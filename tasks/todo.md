@@ -27,4 +27,153 @@ All Phase 1 gates passed on 2026-07-24. Validator outputs, re-run from the repos
 - Task 5: `PASS: foundation contract maps all 51 V1 requirements` — `docs/product/phase-2-foundation-contract.md` (11 stable error codes).
 - Task 6: readiness gate ready with clean-room and scope reviews clear — `docs/product/phase-1-readiness-review.md`.
 
-Next action: Create the Phase 2 foundation implementation plan after explicit approval.
+## Phase 2 Planning
+
+- [x] Phase 2 foundation implementation plan created on 2026-07-25: `docs/superpowers/plans/2026-07-25-phase-2-mcp-gateway-foundation.md` (14 TDD tasks). Approved decisions: PHP 8.1+ / WP 6.6+ platform floor; REQ-0001 included as the end-to-end demo operation.
+
+Next action: Execute the Phase 2 plan (subagent-driven or inline) after user chooses the execution approach.
+
+## Phase 2 Execution
+
+- [x] Task 1: Plugin scaffold and test harness. Validation: PASS. Committed 133a776..c1d020b, review approved.
+- [x] Task 2: Contract enumerations. Validation: PASS. Committed c1d020b..0431b5a, review clean.
+- [x] Task 3: OperationDefinition value object with cross-field validation. Validation: PASS after 1 fix round. Committed 0431b5a..12e5017, review clean.
+- [x] Task 4: Context, result, error, and plan value objects. Validation: PASS. Committed 12e5017..9b6f6a0, review clean.
+- [x] Task 5: Strict schema validator. Validation: PASS after 1 fix round. Committed 9b6f6a0..bf5d286, review clean.
+- [x] Task 6: Capability registry and catalog builder. Validation: PASS after 1 fix round. Committed bf5d286..8415e0a, review clean.
+- [x] Task 7: Policy engine. Validation: PASS after 1 evidence-only round. Committed 8415e0a..2379110, review clean.
+- [x] Task 8: Operation context factory. Validation: PASS after 1 fix round. Committed 2379110..9a84554, review clean.
+- [x] Task 9: Dispatcher routing with catalog behavior. Validation: PASS after 2 fix rounds. Committed 9a84554..279f016, review clean.
+- [x] Task 10: MCP JSON-RPC server core. Validation: PASS, no fix rounds. Committed 279f016..d223640, review clean.
+- [x] Task 11: Integration module interface and isolated module loader. Validation: PASS after 3 fix rounds. Committed d223640..dab17dd, review clean.
+- [x] Task 12: Diagnostics module with system environment discovery (REQ-0001). Validation: PASS, no fix rounds. Committed dab17dd..a1ef178, review clean.
+- [x] Task 13: REST transport and plugin bootstrap wiring. Validation: PASS after 1 fix round. Committed a1ef178..92d26e3, review clean.
+- [x] Task 14: Real-site demonstration and phase close-out. Validation: PASS. All 7 demonstration checklist items pass on PHP 8.3.32 + WordPress 7.0.2 (PHP built-in server + SQLite; Docker unavailable). Evidence: `docs/product/phase-2-demonstration.md`.
+
+## Phase 2 Whole-Branch Review and Fix Wave
+
+- [x] Final whole-branch review of all 30 commits. Verdict: **DO NOT MERGE** — 2 Critical, 4 Important. Critical C1: `OperationError`'s leak guard threw from inside `catch (OperationException)`, so the sibling `catch (Throwable)` could not catch it; client-supplied text reached the guard via `Dispatcher` interpolating the caller's `operation` value, making `{"operation":"password"}` an uncaught fatal that leaked paths and a stack trace under `WP_DEBUG_DISPLAY`. Critical C2: no transport containment — `"params":"hello"` raised a `TypeError` embedding an absolute path. Important: catalogs not capability-filtered (contract line 49); 203 repo-wide phpcs errors invisible to file-scoped per-task linting; empty arrays serialized as `[]` instead of `{}`, making advertised schemas malformed JSON Schema; two module-isolation escapes.
+- [x] Fix wave (single pass, TDD per finding). Commits `b54fcb8` (C1+C2), `2b72f5a` (I1+I3), `f945c2c` (I4), `c7ef1aa` (minors), `144a8b8` (repo-wide lint).
+- [x] Scoped re-review of the fix wave. Verdict: **Safe to merge** — all findings addressed; 3 new findings, all Minor and latent, parked with rulings in the plan's "Residual risks inherited by Phase 3".
+
+**Final gate status:** 128 tests / 287 assertions pass. `vendor/bin/phpcs` exits 0 with no output (was 203 errors in 10 files). Line coverage **88.72%**, clearing the >= 80% target — measured with Xdebug loaded via CLI flags only, no configuration modified.
+
+**Second-environment verification** (`docs/product/phase-2-demonstration.md`, commit `1e4cf34`): the demonstration was repeated on a conventional nginx + FastCGI + MySQL 8.4 stack (WordPress 7.0.2, PHP 8.2.29). All six requests pass with correct status codes including a genuine 401. The `Authorization` header survives nginx + FastCGI, confirming Application Password authentication on a production-shaped stack — a failure class PHP's built-in server cannot expose. All 7 C1 payloads and all 4 C2 payloads return clean envelopes with no path or trace, verifying both Criticals are closed over real HTTP rather than only in unit tests.
+
+Process lessons from this phase are recorded in `tasks/lessons.md`.
+
+**Phase 2 approved by the user on 2026-07-25.** The phase gate is closed: all 14 tasks review-clean, whole-branch review findings fixed and re-reviewed, both Critical defects verified closed over real HTTP on a conventional nginx + FastCGI + MySQL stack, 128 tests passing, `phpcs` clean, 88.72% line coverage. Merged to `main` (39 commits); branch `worktree-phase-2-foundation` deleted after `git branch -d` confirmed the merge.
+
+Next action: Phase 3 planning (WordPress content, media, and menu modules) may begin. Before planning, read the "Residual risks inherited by Phase 3" section of `docs/superpowers/plans/2026-07-25-phase-2-mcp-gateway-foundation.md` — in particular the catalog capability-filtering trap, which will silently hide the first registered write operation from every user's catalog, administrators included.
+
+## Phase 3a — Change Engine
+
+Branch `worktree-phase-3a-change-engine`, base `7c3fc3e`. Executed with the
+subagent-driven-development process: a fresh implementer per task, then a
+reviewer gating spec compliance and quality, then fix rounds until clean.
+
+### 1. Task table
+
+| # | Title | Result | Commits |
+|---|---|---|---|
+| 1 | Close Phase 2 residual risks | pass | `fb8282d` |
+| 2 | Core module and content retrieval (REQ-0011) | pass with deviation | `fee1457`, `86be8fd` — a lint suppression spanned three methods, contradicting the plan's own Global Constraint; split per method. |
+| 3 | Database installer for three tables | pass | `1f92d77` |
+| 4 | Plan store with hashed single-use tokens | pass with deviation | `d14bbc7`, `deadef7` — the suite survived weakening the single-use check and inverting the digest lookup; both now pinned. |
+| 5 | Audit store | pass | `a82f3a7` |
+| 6 | Snapshot store and retention pruning | pass with deviation | `a6bb543`, `6d4ac28` — no test asserted which table a statement targeted; four mutations survived. |
+| 7 | Deterministic state layer and fingerprint | pass with deviation | `5113848`, `9ec9e9c` — a clock-dependent field could be added to the hash with the suite green. |
+| 8 | Preview renderer | pass with deviation | `d545efc`, `f5b5948` — escaping covered ASCII newlines only; Unicode line separators and bidi overrides passed through. |
+| 9 | Audit redactor and recorder | pass with deviation | `c2eba9e`, `282ceba` — `finish()` cleared the recovery handle `start()` wrote, orphaning a real snapshot. |
+| 10 | Write-operation contract and registry write path | pass with deviation | `41cf314`, `fa0e6cf` — a write registered through the read path bypassed the engine; guard deferred to Task 13 and documented in code. |
+| 11 | Change engine plan phase (REQ-0005) | pass with deviation | `900a5fe`, `3037825` — nothing pinned which state was fingerprinted. |
+| 12 | Change engine apply phase (REQ-0006, REQ-0007) | pass with deviation | `b8d5cbb`, `c8bfeb8` — `readBack()` sat outside the try/catch, so a write that landed but could not be re-read left the audit row open. |
+| 13 | Dispatcher write routing and plan-token argument | pass with deviation | `3614301`, `22c91e3` — closed Task 10's bypass and converted nine fixtures; a non-array `arguments` was coerced rather than refused. |
+| 14 | Content update (REQ-0014) | pass | `f39a5da` |
+| 15 | Content creation (REQ-0013) | pass with deviation | `69cd9cb`, `f9b66cd` — two capability bypasses: `private` status was ungated, and post-type capabilities were ignored. |
+| 16 | Rollback execution (REQ-0008) | pass with deviation | `e5f7849`, `a021a7c` — a chained rollback escaped the target-bound capability check. |
+| 17 | Audit log read (REQ-0009) | pass | `ef2e8f3` |
+| 18 | Activation, retention wiring, real-site demonstration | pass with deviation | this commit — the live run found that a target-less meta-capability check refused every user, making rollback unusable through the gateway. Fixed in `PolicyEngine`. |
+
+### 2. Gate results
+
+| Gate | Result |
+|---|---|
+| `vendor/bin/phpunit` | 411 tests, 986 assertions, exit 0 |
+| `vendor/bin/phpcs` (no path argument, repo-wide) | exit 0, 0 error/warning lines |
+| Line coverage on `src/` | 94.11% (1951/2073), floor 80% |
+
+Coverage measured with LocalWP's bundled Xdebug loaded via CLI flags only; no
+configuration file was modified.
+
+### 3. Evidence
+
+`docs/product/phase-3a-demonstration.md` — 13 of 13 checklist items confirmed
+against a live WordPress 7.0.2 / PHP 8.2.29 / MySQL 8.4.0 install, every request
+and response recorded verbatim.
+
+### 4. Open items carried forward
+
+- **Runtime `outputSchema` validation is deferred** per recorded interpretation I6.
+  Phase 2 shipped none and Phase 3a adds none; the interim mitigation is a
+  per-operation conformance test for each of the five registered operations,
+  covering both branches of the write union. Validation at the dispatcher's
+  return point is **required before V1 public release**, because that is the
+  point at which the declared schema becomes a promise to third-party clients.
+- **`OperationError` has no field for a recovery handle**, so a caller meeting
+  `verification_failed` cannot self-serve a rollback reference and must ask an
+  administrator to locate the record by `correlationId`. Recorded interpretation
+  I4; an open candidate for the next contract revision.
+- **REQ-0014's "the prior revision remained available" clause is not evidenced by
+  WordPress revisions, and is recorded as an honest gap.** The demonstration's
+  revision table shows revision 14 holding the *new* title: WordPress's
+  `wp_save_post_revision()` records the state *after* each save, so a freshly
+  created item's first update leaves the prior version in no revision at all.
+  Probed directly against WordPress 7.0.2 (create → no revisions; update A→B →
+  one revision holding B; update B→C → revisions holding B and C). What is
+  evidenced end to end is that recovery comes from SiteHelm's own snapshot and
+  `rollbackRef`, which is the product's actual mechanism. The narrower reading —
+  that WordPress's revision history retains the pre-update version across a
+  SiteHelm update — holds only for an item that already has revision history, and
+  no recorded MCP session exercises that conditional case. No unit test can close
+  it: revisions are created inside `wp_update_post()`, which Brain Monkey stubs.
+  Needs either a second recorded session on a post with existing revision history,
+  or a decision to reword the requirement around the snapshot mechanism.
+- `ContentUpdate`'s verification models `kses` and core's unconditional
+  `title_save_pre` trim. It does **not** model the two further filters core
+  registers unconditionally on `content_save_pre` and `excerpt_save_pre`:
+  `convert_invalid_entities` (verified live to rewrite `&#133;` to `&#8230;`) and
+  `balanceTags` (a no-op while `use_balanceTags` is `'0'`, which is the default).
+  Faithfully modelling `content_save_pre` means replicating a five-callback
+  priority-ordered chain, three of whose members are capability-gated
+  (`wp_strip_custom_css_from_blocks` at 8 on `edit_css`, new in WP 7.0;
+  `wp_filter_global_styles_post` at 9; `wp_filter_post_kses` at 10) and one
+  option-gated. Third-party `content_save_pre` filters remain out of scope
+  entirely. Needs a decision about how much filter behaviour to model.
+- **Dead phpcs suppressions across the tree (pre-existing).** Thirteen files
+  declare `phpcs:disable` for sniffs that never fire, verified by reconciling
+  `vendor/bin/phpcs --ignore-annotations` output against the annotations per
+  method. `CoreModule.php` is the clearest case: two `MethodNameInvalid` pairs
+  that never fire, because WPCS skips that sniff for a class implementing an
+  interface. Every suppression added by the whole-branch fixes reconciles 1:1;
+  sweeping the pre-existing ones is a mechanical diff deferred alongside the
+  camelCase sniff exclusions.
+- `AuditRecorder::finish()` accepts any outcome string, so a typo persists and
+  returns true. The `OUTCOME_*` constants exist but are not enforced.
+- `AuditStore`'s audit query carries no `site_id` constraint (pre-existing).
+- An object field value reaches an uncaught `Error` in both `AuditRedactor` and
+  `PreviewRenderer`.
+- The machine diff in a preview is unbounded, deliberately, because the apply
+  phase needs literal values. No input `maxLength` is declared anywhere yet.
+
+### 5. Approval
+
+**Approved by the user on 2026-07-26.** Phase 3b planning is cleared to begin
+once the whole-branch review is closed and the integration decision is taken.
+
+Two items were surfaced at approval time and remain the user's to action:
+
+- The Application Password named "SiteHelm Phase 3a demonstration" issued to
+  `admin` on `emcp-license-test` should be revoked when the site is no longer
+  used to drive the plugin from an MCP client.
+- The branch is unpushed and unmerged pending the integration decision.
