@@ -83,19 +83,29 @@ final class CatalogBuilderTest extends TestCase {
 	/**
 	 * Builds a context whose diagnostics module carries the given health.
 	 *
-	 * @param string $diagnostics_health Health status for the diagnostics module.
+	 * @param string         $diagnostics_health Health status for the diagnostics module.
+	 * @param PermissionMode $mode               The site-level permission mode in force.
+	 * @param string         $core_health        Health status for the core module.
 	 */
-	private function makeContext( string $diagnostics_health = 'active' ): OperationContext {
+	private function makeContext(
+		string $diagnostics_health = 'active',
+		PermissionMode $mode = PermissionMode::SafeWrite,
+		string $core_health = 'active'
+	): OperationContext {
 		return new OperationContext(
 			siteId: 'example.com',
 			userId: 7,
 			clientId: 'client',
 			correlationId: 'corr-1',
-			permissionMode: PermissionMode::SafeWrite,
+			permissionMode: $mode,
 			moduleVersions: [
 				'diagnostics' => [
 					'version' => null,
 					'health'  => $diagnostics_health,
+				],
+				'core'        => [
+					'version' => '6.8.1',
+					'health'  => $core_health,
 				],
 			],
 			requestTime: 1_800_000_000,
@@ -354,6 +364,29 @@ final class CatalogBuilderTest extends TestCase {
 	 * edit_post to edit_posts keeps a real visibility boundary.
 	 */
 	public function test_a_caller_without_capabilities_sees_no_write_operations_while_an_editor_does(): void {
+		$this->registerContentUpdate();
+
+		$this->allowCapabilities( [] );
+		$this->assertSame(
+			[],
+			$this->builder->build( 'content-write', $this->makeContext() )['operations'],
+			'A subscriber must not be told the site can be written to.'
+		);
+
+		$this->allowCapabilities( [ 'edit_posts' ] );
+		$this->assertSame(
+			[ 'content-update' ],
+			array_column(
+				$this->builder->build( 'content-write', $this->makeContext() )['operations'],
+				'operation'
+			)
+		);
+	}
+
+	/**
+	 * Registers a content write operation shaped like the real content-update.
+	 */
+	private function registerContentUpdate(): void {
 		$this->registry->registerWrite(
 			new OperationDefinition(
 				id: 'content-update',
@@ -388,21 +421,81 @@ final class CatalogBuilderTest extends TestCase {
 			),
 			new StubWriteOperation()
 		);
+	}
 
-		$this->allowCapabilities( [] );
-		$this->assertSame(
-			[],
-			$this->builder->build( 'content-write', $this->makeContext() )['operations'],
-			'A subscriber must not be told the site can be written to.'
-		);
-
+	/**
+	 * A catalog exists to tell a client what it can call.
+	 *
+	 * In read-only mode PolicyEngine refuses every write, but the catalog never
+	 * read permissionMode, so every write operation was advertised
+	 * `available: true` to every role from Contributor up. Nothing became
+	 * invocable, so this over-promised rather than bypassing the gate — but it is
+	 * the same catalog-versus-gate divergence that already caused one defect in
+	 * this phase.
+	 */
+	public function test_read_only_mode_marks_a_write_operation_unavailable_with_a_reason(): void {
+		$this->registerContentUpdate();
 		$this->allowCapabilities( [ 'edit_posts' ] );
-		$this->assertSame(
-			[ 'content-update' ],
-			array_column(
-				$this->builder->build( 'content-write', $this->makeContext() )['operations'],
-				'operation'
-			)
+
+		$catalog = $this->builder->build(
+			'content-write',
+			$this->makeContext( 'active', PermissionMode::ReadOnly )
 		);
+
+		$this->assertCount( 1, $catalog['operations'], 'A blocked write must stay explainable, not vanish.' );
+		$entry = $catalog['operations'][0];
+		$this->assertSame( 'content-update', $entry['operation'] );
+		$this->assertFalse( $entry['available'] );
+		$this->assertSame( 'read_only_mode', $entry['blockedReason'] );
+	}
+
+	/**
+	 * Read-only mode disables writes, so reporting a read as blocked would be a
+	 * new lie in the opposite direction.
+	 */
+	public function test_read_only_mode_leaves_read_operations_available(): void {
+		$entry = $this->builder->build(
+			'system-read',
+			$this->makeContext( 'active', PermissionMode::ReadOnly )
+		)['operations'][0];
+
+		$this->assertTrue( $entry['available'] );
+		$this->assertNull( $entry['blockedReason'] );
+	}
+
+	/**
+	 * Read-only mode is reported ahead of module health, matching the order the
+	 * gate enforces: PolicyEngine::authorize() refuses a write in read-only mode
+	 * before the dispatcher consults module health at all.
+	 */
+	public function test_read_only_mode_is_reported_ahead_of_module_health(): void {
+		$this->registerContentUpdate();
+		$this->allowCapabilities( [ 'edit_posts' ] );
+
+		$entry = $this->builder->build(
+			'content-write',
+			$this->makeContext( 'active', PermissionMode::ReadOnly, 'inactive' )
+		)['operations'][0];
+
+		$this->assertSame( 'read_only_mode', $entry['blockedReason'] );
+	}
+
+	/**
+	 * A write-permitting mode must not be affected, or the fix would simply move
+	 * the over-promise into an under-promise.
+	 */
+	public function test_a_write_permitting_mode_still_advertises_the_write_as_available(): void {
+		$this->registerContentUpdate();
+		$this->allowCapabilities( [ 'edit_posts' ] );
+
+		foreach ( [ PermissionMode::SafeWrite, PermissionMode::TrustedWrite ] as $mode ) {
+			$entry = $this->builder->build(
+				'content-write',
+				$this->makeContext( 'active', $mode )
+			)['operations'][0];
+
+			$this->assertTrue( $entry['available'], $mode->value );
+			$this->assertNull( $entry['blockedReason'], $mode->value );
+		}
 	}
 }

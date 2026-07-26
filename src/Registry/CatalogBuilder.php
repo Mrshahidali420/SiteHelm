@@ -9,10 +9,12 @@ declare(strict_types=1);
 
 namespace SiteHelm\Registry;
 
+use SiteHelm\Contracts\Mode;
 use SiteHelm\Contracts\ModuleHealth;
 use SiteHelm\Policy\PolicyEngine;
 use SiteHelm\Contracts\OperationContext;
 use SiteHelm\Contracts\OperationDefinition;
+use SiteHelm\Contracts\PermissionMode;
 use stdClass;
 
 /**
@@ -25,9 +27,11 @@ use stdClass;
  *   A required target meta-capability is evaluated through its primitive
  *   stand-in, because a listing has no target to evaluate it against; see
  *   is_permitted().
- * - Operations blocked by a module dependency stay listed with `available:false`
- *   and a `blockedReason`, because the contract requires blocked operations to
- *   remain explainable rather than silently disappear.
+ * - Operations the caller may see but cannot currently invoke stay listed with
+ *   `available:false` and a `blockedReason`, because the contract requires
+ *   blocked operations to remain explainable rather than silently disappear.
+ *   Both a module dependency and read-only mode block this way; see
+ *   blocked_reason().
  *
  * @package SiteHelm
  */
@@ -122,13 +126,7 @@ final class CatalogBuilder {
 	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 	 */
 	private function entry( OperationDefinition $definition, OperationContext $context ): array {
-		$health = $context->moduleVersions[ $definition->module->value ]['health'] ?? ModuleHealth::Inactive->value;
-
-		$blocked_reason = match ( $health ) {
-			ModuleHealth::Active->value         => null,
-			ModuleHealth::VersionBlocked->value => 'unsupported_version',
-			default                             => 'integration_unavailable',
-		};
+		$blocked_reason = $this->blocked_reason( $definition, $context );
 
 		return $this->normalize_object_shapes(
 			[
@@ -148,6 +146,43 @@ final class CatalogBuilder {
 			],
 			false
 		);
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+
+	/**
+	 * Why this operation cannot be invoked right now, or null when it can be.
+	 *
+	 * Read-only mode is reported first, matching the order the gate enforces:
+	 * PolicyEngine::authorize() refuses a write in read-only mode before the
+	 * dispatcher consults module health at all. Reporting availability without
+	 * consulting the mode advertised every write as available while every attempt
+	 * was refused — the same catalog-versus-gate divergence that already caused
+	 * one defect in this phase.
+	 *
+	 * The write stays listed rather than hidden. The contract requires a blocked
+	 * operation to remain explainable, and read-only mode is a site setting an
+	 * administrator can change, so a client that can name the reason is more
+	 * useful than one watching operations disappear.
+	 *
+	 * @param OperationDefinition $definition The operation to describe.
+	 * @param OperationContext    $context    The request context.
+	 *
+	 * @return string|null The blocking reason, or null when the operation is available.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+	 */
+	private function blocked_reason( OperationDefinition $definition, OperationContext $context ): ?string {
+		if ( PermissionMode::ReadOnly === $context->permissionMode && Mode::Write === $definition->mode ) {
+			return 'read_only_mode';
+		}
+
+		$health = $context->moduleVersions[ $definition->module->value ]['health'] ?? ModuleHealth::Inactive->value;
+
+		return match ( $health ) {
+			ModuleHealth::Active->value         => null,
+			ModuleHealth::VersionBlocked->value => 'unsupported_version',
+			default                             => 'integration_unavailable',
+		};
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 
