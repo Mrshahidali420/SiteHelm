@@ -125,17 +125,24 @@ final class ContentFields {
 	 * One content field's value exactly as WordPress will store it.
 	 *
 	 * The promised after-state must model what WordPress actually persists,
-	 * because verification re-reads the item and compares it against that
-	 * promise. A transformation core applies that the promise does not model
-	 * makes a perfectly correct write report `verification_failed` and invites
-	 * the operator to undo it — which is precisely what the missing title trim
-	 * did. So this models core's save filters in core's own order: the
+	 * because that promise is what a human approves at preview and what
+	 * verification compares the re-read item against. A transformation core
+	 * applies that the promise does not model makes the preview show one value
+	 * while the site stores another, which is precisely what the missing title
+	 * trim did. Back when verification demanded byte-equality it also made that
+	 * perfectly correct write report `verification_failed`; that failure mode
+	 * has since been removed, and an unmodelled transformation now succeeds as
+	 * `verified-with-adjustments` with the stored value disclosed. What is still
+	 * at stake here is whether the preview tells the truth, which is reason
+	 * enough. So this models core's save filters in core's own order: the
 	 * unconditional trim first, then kses, matching the registration order of
 	 * the two priority-10 callbacks on `title_save_pre`.
 	 *
 	 * A user holding unfiltered_html bypasses kses in WordPress, so the promise
-	 * bypasses it too or verification would fail for that user. The trim is not
-	 * part of that bypass, because core does not register it with the kses set.
+	 * bypasses it too; otherwise every write by that user would be previewed
+	 * wrongly and then reported as adjusted when nothing was adjusted. The trim
+	 * is not part of that bypass, because core does not register it with the
+	 * kses set.
 	 *
 	 * Both content write operations call this. They previously held a
 	 * byte-identical private copy each, and the trim was absent from both.
