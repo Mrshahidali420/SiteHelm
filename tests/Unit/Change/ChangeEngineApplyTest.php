@@ -18,6 +18,7 @@ use SiteHelm\Change\PlannedChange;
 use SiteHelm\Change\PreviewRenderer;
 use SiteHelm\Change\StateFingerprint;
 use SiteHelm\Change\TargetState;
+use SiteHelm\Change\WriteVerifier;
 use SiteHelm\Contracts\Domain;
 use SiteHelm\Contracts\ErrorCode;
 use SiteHelm\Contracts\Mode;
@@ -77,7 +78,8 @@ final class ChangeEngineApplyTest extends TestCase {
 			$this->normalizer,
 			new StateFingerprint( $this->normalizer ),
 			new PreviewRenderer(),
-			new Installer()
+			new Installer(),
+			new WriteVerifier( $this->normalizer )
 		);
 
 		$this->operation           = new StubWriteOperation();
@@ -498,8 +500,12 @@ final class ChangeEngineApplyTest extends TestCase {
 		}
 	}
 
-	public function test_diverged_persisted_state_is_verification_failed(): void {
-		$this->operation->readBackState = new TargetState( 'post:42', true, [ 'post_title' => 'Something else' ] );
+	/**
+	 * The stored value still being the prior value is the one divergence that
+	 * means the write did not take.
+	 */
+	public function test_a_field_still_holding_its_prior_value_is_verification_failed(): void {
+		$this->operation->readBackState = new TargetState( 'post:42', true, [ 'post_title' => 'Original title' ] );
 
 		try {
 			$this->apply();
@@ -513,6 +519,82 @@ final class ChangeEngineApplyTest extends TestCase {
 			AuditRecorder::OUTCOME_VERIFICATION_FAILED,
 			$this->wpdb->updates[0]['data']['outcome']
 		);
+	}
+
+	/**
+	 * The defect this contract change exists to fix. WordPress adjusting a value
+	 * on save — trimming a title, uniquifying a slug, turning a publish into a
+	 * future — used to raise verification_failed with no rollbackRef and a
+	 * remediation telling the operator to restore the snapshot, for a write that
+	 * had landed perfectly. It must now succeed, disclose what was stored, and
+	 * hand back the recovery handle.
+	 */
+	public function test_a_value_wordpress_adjusted_succeeds_with_adjustments(): void {
+		$this->operation->readBackState = new TargetState( 'post:42', true, [ 'post_title' => 'Adjusted by WordPress' ] );
+
+		$result = $this->apply();
+
+		$this->assertSame( VerificationStatus::VerifiedWithAdjustments, $result->verification );
+		$this->assertNotNull( $result->rollbackRef );
+		$this->assertSame( 'Adjusted by WordPress', $result->data['state']['post_title'] );
+		$this->assertSame(
+			AuditRecorder::OUTCOME_APPLIED,
+			$this->wpdb->updates[0]['data']['outcome']
+		);
+
+		$joined = implode( "\n", $result->warnings );
+		$this->assertStringContainsString( 'post_title', $joined );
+		$this->assertStringNotContainsString( 'Adjusted by WordPress', $joined );
+	}
+
+	/**
+	 * One promised field stored and another reverted leaves the target in neither
+	 * its prior nor its promised state.
+	 *
+	 * The plan promises two fields, so the resolved before-state carries two
+	 * fields as well — which means the stored row's state_fingerprint has to be
+	 * recomputed from that state. planRow()'s default fingerprint is computed
+	 * from the single-field fixture, and leaving it in place would refuse this
+	 * plan as a `conflict` long before verification is reached. The stored
+	 * payload_hash still matches: planChange()'s returned payload is unchanged.
+	 */
+	public function test_a_partial_write_is_verification_failed(): void {
+		$this->operation->planned = new PlannedChange(
+			[ 'title' => 'Edited title' ],
+			[
+				'post_title'   => 'Edited title',
+				'post_excerpt' => 'Edited excerpt',
+			],
+			[ 'post_title', 'post_excerpt' ]
+		);
+		$this->operation->target        = new TargetState(
+			'post:42',
+			true,
+			[
+				'post_title'   => 'Original title',
+				'post_excerpt' => 'Original excerpt',
+			]
+		);
+		$this->operation->readBackState = new TargetState(
+			'post:42',
+			true,
+			[
+				'post_title'   => 'Edited title',
+				'post_excerpt' => 'Original excerpt',
+			]
+		);
+
+		try {
+			$this->apply(
+				[
+					'state_fingerprint' => ( new StateFingerprint( $this->normalizer ) )
+						->compute( $this->operation->target, $this->makeContext() ),
+				]
+			);
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::VerificationFailed, $e->errorCode );
+		}
 	}
 
 	/**

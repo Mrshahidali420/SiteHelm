@@ -68,6 +68,7 @@ final class ChangeEngine {
 	 * @param StateFingerprint  $fingerprint Target-state fingerprinting.
 	 * @param PreviewRenderer   $preview     Both preview renderings.
 	 * @param Installer         $installer   Storage availability probe.
+	 * @param WriteVerifier     $verifier    Post-write state classification.
 	 */
 	public function __construct(
 		private readonly PlanStore $plans,
@@ -77,6 +78,7 @@ final class ChangeEngine {
 		private readonly StateFingerprint $fingerprint,
 		private readonly PreviewRenderer $preview,
 		private readonly Installer $installer,
+		private readonly WriteVerifier $verifier,
 	) {
 	}
 
@@ -98,7 +100,8 @@ final class ChangeEngine {
 			$normalizer,
 			new StateFingerprint( $normalizer ),
 			new PreviewRenderer(),
-			new Installer()
+			new Installer(),
+			new WriteVerifier( $normalizer )
 		);
 	}
 
@@ -413,7 +416,9 @@ final class ChangeEngine {
 			);
 		}
 
-		if ( ! $this->verified( $planned, $after ) ) {
+		$outcome = $this->verifier->classify( $planned, $current, $after );
+
+		if ( ! $outcome->applied ) {
 			throw $this->verification_failed(
 				$audit_id,
 				$snapshot,
@@ -422,6 +427,19 @@ final class ChangeEngine {
 				$planned,
 				$context,
 				'The write completed but the stored state does not match the approved plan.'
+			);
+		}
+
+		// WordPress transforms values as it stores them, and some of those
+		// transformations cannot be known before the write: a slug is uniquified
+		// against whatever else exists, a publish becomes a future when the post
+		// is dated ahead. The write landed, so this is not a failure — but the
+		// caller approved a different value, so each adjusted field is named. The
+		// value itself is disclosed in 'state' below, never in a warning.
+		foreach ( $outcome->adjustedFields as $field ) {
+			$warnings[] = sprintf(
+				'WordPress stored a different value for %s than the approved plan promised. The stored state is reported in this response.',
+				$field
 			);
 		}
 
@@ -460,7 +478,9 @@ final class ChangeEngine {
 				'changed' => array_keys( $planned->afterFields ),
 				'state'   => $after->fields,
 			],
-			verification: VerificationStatus::Verified,
+			verification: [] === $outcome->adjustedFields
+				? VerificationStatus::Verified
+				: VerificationStatus::VerifiedWithAdjustments,
 			correlationId: $context->correlationId,
 			auditRef: AuditRecorder::reference( $audit_id ),
 			rollbackRef: $snapshot['reference'],
@@ -616,33 +636,6 @@ final class ChangeEngine {
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
-
-	/**
-	 * Whether the persisted state matches every field the plan promised.
-	 *
-	 * Only the promised keys are compared, and both sides go through the
-	 * canonical fingerprint so key order and nesting cannot cause a false
-	 * mismatch. Fields the plan did not promise are handled separately by
-	 * unpromised_changes(), which warns rather than fails: an operation that
-	 * kept every promise it made has not failed verification.
-	 *
-	 * @param PlannedChange $planned The promised change.
-	 * @param TargetState   $after   The persisted state.
-	 *
-	 * @return bool True when every promised field matches.
-	 *
-	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
-	 */
-	private function verified( PlannedChange $planned, TargetState $after ): bool {
-		$observed = [];
-		foreach ( array_keys( $planned->afterFields ) as $field ) {
-			$observed[ $field ] = $after->fields[ $field ] ?? null;
-		}
-
-		return $this->normalizer->fingerprint( $observed )
-			=== $this->normalizer->fingerprint( $planned->afterFields );
-	}
-	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 
 	/**
 	 * Field names that changed although the approved plan never promised them.
