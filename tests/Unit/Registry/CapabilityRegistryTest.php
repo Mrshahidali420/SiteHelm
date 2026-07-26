@@ -266,4 +266,23 @@ final class CapabilityRegistryTest extends TestCase {
 		$this->expectException( InvalidArgumentException::class );
 		$registry->writeOperation( 'content-nuke' );
 	}
+
+	/**
+	 * An unknown identifier is refused even when other writes are registered.
+	 *
+	 * A review found the test above passes against a lookup that returns some
+	 * arbitrary registered operation, because on an empty registry that
+	 * fallback trips PHP's return-type check rather than any assertion. With a
+	 * populated registry the wrong operation would be returned happily — and
+	 * the dispatcher would drive a caller's request through an implementation
+	 * they did not name.
+	 */
+	public function test_write_operation_lookup_rejects_an_unknown_identifier_with_others_registered(): void {
+		$registry = new CapabilityRegistry();
+		$registry->registerWrite( $this->makeWriteDefinition( 'content-update' ), new StubWriteOperation() );
+
+		$this->expectException( InvalidArgumentException::class );
+		$registry->writeOperation( 'content-nuke' );
+	}
+
 }

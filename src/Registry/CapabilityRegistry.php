@@ -68,6 +68,21 @@ final class CapabilityRegistry {
 	/**
 	 * Registers one operation and its handler.
 	 *
+	 * KNOWN GAP, closing in Task 13. A Mode::Write definition registered here
+	 * with a bare callable lands in the catalog and on its write dispatcher
+	 * while hasWriteOperation() stays false, so the dispatcher would call the
+	 * callable directly and skip preview, plan token, snapshot, verification and
+	 * audit for an operation whose own definition advertises previewPolicy
+	 * required. Nothing in production does this — every Phase 3a write uses
+	 * registerWrite() — but a module author could.
+	 *
+	 * The guard belongs here and was written, then reverted: until the
+	 * dispatcher can route a registerWrite()-registered operation, refusing
+	 * writes here leaves no way to exercise a write-mode definition at all, and
+	 * four existing fixtures legitimately depend on the read path to reach the
+	 * capability and health checks. Task 13 adds write routing and closes this
+	 * in the same change that makes the alternative available.
+	 *
 	 * @param OperationDefinition $definition The operation definition.
 	 * @param callable            $handler    The handler that executes it.
 	 *
