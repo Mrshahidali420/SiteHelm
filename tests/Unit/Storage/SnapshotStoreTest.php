@@ -92,6 +92,10 @@ final class SnapshotStoreTest extends TestCase {
 
 		$this->assertSame( $expected, $this->store->findByRef( 'rb-abc' ) );
 		$this->assertStringContainsString( 'WHERE rollback_ref = %s', $this->wpdb->prepared[0]['query'] );
+		$this->assertStringContainsString(
+			'FROM ' . Installer::tableName( Installer::TABLE_SNAPSHOTS ) . ' ',
+			$this->wpdb->prepared[0]['query']
+		);
 		$this->assertSame( [ 'rb-abc' ], $this->wpdb->prepared[0]['args'] );
 	}
 
@@ -99,17 +103,37 @@ final class SnapshotStoreTest extends TestCase {
 		$this->assertNull( $this->store->findByRef( 'rb-missing' ) );
 	}
 
+	/**
+	 * The snapshots table is asserted, not assumed.
+	 *
+	 * The audit table carries a rollback_ref column too, so an update aimed at
+	 * the wrong table still finds a plausible row shape. FakeWpdb records the
+	 * table it was handed but replays success either way, so without this
+	 * assertion the mutation is invisible.
+	 */
 	public function test_mark_restored_stamps_the_row(): void {
 		$this->assertTrue( $this->store->markRestored( 5, 1_800_000_500 ) );
 
+		$this->assertSame(
+			Installer::tableName( Installer::TABLE_SNAPSHOTS ),
+			$this->wpdb->updates[0]['table']
+		);
 		$this->assertSame( [ 'id' => 5 ], $this->wpdb->updates[0]['where'] );
 		$this->assertSame( 1_800_000_500, $this->wpdb->updates[0]['data']['restored_at'] );
 	}
 
+	/**
+	 * Retention deleting from the wrong table would destroy audit evidence
+	 * while reporting that it pruned snapshots, so the table is asserted.
+	 */
 	public function test_prune_deletes_rows_older_than_the_cutoff(): void {
 		$this->wpdb->queryRowsQueue = [ 2 ];
 
 		$this->assertSame( 2, $this->store->prune( 1_700_000_000 ) );
 		$this->assertStringContainsString( 'created_at < %d', $this->wpdb->prepared[0]['query'] );
+		$this->assertStringContainsString(
+			'DELETE FROM ' . Installer::tableName( Installer::TABLE_SNAPSHOTS ) . ' ',
+			$this->wpdb->prepared[0]['query']
+		);
 	}
 }

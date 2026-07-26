@@ -11,6 +11,7 @@ namespace SiteHelm\Tests\Unit\Storage;
 
 use Brain\Monkey\Functions;
 use SiteHelm\Storage\AuditStore;
+use SiteHelm\Storage\Installer;
 use SiteHelm\Storage\PlanStore;
 use SiteHelm\Storage\Retention;
 use SiteHelm\Storage\SnapshotStore;
@@ -64,6 +65,21 @@ final class RetentionTest extends TestCase {
 		);
 		$this->assertSame( [ 1_800_000_000 - 30 * 86400 ], $this->wpdb->prepared[1]['args'] );
 		$this->assertSame( [ 1_800_000_000 - 30 * 86400 ], $this->wpdb->prepared[2]['args'] );
+
+		// The counts alone cannot tell the two stores apart: FakeWpdb replays
+		// queryRowsQueue in call order, so swapping which store backs 'audit'
+		// and which backs 'snapshots' returns the same array. Only the table
+		// each statement names distinguishes them — and getting it wrong would
+		// mean a retention sweep deleting audit evidence while reporting that
+		// it pruned snapshots.
+		$this->assertStringContainsString(
+			Installer::tableName( Installer::TABLE_AUDIT ) . ' ',
+			$this->wpdb->prepared[1]['query']
+		);
+		$this->assertStringContainsString(
+			Installer::tableName( Installer::TABLE_SNAPSHOTS ) . ' ',
+			$this->wpdb->prepared[2]['query']
+		);
 	}
 
 	public function test_schedule_registers_a_daily_event_only_once(): void {

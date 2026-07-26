@@ -78,7 +78,6 @@ final class SnapshotStore {
 	}
 	// phpcs:enable WordPress.DB.DirectDatabaseQuery.DirectQuery
 
-	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 	/**
 	 * Resolves one snapshot by its rollback reference.
 	 *
@@ -86,6 +85,7 @@ final class SnapshotStore {
 	 *
 	 * @return array<string, mixed>|null The snapshot row, or null when unknown.
 	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
 	 * phpcs:disable WordPress.DB.DirectDatabaseQuery.DirectQuery
 	 * phpcs:disable WordPress.DB.DirectDatabaseQuery.NoCaching
@@ -106,6 +106,7 @@ final class SnapshotStore {
 
 		return is_array( $row ) ? $row : null;
 	}
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
 	// phpcs:enable WordPress.DB.DirectDatabaseQuery.DirectQuery
 	// phpcs:enable WordPress.DB.DirectDatabaseQuery.NoCaching
@@ -119,6 +120,7 @@ final class SnapshotStore {
 	 *
 	 * @return bool True when the row was updated.
 	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 	 * phpcs:disable WordPress.DB.DirectDatabaseQuery.DirectQuery
 	 * phpcs:disable WordPress.DB.DirectDatabaseQuery.NoCaching
 	 */
@@ -135,9 +137,9 @@ final class SnapshotStore {
 
 		return false !== $updated;
 	}
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 	// phpcs:enable WordPress.DB.DirectDatabaseQuery.DirectQuery
 	// phpcs:enable WordPress.DB.DirectDatabaseQuery.NoCaching
-	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 
 	/**
 	 * Deletes snapshots older than the cutoff.
