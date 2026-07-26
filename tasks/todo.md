@@ -124,6 +124,19 @@ and response recorded verbatim.
   `verification_failed` cannot self-serve a rollback reference and must ask an
   administrator to locate the record by `correlationId`. Recorded interpretation
   I4; an open candidate for the next contract revision.
+- **REQ-0042's acceptance evidence rests on a WordPress revision trail, which
+  the platform cannot guarantee.** Its evidence reads "a new revision recorded
+  verified by document re-read" — the same defect class as REQ-0014's withdrawn
+  clause, because `WP_POST_REVISIONS` can be defined `false` for the whole site
+  and the `wp_save_post_revision_post_has_changed` filter lets any plugin
+  suppress a revision for any save. It was deliberately **not** corrected in the
+  write-verification-contract plan: its `user_outcome` column also promises "a
+  revision trail for recovery", and correcting the evidence while leaving the
+  outcome would desync the row. That outcome traces to external sources
+  (SRC-0006; SRC-0009; SRC-0011) and market evidence EMCP-CAP-004, so this is a
+  product decision, not a wording fix. Needs an explicit decision at Phase 5
+  (Elementor) planning covering **both** the `acceptance_evidence` and the
+  `user_outcome` column.
 - **REQ-0014's revision-evidence gap is closed, not carried.** Its
   `acceptance_evidence` column was corrected in the write-verification-contract
   plan (`.superpowers/sdd/2026-07-26-write-verification-contract/`) to name the

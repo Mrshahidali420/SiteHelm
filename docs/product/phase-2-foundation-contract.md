@@ -2,6 +2,7 @@
 
 **Date:** 2026-07-24
 **Status:** Frozen. Phase 2 implements this contract exactly as written.
+**Amended 2026-07-26:** The `verification` field of `OperationResult` and the `verification_failed` error row now admit a third status, `verified-with-adjustments` — a write WordPress adjusted on save succeeds and is disclosed instead of being reported as a failure. Approved through the write-verification-contract design and recorded as interpretation I7, not through a prior revision of this document: the implementation shipped first and this amendment followed it, which is the reverse of the ordering the Change Policy below requires.
 **Product:** SiteHelm — a secure WordPress MCP operations platform delivered as one plugin.
 **Scope:** Documentation-level contracts for the MCP gateway foundation: dispatchers, operation definitions, runtime context, change plans, results, errors, and integration modules.
 
@@ -181,7 +182,7 @@ All eleven codes below ship in V1. Each is required by the approved design.
 | `conflict` | The target state changed between plan and apply (state fingerprint mismatch), or a concurrent change collided with this one. State remains untouched. | Retryable by re-reading the target and generating a fresh plan. |
 | `stale_plan` | The plan token is expired, already used, unknown, or bound to a different user, site, operation, target, or payload. State remains untouched. | Retryable by generating a fresh preview plan and approving it. |
 | `execution_failed` | The write started but WordPress or the owning plugin reported a failure during execution. `completedSteps` and `compensation` report the exact position and whether the snapshot was restored. | Conditionally retryable: safe to retry with a fresh plan; an automatic retry is appropriate only when the operation declares `isIdempotent` true. |
-| `verification_failed` | Execution completed but the re-read WordPress state does not match the approved plan payload. The discrepancy is reported rather than hidden. | Not automatically retryable. Requires operator inspection; the audit record and any rollback reference support recovery. |
+| `verification_failed` | Execution completed but a promised field still holds its prior value in the re-read WordPress state, meaning the write did not take. The discrepancy is reported rather than hidden. A promised field holding some *other* value is not this error: WordPress adjusted the value, and the operation succeeds as `verified-with-adjustments` with the adjustment named in `warnings` and the stored state disclosed. | Not automatically retryable. Requires operator inspection; the audit record and any rollback reference support recovery. |
 | `rollback_unavailable` | Restoration was requested, or required before execution, but no complete and safe restoration is possible for this write. For `rollbackPolicy` `required` operations this is returned before execution instead of executing without a recovery path. | Not retryable. Recovery proceeds through WordPress-native means (for example revisions or trash), guided by `remediation`. |
 
 ## IntegrationModule
