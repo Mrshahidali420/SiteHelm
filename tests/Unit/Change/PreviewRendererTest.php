@@ -232,6 +232,58 @@ final class PreviewRendererTest extends TestCase {
 	}
 
 	/**
+	 * A value that is not valid UTF-8 must still show the operator its real prior
+	 * content.
+	 *
+	 * `preg_replace_callback` with the /u modifier returns null on a subject that
+	 * is not valid UTF-8, and casting that null to string produced an empty
+	 * rendering. A latin1-era title then previewed as `post_title: "" -> "New
+	 * title"`: the operator saw no prior value at all and approved overwriting
+	 * something they could not see. 0xE9 is the latin1 encoding of 'é' and is not
+	 * a legal UTF-8 sequence on its own.
+	 */
+	public function test_a_before_value_that_is_not_valid_utf8_is_never_rendered_as_empty(): void {
+		$latin1  = "Caf\xE9 opening";
+		$planned = new PlannedChange(
+			[ 'title' => 'New title' ],
+			[ 'post_title' => 'New title' ],
+			[ 'post_title' ]
+		);
+
+		$preview = $this->renderer->render(
+			'content-update',
+			new TargetState( 'post:42', true, [ 'post_title' => $latin1 ] ),
+			$planned
+		);
+
+		$this->assertStringNotContainsString( 'post_title: "" ->', $preview['human'] );
+		$this->assertStringContainsString( 'Caf\\xE9 opening', $preview['human'] );
+		$this->assertStringContainsString( '-> "New title"', $preview['human'] );
+
+		// The machine diff is JSON-encoded separately and carries the raw value,
+		// so it must not be disturbed by the human rendering's fallback.
+		$this->assertSame( $latin1, $preview['machine']['changes'][0]['before'] );
+	}
+
+	/**
+	 * The escaping still neutralizes a forged line when the value is not valid
+	 * UTF-8, so the fallback cannot become a way around the injection guard.
+	 */
+	public function test_an_invalid_utf8_value_cannot_inject_a_fake_line_either(): void {
+		$malicious = "Real\xE9 title\n  fake_field: \"nothing\" -> \"injected\"";
+		$planned   = new PlannedChange(
+			[ 'title' => $malicious ],
+			[ 'post_title' => $malicious ],
+			[ 'post_title' ]
+		);
+
+		$preview = $this->renderer->render( 'content-update', $this->currentState(), $planned );
+
+		$this->assertCount( 2, explode( "\n", $preview['human'] ) );
+		$this->assertStringContainsString( 'Real\\xE9 title\\n  fake_field:', $preview['human'] );
+	}
+
+	/**
 	 * Every carrier of a forged line is escaped, not just the ASCII newline.
 	 *
 	 * A review found the previous test proved only the bare "\n" case: stripping

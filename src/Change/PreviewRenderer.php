@@ -40,6 +40,13 @@ final class PreviewRenderer {
 	private const ABSENT = '(absent)';
 
 	/**
+	 * The explicit marker for a value no rendering could produce. An operator
+	 * must never be shown a blank before-state, because approving a preview
+	 * authorizes exactly what the preview said.
+	 */
+	private const UNRENDERABLE = '(value could not be rendered)';
+
+	/**
 	 * Renders both previews for one planned change.
 	 *
 	 * @param string        $operationId The operation being previewed.
@@ -156,7 +163,8 @@ final class PreviewRenderer {
 	 * summary row, so a crafted value cannot inject what looks like additional
 	 * change lines into the confirmation text an operator reads before
 	 * approving. The character count reported for a truncated value reflects
-	 * the original, unescaped length.
+	 * the original, unescaped length, in bytes when the value is not valid
+	 * UTF-8.
 	 *
 	 * @param mixed $value The value to render.
 	 *
@@ -178,8 +186,10 @@ final class PreviewRenderer {
 			return sprintf( '(%d item%s)', $count, 1 === $count ? '' : 's' );
 		}
 
-		$raw    = (string) $value;
-		$length = mb_strlen( $raw );
+		$raw = (string) $value;
+		// mb_strlen() has no meaningful answer for a subject that is not valid
+		// UTF-8, so the count reported for one is its byte length.
+		$length = mb_check_encoding( $raw, 'UTF-8' ) ? mb_strlen( $raw ) : strlen( $raw );
 		$text   = $this->escape_line_control( $raw );
 
 		if ( $length <= self::MAX_VALUE_CHARS ) {
@@ -221,10 +231,51 @@ final class PreviewRenderer {
 	private function escape_line_control( string $raw ): string {
 		$text = str_replace( [ "\r\n", "\r", "\n" ], '\\n', $raw );
 
-		return (string) preg_replace_callback(
+		$escaped = preg_replace_callback(
 			'/[\x{000B}\x{000C}\x{0085}\x{2028}\x{2029}\x{200E}\x{200F}\x{202A}-\x{202E}\x{2066}-\x{2069}]/u',
 			static fn( array $matches ): string => sprintf( '\\u{%04X}', (int) mb_ord( $matches[0], 'UTF-8' ) ),
 			$text
 		);
+
+		if ( null !== $escaped ) {
+			return $escaped;
+		}
+
+		return $this->escape_every_unprintable_byte( $text );
+	}
+
+	/**
+	 * Escapes byte by byte, for a value that is not valid UTF-8.
+	 *
+	 * The /u modifier makes preg_replace_callback return null on a subject that
+	 * is not valid UTF-8, and casting that null to string yielded an empty
+	 * rendering: a latin1-era title previewed as `post_title: "" -> "New
+	 * title"`, so the operator saw no prior value and approved overwriting
+	 * something they could not see. Approving a preview authorizes what the
+	 * preview said, which makes a blank before-state the worst possible failure
+	 * mode here.
+	 *
+	 * Escaping per byte needs no valid encoding, so the real prior value still
+	 * reaches the operator with its undecodable bytes made visible. Every byte
+	 * outside printable ASCII is escaped, which also covers the multi-byte line
+	 * and direction carriers the UTF-8 pass would have handled, so the fallback
+	 * cannot become a way around the injection guard. Valid UTF-8 never reaches
+	 * this path, so ordinary accented text is rendered normally.
+	 *
+	 * @param string $text The value, with newlines already normalized.
+	 *
+	 * @return string The value with every unprintable byte made visible.
+	 */
+	private function escape_every_unprintable_byte( string $text ): string {
+		$escaped = preg_replace_callback(
+			'/[^\x20-\x7E]/',
+			static fn( array $matches ): string => sprintf( '\\x%02X', ord( $matches[0] ) ),
+			$text
+		);
+
+		// A last resort that is never expected to be reached: this pattern has no
+		// encoding requirement and cannot backtrack. It exists because the one
+		// thing this method must never do is return a silent empty string.
+		return is_string( $escaped ) ? $escaped : self::UNRENDERABLE;
 	}
 }
