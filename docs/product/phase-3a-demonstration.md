@@ -904,6 +904,9 @@ Response:
 
 ### Post revisions after the rollback
 
+Revisions of the fixture post `post:13`, whose live title after the rollback is
+`Phase 3a fixture post`. These are the post's only two revisions.
+
 | Revision ID | Date (GMT) | Title |
 |---|---|---|
 | 15 | 2026-07-26 11:26:19 | `Phase 3a fixture post` |
