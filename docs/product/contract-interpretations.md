@@ -58,7 +58,7 @@ The refinement was briefly at risk of being dropped: it arrived after the Phase 
 
 ## I4. `verification_failed` cannot carry a recovery handle — accepted limitation
 
-**Contract says.** `OperationError` has exactly seven fields; none is `auditRef` or `rollbackRef`. `verification_failed` means execution completed but the re-read state diverged from the approved plan — precisely the case where a caller most wants a rollback handle.
+**Contract says.** `OperationError` has exactly seven fields; none is `auditRef` or `rollbackRef`. Before the amendment recorded in I7 below, `verification_failed` meant execution completed but the re-read state diverged from the approved plan — precisely the case where a caller most wants a rollback handle.
 
 **Why it needed a ruling.** The recovery path for the error is the least self-serve of any code.
 
