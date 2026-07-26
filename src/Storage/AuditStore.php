@@ -122,21 +122,41 @@ final class AuditStore {
 	): bool {
 		global $wpdb;
 
+		$data    = [
+			'outcome'    => $outcome,
+			'target_key' => $targetKey,
+			'summary'    => $summary,
+		];
+		$formats = [ '%s', '%s', '%s' ];
+
+		// A null recovery handle here means "leave it alone", never "clear it".
+		// start() already wrote the snapshot id and rollback reference onto the
+		// opening row, which is what makes interpretation I4's guarantee
+		// unconditional rather than true only on the happy path. Writing nulls
+		// back would let a caller finalizing a failed write orphan a snapshot
+		// that really exists — precisely the state the opening-row write was
+		// introduced to prevent.
+		if ( null !== $snapshotId ) {
+			$data['snapshot_id'] = $snapshotId;
+			$formats[]           = '%d';
+		}
+		if ( null !== $rollbackRef ) {
+			$data['rollback_ref'] = $rollbackRef;
+			$formats[]            = '%s';
+		}
+
 		$updated = $wpdb->update(
 			Installer::tableName( Installer::TABLE_AUDIT ),
-			[
-				'outcome'      => $outcome,
-				'snapshot_id'  => $snapshotId,
-				'rollback_ref' => $rollbackRef,
-				'target_key'   => $targetKey,
-				'summary'      => $summary,
-			],
+			$data,
 			[ 'id' => $id ],
-			[ '%s', '%d', '%s', '%s', '%s' ],
+			$formats,
 			[ '%d' ]
 		);
 
-		return false !== $updated;
+		// id is the primary key, so a successful finalization always touches
+		// exactly one row. Accepting 0 would report success for an audit row
+		// that does not exist — including the id 0 a refused start() returns.
+		return 1 === $updated;
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
 	// phpcs:enable WordPress.DB.DirectDatabaseQuery.DirectQuery

@@ -44,6 +44,9 @@ final class FakeWpdb {
 	/** @var array<int, mixed> Queued query() row counts; false simulates failure. */
 	public array $queryRowsQueue = [];
 
+	/** @var array<int, mixed> Queued update() matched-row counts; 0 means no row matched. */
+	public array $updateRowsQueue = [];
+
 	public bool $failInsert = false;
 	public bool $failUpdate = false;
 
@@ -146,9 +149,15 @@ final class FakeWpdb {
 
 			return false;
 		}
-		$this->rows_affected = 1;
+		// Real wpdb returns 0 — not false — when the WHERE clause matched no
+		// row. That is a distinct outcome from an error, and a caller that
+		// conflates them reports success for a row that does not exist.
+		$rows                = array_key_exists( 0, $this->updateRowsQueue )
+			? (int) array_shift( $this->updateRowsQueue )
+			: 1;
+		$this->rows_affected = $rows;
 
-		return 1;
+		return $rows;
 	}
 
 	public function query( string $query ): int|false {

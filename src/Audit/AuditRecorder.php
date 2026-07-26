@@ -163,7 +163,12 @@ final class AuditRecorder {
 	private function login( int $user_id ): string {
 		$user = get_userdata( $user_id );
 		if ( is_object( $user ) && isset( $user->user_login ) && is_string( $user->user_login ) ) {
-			return substr( $user->user_login, 0, self::MAX_LOGIN_LENGTH );
+			// mb_substr, not substr: the column is 60 characters, and cutting on
+			// a byte boundary splits a multi-byte login mid-character. That
+			// stores invalid UTF-8 in a utf8mb4 column, which a strict server
+			// rejects outright — losing the audit row rather than truncating a
+			// name.
+			return mb_substr( $user->user_login, 0, self::MAX_LOGIN_LENGTH, 'UTF-8' );
 		}
 
 		return '';

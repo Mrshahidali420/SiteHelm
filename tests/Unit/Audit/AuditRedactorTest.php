@@ -159,4 +159,64 @@ final class AuditRedactorTest extends TestCase {
 		$this->assertStringNotContainsString( 'old-secret-value', $summary );
 		$this->assertStringNotContainsString( 'new-secret-value', $summary );
 	}
+	/**
+	 * A field is changed only when it is not identical, not merely unequal.
+	 *
+	 * WordPress hands back column values as strings while a payload carries
+	 * scalars, so '0' against 0 is realistic. A review found relaxing the
+	 * comparison to `==` passed the whole suite, which would drop a real change
+	 * out of the audit summary — the record would say a field was untouched
+	 * when the write altered it.
+	 */
+	public function test_a_loosely_equal_value_is_still_recorded_as_changed(): void {
+		$decoded = json_decode( $this->redactor->summarize( [ 'post_title' => '0' ], [ 'post_title' => 0 ] ), true );
+
+		$this->assertSame( [ 'post_title' ], $decoded['changed'] );
+	}
+
+	/**
+	 * Field names are recorded exactly as given.
+	 *
+	 * A review found lower-casing the recorded name left the suite green.
+	 * An audit summary naming a field that does not exist is evidence an
+	 * investigator cannot match against the schema.
+	 */
+	public function test_a_field_name_is_recorded_with_its_original_case(): void {
+		$decoded = json_decode( $this->redactor->summarize( [], [ 'postTitle_X' => 'value' ] ), true );
+
+		$this->assertSame( [ 'postTitle_X' ], $decoded['changed'] );
+		$this->assertArrayHasKey( 'postTitle_X', $decoded['metrics'] );
+	}
+
+	/**
+	 * Metrics are ordered so two identical changes summarize byte-identically.
+	 *
+	 * A review found removing the sort left the suite green, because no test
+	 * supplied fields out of order. Unstable ordering makes two audit rows for
+	 * the same change compare as different, which defeats diffing the trail.
+	 */
+	public function test_metrics_are_ordered_independently_of_input_order(): void {
+		$one = $this->redactor->summarize( [], [ 'zeta' => 'a', 'alpha' => 'bb' ] );
+		$two = $this->redactor->summarize( [], [ 'alpha' => 'bb', 'zeta' => 'a' ] );
+
+		$this->assertSame( $one, $two );
+		$this->assertSame( '{"changed":["alpha","zeta"],"metrics":{"alpha":{"before":0,"after":2},"zeta":{"before":0,"after":1}}}', $one );
+	}
+
+	/**
+	 * Before and after are not interchangeable.
+	 *
+	 * A review found swapping them left the suite green, because the fixtures
+	 * happened to be symmetric in size. An audit row that reports a field
+	 * shrinking when it grew is misleading evidence.
+	 */
+	public function test_before_and_after_sizes_are_not_swapped(): void {
+		$decoded = json_decode(
+			$this->redactor->summarize( [ 'post_title' => 'ab' ], [ 'post_title' => 'abcdefgh' ] ),
+			true
+		);
+
+		$this->assertSame( 2, $decoded['metrics']['post_title']['before'] );
+		$this->assertSame( 8, $decoded['metrics']['post_title']['after'] );
+	}
 }
