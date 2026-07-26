@@ -62,13 +62,10 @@ final class ContentUpdate implements WriteOperation {
 	 * @return TargetState The resolved state.
 	 *
 	 * @throws OperationException With ErrorCode::TargetNotFound.
-	 *
-	 * phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 	 */
 	public function resolveTarget( array $input, OperationContext $context ): TargetState {
 		return $this->targets->resolve( (int) ( $input['id'] ?? 0 ) );
 	}
-	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 
 	/**
 	 * Builds the promised revision.
@@ -82,7 +79,6 @@ final class ContentUpdate implements WriteOperation {
 	 * @throws OperationException With ErrorCode::InvalidInput when nothing
 	 *                           changeable was supplied.
 	 *
-	 * phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 	 * phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 	 */
 	public function planChange( TargetState $current, array $input, OperationContext $context ): PlannedChange {
@@ -107,7 +103,6 @@ final class ContentUpdate implements WriteOperation {
 
 		return new PlannedChange( $promised, $promised, ContentFields::FIELD_ORDER );
 	}
-	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 
 	/**
@@ -117,13 +112,10 @@ final class ContentUpdate implements WriteOperation {
 	 * @param OperationContext $context The request context.
 	 *
 	 * @return array<string, mixed>|null The restore state.
-	 *
-	 * phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 	 */
 	public function captureSnapshot( TargetState $current, OperationContext $context ): ?array {
 		return $this->targets->snapshotOf( $current );
 	}
-	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 
 	/**
 	 * Saves the promised revision.
@@ -140,7 +132,6 @@ final class ContentUpdate implements WriteOperation {
 	 *
 	 * @throws OperationException With ErrorCode::ExecutionFailed.
 	 *
-	 * phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 	 * phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 	 */
@@ -162,7 +153,6 @@ final class ContentUpdate implements WriteOperation {
 
 		return $this->fields->targetKey( (int) $updated );
 	}
-	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 
@@ -176,14 +166,12 @@ final class ContentUpdate implements WriteOperation {
 	 *
 	 * @throws OperationException With ErrorCode::VerificationFailed.
 	 *
-	 * phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
 	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 	 */
 	public function readBack( string $targetKey, OperationContext $context ): TargetState {
 		return $this->targets->verifyRead( $targetKey, $context->correlationId );
 	}
-	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 

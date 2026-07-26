@@ -20,10 +20,16 @@ use SiteHelm\Contracts\OperationException;
  * REQ-0013: content creation. An agency operator drafts new client content
  * through an AI client without touching wp-admin.
  *
- * The capability check is split, because a definition cannot express a
- * conditional capability: `edit_posts` is declared and enforced by the policy
- * engine, and `publish_posts` is enforced here whenever the requested status is
- * publish. The contract permits exactly this — the policy engine may add
+ * The capability checks are split, because a definition cannot express a
+ * conditional or per-post-type capability: the declared `edit_posts` on the
+ * definition is a floor the policy engine enforces regardless of the
+ * requested type, and this operation checks the requested post type's own
+ * capabilities on top of it — `create_posts` always, and `publish_posts`
+ * whenever the requested status is not draft-like. A custom post type
+ * registered with its own `capability_type` maps those to distinct
+ * capability names (for example `edit_products`), so the generic
+ * `edit_posts` / `publish_posts` capabilities are never substituted for
+ * them. The contract permits exactly this — the policy engine may add
  * restrictions on top of the declared capabilities, never fewer.
  *
  * @package SiteHelm
@@ -31,14 +37,14 @@ use SiteHelm\Contracts\OperationException;
 final class ContentCreate implements WriteOperation {
 
 	/**
-	 * The status whose creation additionally requires publish_posts.
+	 * Statuses that keep content inside the draft workflow rather than making
+	 * it live or otherwise visible outside it. Anything the input schema
+	 * admits that is not listed here requires the post type's own publish
+	 * capability, so a status added to the schema later fails closed by
+	 * default instead of silently becoming creatable by anyone who can create
+	 * a draft.
 	 */
-	private const PUBLISH_STATUS = 'publish';
-
-	/**
-	 * The status used when the request names none.
-	 */
-	private const DEFAULT_STATUS = 'draft';
+	private const DRAFT_LIKE_STATUSES = [ 'draft', 'pending' ];
 
 	/**
 	 * Constructs the operation.
@@ -59,13 +65,10 @@ final class ContentCreate implements WriteOperation {
 	 * @param OperationContext     $context The request context.
 	 *
 	 * @return TargetState The pending state.
-	 *
-	 * phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 	 */
 	public function resolveTarget( array $input, OperationContext $context ): TargetState {
 		return $this->targets->pending();
 	}
-	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 
 	/**
 	 * Builds the promised new content item.
@@ -78,15 +81,16 @@ final class ContentCreate implements WriteOperation {
 	 *
 	 * @throws OperationException With ErrorCode::InvalidInput for an
 	 *                           unavailable content type, or
-	 *                           ErrorCode::Forbidden for an unpermitted publish.
+	 *                           ErrorCode::Forbidden for an unpermitted create
+	 *                           or an unpermitted publish.
 	 *
-	 * phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 	 * phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 	 */
 	public function planChange( TargetState $current, array $input, OperationContext $context ): PlannedChange {
-		$type = (string) ( $input['type'] ?? '' );
-		if ( ! $this->is_creatable( $type ) ) {
+		$type        = (string) ( $input['type'] ?? '' );
+		$type_object = $this->resolve_creatable_type( $type );
+		if ( null === $type_object ) {
 			throw new OperationException(
 				ErrorCode::InvalidInput,
 				'The requested content type is not available for creation on this site.',
@@ -94,8 +98,17 @@ final class ContentCreate implements WriteOperation {
 			);
 		}
 
-		$status = (string) ( $input['status'] ?? self::DEFAULT_STATUS );
-		if ( self::PUBLISH_STATUS === $status && ! user_can( $context->userId, 'publish_posts' ) ) {
+		if ( ! user_can( $context->userId, $type_object->cap->create_posts ) ) {
+			throw new OperationException(
+				ErrorCode::Forbidden,
+				'Your WordPress user may not create this content type.',
+				'Ask a site administrator to grant the capability this content type requires.'
+			);
+		}
+
+		$status = (string) $input['status'];
+		if ( ! in_array( $status, self::DRAFT_LIKE_STATUSES, true )
+			&& ! user_can( $context->userId, $type_object->cap->publish_posts ) ) {
 			throw new OperationException(
 				ErrorCode::Forbidden,
 				'Your WordPress user may not publish content.',
@@ -114,7 +127,6 @@ final class ContentCreate implements WriteOperation {
 
 		return new PlannedChange( $promised, $promised, ContentFields::FIELD_ORDER );
 	}
-	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 
@@ -129,13 +141,10 @@ final class ContentCreate implements WriteOperation {
 	 * @param OperationContext $context The request context.
 	 *
 	 * @return array<string, mixed>|null Always null.
-	 *
-	 * phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 	 */
 	public function captureSnapshot( TargetState $current, OperationContext $context ): ?array {
 		return null;
 	}
-	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 
 	/**
 	 * Inserts the promised content item.
@@ -148,7 +157,6 @@ final class ContentCreate implements WriteOperation {
 	 *
 	 * @throws OperationException With ErrorCode::ExecutionFailed.
 	 *
-	 * phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 	 * phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 	 */
 	public function applyChange( TargetState $current, PlannedChange $planned, OperationContext $context ): string {
@@ -165,7 +173,6 @@ final class ContentCreate implements WriteOperation {
 
 		return $this->fields->targetKey( (int) $created );
 	}
-	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 
 	/**
@@ -178,14 +185,12 @@ final class ContentCreate implements WriteOperation {
 	 *
 	 * @throws OperationException With ErrorCode::VerificationFailed.
 	 *
-	 * phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
 	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 	 */
 	public function readBack( string $targetKey, OperationContext $context ): TargetState {
 		return $this->targets->verifyRead( $targetKey, $context->correlationId );
 	}
-	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 
@@ -216,19 +221,35 @@ final class ContentCreate implements WriteOperation {
 	// phpcs:enable Squiz.Commenting.FunctionComment.InvalidNoReturn
 
 	/**
-	 * Whether a content type may be created through this operation.
+	 * Resolves the post type object this creation targets, refusing rather
+	 * than guessing when it cannot be resolved with the capabilities this
+	 * operation needs to check.
+	 *
+	 * Falling back to a generic capability when a type's own `cap` object
+	 * cannot be read would let a caller create content of a type they hold
+	 * no capability for at all, so an unresolvable type is refused instead of
+	 * silently treated as creatable.
 	 *
 	 * @param string $type The requested content type.
 	 *
-	 * @return bool True when the type is registered and public.
+	 * @return object|null The post type object, or null when it is not
+	 *                     creatable through this operation.
 	 */
-	private function is_creatable( string $type ): bool {
+	private function resolve_creatable_type( string $type ): ?object {
 		if ( '' === $type || ! post_type_exists( $type ) ) {
-			return false;
+			return null;
 		}
 		$object = get_post_type_object( $type );
+		if ( ! is_object( $object ) || ! isset( $object->public ) || true !== $object->public ) {
+			return null;
+		}
+		if ( ! isset( $object->cap ) || ! is_object( $object->cap )
+			|| ! isset( $object->cap->create_posts ) || ! is_string( $object->cap->create_posts )
+			|| ! isset( $object->cap->publish_posts ) || ! is_string( $object->cap->publish_posts ) ) {
+			return null;
+		}
 
-		return is_object( $object ) && isset( $object->public ) && true === $object->public;
+		return $object;
 	}
 
 	/**

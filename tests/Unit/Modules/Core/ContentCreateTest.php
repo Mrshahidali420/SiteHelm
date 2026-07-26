@@ -38,7 +38,13 @@ final class ContentCreateTest extends TestCase {
 		$this->operation = new ContentCreate( $fields, new ContentTarget( $fields ) );
 		$this->writes    = [];
 
-		Functions\when( 'user_can' )->justReturn( false );
+		// Grants the generic 'post' type's own capability (which, for the
+		// built-in 'post' type, is literally 'edit_posts'/'publish_posts') but
+		// nothing else, so tests exercise the same distinction WordPress does
+		// between "may create at all" and "may publish".
+		Functions\when( 'user_can' )->alias(
+			static fn( int $user_id, string $capability ): bool => 'edit_posts' === $capability
+		);
 		Functions\when( 'wp_kses_post' )->alias( static fn( string $v ): string => $v );
 		Functions\when( 'wp_kses_data' )->alias( static fn( string $v ): string => $v );
 		Functions\when( 'wp_slash' )->alias( static fn( array $v ): array => $v );
@@ -49,9 +55,7 @@ final class ContentCreateTest extends TestCase {
 		Functions\when( 'get_object_taxonomies' )->justReturn( [] );
 		Functions\when( 'get_option' )->justReturn( [] );
 
-		$type          = new stdClass();
-		$type->public  = true;
-		Functions\when( 'get_post_type_object' )->justReturn( $type );
+		Functions\when( 'get_post_type_object' )->justReturn( $this->postTypeObject() );
 		Functions\when( 'wp_insert_post' )->alias(
 			function ( array $postarr ): int {
 				$this->writes[] = $postarr;
@@ -61,6 +65,30 @@ final class ContentCreateTest extends TestCase {
 		);
 
 		$this->stubCreatedPost();
+	}
+
+	/**
+	 * A public post type object shaped like the real 'post' type: `cap`
+	 * carries the actual capability names WordPress maps for it, where
+	 * `create_posts` defaults to the `edit_posts` primitive.
+	 *
+	 * @param string $create_posts_cap  The type's create_posts capability name.
+	 * @param string $publish_posts_cap The type's publish_posts capability name.
+	 */
+	private function postTypeObject(
+		string $create_posts_cap = 'edit_posts',
+		string $publish_posts_cap = 'publish_posts'
+	): stdClass {
+		$caps                = new stdClass();
+		$caps->create_posts  = $create_posts_cap;
+		$caps->edit_posts    = $create_posts_cap;
+		$caps->publish_posts = $publish_posts_cap;
+
+		$type         = new stdClass();
+		$type->public = true;
+		$type->cap    = $caps;
+
+		return $type;
 	}
 
 	/**
@@ -175,12 +203,101 @@ final class ContentCreateTest extends TestCase {
 
 	public function test_a_publish_request_succeeds_with_the_publish_capability(): void {
 		Functions\when( 'user_can' )->alias(
-			static fn( int $user_id, string $capability ): bool => 'publish_posts' === $capability
+			static fn( int $user_id, string $capability ): bool => in_array( $capability, [ 'edit_posts', 'publish_posts' ], true )
 		);
 		$current = $this->operation->resolveTarget( $this->input( 'publish' ), $this->makeContext() );
 		$planned = $this->operation->planChange( $current, $this->input( 'publish' ), $this->makeContext() );
 
 		$this->assertSame( 'publish', $planned->afterFields['post_status'] );
+	}
+
+	/**
+	 * Finding 1 (review of Task 15): the publish gate must match every status
+	 * that makes content live or otherwise escapes the draft workflow, not
+	 * just the literal 'publish'. 'private' is published content with
+	 * restricted visibility, so WordPress's own REST controller gates it
+	 * behind publish_posts for the same reason this operation must.
+	 */
+	public function test_a_private_request_requires_the_publish_capability(): void {
+		$current = $this->operation->resolveTarget( $this->input( 'private' ), $this->makeContext() );
+
+		try {
+			$this->operation->planChange( $current, $this->input( 'private' ), $this->makeContext() );
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::Forbidden, $e->errorCode );
+		}
+	}
+
+	public function test_a_private_request_succeeds_with_the_publish_capability(): void {
+		Functions\when( 'user_can' )->alias(
+			static fn( int $user_id, string $capability ): bool => in_array( $capability, [ 'edit_posts', 'publish_posts' ], true )
+		);
+		$current = $this->operation->resolveTarget( $this->input( 'private' ), $this->makeContext() );
+		$planned = $this->operation->planChange( $current, $this->input( 'private' ), $this->makeContext() );
+
+		$this->assertSame( 'private', $planned->afterFields['post_status'] );
+	}
+
+	public function test_a_pending_request_does_not_require_the_publish_capability(): void {
+		$current = $this->operation->resolveTarget( $this->input( 'pending' ), $this->makeContext() );
+		$planned = $this->operation->planChange( $current, $this->input( 'pending' ), $this->makeContext() );
+
+		$this->assertSame( 'pending', $planned->afterFields['post_status'] );
+	}
+
+	/**
+	 * Finding 2 (review of Task 15): a custom post type registered with its
+	 * own `capability_type` (here 'product') maps create_posts and
+	 * publish_posts to distinct capability names such as 'edit_products'.
+	 * A caller holding only the generic 'post' type's capabilities must not
+	 * be treated as able to create this type — content-update escapes this
+	 * because edit_post is a meta capability WordPress resolves per post
+	 * type, but creation has no such indirection and must check the type's
+	 * own `cap` object.
+	 */
+	public function test_plan_change_rejects_a_caller_without_the_post_types_own_create_capability(): void {
+		Functions\when( 'user_can' )->alias(
+			static fn( int $user_id, string $capability ): bool => in_array( $capability, [ 'edit_posts', 'publish_posts' ], true )
+		);
+		Functions\when( 'get_post_type_object' )->justReturn(
+			$this->postTypeObject( 'edit_products', 'publish_products' )
+		);
+
+		$input = [
+			'type'    => 'product',
+			'title'   => 'New product',
+			'content' => '<p>Body.</p>',
+			'status'  => 'draft',
+		];
+		$current = $this->operation->resolveTarget( $input, $this->makeContext() );
+
+		try {
+			$this->operation->planChange( $current, $input, $this->makeContext() );
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::Forbidden, $e->errorCode );
+		}
+	}
+
+	public function test_plan_change_succeeds_with_the_post_types_own_create_capability(): void {
+		Functions\when( 'user_can' )->alias(
+			static fn( int $user_id, string $capability ): bool => 'edit_products' === $capability
+		);
+		Functions\when( 'get_post_type_object' )->justReturn(
+			$this->postTypeObject( 'edit_products', 'publish_products' )
+		);
+
+		$input = [
+			'type'    => 'product',
+			'title'   => 'New product',
+			'content' => '<p>Body.</p>',
+			'status'  => 'draft',
+		];
+		$current = $this->operation->resolveTarget( $input, $this->makeContext() );
+		$planned = $this->operation->planChange( $current, $input, $this->makeContext() );
+
+		$this->assertSame( 'product', $planned->afterFields['post_type'] );
 	}
 
 	public function test_a_draft_request_does_not_require_the_publish_capability(): void {
@@ -250,6 +367,21 @@ final class ContentCreateTest extends TestCase {
 				'changed' => array_keys( $planned->afterFields ),
 				'state'   => $after->fields,
 			],
+			$registry->definition( 'content-create' )->outputSchema
+		);
+	}
+
+	/**
+	 * Covers the other half of the `oneOf` union: WRITE_OUTPUT_SCHEMA's plan
+	 * branch, which the apply-phase test above never exercises.
+	 */
+	public function test_the_plan_phase_payload_conforms_to_the_declared_output_schema(): void {
+		Functions\when( 'get_bloginfo' )->justReturn( '6.8.1' );
+		$registry = new CapabilityRegistry();
+		( new CoreModule() )->register( $registry );
+
+		$this->assertConformsToOutputSchema(
+			[ 'plan' => [ 'token' => 'plan-token' ] ],
 			$registry->definition( 'content-create' )->outputSchema
 		);
 	}
