@@ -1,0 +1,581 @@
+{
+    "operationIds": [
+        "content-get",
+        "content-list",
+        "taxonomy-list",
+        "content-update",
+        "content-create",
+        "content-rollback-apply",
+        "audit-list"
+    ],
+    "operationCount": 7,
+    "definitions": {
+        "content-get": {
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "Identifier of the content item to read."
+                    }
+                },
+                "required": [
+                    "id"
+                ],
+                "additionalProperties": false
+            },
+            "outputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer"
+                    },
+                    "type": {
+                        "type": "string"
+                    },
+                    "status": {
+                        "type": "string"
+                    },
+                    "title": {
+                        "type": "string"
+                    },
+                    "slug": {
+                        "type": "string"
+                    },
+                    "content": {
+                        "type": "string"
+                    },
+                    "excerpt": {
+                        "type": "string"
+                    },
+                    "parent": {
+                        "type": "integer"
+                    },
+                    "modifiedGmt": {
+                        "type": "string"
+                    },
+                    "featuredMedia": {
+                        "type": "integer"
+                    },
+                    "terms": {
+                        "type": "object"
+                    },
+                    "meta": {
+                        "type": "object"
+                    }
+                },
+                "additionalProperties": false
+            }
+        },
+        "content-list": {
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "type": {
+                        "type": "string",
+                        "maxLength": 32,
+                        "description": "A public content type this site registers, for example post or page. Defaults to post."
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "draft",
+                            "pending",
+                            "private",
+                            "publish",
+                            "trash"
+                        ],
+                        "description": "Return only items in this status. Defaults to every status except trash."
+                    },
+                    "search": {
+                        "type": "string",
+                        "maxLength": 255,
+                        "description": "Return only items matching this search term."
+                    },
+                    "parent": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "Return only children of this content item; 0 returns top-level items."
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "Page size, clamped to 100."
+                    },
+                    "offset": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "Items to skip before the page begins."
+                    }
+                },
+                "additionalProperties": false
+            },
+            "outputSchema": {
+                "type": "object",
+                "properties": {
+                    "items": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {
+                                    "type": "integer"
+                                },
+                                "type": {
+                                    "type": "string"
+                                },
+                                "status": {
+                                    "type": "string"
+                                },
+                                "title": {
+                                    "type": "string"
+                                },
+                                "slug": {
+                                    "type": "string"
+                                },
+                                "modifiedGmt": {
+                                    "type": "string"
+                                },
+                                "parent": {
+                                    "type": "integer"
+                                }
+                            },
+                            "required": [
+                                "id",
+                                "type",
+                                "status",
+                                "title",
+                                "slug",
+                                "modifiedGmt",
+                                "parent"
+                            ],
+                            "additionalProperties": false
+                        }
+                    },
+                    "total": {
+                        "type": "integer"
+                    },
+                    "limit": {
+                        "type": "integer"
+                    },
+                    "offset": {
+                        "type": "integer"
+                    }
+                },
+                "required": [
+                    "items",
+                    "total",
+                    "limit",
+                    "offset"
+                ],
+                "additionalProperties": false
+            }
+        },
+        "taxonomy-list": {
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "type": {
+                        "type": "string",
+                        "maxLength": 32,
+                        "description": "A public content type this site registers, for example post or page."
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "Terms returned per taxonomy, clamped to 100."
+                    },
+                    "offset": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "Terms to skip within each taxonomy before the page begins."
+                    }
+                },
+                "required": [
+                    "type"
+                ],
+                "additionalProperties": false
+            },
+            "outputSchema": {
+                "type": "object",
+                "properties": {
+                    "taxonomies": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "name": {
+                                    "type": "string"
+                                },
+                                "label": {
+                                    "type": "string"
+                                },
+                                "hierarchical": {
+                                    "type": "boolean"
+                                },
+                                "mayAssignTerms": {
+                                    "type": "boolean"
+                                },
+                                "termTotal": {
+                                    "type": "integer"
+                                },
+                                "terms": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "object",
+                                        "properties": {
+                                            "id": {
+                                                "type": "integer"
+                                            },
+                                            "name": {
+                                                "type": "string"
+                                            },
+                                            "slug": {
+                                                "type": "string"
+                                            },
+                                            "parent": {
+                                                "type": "integer"
+                                            },
+                                            "count": {
+                                                "type": "integer"
+                                            }
+                                        },
+                                        "required": [
+                                            "id",
+                                            "name",
+                                            "slug",
+                                            "parent",
+                                            "count"
+                                        ],
+                                        "additionalProperties": false
+                                    }
+                                }
+                            },
+                            "required": [
+                                "name",
+                                "label",
+                                "hierarchical",
+                                "mayAssignTerms",
+                                "termTotal",
+                                "terms"
+                            ],
+                            "additionalProperties": false
+                        }
+                    },
+                    "limit": {
+                        "type": "integer"
+                    },
+                    "offset": {
+                        "type": "integer"
+                    },
+                    "unreadableTaxonomies": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "description": "Names of taxonomies whose terms could not be read, matching taxonomies[].name. Their terms and termTotal are not trustworthy. Absent when every taxonomy was read successfully."
+                    }
+                },
+                "required": [
+                    "taxonomies",
+                    "limit",
+                    "offset"
+                ],
+                "additionalProperties": false
+            }
+        },
+        "content-update": {
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "Identifier of the content item to revise."
+                    },
+                    "title": {
+                        "type": "string",
+                        "maxLength": 255,
+                        "description": "Replacement title."
+                    },
+                    "content": {
+                        "type": "string",
+                        "maxLength": 500000,
+                        "description": "Replacement body."
+                    },
+                    "excerpt": {
+                        "type": "string",
+                        "maxLength": 5000,
+                        "description": "Replacement excerpt."
+                    }
+                },
+                "required": [
+                    "id"
+                ],
+                "additionalProperties": false
+            },
+            "outputSchema": {
+                "type": "object",
+                "oneOf": [
+                    {
+                        "title": "Plan phase",
+                        "type": "object",
+                        "properties": {
+                            "plan": {
+                                "type": "object",
+                                "description": "The change plan to approve, including its plan token."
+                            }
+                        },
+                        "required": [
+                            "plan"
+                        ],
+                        "additionalProperties": false
+                    },
+                    {
+                        "title": "Apply phase",
+                        "type": "object",
+                        "properties": {
+                            "target": {
+                                "type": "string",
+                                "description": "The concrete target that was written."
+                            },
+                            "changed": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                },
+                                "description": "The fields the approved plan changed."
+                            },
+                            "state": {
+                                "type": "object",
+                                "description": "The verified persisted state of the target."
+                            }
+                        },
+                        "required": [
+                            "target",
+                            "changed",
+                            "state"
+                        ],
+                        "additionalProperties": false
+                    }
+                ]
+            }
+        },
+        "content-create": {
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "type": {
+                        "type": "string",
+                        "maxLength": 32,
+                        "description": "A public content type this site registers, for example post or page."
+                    },
+                    "title": {
+                        "type": "string",
+                        "maxLength": 255,
+                        "description": "Title of the new content item."
+                    },
+                    "content": {
+                        "type": "string",
+                        "maxLength": 500000,
+                        "description": "Body of the new content item."
+                    },
+                    "excerpt": {
+                        "type": "string",
+                        "maxLength": 5000,
+                        "description": "Excerpt of the new content item."
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "draft",
+                            "pending",
+                            "private",
+                            "publish"
+                        ],
+                        "description": "Initial status. Requesting publish additionally requires the publish capability."
+                    }
+                },
+                "required": [
+                    "type",
+                    "title",
+                    "status"
+                ],
+                "additionalProperties": false
+            },
+            "outputSchema": {
+                "type": "object",
+                "oneOf": [
+                    {
+                        "title": "Plan phase",
+                        "type": "object",
+                        "properties": {
+                            "plan": {
+                                "type": "object",
+                                "description": "The change plan to approve, including its plan token."
+                            }
+                        },
+                        "required": [
+                            "plan"
+                        ],
+                        "additionalProperties": false
+                    },
+                    {
+                        "title": "Apply phase",
+                        "type": "object",
+                        "properties": {
+                            "target": {
+                                "type": "string",
+                                "description": "The concrete target that was written."
+                            },
+                            "changed": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                },
+                                "description": "The fields the approved plan changed."
+                            },
+                            "state": {
+                                "type": "object",
+                                "description": "The verified persisted state of the target."
+                            }
+                        },
+                        "required": [
+                            "target",
+                            "changed",
+                            "state"
+                        ],
+                        "additionalProperties": false
+                    }
+                ]
+            }
+        },
+        "content-rollback-apply": {
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "rollbackRef": {
+                        "type": "string",
+                        "maxLength": 64,
+                        "description": "Rollback reference offered on a previous write result or audit entry."
+                    }
+                },
+                "required": [
+                    "rollbackRef"
+                ],
+                "additionalProperties": false
+            },
+            "outputSchema": {
+                "type": "object",
+                "oneOf": [
+                    {
+                        "title": "Plan phase",
+                        "type": "object",
+                        "properties": {
+                            "plan": {
+                                "type": "object",
+                                "description": "The change plan to approve, including its plan token."
+                            }
+                        },
+                        "required": [
+                            "plan"
+                        ],
+                        "additionalProperties": false
+                    },
+                    {
+                        "title": "Apply phase",
+                        "type": "object",
+                        "properties": {
+                            "target": {
+                                "type": "string",
+                                "description": "The concrete target that was written."
+                            },
+                            "changed": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                },
+                                "description": "The fields the approved plan changed."
+                            },
+                            "state": {
+                                "type": "object",
+                                "description": "The verified persisted state of the target."
+                            }
+                        },
+                        "required": [
+                            "target",
+                            "changed",
+                            "state"
+                        ],
+                        "additionalProperties": false
+                    }
+                ]
+            }
+        },
+        "audit-list": {
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "operationId": {
+                        "type": "string",
+                        "maxLength": 64,
+                        "description": "Return only events for this operation identifier."
+                    },
+                    "correlationId": {
+                        "type": "string",
+                        "maxLength": 64,
+                        "description": "Return only events for this request correlation identifier."
+                    },
+                    "actorId": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "Return only events performed by this WordPress user."
+                    },
+                    "since": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "Return only events recorded at or after this UTC instant."
+                    },
+                    "until": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "Return only events recorded at or before this UTC instant."
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "Page size, clamped to 100."
+                    },
+                    "offset": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "Events to skip before the page begins."
+                    }
+                },
+                "additionalProperties": false
+            },
+            "outputSchema": {
+                "type": "object",
+                "properties": {
+                    "entries": {
+                        "type": "array",
+                        "items": {
+                            "type": "object"
+                        }
+                    },
+                    "total": {
+                        "type": "integer"
+                    },
+                    "limit": {
+                        "type": "integer"
+                    },
+                    "offset": {
+                        "type": "integer"
+                    }
+                },
+                "additionalProperties": false
+            }
+        }
+    }
+}
