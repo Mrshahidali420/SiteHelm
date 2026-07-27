@@ -7,9 +7,10 @@
         "content-create",
         "content-rollback-apply",
         "content-featured-media-set",
+        "content-status-set",
         "audit-list"
     ],
-    "operationCount": 8,
+    "operationCount": 9,
     "definitions": {
         "content-get": {
             "inputSchema": {
@@ -532,6 +533,79 @@
                 "required": [
                     "id",
                     "mediaId"
+                ],
+                "additionalProperties": false
+            },
+            "outputSchema": {
+                "type": "object",
+                "oneOf": [
+                    {
+                        "title": "Plan phase",
+                        "type": "object",
+                        "properties": {
+                            "plan": {
+                                "type": "object",
+                                "description": "The change plan to approve, including its plan token."
+                            }
+                        },
+                        "required": [
+                            "plan"
+                        ],
+                        "additionalProperties": false
+                    },
+                    {
+                        "title": "Apply phase",
+                        "type": "object",
+                        "properties": {
+                            "target": {
+                                "type": "string",
+                                "description": "The concrete target that was written."
+                            },
+                            "changed": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                },
+                                "description": "The fields the approved plan changed."
+                            },
+                            "state": {
+                                "type": "object",
+                                "description": "The verified persisted state of the target."
+                            }
+                        },
+                        "required": [
+                            "target",
+                            "changed",
+                            "state"
+                        ],
+                        "additionalProperties": false
+                    }
+                ]
+            }
+        },
+        "content-status-set": {
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "Identifier of the content item whose status is being changed."
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "draft",
+                            "pending",
+                            "private",
+                            "publish"
+                        ],
+                        "description": "Target status. Anything other than draft or pending additionally requires the content type's publish capability."
+                    }
+                },
+                "required": [
+                    "id",
+                    "status"
                 ],
                 "additionalProperties": false
             },

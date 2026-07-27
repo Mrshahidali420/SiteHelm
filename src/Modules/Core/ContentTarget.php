@@ -17,8 +17,8 @@ use SiteHelm\Contracts\OperationException;
  * The three things every content write does identically: resolve the target,
  * re-read it for verification, and write a recorded restore state back.
  *
- * Extracted so create, update, rollback, and featured-media assignment share
- * one implementation rather than four that could drift apart.
+ * Extracted so create, update, rollback, featured-media assignment and status
+ * change share one implementation rather than five that could drift apart.
  *
  * @package SiteHelm
  */

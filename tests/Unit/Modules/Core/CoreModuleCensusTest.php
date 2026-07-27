@@ -84,6 +84,14 @@ final class CoreModuleCensusTest extends TestCase {
 			'snapshot'      => 'required',
 			'rollback'      => 'supported',
 		],
+		'content-status-set'         => [
+			'dispatcher'    => 'content-write',
+			'schemaVersion' => 1,
+			'capabilities'  => [ 'edit_post' ],
+			'preview'       => 'required',
+			'snapshot'      => 'required',
+			'rollback'      => 'supported',
+		],
 		'audit-list'                 => [
 			'dispatcher'    => 'system-read',
 			'schemaVersion' => 1,
@@ -121,7 +129,7 @@ final class CoreModuleCensusTest extends TestCase {
 		$registry = $this->registryWithCoreModule();
 
 		$this->assertCount( 3, $registry->forDispatcher( 'content-read' ) );
-		$this->assertCount( 4, $registry->forDispatcher( 'content-write' ) );
+		$this->assertCount( 5, $registry->forDispatcher( 'content-write' ) );
 		$this->assertCount( 1, $registry->forDispatcher( 'system-read' ) );
 
 		$empty = [ 'media-read', 'media-write', 'menu-read', 'menu-write', 'elementor-read', 'elementor-write', 'fields-read', 'fields-write' ];
