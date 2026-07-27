@@ -69,7 +69,7 @@ Each taxonomy reports `name`, `label`, `hierarchical`, and whether the caller ma
 
 Terms report `id`, `name`, `slug`, `parent`, `count`. Terms are paginated with the same `limit` and `offset` bounds as Decision 1, because a site with thousands of tags would otherwise return an unbounded response.
 
-**Amended 2026-07-27 during implementation:** there is deliberately **no top-level `total`**. With several taxonomies each holding its own term count, a single total is ambiguous, so each taxonomy carries its own `termTotal` — sourced from `wp_count_terms()`, unpaginated, rather than a `count()` of the returned page. Decision 1's third echoed field therefore has no counterpart here; only `limit` and `offset` carry over.
+**Amended 2026-07-27 during implementation:** there is deliberately **no top-level `total`**. With several taxonomies each holding its own term count, a single total is ambiguous, so each taxonomy carries its own `termTotal` — sourced from `wp_count_terms()`, unpaginated, rather than a `count()` of the returned page. Of Decision 1's three echoed fields, `total` therefore has no counterpart here; only `limit` and `offset` carry over.
 
 **Only public taxonomies are listed.** A private taxonomy is an implementation detail of the site or another plugin, and exposing its terms through a general discovery surface is a disclosure with no requirement behind it.
 
