@@ -944,6 +944,63 @@ final class ContentRollbackApplyTest extends TestCase {
 	}
 
 	/**
+	 * Shape one of the empty promise: the snapshot's only restorable key holds a
+	 * value the media gate refuses, so nothing is promised.
+	 *
+	 * Without the explicit refusal this reaches PlannedChange::__construct(),
+	 * which throws InvalidArgumentException — and because preview() calls
+	 * planChange() outside any try block, that escape is answered as
+	 * `execution_failed`, which ErrorCode declares RETRYABLE. The caller would be
+	 * told to retry a rollback that can never succeed. `rollback_unavailable`
+	 * exists for exactly this and is not retryable.
+	 */
+	public function test_a_snapshot_promising_nothing_is_rollback_unavailable(): void {
+		$this->queueSnapshot( [ 'restore_state' => '{"featured_media":null,"post_id":42}' ], 2 );
+		$current = $this->operation->resolveTarget( [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+
+		try {
+			$this->operation->planChange( $current, [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::RollbackUnavailable, $e->errorCode );
+		}
+	}
+
+	/**
+	 * Shape two, and the older of the two: a stored snapshot holding nothing but
+	 * `post_id`. It reaches the same empty promise by a different route — no key
+	 * to skip, simply nothing recorded — and one condition covers both.
+	 */
+	public function test_a_snapshot_holding_only_a_post_id_is_rollback_unavailable(): void {
+		$this->queueSnapshot( [ 'restore_state' => '{"post_id":42}' ], 2 );
+		$current = $this->operation->resolveTarget( [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+
+		try {
+			$this->operation->planChange( $current, [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::RollbackUnavailable, $e->errorCode );
+		}
+	}
+
+	/**
+	 * The refusal must not over-fire. A snapshot whose ONLY restorable value is a
+	 * featured media id of 0 promises exactly that, and 0 is both falsy and the
+	 * legal "no featured image" value — so a guard written as `! $promised` or
+	 * `empty( $promised )` on the value rather than the array would refuse a
+	 * perfectly restorable snapshot. A guard that refuses too much is worse than
+	 * the escape it replaces.
+	 */
+	public function test_a_snapshot_promising_only_a_zero_featured_media_is_still_planned(): void {
+		$this->queueSnapshot( [ 'restore_state' => '{"featured_media":0,"post_id":42}' ], 2 );
+		$current = $this->operation->resolveTarget( [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+
+		$planned = $this->operation->planChange( $current, [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+
+		$this->assertSame( [ 'featured_media' => 0 ], $planned->afterFields );
+	}
+
+	/**
 	 * applyChange() carries its own is_numeric() gate rather than trusting
 	 * planChange() to have stripped the value. The two phases are separated by a
 	 * stored plan token, so applyChange() re-derives everything it writes; a
