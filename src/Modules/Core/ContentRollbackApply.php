@@ -12,12 +12,19 @@ namespace SiteHelm\Modules\Core;
 use SiteHelm\Change\PlannedChange;
 use SiteHelm\Change\TargetState;
 use SiteHelm\Change\WriteOperation;
+use SiteHelm\Change\WriteOutputSchema;
+use SiteHelm\Contracts\Domain;
 use SiteHelm\Contracts\ErrorCode;
 use SiteHelm\Contracts\Mode;
 use SiteHelm\Contracts\ModuleHealth;
 use SiteHelm\Contracts\ModuleId;
 use SiteHelm\Contracts\OperationContext;
+use SiteHelm\Contracts\OperationDefinition;
 use SiteHelm\Contracts\OperationException;
+use SiteHelm\Contracts\PreviewPolicy;
+use SiteHelm\Contracts\Risk;
+use SiteHelm\Contracts\RollbackPolicy;
+use SiteHelm\Contracts\SnapshotPolicy;
 use SiteHelm\Policy\PolicyEngine;
 use SiteHelm\Registry\CapabilityRegistry;
 use SiteHelm\Storage\SnapshotStore;
@@ -41,6 +48,66 @@ use SiteHelm\Storage\SnapshotStore;
  * @package SiteHelm
  */
 final class ContentRollbackApply implements WriteOperation {
+
+	/**
+	 * The operation's registered definition, beside the code that produces
+	 * the payload. Static because a definition is a constant declaration: it
+	 * takes no dependencies, and the registry reads it without constructing
+	 * the operation.
+	 *
+	 * @return OperationDefinition The definition registered for content-rollback-apply.
+	 */
+	public static function definition(): OperationDefinition {
+		// requiredCapabilities is the target-bound meta capability edit_post,
+		// matching content-update, rather than the site-wide primitive
+		// edit_posts. It is the front-gate and catalog declaration only:
+		// assert_original_capability() derives the capability it re-checks
+		// from the resolved target itself, so no declaration here or on any
+		// origin operation can weaken the restore-time check.
+		//
+		// The request carries no post id (only rollbackRef), so PolicyEngine's
+		// front-gate check for a direct invocation cannot evaluate edit_post
+		// against a target and falls back to the governing primitive. That
+		// target-less fallback was introduced in this phase, to stop a
+		// target-less meta-capability resolving to do_not_allow and refusing
+		// every user including administrators. It is deliberately coarse and
+		// is safe precisely because the restore-time re-check inside this
+		// operation is target-bound.
+		return new OperationDefinition(
+			id: 'content-rollback-apply',
+			domain: Domain::Content,
+			mode: Mode::Write,
+			description: 'Restore a recorded snapshot for a previously executed content write, re-checking the original permission at restore time.',
+			inputSchema: [
+				'type'                 => 'object',
+				'properties'           => [
+					'rollbackRef' => [
+						'type'        => 'string',
+						'maxLength'   => 64,
+						'description' => 'Rollback reference offered on a previous write result or audit entry.',
+					],
+				],
+				'required'             => [ 'rollbackRef' ],
+				'additionalProperties' => false,
+			],
+			outputSchema: WriteOutputSchema::schema(),
+			schemaVersion: 1,
+			requiredCapabilities: [ 'edit_post' ],
+			risk: Risk::Medium,
+			isReadOnly: false,
+			isDestructive: false,
+			isIdempotent: true,
+			previewPolicy: PreviewPolicy::Required,
+			snapshotPolicy: SnapshotPolicy::Required,
+			rollbackPolicy: RollbackPolicy::Supported,
+			module: ModuleId::Core,
+			supportedVersions: [ 'wordpress' => '>=' . SITEHELM_MIN_WP ],
+			example: [
+				'operation' => 'content-rollback-apply',
+				'arguments' => [ 'rollbackRef' => 'rb-0123456789abcdef01234567' ],
+			],
+		);
+	}
 
 	/**
 	 * The fields a content snapshot restores.

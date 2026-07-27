@@ -134,6 +134,21 @@ and response recorded verbatim.
   is therefore the one registered operation whose payload shape nothing checks,
   and declaring those members is a contract change that must land before the
   runtime validation above, not with it.
+- **The conformance helper never reads `additionalProperties` at all.** The third
+  discovery that the I6 interim mitigation is weaker than the project believed,
+  found while extracting the core operation definitions.
+  `conformsToSchema()` in `tests/TestCase.php` hardcodes closure by diffing the
+  payload's keys against the declared `properties` keys; the string
+  `additionalProperties` appears nowhere in the file. So the declared flag is
+  enforced by nothing — not at runtime, which I6 defers, and not by the helper.
+  It is correct today only by coincidence, because every schema declares
+  `false`. The exposure runs both ways: a schema deliberately declaring `true`
+  would still have extra keys rejected, and a schema flipped from `false` to
+  `true` would go unnoticed until runtime validation shipped and turned
+  permissive while the tests stayed strict. A named invariant test now asserts
+  the flag is `false` for every core operation, which covers the operations that
+  exist but not the helper. Whoever implements runtime validation must make the
+  helper read the flag rather than simulate it.
 - **An optional output member can never be pinned by conformance alone.**
   `taxonomy-list`'s `unreadableTaxonomies` is declared but not `required`, and a
   conformance test correctly passes when it is absent — including when it is

@@ -12,9 +12,18 @@ namespace SiteHelm\Modules\Core;
 use SiteHelm\Change\PlannedChange;
 use SiteHelm\Change\TargetState;
 use SiteHelm\Change\WriteOperation;
+use SiteHelm\Change\WriteOutputSchema;
+use SiteHelm\Contracts\Domain;
 use SiteHelm\Contracts\ErrorCode;
+use SiteHelm\Contracts\Mode;
+use SiteHelm\Contracts\ModuleId;
 use SiteHelm\Contracts\OperationContext;
+use SiteHelm\Contracts\OperationDefinition;
 use SiteHelm\Contracts\OperationException;
+use SiteHelm\Contracts\PreviewPolicy;
+use SiteHelm\Contracts\Risk;
+use SiteHelm\Contracts\RollbackPolicy;
+use SiteHelm\Contracts\SnapshotPolicy;
 
 /**
  * REQ-0014: content update. An agency operator revises existing client content
@@ -33,6 +42,69 @@ use SiteHelm\Contracts\OperationException;
  * @package SiteHelm
  */
 final class ContentUpdate implements WriteOperation {
+
+	/**
+	 * The operation's registered definition, beside the code that produces
+	 * the payload. Static because a definition is a constant declaration: it
+	 * takes no dependencies, and the registry reads it without constructing
+	 * the operation.
+	 *
+	 * @return OperationDefinition The definition registered for content-update.
+	 */
+	public static function definition(): OperationDefinition {
+		return new OperationDefinition(
+			id: 'content-update',
+			domain: Domain::Content,
+			mode: Mode::Write,
+			description: 'Revise the title, body, or excerpt of one existing content item, keeping the prior revision available.',
+			inputSchema: [
+				'type'                 => 'object',
+				'properties'           => [
+					'id'      => [
+						'type'        => 'integer',
+						'minimum'     => 1,
+						'description' => 'Identifier of the content item to revise.',
+					],
+					'title'   => [
+						'type'        => 'string',
+						'maxLength'   => 255,
+						'description' => 'Replacement title.',
+					],
+					'content' => [
+						'type'        => 'string',
+						'maxLength'   => 500000,
+						'description' => 'Replacement body.',
+					],
+					'excerpt' => [
+						'type'        => 'string',
+						'maxLength'   => 5000,
+						'description' => 'Replacement excerpt.',
+					],
+				],
+				'required'             => [ 'id' ],
+				'additionalProperties' => false,
+			],
+			outputSchema: WriteOutputSchema::schema(),
+			schemaVersion: 1,
+			requiredCapabilities: [ 'edit_post' ],
+			risk: Risk::Medium,
+			isReadOnly: false,
+			isDestructive: false,
+			isIdempotent: true,
+			previewPolicy: PreviewPolicy::Required,
+			snapshotPolicy: SnapshotPolicy::Required,
+			rollbackPolicy: RollbackPolicy::Supported,
+			module: ModuleId::Core,
+			supportedVersions: [ 'wordpress' => '>=' . SITEHELM_MIN_WP ],
+			example: [
+				'operation' => 'content-update',
+				'arguments' => [
+					'id'    => 42,
+					'title' => 'Revised heading',
+				],
+			],
+		);
+	}
 
 	/**
 	 * Request property to normalized field name. Status, terms, metadata, and
