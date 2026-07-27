@@ -299,10 +299,11 @@ final class TaxonomyListTest extends TestCase {
 	}
 
 	/**
-	 * The capability checked must be the one the taxonomy declares, never the
-	 * post-scoped edit_posts PolicyEngine::META_CAPABILITY_MAP substitutes for
-	 * assign_terms. A caller holding edit_posts alone must not be told they may
-	 * assign this taxonomy's terms.
+	 * The capability checked must be the one the taxonomy declares, never a
+	 * post-scoped substitute. PolicyEngine::META_CAPABILITY_MAP deliberately
+	 * carries no assign_terms row, so nothing maps it to edit_posts any more —
+	 * and a caller holding edit_posts alone must not be told they may assign
+	 * this taxonomy's terms.
 	 */
 	public function test_the_capability_checked_is_the_one_the_taxonomy_declares(): void {
 		$this->list( [ 'type' => 'post' ] );

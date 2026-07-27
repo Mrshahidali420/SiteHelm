@@ -660,6 +660,14 @@ final class ContentRollbackApplyTest extends TestCase {
 		$this->assertSame( $missing_remediation, $non_write_remediation );
 	}
 
+	/**
+	 * The rollback's own snapshot is captured through the shared
+	 * ContentTarget::snapshotOf(), so it records every column in
+	 * RESTORABLE_FIELDS. post_status and post_name are asserted here because
+	 * this operation is what un-does a rollback: if its capture were to lose
+	 * either column, restore() would be unable to put a post back the way the
+	 * rollback found it.
+	 */
 	public function test_capture_snapshot_records_the_pre_rollback_state(): void {
 		$this->queueSnapshot();
 		$current  = $this->operation->resolveTarget( [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
@@ -667,6 +675,8 @@ final class ContentRollbackApplyTest extends TestCase {
 
 		$this->assertSame( 'Edited title', $snapshot['post_title'] );
 		$this->assertSame( 42, $snapshot['post_id'] );
+		$this->assertSame( 'draft', $snapshot['post_status'] );
+		$this->assertSame( 'original-title', $snapshot['post_name'] );
 	}
 
 	public function test_apply_change_writes_the_prior_state_and_stamps_the_snapshot(): void {
@@ -783,6 +793,66 @@ final class ContentRollbackApplyTest extends TestCase {
 		$this->assertConformsToOutputSchema(
 			[ 'plan' => [ 'token' => 'plan-token' ] ],
 			$registry->definition( 'content-rollback-apply' )->outputSchema
+		);
+	}
+
+	/**
+	 * A snapshot recorded after post_status and post_name joined
+	 * RESTORABLE_FIELDS promises both and writes both back. Without this the
+	 * widening in ContentTarget would record two columns that no rollback ever
+	 * restores.
+	 */
+	public function test_a_widened_snapshot_promises_and_restores_status_and_slug(): void {
+		$restore_state = '{"post_content":"<p>Original body.<\/p>","post_excerpt":"Original excerpt.","post_id":42,"post_name":"original-title","post_status":"publish","post_title":"Original title"}';
+		$this->queueSnapshot( [ 'restore_state' => $restore_state ], 3 );
+
+		$current = $this->operation->resolveTarget( [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+		$planned = $this->operation->planChange( $current, [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+
+		$this->assertSame(
+			[
+				'post_content' => '<p>Original body.</p>',
+				'post_excerpt' => 'Original excerpt.',
+				'post_name'    => 'original-title',
+				'post_status'  => 'publish',
+				'post_title'   => 'Original title',
+			],
+			$planned->afterFields
+		);
+
+		$this->assertSame( 'post:42', $this->operation->applyChange( $current, $planned, $this->makeContext() ) );
+		$this->assertSame( 'publish', $this->writes[0]['post_status'] );
+		$this->assertSame( 'original-title', $this->writes[0]['post_name'] );
+	}
+
+	/**
+	 * Backward compatibility with snapshot rows already in a live database. The
+	 * default fixture row is deliberately the pre-widening shape: four keys, no
+	 * post_status, no post_name.
+	 *
+	 * Such a row must promise and write only those four. A missing post_status
+	 * defaulted to '' would reach wp_update_post(), which resolves an empty
+	 * status to 'draft' — silently un-publishing a live post during a rollback
+	 * that promised only to restore its text, and reporting success while doing
+	 * it. This test is the only thing standing between that fixture shape and
+	 * that outcome.
+	 */
+	public function test_a_snapshot_recorded_before_the_widening_restores_only_what_it_holds(): void {
+		$this->queueSnapshot( [], 3 );
+
+		$current = $this->operation->resolveTarget( [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+		$planned = $this->operation->planChange( $current, [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+
+		$this->assertArrayNotHasKey( 'post_status', $planned->afterFields );
+		$this->assertArrayNotHasKey( 'post_name', $planned->afterFields );
+
+		$this->operation->applyChange( $current, $planned, $this->makeContext() );
+
+		$this->assertArrayNotHasKey( 'post_status', $this->writes[0] );
+		$this->assertArrayNotHasKey( 'post_name', $this->writes[0] );
+		$this->assertSame(
+			[ 'ID', 'post_title', 'post_content', 'post_excerpt' ],
+			array_keys( $this->writes[0] )
 		);
 	}
 }

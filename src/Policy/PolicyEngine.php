@@ -32,11 +32,22 @@ final class PolicyEngine {
 	 * knowledge separately they disagreed, and a target-less invocation of a
 	 * meta-capability operation was refused for every user including
 	 * administrators while the catalog still advertised it as available.
+	 *
+	 * `assign_terms` is deliberately absent, and must not be re-added. It is
+	 * not post-scoped: WordPress resolves it against a TAXONOMY, through
+	 * `get_taxonomy( $tax )->cap->assign_terms`, which is what `TaxonomyList`
+	 * reads. It was once mapped here to the post-scoped `edit_posts`, so an
+	 * operation declaring it would have been granted term-assignment authority
+	 * on the strength of a capability that means something else. With no row
+	 * the fallback branch below asks WordPress for `assign_terms` as a
+	 * primitive, which no default WordPress role holds, so a mistaken
+	 * declaration fails closed.
+	 * An operation that genuinely needs it checks the taxonomy's own
+	 * capability inside `planChange()`.
 	 */
 	public const META_CAPABILITY_MAP = [
-		'edit_post'    => 'edit_posts',
-		'delete_post'  => 'delete_posts',
-		'assign_terms' => 'edit_posts',
+		'edit_post'   => 'edit_posts',
+		'delete_post' => 'delete_posts',
 	];
 
 	/**

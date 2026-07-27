@@ -115,16 +115,6 @@ final class ContentCreate implements WriteOperation {
 	}
 
 	/**
-	 * Statuses that keep content inside the draft workflow rather than making
-	 * it live or otherwise visible outside it. Anything the input schema
-	 * admits that is not listed here requires the post type's own publish
-	 * capability, so a status added to the schema later fails closed by
-	 * default instead of silently becoming creatable by anyone who can create
-	 * a draft.
-	 */
-	private const DRAFT_LIKE_STATUSES = [ 'draft', 'pending' ];
-
-	/**
 	 * Constructs the operation.
 	 *
 	 * @param ContentFields $fields  The normalized field map.
@@ -185,7 +175,7 @@ final class ContentCreate implements WriteOperation {
 		}
 
 		$status = (string) $input['status'];
-		if ( ! in_array( $status, self::DRAFT_LIKE_STATUSES, true )
+		if ( ! in_array( $status, ContentFields::DRAFT_LIKE_STATUSES, true )
 			&& ! user_can( $context->userId, $type_object->cap->publish_posts ) ) {
 			throw new OperationException(
 				ErrorCode::Forbidden,

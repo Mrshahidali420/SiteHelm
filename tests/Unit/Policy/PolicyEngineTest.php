@@ -129,4 +129,71 @@ final class PolicyEngineTest extends TestCase {
 		);
 		$this->assertSame( [ [ 'read', [] ] ], $received );
 	}
+
+	/**
+	 * `assign_terms` is taxonomy-scoped, not post-scoped: WordPress resolves it
+	 * through get_taxonomy( $tax )->cap->assign_terms and never against a post
+	 * id. It is still a member of OperationDefinition::ALLOWED_CAPABILITIES, so
+	 * a future operation may still declare it — and when one does, the gate must
+	 * ask WordPress for the primitive rather than substituting a post-scoped
+	 * check against a target id that means nothing here.
+	 */
+	public function test_declaring_assign_terms_asks_for_the_primitive_not_a_post_scoped_check(): void {
+		$received = [];
+		Functions\when( 'user_can' )->alias(
+			static function ( int $user, string $capability, ...$args ) use ( &$received ): bool {
+				$received[] = [ $capability, $args ];
+
+				return 'assign_terms' !== $capability;
+			}
+		);
+
+		try {
+			$this->policy->authorize(
+				$this->makeDefinition( Mode::Write, [ 'assign_terms' ] ),
+				$this->makeContext( PermissionMode::SafeWrite ),
+				42
+			);
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::Forbidden, $e->errorCode );
+		}
+
+		$this->assertSame( [ [ 'assign_terms', [] ] ], $received );
+	}
+
+	/**
+	 * The sharp edge of the removed map row. A caller holding edit_posts and
+	 * nothing else must NOT be granted assign_terms by substitution. Restoring
+	 * the map row makes this authorize() call succeed, so this is the test that
+	 * pins the removal rather than merely observing a refusal.
+	 */
+	public function test_edit_posts_does_not_substitute_for_assign_terms(): void {
+		// Captured so the refusal is pinned to the capability actually checked.
+		// Without this the test passes for ANY capability other than edit_posts,
+		// and the message assertion below pins only the declared string, not the
+		// checked one — so a future substitution to some third capability would
+		// still be refused here and still be wrong.
+		$received = [];
+
+		Functions\when( 'user_can' )->alias(
+			static function ( int $user, string $capability, ...$args ) use ( &$received ): bool {
+				$received[] = $capability;
+
+				return 'edit_posts' === $capability;
+			}
+		);
+
+		try {
+			$this->policy->authorize(
+				$this->makeDefinition( Mode::Write, [ 'assign_terms' ] ),
+				$this->makeContext( PermissionMode::SafeWrite )
+			);
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::Forbidden, $e->errorCode );
+			$this->assertStringContainsString( 'assign_terms', $e->getMessage() );
+			$this->assertSame( [ 'assign_terms' ], $received );
+		}
+	}
 }
