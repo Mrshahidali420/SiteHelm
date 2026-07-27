@@ -12,9 +12,18 @@ namespace SiteHelm\Modules\Core;
 use SiteHelm\Change\PlannedChange;
 use SiteHelm\Change\TargetState;
 use SiteHelm\Change\WriteOperation;
+use SiteHelm\Change\WriteOutputSchema;
+use SiteHelm\Contracts\Domain;
 use SiteHelm\Contracts\ErrorCode;
+use SiteHelm\Contracts\Mode;
+use SiteHelm\Contracts\ModuleId;
 use SiteHelm\Contracts\OperationContext;
+use SiteHelm\Contracts\OperationDefinition;
 use SiteHelm\Contracts\OperationException;
+use SiteHelm\Contracts\PreviewPolicy;
+use SiteHelm\Contracts\Risk;
+use SiteHelm\Contracts\RollbackPolicy;
+use SiteHelm\Contracts\SnapshotPolicy;
 
 /**
  * REQ-0013: content creation. An agency operator drafts new client content
@@ -35,6 +44,75 @@ use SiteHelm\Contracts\OperationException;
  * @package SiteHelm
  */
 final class ContentCreate implements WriteOperation {
+
+	/**
+	 * The operation's registered definition, beside the code that produces
+	 * the payload. Static because a definition is a constant declaration: it
+	 * takes no dependencies, and the registry reads it without constructing
+	 * the operation.
+	 *
+	 * @return OperationDefinition The definition registered for content-create.
+	 */
+	public static function definition(): OperationDefinition {
+		return new OperationDefinition(
+			id: 'content-create',
+			domain: Domain::Content,
+			mode: Mode::Write,
+			description: 'Create one new content item with a title, body, excerpt, and initial status.',
+			inputSchema: [
+				'type'                 => 'object',
+				'properties'           => [
+					'type'    => [
+						'type'        => 'string',
+						'maxLength'   => 32,
+						'description' => 'A public content type this site registers, for example post or page.',
+					],
+					'title'   => [
+						'type'        => 'string',
+						'maxLength'   => 255,
+						'description' => 'Title of the new content item.',
+					],
+					'content' => [
+						'type'        => 'string',
+						'maxLength'   => 500000,
+						'description' => 'Body of the new content item.',
+					],
+					'excerpt' => [
+						'type'        => 'string',
+						'maxLength'   => 5000,
+						'description' => 'Excerpt of the new content item.',
+					],
+					'status'  => [
+						'type'        => 'string',
+						'enum'        => [ 'draft', 'pending', 'private', 'publish' ],
+						'description' => 'Initial status. Requesting publish additionally requires the publish capability.',
+					],
+				],
+				'required'             => [ 'type', 'title', 'status' ],
+				'additionalProperties' => false,
+			],
+			outputSchema: WriteOutputSchema::schema(),
+			schemaVersion: 1,
+			requiredCapabilities: [ 'edit_posts' ],
+			risk: Risk::Medium,
+			isReadOnly: false,
+			isDestructive: false,
+			isIdempotent: false,
+			previewPolicy: PreviewPolicy::Required,
+			snapshotPolicy: SnapshotPolicy::Supported,
+			rollbackPolicy: RollbackPolicy::Supported,
+			module: ModuleId::Core,
+			supportedVersions: [ 'wordpress' => '>=' . SITEHELM_MIN_WP ],
+			example: [
+				'operation' => 'content-create',
+				'arguments' => [
+					'type'   => 'post',
+					'title'  => 'Launch announcement',
+					'status' => 'draft',
+				],
+			],
+		);
+	}
 
 	/**
 	 * Statuses that keep content inside the draft workflow rather than making
