@@ -93,6 +93,12 @@ abstract class TestCase extends PHPUnitTestCase {
 	 * An object item that declares no `properties` can only be checked for
 	 * shape, because there is no per-item contract to check it against.
 	 *
+	 * Every other item type delegates to matchesDeclaredType() rather than
+	 * restating the scalar rules here. A second copy would drift: the first one
+	 * covered only `string` and `integer` and passed `number`, `boolean` and
+	 * nested arrays unconditionally — the same permissive default this method
+	 * exists to remove, one level down.
+	 *
 	 * @param mixed                $item  One member of the declared array.
 	 * @param array<string, mixed> $items The declared item schema.
 	 *
@@ -107,11 +113,7 @@ abstract class TestCase extends PHPUnitTestCase {
 			return is_array( $item ) && $this->conformsToSchema( $item, $items );
 		}
 
-		return match ( $items['type'] ) {
-			'string'  => is_string( $item ),
-			'integer' => is_int( $item ),
-			default   => true,
-		};
+		return $this->matchesDeclaredType( $item, $items );
 	}
 
 	/**
