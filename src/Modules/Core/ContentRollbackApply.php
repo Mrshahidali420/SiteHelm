@@ -110,11 +110,6 @@ final class ContentRollbackApply implements WriteOperation {
 	}
 
 	/**
-	 * The fields a content snapshot restores.
-	 */
-	private const RESTORED_FIELDS = [ 'post_title', 'post_content', 'post_excerpt' ];
-
-	/**
 	 * This operation's own identifier, named in a restore-time refusal.
 	 */
 	private const OPERATION_ID = 'content-rollback-apply';
@@ -188,10 +183,19 @@ final class ContentRollbackApply implements WriteOperation {
 		$this->assert_original_capability( $snapshot, $current, $context );
 		$this->assert_module_compatibility( $snapshot, $context );
 
+		// Only the fields the stored snapshot actually recorded are promised.
+		// A snapshot written before a column joined RESTORABLE_FIELDS does not
+		// carry it, and defaulting the absence to '' would promise — and then
+		// write — an empty value the snapshot never observed. For post_status
+		// that is not cosmetic: wp_update_post() resolves an empty status to
+		// 'draft', so a rollback of an older snapshot would silently
+		// un-publish a live post while reporting success.
 		$state    = $this->decode( (string) $snapshot['restore_state'] );
 		$promised = [];
-		foreach ( self::RESTORED_FIELDS as $field ) {
-			$promised[ $field ] = (string) ( $state[ $field ] ?? '' );
+		foreach ( ContentTarget::RESTORABLE_FIELDS as $field ) {
+			if ( array_key_exists( $field, $state ) ) {
+				$promised[ $field ] = (string) $state[ $field ];
+			}
 		}
 		ksort( $promised, SORT_STRING );
 
@@ -236,8 +240,10 @@ final class ContentRollbackApply implements WriteOperation {
 		$restore_state = [
 			'post_id' => $this->fields->postIdFromTargetKey( $current->targetKey ),
 		];
-		foreach ( self::RESTORED_FIELDS as $field ) {
-			$restore_state[ $field ] = (string) ( $planned->afterFields[ $field ] ?? '' );
+		foreach ( ContentTarget::RESTORABLE_FIELDS as $field ) {
+			if ( array_key_exists( $field, $planned->afterFields ) ) {
+				$restore_state[ $field ] = (string) $planned->afterFields[ $field ];
+			}
 		}
 
 		$target_key = $this->targets->restoreFields( $restore_state );
