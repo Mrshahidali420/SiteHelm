@@ -534,7 +534,7 @@ the exception they raise differs, so only that stays at the call site."
 
 ## Verification checklist
 
-- [ ] **No existing test was edited, deleted, or renamed.** Confirm with `git diff 8a9b0e8..HEAD --stat -- tests/` — the only changes to pre-existing test files are the constructor wiring lines in `ChangeEngineApplyTest` and `ChangeEnginePlanTest`.
+- [ ] **No existing test had an assertion, name, or case edited, deleted, or renamed.** Confirm with `git diff 8a9b0e8..HEAD -- tests/`. Three pre-existing test files are touched, all sanctioned: constructor wiring in `ChangeEngineApplyTest` and `ChangeEnginePlanTest`, and a **comment-only** docblock fix in `tests/Unit/Storage/PlanStoreTest.php` correcting a stale `ChangeEngine::apply()` reference to `PlanAdmission::findValidPlan()`. *Corrected during execution: this bullet originally said only constructor wiring, which would have read as violated and might have prompted reverting the authorised comment fix.* A comment carries no assertion and cannot make a failing test pass, so it cannot mask behaviour that moved — the arithmetic proof is that the suite count and assertion count did not shift across that commit.
 - [ ] `vendor/bin/phpunit` exits 0, unpiped, at 465 tests (464 in the original plan, plus the eleventh guard test added during Task 2's review)
 - [ ] `vendor/bin/phpcs` exits 0 repo-wide, unpiped
 - [ ] Coverage at or above 94.32%
