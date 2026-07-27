@@ -158,7 +158,9 @@ and response recorded verbatim.
   as a defect in the enum.
 - **Runtime `outputSchema` validation is deferred** per recorded interpretation I6.
   Phase 2 shipped none and Phase 3a adds none; the interim mitigation is a
-  per-operation conformance test for each of the five registered operations,
+  per-operation conformance test for each of the nine registered operations
+  (five at Phase 3a, plus `content-list` and `taxonomy-list` from part 1 and
+  `content-featured-media-set` and `content-status-set` from part 2),
   covering both branches of the write union. Validation at the dispatcher's
   return point is **required before V1 public release**, because that is the
   point at which the declared schema becomes a promise to third-party clients.
