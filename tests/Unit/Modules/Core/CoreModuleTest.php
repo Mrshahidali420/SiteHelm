@@ -75,6 +75,54 @@ final class CoreModuleTest extends TestCase {
 		$this->assertTrue( $definition->isReadOnly );
 	}
 
+	/**
+	 * The dispatcher an operation lands on is derived from its domain and mode,
+	 * so a wrong domain silently relocates it rather than failing loudly. This
+	 * pins content-list to content-read, to the site-wide primitive it declares,
+	 * and to the read shape the contract enforces.
+	 */
+	public function test_module_registers_content_list_on_the_content_read_dispatcher(): void {
+		Functions\when( 'get_bloginfo' )->justReturn( '6.8.1' );
+		$registry = new CapabilityRegistry();
+
+		( new CoreModule() )->register( $registry );
+
+		$this->assertTrue( $registry->has( 'content-list' ) );
+		$definition = $registry->definition( 'content-list' );
+		$this->assertSame( 'content-read', $definition->dispatcherName() );
+		$this->assertSame( ModuleId::Core, $definition->module );
+		$this->assertSame( [ 'edit_posts' ], $definition->requiredCapabilities );
+		$this->assertSame( 'low', $definition->risk->value );
+		$this->assertTrue( $definition->isReadOnly );
+		$this->assertFalse( $definition->isDestructive );
+		$this->assertTrue( $definition->isIdempotent );
+		$this->assertFalse( $registry->hasWriteOperation( 'content-list' ) );
+	}
+
+	/**
+	 * taxonomy-list is a Content-domain read like content-list, so it must land
+	 * on the same content-read dispatcher. Pinning it here is what stops a wrong
+	 * Domain silently relocating a discovery call onto another dispatcher.
+	 */
+	public function test_module_registers_taxonomy_list_on_the_content_read_dispatcher(): void {
+		Functions\when( 'get_bloginfo' )->justReturn( '6.8.1' );
+		$registry = new CapabilityRegistry();
+
+		( new CoreModule() )->register( $registry );
+
+		$this->assertTrue( $registry->has( 'taxonomy-list' ) );
+		$definition = $registry->definition( 'taxonomy-list' );
+		$this->assertSame( 'content-read', $definition->dispatcherName() );
+		$this->assertSame( ModuleId::Core, $definition->module );
+		$this->assertSame( [ 'edit_posts' ], $definition->requiredCapabilities );
+		$this->assertSame( 'low', $definition->risk->value );
+		$this->assertTrue( $definition->isReadOnly );
+		$this->assertFalse( $definition->isDestructive );
+		$this->assertTrue( $definition->isIdempotent );
+		$this->assertSame( [ 'type' ], $definition->inputSchema['required'] );
+		$this->assertFalse( $registry->hasWriteOperation( 'taxonomy-list' ) );
+	}
+
 	public function test_module_registers_content_update_as_a_write_operation(): void {
 		Functions\when( 'get_bloginfo' )->justReturn( '6.8.1' );
 		$registry = new CapabilityRegistry();

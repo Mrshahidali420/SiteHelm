@@ -6,13 +6,25 @@ namespace SiteHelm\Tests;
 
 use Brain\Monkey;
 use PHPUnit\Framework\TestCase as PHPUnitTestCase;
+use SiteHelm\Tests\Doubles\FakeWpQuery;
 use stdClass;
 
 abstract class TestCase extends PHPUnitTestCase {
 
+	/**
+	 * Clears the two pieces of process-global test state before every test:
+	 * Brain Monkey's function fakes, and the WP_Query double's queued rows.
+	 *
+	 * The double is reset here rather than in the one class that uses it today,
+	 * because its state is static and its alias is installed for the whole
+	 * process by tests/bootstrap.php. Resetting per class would let a class that
+	 * constructs WP_Query without knowing about the double inherit whatever rows
+	 * the previous class queued.
+	 */
 	protected function setUp(): void {
 		parent::setUp();
 		Monkey\setUp();
+		FakeWpQuery::reset();
 	}
 
 	protected function tearDown(): void {
@@ -54,18 +66,54 @@ abstract class TestCase extends PHPUnitTestCase {
 		}
 
 		foreach ( $value as $item ) {
-			$item_matches = match ( $property['items']['type'] ) {
-				'string'  => is_string( $item ),
-				'integer' => is_int( $item ),
-				default   => true,
-			};
-
-			if ( ! $item_matches ) {
+			if ( ! $this->matchesDeclaredItem( $item, $property['items'] ) ) {
 				return false;
 			}
 		}
 
 		return true;
+	}
+
+	/**
+	 * Reports whether one member of a declared array matches its item schema.
+	 *
+	 * An object item that declares its own `properties` is checked against that
+	 * sub-schema by conformsToSchema(), so the per-item contract — no member the
+	 * schema does not declare, every required member present, every member the
+	 * declared type — is enforced by the same rules that govern a top-level
+	 * payload rather than by a second copy of them.
+	 *
+	 * Before this delegation existed, a declared `object` item fell through to
+	 * the permissive default and every item passed unconditionally, which meant
+	 * the first operation to declare an array of objects had its per-item
+	 * contract enforced by nothing. That matters beyond one operation: this
+	 * assertion is the interim mitigation for interpretation I6, under which
+	 * runtime outputSchema validation is deferred.
+	 *
+	 * An object item that declares no `properties` can only be checked for
+	 * shape, because there is no per-item contract to check it against.
+	 *
+	 * Every other item type delegates to matchesDeclaredType() rather than
+	 * restating the scalar rules here. A second copy would drift: the first one
+	 * covered only `string` and `integer` and passed `number`, `boolean` and
+	 * nested arrays unconditionally — the same permissive default this method
+	 * exists to remove, one level down.
+	 *
+	 * @param mixed                $item  One member of the declared array.
+	 * @param array<string, mixed> $items The declared item schema.
+	 *
+	 * @return bool True when the item matches the declaration.
+	 */
+	private function matchesDeclaredItem( mixed $item, array $items ): bool {
+		if ( 'object' === $items['type'] ) {
+			if ( ! isset( $items['properties'] ) ) {
+				return $item instanceof stdClass || is_array( $item );
+			}
+
+			return is_array( $item ) && $this->conformsToSchema( $item, $items );
+		}
+
+		return $this->matchesDeclaredType( $item, $items );
 	}
 
 	/**
