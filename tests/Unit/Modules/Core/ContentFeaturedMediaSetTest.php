@@ -59,9 +59,14 @@ final class ContentFeaturedMediaSetTest extends TestCase {
 		Functions\when( 'wp_update_post' )->justReturn( 42 );
 		// Answers what WordPress answers: false when there is no thumbnail, not 0.
 		// A `: int` return type here would make false unreachable and quietly
-		// retire the (int) casts that compare against it — in this operation's
-		// applyChange() and in ContentTarget::restore_featured_media() — under
-		// which `false !== 0` would refuse every legitimate "no featured image".
+		// retire the (int) cast that compares against it in
+		// ContentTarget::restore_featured_media(), under which `false !== 0`
+		// would refuse every legitimate "restore to no featured image".
+		//
+		// Not this operation's applyChange(): planChange() guarantees a media id
+		// of at least 1 there, so its own cast cannot change the answer for any
+		// reachable input and no fake can pin it. Naming both would credit this
+		// fake with coverage it does not provide.
 		Functions\when( 'get_post_thumbnail_id' )->alias(
 			fn() => 0 === $this->thumbnailId ? false : $this->thumbnailId
 		);

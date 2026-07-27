@@ -43,6 +43,28 @@ final class WriteOutputSchemaTest extends TestCase {
 		$registry = new CapabilityRegistry();
 		( new CoreModule() )->register( $registry );
 
+		$registered = array_values(
+			array_map(
+				static fn( $definition ): string => $definition->id,
+				array_filter(
+					$registry->forDispatcher( 'content-write' ),
+					static fn( $definition ): bool => $registry->hasWriteOperation( $definition->id )
+				)
+			)
+		);
+
+		// The list below is hardcoded so a reader can see what is covered, which
+		// means it can go stale the moment a fifth write registers — and a write
+		// missing from it is silently exempt from the loop that follows. This
+		// assertion is what makes that impossible: the list must be exactly the
+		// registered write ids, so adding a write without adding it here fails
+		// here rather than passing quietly.
+		$this->assertSame(
+			self::CORE_WRITE_IDS,
+			$registered,
+			'CORE_WRITE_IDS must name exactly the registered core writes; a write missing from it would skip the union check below.'
+		);
+
 		foreach ( self::CORE_WRITE_IDS as $id ) {
 			$this->assertSame(
 				WriteOutputSchema::schema(),
