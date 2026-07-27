@@ -33,11 +33,19 @@ final class ContentTarget {
 	}
 
 	/**
-	 * The post columns a content snapshot records and a restore writes back.
+	 * The post columns a content snapshot records, and the half of a restore that
+	 * `wp_update_post()` writes.
 	 *
 	 * Public because `ContentRollbackApply` needs the same list to promise what
 	 * a restore will put back, and a second copy of it would drift: the copy
 	 * that drifts decides which columns a rollback silently fails to restore.
+	 *
+	 * BEFORE ADDING A FIELD HERE, check it is really a post column. Every loop
+	 * over this list casts to string and hands the result to `wp_update_post()`,
+	 * so anything stored as post meta would be recorded, promised, silently
+	 * ignored on the way in, and then reported as restored. That is what
+	 * `RESTORABLE_MEDIA_FIELDS` exists for, and why it is a second list rather
+	 * than more entries here: one list cannot serve two write mechanisms.
 	 *
 	 * `post_status` and `post_name` joined the original three because a write
 	 * that moves content between statuses, or one that trashes it, changes both
@@ -242,8 +250,14 @@ final class ContentTarget {
 			}
 		}
 
+		// is_numeric() is not defensive padding: `(int) null` is 0, and 0 is the
+		// recorded value that MEANS "restore to no featured image". So a key
+		// present with a null value would delete a live featured image and report
+		// the rollback verified. Structurally the same as an absent post_status
+		// defaulting to '' and resolving to 'draft' — a value nothing observed
+		// becoming a destructive instruction. Skipped rather than guessed.
 		foreach ( self::RESTORABLE_MEDIA_FIELDS as $field ) {
-			if ( array_key_exists( $field, $restoreState ) ) {
+			if ( array_key_exists( $field, $restoreState ) && is_numeric( $restoreState[ $field ] ) ) {
 				$this->restore_featured_media( $post_id, (int) $restoreState[ $field ] );
 			}
 		}

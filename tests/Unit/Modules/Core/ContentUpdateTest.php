@@ -52,7 +52,14 @@ final class ContentUpdateTest extends TestCase {
 		Functions\when( 'wp_slash' )->alias( static fn( array $v ): array => $v );
 		Functions\when( 'is_wp_error' )->justReturn( false );
 		Functions\when( 'clean_post_cache' )->justReturn( null );
-		Functions\when( 'get_post_thumbnail_id' )->alias( fn(): int => $this->thumbnailId );
+		// Answers what WordPress answers: false when there is no thumbnail, not 0.
+		// A `: int` return type here would make false unreachable and quietly
+		// retire the (int) cast in restore_featured_media()'s comparison — which is
+		// load-bearing, since `false !== 0` would refuse every legitimate restore
+		// to "no featured image".
+		Functions\when( 'get_post_thumbnail_id' )->alias(
+			fn() => 0 === $this->thumbnailId ? false : $this->thumbnailId
+		);
 		Functions\when( 'set_post_thumbnail' )->alias(
 			function ( int $post_id, int $media_id ): bool {
 				$this->thumbnailWrites[] = [ 'set', $post_id, $media_id ];
@@ -639,6 +646,34 @@ final class ContentUpdateTest extends TestCase {
 
 		$this->assertSame( [], $this->thumbnailWrites );
 		$this->assertSame( 108, $this->thumbnailId );
+	}
+
+	/**
+	 * `(int) null` is 0, and 0 is the recorded value that MEANS "restore to no
+	 * featured image". So a featured_media key present with a null value — a
+	 * shape a hand-edited or truncated snapshot row can hold — would DELETE a
+	 * live featured image and report the rollback verified.
+	 *
+	 * This is the same defect class as an absent post_status defaulting to '',
+	 * which wp_update_post() resolves to 'draft': a value nothing ever observed
+	 * turning into a destructive instruction. The recorded columns are still
+	 * restored; only the unusable media value is skipped.
+	 */
+	public function test_restore_skips_a_recorded_featured_media_that_is_not_numeric(): void {
+		$this->thumbnailId = 108;
+
+		$this->operation->restore(
+			[
+				'post_id'        => 42,
+				'post_title'     => 'Original title',
+				'featured_media' => null,
+			],
+			$this->makeContext()
+		);
+
+		$this->assertSame( [], $this->thumbnailWrites );
+		$this->assertSame( 108, $this->thumbnailId );
+		$this->assertSame( 'Original title', $this->writes[0]['post_title'] );
 	}
 
 	/**
