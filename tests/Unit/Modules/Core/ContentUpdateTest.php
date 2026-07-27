@@ -450,7 +450,13 @@ final class ContentUpdateTest extends TestCase {
 					'post_id'      => 42,
 					'post_title'   => 'Original title',
 					'post_content' => '<p>Original body.</p>',
-					'post_excerpt' => 'Original excerpt.',
+					// Deliberately empty, and the only fixture in the suite that
+					// is. Every other recorded value is non-empty, which leaves
+					// "absent" and "recorded as empty" indistinguishable: relaxing
+					// the array_key_exists gate to isset or ! empty() keeps the
+					// whole suite green while silently declining to restore an
+					// empty excerpt — the common case, since most posts have none.
+					'post_excerpt' => '',
 					'post_status'  => 'publish',
 					'post_name'    => 'original-title',
 				],
@@ -461,6 +467,7 @@ final class ContentUpdateTest extends TestCase {
 		$this->assertSame( 'publish', $this->writes[0]['post_status'] );
 		$this->assertSame( 'original-title', $this->writes[0]['post_name'] );
 		$this->assertSame( 'Original title', $this->writes[0]['post_title'] );
+		$this->assertSame( '', $this->writes[0]['post_excerpt'] );
 	}
 
 	/**

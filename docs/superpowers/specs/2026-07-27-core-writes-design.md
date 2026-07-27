@@ -30,7 +30,7 @@ This is safe for a two-phase write specifically because **`planChange()` runs in
 
 ## Decision 2 — `assign_terms` is read from the taxonomy, and the wrong mapping is removed
 
-`PolicyEngine::META_CAPABILITY_MAP` maps `assign_terms` to `edit_posts`, as though it were post-scoped. WordPress checks it against a **taxonomy**: `get_taxonomy( $tax )->cap->assign_terms`. `taxonomy-list` already does this correctly and is the reference implementation.
+As this was written, `PolicyEngine::META_CAPABILITY_MAP` mapped `assign_terms` to `edit_posts`, as though it were post-scoped — the prep branch has since removed that row. WordPress checks it against a **taxonomy**: `get_taxonomy( $tax )->cap->assign_terms`. `taxonomy-list` already does this correctly and is the reference implementation.
 
 REQ-0016 therefore declares `requiredCapabilities: ['edit_post']` and checks each named taxonomy's own capability inside `planChange()`, refusing with `Forbidden`.
 
@@ -72,7 +72,7 @@ The restore state widens to include `post_status` and `post_name`, and `restoreF
 - **Older stored snapshots lack the new keys.** `restoreFields()` must restore only keys actually present rather than assuming a fixed set, so a snapshot captured before this change still restores what it recorded. This is backward compatibility with rows already in a live database, not defensive coding.
 - **`content-update`'s rollback becomes more faithful too**, since it now records status and slug. That is a behaviour change to an existing operation and must be called out in its own commit with its own test, not smuggled in.
 
-**Amended 2026-07-27, during planning — this decision was incomplete as written, and the omission hid a data-loss bug.** The fixed field list is kept in **two** places, not one: `ContentRollbackApply` carries its own `private const RESTORED_FIELDS` and rebuilds the restore state from it in `applyChange()`. Widening `ContentTarget` alone would record `post_status` and `post_name` into every new snapshot and never write either back, so the claim above that `content-update`'s rollback "becomes more faithful" would simply be false.
+**Amended 2026-07-27, during planning — this decision was incomplete as written, and the omission hid a data-loss bug.** The fixed field list was kept in **two** places, not one: `ContentRollbackApply` carried its own `private const RESTORED_FIELDS` and rebuilt the restore state from it in `applyChange()`. The prep branch collapsed it — both of that file's loops now read `ContentTarget::RESTORABLE_FIELDS`, gated by `array_key_exists`. Widening `ContentTarget` alone would record `post_status` and `post_name` into every new snapshot and never write either back, so the claim above that `content-update`'s rollback "becomes more faithful" would simply be false.
 
 Worse, the obvious fix is dangerous. Both loops read with `?? ''`, so pointing them at the widened list re-materializes the absent keys as `''` for snapshot rows already stored in live databases — and `wp_update_post()` resolves an empty `post_status` to `draft`. That would **un-publish a live post during a rollback that promised only to restore its text, and report success.** The present-keys-only requirement therefore has to hold in three places, each with its own test.
 
