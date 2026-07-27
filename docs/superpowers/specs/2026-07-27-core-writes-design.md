@@ -90,7 +90,7 @@ This is the first operation to rely on `verified-with-adjustments` as a designed
 
 ## Decision 7 — `DRAFT_LIKE_STATUSES` is promoted, not copied
 
-`ContentCreate::DRAFT_LIKE_STATUSES = ['draft','pending']` is a private constant, and it encodes the rule that decides whether `publish_posts` is required. REQ-0018 needs the same rule. Copying it would create two definitions of a security-relevant split that can drift independently.
+`DRAFT_LIKE_STATUSES = ['draft','pending']` began as a private constant on `ContentCreate`, and it encodes the rule that decides whether `publish_posts` is required. REQ-0018 needs the same rule. Copying it would create two definitions of a security-relevant split that can drift independently.
 
 It moves to `ContentFields` as a public constant, and `ContentCreate` consumes it from there. That is a change to an existing operation's source with no behaviour change, and it must be proven behaviour-preserving before REQ-0018 depends on it.
 

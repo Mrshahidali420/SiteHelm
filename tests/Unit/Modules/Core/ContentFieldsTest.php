@@ -178,4 +178,17 @@ final class ContentFieldsTest extends TestCase {
 		$this->assertInstanceOf( stdClass::class, $record['terms'] );
 		$this->assertInstanceOf( stdClass::class, $record['meta'] );
 	}
+
+	/**
+	 * The draft-like split decides whether a content write requires the post
+	 * type's own publish capability, so its membership is a security decision
+	 * rather than a convenience list. `private` must stay out: WordPress
+	 * requires publish_posts to set a private status, so admitting it here
+	 * would let a caller who may only draft create private content.
+	 */
+	public function test_draft_like_statuses_are_exactly_draft_and_pending(): void {
+		$this->assertSame( [ 'draft', 'pending' ], ContentFields::DRAFT_LIKE_STATUSES );
+		$this->assertNotContains( 'private', ContentFields::DRAFT_LIKE_STATUSES );
+		$this->assertNotContains( 'publish', ContentFields::DRAFT_LIKE_STATUSES );
+	}
 }
