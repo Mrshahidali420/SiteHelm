@@ -67,7 +67,9 @@ Scoping to a type is what makes the answer actionable: the client is asking "wha
 
 Each taxonomy reports `name`, `label`, `hierarchical`, and whether the caller may assign its terms — read from `get_taxonomy( $name )->cap->assign_terms`, the same capability REQ-0016 will enforce. Surfacing it here means a client can tell *before* attempting a write that an assignment will be refused.
 
-Terms report `id`, `name`, `slug`, `parent`, `count`. Terms are paginated with the same `limit`/`offset`/`total` shape as Decision 1, because a site with thousands of tags would otherwise return an unbounded response.
+Terms report `id`, `name`, `slug`, `parent`, `count`. Terms are paginated with the same `limit` and `offset` bounds as Decision 1, because a site with thousands of tags would otherwise return an unbounded response.
+
+**Amended 2026-07-27 during implementation:** there is deliberately **no top-level `total`**. With several taxonomies each holding its own term count, a single total is ambiguous, so each taxonomy carries its own `termTotal` — sourced from `wp_count_terms()`, unpaginated, rather than a `count()` of the returned page. Decision 1's third echoed field therefore has no counterpart here; only `limit` and `offset` carry over.
 
 **Only public taxonomies are listed.** A private taxonomy is an implementation detail of the site or another plugin, and exposing its terms through a general discovery surface is a disclosure with no requirement behind it.
 
@@ -108,7 +110,7 @@ Unit tests with Brain Monkey, following `tests/Unit/Modules/Core/` conventions.
 - only taxonomies registered for the requested type are returned
 - a private taxonomy is omitted
 - `assign_terms` is reported from the taxonomy's own capability object, and is `false` for a caller lacking it
-- terms paginate with the same `limit`/`offset`/`total` contract
+- terms paginate with the same `limit`/`offset` bounds, each taxonomy reporting its own unpaginated `termTotal` and the payload carrying no top-level `total`
 - a type that is not registered is `invalid_input`
 
 Both operations must also pass the existing per-operation output-schema conformance test that every registered operation carries — check how the five current operations are covered by it and follow that pattern, since runtime `outputSchema` validation is still deferred under interpretation I6 and those tests are the interim mitigation.
