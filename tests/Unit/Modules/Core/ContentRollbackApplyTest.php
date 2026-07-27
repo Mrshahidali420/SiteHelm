@@ -770,9 +770,10 @@ final class ContentRollbackApplyTest extends TestCase {
 	}
 
 	/**
-	 * Covers the other half of the `oneOf` union: WRITE_OUTPUT_SCHEMA's plan
-	 * branch, which the apply-phase test above never exercises. previewPolicy
-	 * is Required, so the plan branch is the one every caller sees first.
+	 * Covers the other half of the `oneOf` union: WriteOutputSchema::schema()'s
+	 * plan branch, which the apply-phase test above never exercises.
+	 * previewPolicy is Required, so the plan branch is the one every caller
+	 * sees first.
 	 */
 	public function test_the_plan_phase_payload_conforms_to_the_declared_output_schema(): void {
 		Functions\when( 'get_bloginfo' )->justReturn( '6.8.1' );
