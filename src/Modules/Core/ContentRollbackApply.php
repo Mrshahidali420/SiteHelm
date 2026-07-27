@@ -434,10 +434,14 @@ final class ContentRollbackApply implements WriteOperation {
 	 * whichever operation happened to record the snapshot: a reviewer probed the
 	 * previous behaviour and found a Contributor holding only the site-wide
 	 * primitive `edit_posts` was allowed to overwrite post 42 whenever the origin
-	 * declared that primitive. Unreachable today, because reads cannot record
-	 * snapshots and a creation's captureSnapshot() returns null, but live the
-	 * moment REQ-0018 ships. Changing one operation's declared capability closed
-	 * the chained-reference entrance to that hole; this closes the general one,
+	 * declared that primitive. It was unreachable when that was written, because
+	 * reads cannot record snapshots and a creation's captureSnapshot() returns
+	 * null, and REQ-0018 was expected to make it live. REQ-0018 has since shipped
+	 * and did not, only because `content-status-set` declares the target-bound
+	 * `edit_post` rather than the site-wide primitive — which is precisely the
+	 * per-operation declaration this check refuses to take its strength from.
+	 * Changing one operation's declared capability closed the chained-reference
+	 * entrance to that hole; this closes the general one,
 	 * because a target-bound capability evaluated against the target itself cannot
 	 * be weakened by a declaration made anywhere else.
 	 *

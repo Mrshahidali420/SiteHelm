@@ -405,9 +405,13 @@ final class ContentRollbackApplyTest extends TestCase {
 	 * A reviewer probed the previous behaviour: a Contributor holding only the
 	 * site-wide primitive edit_posts was allowed to overwrite post 42 whenever the
 	 * origin's declaration named that primitive, because the re-check simply
-	 * re-authorized the origin's own definition. It is unreachable today — reads
-	 * cannot record snapshots and a creation's captureSnapshot() returns null —
-	 * but it goes live the moment REQ-0018 ships. This is the same Critical as
+	 * re-authorized the origin's own definition. It was unreachable when that was
+	 * written — reads cannot record snapshots and a creation's captureSnapshot()
+	 * returns null — and REQ-0018 was expected to make it live. REQ-0018 has since
+	 * shipped and did not, only because `content-status-set` declares the
+	 * target-bound edit_post rather than the site-wide primitive. That is a
+	 * property of one declaration, which is exactly what this test exists to stop
+	 * the re-check depending on. This is the same Critical as
 	 * the chained-reference case through a different door: changing the declared
 	 * capability closed one entrance, and this closes the other.
 	 */

@@ -37,6 +37,7 @@ final class WriteOutputSchemaTest extends TestCase {
 		'content-create',
 		'content-rollback-apply',
 		'content-featured-media-set',
+		'content-status-set',
 	];
 
 	public function test_every_core_write_declares_the_shared_union(): void {
@@ -54,7 +55,7 @@ final class WriteOutputSchemaTest extends TestCase {
 		);
 
 		// The list below is hardcoded so a reader can see what is covered, which
-		// means it can go stale the moment a fifth write registers — and a write
+		// means it can go stale the moment another write registers — and a write
 		// missing from it is silently exempt from the loop that follows. This
 		// assertion is what makes that impossible: the list must be exactly the
 		// registered write ids, so adding a write without adding it here fails

@@ -110,8 +110,8 @@ final class ContentUpdate implements WriteOperation {
 	 * Request property to normalized field name. Status, terms, metadata, and
 	 * featured media are deliberately absent: each is its own requirement with
 	 * its own operation, and folding them in here would blur that boundary.
-	 * Featured media is the first of them to ship, as
-	 * `content-featured-media-set`; the rest are still ahead.
+	 * Featured media and status have shipped, as `content-featured-media-set`
+	 * and `content-status-set`; terms and metadata are still ahead.
 	 */
 	private const CHANGEABLE = [
 		'title'   => 'post_title',
