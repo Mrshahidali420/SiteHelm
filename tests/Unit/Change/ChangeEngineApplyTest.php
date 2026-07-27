@@ -927,6 +927,66 @@ final class ChangeEngineApplyTest extends TestCase {
 	}
 
 	/**
+	 * A throwable that is NOT an OperationException reaches the second catch
+	 * block around applyChange(), and everything that block produces is fixed
+	 * rather than derived from the failure. A plain RuntimeException is what
+	 * routes execution there: an OperationException is caught by the first
+	 * block and re-raised verbatim instead.
+	 *
+	 * Nothing the throwable carries may reach the caller. Its message could
+	 * hold a SQL fragment, a filesystem path, or a credential, so the technical
+	 * detail is logged server-side and the envelope gets a generic
+	 * execution_failed with a fixed message, a fixed remediation, and no
+	 * completed steps. The compensation result is the one thing that IS
+	 * reported, because the caller needs to know whether the partial write was
+	 * rolled back.
+	 *
+	 * Without this test the branch is unpinned: its error code, message,
+	 * remediation and empty completedSteps could all be edited and the whole
+	 * suite would still pass, on the failure path of every write operation.
+	 */
+	public function test_an_unexpected_throwable_is_a_generic_execution_failed_with_nothing_derived_from_it(): void {
+		$this->operation->applyThrows = new \RuntimeException(
+			'wpdb::query() failed: INSERT INTO wp_posts, secret-token abc123'
+		);
+
+		try {
+			$this->apply();
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::ExecutionFailed, $e->errorCode );
+			$this->assertSame(
+				'The write failed unexpectedly. The details were logged on the server.',
+				$e->getMessage()
+			);
+			$this->assertSame(
+				'Generate a fresh preview and retry; check SiteHelm diagnostics if it recurs.',
+				$e->remediation
+			);
+			// Nothing from the underlying throwable is echoed anywhere in the
+			// envelope: not the SQL, not the table name, not the token.
+			$this->assertStringNotContainsString( 'wpdb', $e->getMessage() );
+			$this->assertStringNotContainsString( 'wp_posts', $e->getMessage() );
+			$this->assertStringNotContainsString( 'abc123', $e->getMessage() );
+			// The block passes an empty completedSteps list literally: an
+			// unexpected throwable reports no step as having completed. The
+			// compensation result is the fifth constructor argument, and it is
+			// what carries what the rollback achieved.
+			$this->assertSame( [], $e->completedSteps );
+			$this->assertSame( 'restored', $e->compensation );
+		}
+
+		// Compensation ran, and the audit row was finalised as failed rather than
+		// left stranded at 'started' — asserted exactly as the sibling
+		// OperationException test above asserts it.
+		$this->assertSame( 1, $this->operation->restoreCalls );
+		$this->assertSame(
+			AuditRecorder::OUTCOME_EXECUTION_FAILED,
+			$this->wpdb->updates[0]['data']['outcome']
+		);
+	}
+
+	/**
 	 * The plan's snapshot policy is Required. When capturing fails, the change
 	 * must be refused with rollback_unavailable and nothing may execute — but
 	 * the plan token is already spent, because consume() runs before capture()
