@@ -58,7 +58,8 @@ final class TaxonomyList {
 	 * @param array<string, mixed> $input   Validated content type and pagination.
 	 * @param OperationContext     $context The operation context.
 	 *
-	 * @return array<string, mixed> Taxonomies and the page, plus any warnings.
+	 * @return array<string, mixed> Taxonomies and the page, plus the names of any
+	 *                              taxonomies that could not be read.
 	 *
 	 * @throws OperationException With ErrorCode::InvalidInput when the requested
 	 *                            content type is not listable on this site.
@@ -71,18 +72,15 @@ final class TaxonomyList {
 		$offset = max( 0, (int) ( $input['offset'] ?? 0 ) );
 
 		$descriptors = [];
-		$warnings    = [];
+		$unreadable  = [];
 
 		foreach ( $this->public_taxonomies( $type ) as $taxonomy ) {
 			$name  = (string) $taxonomy->name;
 			$terms = $this->terms_of( $name, $limit, $offset );
 
 			if ( null === $terms ) {
-				$warnings[] = sprintf(
-					'The terms of the %s taxonomy could not be read, so it is reported with none.',
-					$name
-				);
-				$terms      = [];
+				$unreadable[] = $name;
+				$terms        = [];
 			}
 
 			$descriptors[] = [
@@ -101,8 +99,16 @@ final class TaxonomyList {
 			'offset'     => $offset,
 		];
 
-		if ( [] !== $warnings ) {
-			$result['warnings'] = $warnings;
+		// Deliberately not called `warnings`: the envelope owns that name.
+		// Dispatcher builds every read's OperationResult with `warnings: []` and
+		// OperationResult::toArray() emits it, so a `warnings` member inside data
+		// would sit one level below an identically named empty envelope member —
+		// a client honouring the envelope contract would report no warnings for a
+		// call that had one. These are bare taxonomy names, matching
+		// taxonomies[].name, so a client can decide per taxonomy whether to trust
+		// that entry's termTotal.
+		if ( [] !== $unreadable ) {
+			$result['unreadableTaxonomies'] = $unreadable;
 		}
 
 		return $result;
@@ -151,6 +157,12 @@ final class TaxonomyList {
 		$sorted = [];
 
 		foreach ( get_object_taxonomies( $type, 'objects' ) as $taxonomy ) {
+			// Loosely truthy on purpose, where assert_public_type() compares a post
+			// type's `public` with `true ===`. WordPress's own taxonomy filtering
+			// treats any truthy `public` as public, so a taxonomy registered
+			// 'public' => 1 must still be listed; tightening this here would hide
+			// taxonomies WordPress itself shows. Anything falsy is still excluded,
+			// so the looseness cannot disclose a private taxonomy.
 			if ( is_object( $taxonomy ) && ! empty( $taxonomy->public ) ) {
 				$sorted[ (string) $taxonomy->name ] = $taxonomy;
 			}

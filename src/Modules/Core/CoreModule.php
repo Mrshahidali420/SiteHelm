@@ -339,7 +339,7 @@ final class CoreModule implements IntegrationModule {
 				outputSchema: [
 					'type'                 => 'object',
 					'properties'           => [
-						'taxonomies' => [
+						'taxonomies'           => [
 							'type'  => 'array',
 							'items' => [
 								'type'                 => 'object',
@@ -369,15 +369,15 @@ final class CoreModule implements IntegrationModule {
 								'additionalProperties' => false,
 							],
 						],
-						'limit'      => [ 'type' => 'integer' ],
-						'offset'     => [ 'type' => 'integer' ],
-						// Present only when a taxonomy's terms could not be read.
+						'limit'                => [ 'type' => 'integer' ],
+						'offset'               => [ 'type' => 'integer' ],
 						// There is no top-level total: with several taxonomies
 						// each having its own term count one total is ambiguous,
 						// so termTotal sits inside each taxonomy instead.
-						'warnings'   => [
-							'type'  => 'array',
-							'items' => [ 'type' => 'string' ],
+						'unreadableTaxonomies' => [
+							'type'        => 'array',
+							'items'       => [ 'type' => 'string' ],
+							'description' => 'Names of taxonomies whose terms could not be read, matching taxonomies[].name. Their terms and termTotal are not trustworthy. Absent when every taxonomy was read successfully.',
 						],
 					],
 					'required'             => [ 'taxonomies', 'limit', 'offset' ],

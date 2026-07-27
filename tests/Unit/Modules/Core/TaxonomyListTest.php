@@ -432,9 +432,14 @@ final class TaxonomyListTest extends TestCase {
 
 	/**
 	 * One unreadable taxonomy must not cost the caller the whole discovery call,
-	 * so it is reported with no terms and a warning naming it.
+	 * so it is reported with no terms and its name listed as unreadable.
+	 *
+	 * The member is not called `warnings`: the envelope owns that name, and
+	 * Dispatcher already emits `warnings: []` for every read. The value is the
+	 * bare taxonomy name so it matches taxonomies[].name exactly, which is what
+	 * lets a client decide per taxonomy whether to trust that termTotal.
 	 */
-	public function test_a_failed_term_query_yields_no_terms_and_a_warning_naming_the_taxonomy(): void {
+	public function test_a_failed_term_query_yields_no_terms_and_names_the_taxonomy_as_unreadable(): void {
 		$this->taxonomiesByType['post'] = [
 			$this->makeTaxonomy( 'category', 'assign_categories' ),
 			$this->makeTaxonomy( 'post_tag', 'assign_post_tags' ),
@@ -444,17 +449,21 @@ final class TaxonomyListTest extends TestCase {
 		$result = $this->list( [ 'type' => 'post' ] );
 
 		$this->assertSame( [], $result['taxonomies'][0]['terms'] );
-		$this->assertCount( 1, $result['warnings'] );
-		$this->assertStringContainsString( 'category', $result['warnings'][0] );
+		$this->assertSame( [ 'category' ], $result['unreadableTaxonomies'] );
+		$this->assertSame( $result['taxonomies'][0]['name'], $result['unreadableTaxonomies'][0] );
 		$this->assertSame( [ 'Gamma' ], array_column( $result['taxonomies'][1]['terms'], 'name' ) );
 	}
 
 	/**
-	 * The warning is exceptional, so a healthy call carries none at all rather
-	 * than an empty list a client must learn to ignore.
+	 * A partial failure is exceptional, so a healthy call carries no such member
+	 * at all rather than an empty list a client must learn to ignore, and nothing
+	 * else beyond the three declared members.
 	 */
-	public function test_a_healthy_call_carries_no_warnings_member(): void {
-		$this->assertArrayNotHasKey( 'warnings', $this->list( [ 'type' => 'post' ] ) );
+	public function test_a_healthy_call_carries_no_unreadable_taxonomies_member(): void {
+		$result = $this->list( [ 'type' => 'post' ] );
+
+		$this->assertArrayNotHasKey( 'unreadableTaxonomies', $result );
+		$this->assertSame( [ 'taxonomies', 'limit', 'offset' ], array_keys( $result ) );
 	}
 
 	/**
@@ -534,10 +543,10 @@ final class TaxonomyListTest extends TestCase {
 	}
 
 	/**
-	 * The warning path produces a member the healthy path does not, so it is
-	 * conformed separately rather than trusting the happy case to cover it.
+	 * The partial-failure path produces a member the healthy path does not, so it
+	 * is conformed separately rather than trusting the happy case to cover it.
 	 */
-	public function test_a_warned_result_conforms_to_the_declared_output_schema(): void {
+	public function test_a_partially_unreadable_result_conforms_to_the_declared_output_schema(): void {
 		Functions\when( 'get_bloginfo' )->justReturn( '6.8.1' );
 		$this->failingTermQueries = [ 'category' ];
 		$result                   = $this->list( [ 'type' => 'post' ] );
