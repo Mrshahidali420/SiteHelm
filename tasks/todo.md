@@ -171,6 +171,22 @@ and response recorded verbatim.
 - The machine diff in a preview is unbounded, deliberately, because the apply
   phase needs literal values. No input `maxLength` is declared anywhere yet.
 
+- **`audit->finish()`’s return is ignored on both write-failure paths (pre-existing).**
+  The success path warns when the audit record cannot be updated, but the
+  execution-failed and verification-failed paths discard the return, so a
+  stranded audit row goes unreported for exactly the writes whose records matter
+  most for recovery. Predates the change-engine extraction and was confirmed as
+  pre-existing by that branch’s whole-branch review. Needs a decision on whether
+  a failure path should append a warning to an envelope it is already refusing.
+- **`ChangeEngine::apply()` remains ~206 body lines against a 50-line function
+  convention — accepted debt, not an open defect.** The
+  2026-07-26 extraction design explicitly declined decomposing it into named
+  phase methods, because those phases share enough local state that they would
+  need either a context object or long parameter lists, trading one kind of
+  complexity for another. The file itself is 759 lines, under the 800 ceiling
+  (it entered that plan at 914), but only 41 lines under. Recorded so the
+  violation is a known accepted trade rather than an oversight.
+
 ### 5. Approval
 
 **Approved by the user on 2026-07-26.** Phase 3b planning is cleared to begin
