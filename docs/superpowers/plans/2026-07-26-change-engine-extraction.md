@@ -498,7 +498,7 @@ Then reduce each catch block to: (log, for the `Throwable` one) → call the hel
 vendor/bin/phpunit
 ```
 
-Expected: **exactly 464 tests, exit 0**, unchanged from Task 2. No new tests here — both paths are already covered, and this step's whole point is that behaviour did not move.
+Expected: **exactly 465 tests, exit 0**, unchanged from Task 2. *(Corrected during execution: the plan said 464, but Task 2's review added an eleventh guard test pinning the `consumed_at` replay refusal.)* No new tests here — both paths are already covered, and this step's whole point is that behaviour did not move.
 
 Confirm the covering tests actually exercise both branches by name; if only one is covered, say so in your report rather than adding a test to this refactor task.
 
@@ -535,7 +535,7 @@ the exception they raise differs, so only that stays at the call site."
 ## Verification checklist
 
 - [ ] **No existing test was edited, deleted, or renamed.** Confirm with `git diff 8a9b0e8..HEAD --stat -- tests/` — the only changes to pre-existing test files are the constructor wiring lines in `ChangeEngineApplyTest` and `ChangeEnginePlanTest`.
-- [ ] `vendor/bin/phpunit` exits 0, unpiped, at 464 tests
+- [ ] `vendor/bin/phpunit` exits 0, unpiped, at 465 tests (464 in the original plan, plus the eleventh guard test added during Task 2's review)
 - [ ] `vendor/bin/phpcs` exits 0 repo-wide, unpiped
 - [ ] Coverage at or above 94.32%
 - [ ] `src/Change/ChangeEngine.php` line count reported (expected near 700, not gated)
