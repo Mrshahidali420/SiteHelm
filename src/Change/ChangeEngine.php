@@ -332,15 +332,16 @@ final class ChangeEngine {
 		try {
 			$target_key = $operation->applyChange( $current, $planned, $context );
 		} catch ( OperationException $failure ) {
-			$compensation = $this->lifecycle->compensate( $operation, $restore, $context );
-			$this->audit->finish(
+			// The operation named its own failure, so its code, message,
+			// remediation and completed steps are re-raised verbatim.
+			$compensation = $this->compensate_and_finalize(
+				$operation,
+				$restore,
 				$audit_id,
-				AuditRecorder::OUTCOME_EXECUTION_FAILED,
-				$snapshot['id'],
-				$snapshot['reference'],
-				$current->targetKey,
-				$current->fields,
-				$planned->afterFields
+				$snapshot,
+				$current,
+				$planned,
+				$context
 			);
 
 			throw new OperationException(
@@ -351,16 +352,18 @@ final class ChangeEngine {
 				$compensation
 			);
 		} catch ( Throwable $unexpected ) {
+			// An unexpected throwable carries nothing safe to disclose, so it is
+			// logged server-side and surfaces as a generic execution_failed.
 			EngineLog::unexpected( $unexpected );
-			$compensation = $this->lifecycle->compensate( $operation, $restore, $context );
-			$this->audit->finish(
+
+			$compensation = $this->compensate_and_finalize(
+				$operation,
+				$restore,
 				$audit_id,
-				AuditRecorder::OUTCOME_EXECUTION_FAILED,
-				$snapshot['id'],
-				$snapshot['reference'],
-				$current->targetKey,
-				$current->fields,
-				$planned->afterFields
+				$snapshot,
+				$current,
+				$planned,
+				$context
 			);
 
 			throw new OperationException(
@@ -488,6 +491,59 @@ final class ChangeEngine {
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+
+	/**
+	 * The failure tail both applyChange() catch blocks share: compensate the
+	 * partial write, then finalise the audit row as execution_failed, returning
+	 * what compensation achieved so the caller can report it.
+	 *
+	 * The two callers differ only in the exception they raise afterwards — the
+	 * operation's own code, message, remediation and completed steps in one
+	 * case, a generic execution_failed in the other — which is exactly why the
+	 * throw is deliberately NOT part of this method.
+	 *
+	 * The recorded after-state is the PROMISE, not a measurement. applyChange()
+	 * threw, so no after-state was ever read; unlike verification_failed(),
+	 * this path has nothing to measure and never can.
+	 *
+	 * @param WriteOperation            $operation The six-phase implementation.
+	 * @param array<string, mixed>|null $restore   The captured restore state.
+	 * @param int                       $auditId   The open audit record.
+	 * @param array<string, mixed>      $snapshot  Keys 'id' and 'reference' from capture().
+	 * @param TargetState               $current   The state before the write.
+	 * @param PlannedChange             $planned   The promised change.
+	 * @param OperationContext          $context   The request context.
+	 *
+	 * @return string One of 'restored', 'failed', or 'not-attempted'.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+	 */
+	private function compensate_and_finalize(
+		WriteOperation $operation,
+		?array $restore,
+		int $auditId,
+		array $snapshot,
+		TargetState $current,
+		PlannedChange $planned,
+		OperationContext $context
+	): string {
+		$compensation = $this->lifecycle->compensate( $operation, $restore, $context );
+
+		$this->audit->finish(
+			$auditId,
+			AuditRecorder::OUTCOME_EXECUTION_FAILED,
+			$snapshot['id'],
+			$snapshot['reference'],
+			$current->targetKey,
+			$current->fields,
+			$planned->afterFields
+		);
+
+		return $compensation;
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 
 	/**
 	 * Finalizes the audit record and builds the shared verification_failed
