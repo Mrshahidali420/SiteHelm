@@ -114,6 +114,28 @@ and response recorded verbatim.
 
 ### 4. Open items carried forward
 
+- **The test doubles declare narrower return types than the WordPress functions
+  they stand in for, which hides every guard written for the real type.** This is
+  systemic, not one slip. A fake declared `alias( fn(): int => … )` for
+  `get_post_thumbnail_id()` made `false` unreachable, so the `(int)` cast guarding
+  that comparison could be deleted with the whole suite green — while in
+  production every legitimate "restore to no featured image" would throw after
+  succeeding. Fixing that fake exposed **three more of the same shape, all
+  pre-existing, each verified by mutating and running the full suite green**:
+  - `ContentFields.php:277` — `(int) get_post_thumbnail_id( $postId )`. Hidden by
+    three tests stubbing `0` where WordPress answers `false`. Drop the cast and
+    every read envelope reports `featured_media: false` for a post with no
+    featured image, **violating the declared integer output schema**.
+  - `ContentFields.php:363` — `is_scalar( $value ) ? … : ''`. Hidden by a
+    `get_post_meta` fake typed `): string`; the real function returns mixed, so
+    array-valued meta would raise "Array to string conversion".
+  - `ContentFields.php:340` — `! is_array( $ids )`. Hidden by a
+    `wp_get_object_terms` fake typed `): array`; the real one returns
+    `array|WP_Error`.
+  The rule this yields: **type a fake like the platform, not like the happy
+  path.** A fake narrower than the function it replaces silently deletes the
+  coverage of every guard that exists for the wider type. Worth a sweep of every
+  double in `tests/` against its WordPress signature, as its own task.
 - **The gateway's generic failure handler discards the correlation id it holds.**
   `src/Gateway/McpServer.php:191`'s `catch ( Throwable )` passes the literal
   `'unresolved'` where the `OperationException` branch two lines above passes

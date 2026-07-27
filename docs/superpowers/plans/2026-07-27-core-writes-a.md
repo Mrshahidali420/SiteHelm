@@ -17,15 +17,19 @@ These two go first because they are the simplest, and because between them they 
 
 **The prep these two depend on is merged** (PR #6, `82313b5`): `ContentFields::DRAFT_LIKE_STATUSES` is a public constant at `src/Modules/Core/ContentFields.php:68`; `ContentTarget::snapshotOf()` records `post_status` and `post_name` via `ContentTarget::RESTORABLE_FIELDS` at `src/Modules/Core/ContentTarget.php:56-62`; and every restore loop gates on `array_key_exists` so an older stored snapshot restores only what it recorded.
 
-**Task 1 made that six loops, not three**, by adding a second field list — `ContentTarget::RESTORABLE_MEDIA_FIELDS` at `src/Modules/Core/ContentTarget.php:80` — for restorable values that are post meta rather than post columns, and therefore cannot be written by `wp_update_post()`. Current lines:
+**Task 1 made that six loops, not three**, by adding a second field list — `ContentTarget::RESTORABLE_MEDIA_FIELDS` — for restorable values that are post meta rather than post columns, and therefore cannot be written by `wp_update_post()`. Each of these three methods loops over **both** lists, so six loops in total:
 
-| Loop | Columns (`RESTORABLE_FIELDS`) | Media (`RESTORABLE_MEDIA_FIELDS`) |
-|---|---|---|
-| `ContentTarget::restoreFields()` | `ContentTarget.php:230-234` | `ContentTarget.php:259-263` |
-| `ContentRollbackApply::planChange()` | `ContentRollbackApply.php:195-199` | `ContentRollbackApply.php:208-212` |
-| `ContentRollbackApply::applyChange()` | `ContentRollbackApply.php:256-260` | `ContentRollbackApply.php:262-266` |
+| Method | Loops over |
+|---|---|
+| `ContentTarget::restoreFields()` | `RESTORABLE_FIELDS`, then `RESTORABLE_MEDIA_FIELDS` |
+| `ContentRollbackApply::planChange()` | `RESTORABLE_FIELDS`, then `RESTORABLE_MEDIA_FIELDS` |
+| `ContentRollbackApply::applyChange()` | `RESTORABLE_FIELDS`, then `RESTORABLE_MEDIA_FIELDS` |
+
+Deliberately no line numbers: this table went stale twice inside Task 1 alone, once per fix round, because every edit to either file shifts them. Find the loops by the constant names — both are `public const`, so `grep` for them reaches every site.
 
 The three media loops gate on `array_key_exists` **and** `is_numeric`, because `(int) null` is `0` and a recorded `0` means "restore to no featured image" — so a key present with a null value would delete a live featured image and report the rollback verified. `restoreFields()` also skips `wp_update_post()` entirely when the recorded state held no column at all (`count( $update ) > 1`), since an ID-only update re-saves the row and fires `save_post` for a rollback that changed no column.
+
+**`ContentRollbackApply::planChange()` also refuses an empty promise** with `ErrorCode::RollbackUnavailable`. Reachable when every recorded restorable value is skipped — a snapshot holding only `post_id`, or one whose only media value is non-numeric. Without it, `PlannedChange`'s own empty-promise `InvalidArgumentException` escaped both `preview()` and `apply()` uncaught into the gateway's generic `Throwable` handler, which reports `execution_failed` — a code declared **retryable**, telling the client to retry a rollback that can never succeed. **Task 3 is the first task able to record a media-only snapshot, so it is the first that can reach this refusal.**
 
 ---
 
