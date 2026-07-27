@@ -259,7 +259,14 @@ final class ContentUpdateTest extends TestCase {
 		}
 	}
 
-	public function test_capture_snapshot_records_the_minimum_restorable_state(): void {
+	/**
+	 * `post_status` and `post_name` are recorded alongside the text because a
+	 * rollback that restores the words but not the workflow position is not a
+	 * rollback. The assertion is on the whole array, key order included: the
+	 * order is `ksort`ed because the snapshot is stored as canonical JSON, and a
+	 * fingerprint taken at preview must match one taken at apply.
+	 */
+	public function test_capture_snapshot_records_every_restorable_field(): void {
 		$current  = $this->operation->resolveTarget( [ 'id' => 42 ], $this->makeContext() );
 		$snapshot = $this->operation->captureSnapshot( $current, $this->makeContext() );
 
@@ -268,6 +275,8 @@ final class ContentUpdateTest extends TestCase {
 				'post_content' => '<p>Original body.</p>',
 				'post_excerpt' => 'Original excerpt.',
 				'post_id'      => 42,
+				'post_name'    => 'original-title',
+				'post_status'  => 'draft',
 				'post_title'   => 'Original title',
 			],
 			$snapshot
@@ -424,6 +433,69 @@ final class ContentUpdateTest extends TestCase {
 		$this->assertConformsToOutputSchema(
 			[ 'plan' => [ 'token' => 'plan-token' ] ],
 			$registry->definition( 'content-update' )->outputSchema
+		);
+	}
+
+	/**
+	 * The forward half of the widened restore: a snapshot that recorded status
+	 * and slug puts both back. This is what makes content-update's rollback
+	 * faithful rather than partial, and it is a behaviour change to a shipped
+	 * operation, not a refactor.
+	 */
+	public function test_restore_writes_back_every_field_the_snapshot_recorded(): void {
+		$this->assertSame(
+			'post:42',
+			$this->operation->restore(
+				[
+					'post_id'      => 42,
+					'post_title'   => 'Original title',
+					'post_content' => '<p>Original body.</p>',
+					// Deliberately empty, and the only fixture in the suite that
+					// is. Every other recorded value is non-empty, which leaves
+					// "absent" and "recorded as empty" indistinguishable: relaxing
+					// the array_key_exists gate to isset or ! empty() keeps the
+					// whole suite green while silently declining to restore an
+					// empty excerpt — the common case, since most posts have none.
+					'post_excerpt' => '',
+					'post_status'  => 'publish',
+					'post_name'    => 'original-title',
+				],
+				$this->makeContext()
+			)
+		);
+
+		$this->assertSame( 'publish', $this->writes[0]['post_status'] );
+		$this->assertSame( 'original-title', $this->writes[0]['post_name'] );
+		$this->assertSame( 'Original title', $this->writes[0]['post_title'] );
+		$this->assertSame( '', $this->writes[0]['post_excerpt'] );
+	}
+
+	/**
+	 * Backward compatibility with rows already in a live database. Snapshots
+	 * captured before post_status and post_name were recorded do not contain
+	 * them, and those rollbacks must still restore exactly what they did record.
+	 *
+	 * A missing key must be ABSENT from the update, not defaulted. wp_update_post()
+	 * resolves an empty post_status to 'draft', so defaulting would un-publish a
+	 * live post during a rollback that promised only to restore its text — a
+	 * silent, auditable-looking data change the operator never approved.
+	 */
+	public function test_restore_omits_fields_an_older_snapshot_never_recorded(): void {
+		$this->operation->restore(
+			[
+				'post_id'      => 42,
+				'post_title'   => 'Original title',
+				'post_content' => '<p>Original body.</p>',
+				'post_excerpt' => 'Original excerpt.',
+			],
+			$this->makeContext()
+		);
+
+		$this->assertArrayNotHasKey( 'post_status', $this->writes[0] );
+		$this->assertArrayNotHasKey( 'post_name', $this->writes[0] );
+		$this->assertSame(
+			[ 'ID', 'post_title', 'post_content', 'post_excerpt' ],
+			array_keys( $this->writes[0] )
 		);
 	}
 }

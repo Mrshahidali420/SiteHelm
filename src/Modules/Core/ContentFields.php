@@ -48,6 +48,26 @@ final class ContentFields {
 	];
 
 	/**
+	 * Statuses that keep content inside the draft workflow rather than making
+	 * it live or otherwise visible outside it. Any status a write's input
+	 * schema admits that is not listed here requires the post type's own
+	 * publish capability, so a status added to a schema later fails closed by
+	 * default instead of silently becoming writable by anyone who can write a
+	 * draft.
+	 *
+	 * `private` is deliberately absent. WordPress requires publish_posts to set
+	 * a private status, so treating it as draft-like would be a capability
+	 * bypass rather than a convenience. Only draft and pending are below the
+	 * line.
+	 *
+	 * This lives here rather than on one operation because it decides whether a
+	 * capability is required, and more than one write needs the same answer. Two
+	 * copies of a security-relevant split drift apart independently, and the
+	 * copy that drifts is the one nobody is looking at.
+	 */
+	public const DRAFT_LIKE_STATUSES = [ 'draft', 'pending' ];
+
+	/**
 	 * The target-key prefix for a post-shaped target.
 	 */
 	private const POST_PREFIX = 'post:';
