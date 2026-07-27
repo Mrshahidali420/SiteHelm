@@ -172,7 +172,11 @@ final class ContentRollbackApply implements WriteOperation {
 	 *
 	 * @throws OperationException With ErrorCode::TargetNotFound,
 	 *                           ErrorCode::Forbidden, or
-	 *                           ErrorCode::RollbackUnavailable.
+	 *                           ErrorCode::RollbackUnavailable — the last both
+	 *                           from the compatibility re-checks and when the
+	 *                           stored snapshot promises nothing restorable.
+	 *
+	 * phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 	 */
 	public function planChange( TargetState $current, array $input, OperationContext $context ): PlannedChange {
 		$reference = (string) ( $input['rollbackRef'] ?? '' );
@@ -212,6 +216,27 @@ final class ContentRollbackApply implements WriteOperation {
 		}
 		ksort( $promised, SORT_STRING );
 
+		// A promise with nothing in it is refused HERE, with the code the contract
+		// has for it. PlannedChange::__construct() also rejects an empty promise,
+		// but it throws InvalidArgumentException, and preview() calls planChange()
+		// outside any try block — so that escape lands in the gateway's generic
+		// Throwable handler and answers `execution_failed`, which is declared
+		// RETRYABLE. A client would be told to retry a rollback that can never
+		// succeed, and the correlation id is replaced with 'unresolved' on that
+		// path, so the response cannot even be tied to the logged cause.
+		//
+		// Two stored shapes reach it, and one condition covers both because both
+		// end the same way: a snapshot whose only restorable key holds a value this
+		// restore may not act on (skipped by the gates above), and a snapshot
+		// holding nothing but `post_id`, which the capture path can already produce.
+		if ( [] === $promised ) {
+			throw new OperationException(
+				ErrorCode::RollbackUnavailable,
+				'The recorded snapshot holds no value this rollback could put back, so it cannot be restored.',
+				'Recover through WordPress revisions instead.'
+			);
+		}
+
 		return new PlannedChange(
 			[
 				'rollbackRef' => $reference,
@@ -221,6 +246,7 @@ final class ContentRollbackApply implements WriteOperation {
 			ContentFields::FIELD_ORDER
 		);
 	}
+	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 
 	/**
 	 * Captures the state the rollback is about to overwrite, so the rollback can
