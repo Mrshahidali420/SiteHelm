@@ -308,6 +308,100 @@ final class CoreModule implements IntegrationModule {
 			[ new ContentList(), 'handle' ]
 		);
 
+		$registry->register(
+			new OperationDefinition(
+				id: 'taxonomy-list',
+				domain: Domain::Content,
+				mode: Mode::Read,
+				description: 'List the public taxonomies of a content type with a page of their terms, reporting for each whether the caller may assign its terms.',
+				inputSchema: [
+					'type'                 => 'object',
+					'properties'           => [
+						'type'   => [
+							'type'        => 'string',
+							'maxLength'   => 32,
+							'description' => 'A public content type this site registers, for example post or page.',
+						],
+						'limit'  => [
+							'type'        => 'integer',
+							'minimum'     => 1,
+							'description' => 'Terms returned per taxonomy, clamped to 100.',
+						],
+						'offset' => [
+							'type'        => 'integer',
+							'minimum'     => 0,
+							'description' => 'Terms to skip within each taxonomy before the page begins.',
+						],
+					],
+					'required'             => [ 'type' ],
+					'additionalProperties' => false,
+				],
+				outputSchema: [
+					'type'                 => 'object',
+					'properties'           => [
+						'taxonomies' => [
+							'type'  => 'array',
+							'items' => [
+								'type'                 => 'object',
+								'properties'           => [
+									'name'           => [ 'type' => 'string' ],
+									'label'          => [ 'type' => 'string' ],
+									'hierarchical'   => [ 'type' => 'boolean' ],
+									'mayAssignTerms' => [ 'type' => 'boolean' ],
+									'termTotal'      => [ 'type' => 'integer' ],
+									'terms'          => [
+										'type'  => 'array',
+										'items' => [
+											'type'       => 'object',
+											'properties' => [
+												'id'     => [ 'type' => 'integer' ],
+												'name'   => [ 'type' => 'string' ],
+												'slug'   => [ 'type' => 'string' ],
+												'parent' => [ 'type' => 'integer' ],
+												'count'  => [ 'type' => 'integer' ],
+											],
+											'required'   => [ 'id', 'name', 'slug', 'parent', 'count' ],
+											'additionalProperties' => false,
+										],
+									],
+								],
+								'required'             => [ 'name', 'label', 'hierarchical', 'mayAssignTerms', 'termTotal', 'terms' ],
+								'additionalProperties' => false,
+							],
+						],
+						'limit'      => [ 'type' => 'integer' ],
+						'offset'     => [ 'type' => 'integer' ],
+						// Present only when a taxonomy's terms could not be read.
+						// There is no top-level total: with several taxonomies
+						// each having its own term count one total is ambiguous,
+						// so termTotal sits inside each taxonomy instead.
+						'warnings'   => [
+							'type'  => 'array',
+							'items' => [ 'type' => 'string' ],
+						],
+					],
+					'required'             => [ 'taxonomies', 'limit', 'offset' ],
+					'additionalProperties' => false,
+				],
+				schemaVersion: 1,
+				requiredCapabilities: [ 'edit_posts' ],
+				risk: Risk::Low,
+				isReadOnly: true,
+				isDestructive: false,
+				isIdempotent: true,
+				previewPolicy: PreviewPolicy::NotApplicable,
+				snapshotPolicy: SnapshotPolicy::NotApplicable,
+				rollbackPolicy: RollbackPolicy::NotApplicable,
+				module: ModuleId::Core,
+				supportedVersions: [ 'wordpress' => '>=' . SITEHELM_MIN_WP ],
+				example: [
+					'operation' => 'taxonomy-list',
+					'arguments' => [ 'type' => 'post' ],
+				],
+			),
+			[ new TaxonomyList(), 'handle' ]
+		);
+
 		$targets = new ContentTarget( $fields );
 
 		$registry->registerWrite(
