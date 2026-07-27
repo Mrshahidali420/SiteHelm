@@ -6,9 +6,10 @@
         "content-update",
         "content-create",
         "content-rollback-apply",
+        "content-featured-media-set",
         "audit-list"
     ],
-    "operationCount": 7,
+    "operationCount": 8,
     "definitions": {
         "content-get": {
             "inputSchema": {
@@ -463,6 +464,74 @@
                 },
                 "required": [
                     "rollbackRef"
+                ],
+                "additionalProperties": false
+            },
+            "outputSchema": {
+                "type": "object",
+                "oneOf": [
+                    {
+                        "title": "Plan phase",
+                        "type": "object",
+                        "properties": {
+                            "plan": {
+                                "type": "object",
+                                "description": "The change plan to approve, including its plan token."
+                            }
+                        },
+                        "required": [
+                            "plan"
+                        ],
+                        "additionalProperties": false
+                    },
+                    {
+                        "title": "Apply phase",
+                        "type": "object",
+                        "properties": {
+                            "target": {
+                                "type": "string",
+                                "description": "The concrete target that was written."
+                            },
+                            "changed": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                },
+                                "description": "The fields the approved plan changed."
+                            },
+                            "state": {
+                                "type": "object",
+                                "description": "The verified persisted state of the target."
+                            }
+                        },
+                        "required": [
+                            "target",
+                            "changed",
+                            "state"
+                        ],
+                        "additionalProperties": false
+                    }
+                ]
+            }
+        },
+        "content-featured-media-set": {
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "Identifier of the content item whose featured image is being set."
+                    },
+                    "mediaId": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "Identifier of an existing media library attachment to use as the featured image."
+                    }
+                },
+                "required": [
+                    "id",
+                    "mediaId"
                 ],
                 "additionalProperties": false
             },

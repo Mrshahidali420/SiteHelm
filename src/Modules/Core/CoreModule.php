@@ -127,6 +127,11 @@ final class CoreModule implements IntegrationModule {
 			)
 		);
 
+		$registry->registerWrite(
+			ContentFeaturedMediaSet::definition(),
+			new ContentFeaturedMediaSet( $fields, $targets )
+		);
+
 		$registry->register( AuditRead::definition(), [ new AuditRead( new AuditStore(), new Installer() ), 'handle' ] );
 	}
 }

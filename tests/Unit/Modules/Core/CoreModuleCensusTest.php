@@ -28,7 +28,7 @@ final class CoreModuleCensusTest extends TestCase {
 	 * @var array<string, mixed[]>
 	 */
 	private const EXPECTED = [
-		'content-get'            => [
+		'content-get'                => [
 			'dispatcher'    => 'content-read',
 			'schemaVersion' => 1,
 			'capabilities'  => [ 'edit_posts' ],
@@ -36,7 +36,7 @@ final class CoreModuleCensusTest extends TestCase {
 			'snapshot'      => 'not-applicable',
 			'rollback'      => 'not-applicable',
 		],
-		'content-list'           => [
+		'content-list'               => [
 			'dispatcher'    => 'content-read',
 			'schemaVersion' => 1,
 			'capabilities'  => [ 'edit_posts' ],
@@ -44,7 +44,7 @@ final class CoreModuleCensusTest extends TestCase {
 			'snapshot'      => 'not-applicable',
 			'rollback'      => 'not-applicable',
 		],
-		'taxonomy-list'          => [
+		'taxonomy-list'              => [
 			'dispatcher'    => 'content-read',
 			'schemaVersion' => 1,
 			'capabilities'  => [ 'edit_posts' ],
@@ -52,7 +52,7 @@ final class CoreModuleCensusTest extends TestCase {
 			'snapshot'      => 'not-applicable',
 			'rollback'      => 'not-applicable',
 		],
-		'content-update'         => [
+		'content-update'             => [
 			'dispatcher'    => 'content-write',
 			'schemaVersion' => 1,
 			'capabilities'  => [ 'edit_post' ],
@@ -60,7 +60,7 @@ final class CoreModuleCensusTest extends TestCase {
 			'snapshot'      => 'required',
 			'rollback'      => 'supported',
 		],
-		'content-create'         => [
+		'content-create'             => [
 			'dispatcher'    => 'content-write',
 			'schemaVersion' => 1,
 			'capabilities'  => [ 'edit_posts' ],
@@ -68,7 +68,7 @@ final class CoreModuleCensusTest extends TestCase {
 			'snapshot'      => 'supported',
 			'rollback'      => 'supported',
 		],
-		'content-rollback-apply' => [
+		'content-rollback-apply'     => [
 			'dispatcher'    => 'content-write',
 			'schemaVersion' => 1,
 			'capabilities'  => [ 'edit_post' ],
@@ -76,7 +76,15 @@ final class CoreModuleCensusTest extends TestCase {
 			'snapshot'      => 'required',
 			'rollback'      => 'supported',
 		],
-		'audit-list'             => [
+		'content-featured-media-set' => [
+			'dispatcher'    => 'content-write',
+			'schemaVersion' => 1,
+			'capabilities'  => [ 'edit_post' ],
+			'preview'       => 'required',
+			'snapshot'      => 'required',
+			'rollback'      => 'supported',
+		],
+		'audit-list'                 => [
 			'dispatcher'    => 'system-read',
 			'schemaVersion' => 1,
 			'capabilities'  => [ 'manage_options' ],
@@ -113,7 +121,7 @@ final class CoreModuleCensusTest extends TestCase {
 		$registry = $this->registryWithCoreModule();
 
 		$this->assertCount( 3, $registry->forDispatcher( 'content-read' ) );
-		$this->assertCount( 3, $registry->forDispatcher( 'content-write' ) );
+		$this->assertCount( 4, $registry->forDispatcher( 'content-write' ) );
 		$this->assertCount( 1, $registry->forDispatcher( 'system-read' ) );
 
 		$empty = [ 'media-read', 'media-write', 'menu-read', 'menu-write', 'elementor-read', 'elementor-write', 'fields-read', 'fields-write' ];

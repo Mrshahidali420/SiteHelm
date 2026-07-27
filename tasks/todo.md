@@ -146,7 +146,7 @@ and response recorded verbatim.
   deliberately carries no detail. It affects **every dispatcher equally**, not
   one module. The fix is one line and touches no module, but it is a gateway
   change and wants its own test, so it is recorded rather than smuggled into a
-  module branch. **Do it before the remaining three core writes land**, since
+  module branch. **Do it before the remaining core writes land**, since
   every one of them can reach that handler. Found while closing an unrelated
   escape in `ContentRollbackApply::planChange()`.
 - **`ErrorCode::ExecutionFailed` is declared retryable and

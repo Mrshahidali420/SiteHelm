@@ -23,8 +23,21 @@ use SiteHelm\Tests\TestCase;
  */
 final class WriteOutputSchemaTest extends TestCase {
 
-	/** @var string[] */
-	private const CORE_WRITE_IDS = [ 'content-update', 'content-create', 'content-rollback-apply' ];
+	/**
+	 * Every write the core module registers. Hardcoded on purpose — deriving it
+	 * from the registry would make the loop below assert only what the registry
+	 * already agrees with. The cost is that a new write must be added here, and
+	 * a write missing from this list is silently exempt from the union check, so
+	 * this list grows with `CoreDefinitionInvariantsTest::CORE_WRITE_COUNT`.
+	 *
+	 * @var string[]
+	 */
+	private const CORE_WRITE_IDS = [
+		'content-update',
+		'content-create',
+		'content-rollback-apply',
+		'content-featured-media-set',
+	];
 
 	public function test_every_core_write_declares_the_shared_union(): void {
 		$registry = new CapabilityRegistry();
