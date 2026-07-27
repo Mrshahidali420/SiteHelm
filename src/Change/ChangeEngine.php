@@ -62,23 +62,25 @@ final class ChangeEngine {
 	 * Constructs the engine over its collaborators.
 	 *
 	 * @param PlanStore         $plans       Pending plan storage.
-	 * @param SnapshotStore     $snapshots   Rollback snapshot storage.
 	 * @param AuditRecorder     $audit       Audit record lifecycle.
 	 * @param PayloadNormalizer $normalizer  Canonical form and hashing.
 	 * @param StateFingerprint  $fingerprint Target-state fingerprinting.
 	 * @param PreviewRenderer   $preview     Both preview renderings.
 	 * @param Installer         $installer   Storage availability probe.
 	 * @param WriteVerifier     $verifier    Post-write state classification.
+	 * @param SnapshotLifecycle $lifecycle   Snapshot eligibility, capture, and compensation.
+	 * @param PlanAdmission     $admission   Whether a stored plan may be applied.
 	 */
 	public function __construct(
 		private readonly PlanStore $plans,
-		private readonly SnapshotStore $snapshots,
 		private readonly AuditRecorder $audit,
 		private readonly PayloadNormalizer $normalizer,
 		private readonly StateFingerprint $fingerprint,
 		private readonly PreviewRenderer $preview,
 		private readonly Installer $installer,
 		private readonly WriteVerifier $verifier,
+		private readonly SnapshotLifecycle $lifecycle,
+		private readonly PlanAdmission $admission,
 	) {
 	}
 
@@ -91,17 +93,20 @@ final class ChangeEngine {
 	 * @return self The default engine.
 	 */
 	public static function create(): self {
-		$normalizer = new PayloadNormalizer();
+		$normalizer  = new PayloadNormalizer();
+		$plans       = new PlanStore();
+		$fingerprint = new StateFingerprint( $normalizer );
 
 		return new self(
-			new PlanStore(),
-			new SnapshotStore(),
+			$plans,
 			new AuditRecorder( new AuditStore(), new AuditRedactor() ),
 			$normalizer,
-			new StateFingerprint( $normalizer ),
+			$fingerprint,
 			new PreviewRenderer(),
 			new Installer(),
-			new WriteVerifier( $normalizer )
+			new WriteVerifier( $normalizer ),
+			new SnapshotLifecycle( new SnapshotStore(), $normalizer ),
+			new PlanAdmission( $plans, $normalizer, $fingerprint )
 		);
 	}
 
@@ -135,7 +140,7 @@ final class ChangeEngine {
 		$current     = $operation->resolveTarget( $payload, $context );
 		$planned     = $operation->planChange( $current, $payload, $context );
 		$fingerprint = $this->fingerprint->compute( $current, $context );
-		$eligibility = $this->eligibility( $definition, $operation, $current, $context );
+		$eligibility = $this->lifecycle->eligibility( $definition, $operation, $current, $context );
 		$rendering   = $this->preview->render( $definition->id, $current, $planned );
 
 		$token        = PlanStore::issueToken();
@@ -281,51 +286,28 @@ final class ChangeEngine {
 		$this->require_storage();
 
 		$digest = PlanStore::digest( $planToken );
-		$row    = $this->plans->find( $digest );
 
-		if ( null === $row
-			|| null !== $row['consumed_at']
-			|| (int) $row['expires_at'] <= $context->requestTime
-			|| (string) $row['site_id'] !== $context->siteId
-			|| (int) $row['user_id'] !== $context->userId
-			|| (string) $row['operation_id'] !== $definition->id
-			|| (int) $row['schema_version'] !== $definition->schemaVersion ) {
-			throw $this->stale_plan();
-		}
-
+		$row     = $this->admission->findValidPlan( $digest, $definition, $context );
 		$current = $operation->resolveTarget( $payload, $context );
-		if ( (string) $row['target_key'] !== $current->targetKey ) {
-			throw $this->stale_plan();
-		}
+		$this->admission->assertTargetMatches( $row, $current );
 
 		// planChange() runs again here so the apply executes exactly what was
 		// previewed, and so every guard inside it is re-evaluated. The payload is
-		// the one the CLIENT re-supplied on this call; the digest comparison below
-		// is what proves it is the payload the preview was generated from.
+		// the one the CLIENT re-supplied on this call; the digest comparison in
+		// assertPayloadMatches() below is what proves it is the payload the
+		// preview was generated from.
 		$planned = $operation->planChange( $current, $payload, $context );
 
 		// The fingerprint is checked first, and deliberately. A concurrent edit
 		// invalidates both this and the payload hash at once, and the contract
 		// names that case `conflict`; checking the payload first would answer
 		// `stale_plan` for a situation the contract has a different code for.
-		if ( (string) $row['state_fingerprint'] !== $this->fingerprint->compute( $current, $context ) ) {
-			throw new OperationException(
-				ErrorCode::Conflict,
-				'The target changed between the preview and this approval, so nothing was applied.',
-				'Read the target again and generate a fresh preview.'
-			);
-		}
-
-		if ( (string) $row['payload_hash'] !== $this->normalizer->fingerprint( $planned->payload ) ) {
-			throw $this->stale_plan();
-		}
-
-		if ( ! $this->plans->consume( $digest, $context->requestTime ) ) {
-			throw $this->stale_plan();
-		}
+		$this->admission->assertStateUnchanged( $row, $current, $context );
+		$this->admission->assertPayloadMatches( $row, $planned );
+		$this->admission->consumeOrFail( $digest, $context->requestTime );
 
 		$warnings = $planned->warnings;
-		$snapshot = $this->capture( $definition, $operation, $current, $context );
+		$snapshot = $this->lifecycle->capture( $definition, $operation, $current, $context );
 		$restore  = $snapshot['restore'];
 
 		// The snapshot handle goes onto the OPENING audit row. Both values are
@@ -350,15 +332,16 @@ final class ChangeEngine {
 		try {
 			$target_key = $operation->applyChange( $current, $planned, $context );
 		} catch ( OperationException $failure ) {
-			$compensation = $this->compensate( $operation, $restore, $context );
-			$this->audit->finish(
+			// The operation named its own failure, so its code, message,
+			// remediation and completed steps are re-raised verbatim.
+			$compensation = $this->compensate_and_finalize(
+				$operation,
+				$restore,
 				$audit_id,
-				AuditRecorder::OUTCOME_EXECUTION_FAILED,
-				$snapshot['id'],
-				$snapshot['reference'],
-				$current->targetKey,
-				$current->fields,
-				$planned->afterFields
+				$snapshot,
+				$current,
+				$planned,
+				$context
 			);
 
 			throw new OperationException(
@@ -369,16 +352,18 @@ final class ChangeEngine {
 				$compensation
 			);
 		} catch ( Throwable $unexpected ) {
-			$this->log_unexpected( $unexpected );
-			$compensation = $this->compensate( $operation, $restore, $context );
-			$this->audit->finish(
+			// An unexpected throwable carries nothing safe to disclose, so it is
+			// logged server-side and surfaces as a generic execution_failed.
+			EngineLog::unexpected( $unexpected );
+
+			$compensation = $this->compensate_and_finalize(
+				$operation,
+				$restore,
 				$audit_id,
-				AuditRecorder::OUTCOME_EXECUTION_FAILED,
-				$snapshot['id'],
-				$snapshot['reference'],
-				$current->targetKey,
-				$current->fields,
-				$planned->afterFields
+				$snapshot,
+				$current,
+				$planned,
+				$context
 			);
 
 			throw new OperationException(
@@ -402,7 +387,7 @@ final class ChangeEngine {
 		try {
 			$after = $operation->readBack( $target_key, $context );
 		} catch ( Throwable $unreadable ) {
-			$this->log_unexpected( $unreadable );
+			EngineLog::unexpected( $unreadable );
 
 			// No after-state exists to record: the read that would have produced
 			// one is what failed. The promise is all there is. See the helper's
@@ -506,6 +491,59 @@ final class ChangeEngine {
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+
+	/**
+	 * The failure tail both applyChange() catch blocks share: compensate the
+	 * partial write, then finalise the audit row as execution_failed, returning
+	 * what compensation achieved so the caller can report it.
+	 *
+	 * The two callers differ only in the exception they raise afterwards — the
+	 * operation's own code, message, remediation and completed steps in one
+	 * case, a generic execution_failed in the other — which is exactly why the
+	 * throw is deliberately NOT part of this method.
+	 *
+	 * The recorded after-state is the PROMISE, not a measurement. applyChange()
+	 * threw, so no after-state was ever read; unlike verification_failed(),
+	 * this path has nothing to measure and never can.
+	 *
+	 * @param WriteOperation            $operation The six-phase implementation.
+	 * @param array<string, mixed>|null $restore   The captured restore state.
+	 * @param int                       $auditId   The open audit record.
+	 * @param array<string, mixed>      $snapshot  Keys 'id' and 'reference' from capture().
+	 * @param TargetState               $current   The state before the write.
+	 * @param PlannedChange             $planned   The promised change.
+	 * @param OperationContext          $context   The request context.
+	 *
+	 * @return string One of 'restored', 'failed', or 'not-attempted'.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+	 */
+	private function compensate_and_finalize(
+		WriteOperation $operation,
+		?array $restore,
+		int $auditId,
+		array $snapshot,
+		TargetState $current,
+		PlannedChange $planned,
+		OperationContext $context
+	): string {
+		$compensation = $this->lifecycle->compensate( $operation, $restore, $context );
+
+		$this->audit->finish(
+			$auditId,
+			AuditRecorder::OUTCOME_EXECUTION_FAILED,
+			$snapshot['id'],
+			$snapshot['reference'],
+			$current->targetKey,
+			$current->fields,
+			$planned->afterFields
+		);
+
+		return $compensation;
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 
 	/**
 	 * Finalizes the audit record and builds the shared verification_failed
@@ -626,89 +664,6 @@ final class ChangeEngine {
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 
 	/**
-	 * Captures the snapshot the plan promised.
-	 *
-	 * @param OperationDefinition $definition The operation being applied.
-	 * @param WriteOperation      $operation  The six-phase implementation.
-	 * @param TargetState         $current    The resolved current state.
-	 * @param OperationContext    $context    The request context.
-	 *
-	 * @return array<string, mixed> Keys 'restore', 'id', and 'reference'.
-	 *
-	 * @throws OperationException With ErrorCode::RollbackUnavailable when a
-	 *                           required snapshot could not be recorded.
-	 *
-	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
-	 * phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped
-	 */
-	private function capture(
-		OperationDefinition $definition,
-		WriteOperation $operation,
-		TargetState $current,
-		OperationContext $context
-	): array {
-		$empty = [
-			'restore'   => null,
-			'id'        => null,
-			'reference' => null,
-		];
-
-		if ( SnapshotPolicy::NotApplicable === $definition->snapshotPolicy ) {
-			return $empty;
-		}
-
-		$restore = $operation->captureSnapshot( $current, $context );
-		if ( null === $restore ) {
-			if ( SnapshotPolicy::Required === $definition->snapshotPolicy ) {
-				throw new OperationException(
-					ErrorCode::RollbackUnavailable,
-					'No recoverable snapshot can be captured for this target, so the change was not applied.',
-					'Recover through WordPress revisions or the trash instead.'
-				);
-			}
-
-			return $empty;
-		}
-
-		$captured = $this->snapshots->capture(
-			[
-				'site_id'         => $context->siteId,
-				'user_id'         => $context->userId,
-				'operation_id'    => $definition->id,
-				'module_id'       => $definition->module->value,
-				'target_key'      => $current->targetKey,
-				'restore_state'   => $this->normalizer->canonicalJson( $restore ),
-				'module_versions' => $this->normalizer->canonicalJson( $context->moduleVersions ),
-				'created_at'      => $context->requestTime,
-			]
-		);
-
-		if ( null === $captured ) {
-			if ( SnapshotPolicy::Required === $definition->snapshotPolicy ) {
-				throw new OperationException(
-					ErrorCode::RollbackUnavailable,
-					'The snapshot this change requires could not be recorded, so the change was not applied.',
-					'A site administrator should deactivate and reactivate SiteHelm to rebuild its local storage.'
-				);
-			}
-
-			return [
-				'restore'   => $restore,
-				'id'        => null,
-				'reference' => null,
-			];
-		}
-
-		return [
-			'restore'   => $restore,
-			'id'        => $captured['id'],
-			'reference' => $captured['reference'],
-		];
-	}
-	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
-	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
-
-	/**
 	 * Field names that changed although the approved plan never promised them.
 	 *
 	 * Verifying only the promised keys would let a third-party save_post hook
@@ -752,63 +707,6 @@ final class ChangeEngine {
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 
 	/**
-	 * Attempts to restore the captured snapshot after a failed write.
-	 *
-	 * The restore attempt has its own containment, because an exception thrown
-	 * inside a catch block is not caught by a sibling catch on the same try.
-	 *
-	 * @param WriteOperation            $operation The six-phase implementation.
-	 * @param array<string, mixed>|null $restore   The captured restore state.
-	 * @param OperationContext          $context   The request context.
-	 *
-	 * @return string One of 'restored', 'failed', or 'not-attempted'.
-	 */
-	private function compensate( WriteOperation $operation, ?array $restore, OperationContext $context ): string {
-		if ( null === $restore ) {
-			return 'not-attempted';
-		}
-
-		try {
-			$operation->restore( $restore, $context );
-
-			return 'restored';
-		} catch ( Throwable $failure ) {
-			$this->log_unexpected( $failure );
-
-			return 'failed';
-		}
-	}
-
-	/**
-	 * The single stale-plan failure, used for every binding refusal so a caller
-	 * cannot learn which element of the binding was wrong.
-	 *
-	 * @return OperationException The failure to throw.
-	 */
-	private function stale_plan(): OperationException {
-		return new OperationException(
-			ErrorCode::StalePlan,
-			'This plan token is expired, already used, or bound to a different request.',
-			'Generate a fresh preview and approve that plan token instead.'
-		);
-	}
-
-	/**
-	 * Logs an unexpected failure server-side.
-	 *
-	 * The message never reaches the client, so it may carry technical detail;
-	 * nothing derived from it is placed in an envelope.
-	 *
-	 * @param Throwable $failure The failure to log.
-	 *
-	 * phpcs:disable WordPress.PHP.DevelopmentFunctions.error_log_error_log
-	 */
-	private function log_unexpected( Throwable $failure ): void {
-		error_log( sprintf( 'SiteHelm change engine failure: %s', $failure->getMessage() ) );
-	}
-	// phpcs:enable WordPress.PHP.DevelopmentFunctions.error_log_error_log
-
-	/**
 	 * Serializes a change plan for the wire.
 	 *
 	 * The bindings are returned because the contract makes them a field of
@@ -833,59 +731,6 @@ final class ChangeEngine {
 		];
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
-
-	/**
-	 * Declares the recovery position before anything executes.
-	 *
-	 * `captureSnapshot()` is contractually side-effect free, so probing it here
-	 * is safe. When the snapshot policy is `required` and nothing can be
-	 * captured, the plan is refused with `rollback_unavailable` rather than
-	 * offering a preview that could never safely execute. A `required` rollback
-	 * policy needs no separate branch: the registry already forces a `required`
-	 * snapshot policy alongside it.
-	 *
-	 * @param OperationDefinition $definition The operation being previewed.
-	 * @param WriteOperation      $operation  The six-phase implementation.
-	 * @param TargetState         $current    The resolved current state.
-	 * @param OperationContext    $context    The request context.
-	 *
-	 * @return array<string, string> Keys 'snapshot' and 'rollback'.
-	 *
-	 * @throws OperationException With ErrorCode::RollbackUnavailable.
-	 *
-	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
-	 * phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped
-	 */
-	private function eligibility(
-		OperationDefinition $definition,
-		WriteOperation $operation,
-		TargetState $current,
-		OperationContext $context
-	): array {
-		if ( SnapshotPolicy::NotApplicable === $definition->snapshotPolicy ) {
-			return [
-				'snapshot' => self::SNAPSHOT_NOT_APPLICABLE,
-				'rollback' => self::ROLLBACK_NOT_OFFERED,
-			];
-		}
-
-		$capturable = null !== $operation->captureSnapshot( $current, $context );
-
-		if ( ! $capturable && SnapshotPolicy::Required === $definition->snapshotPolicy ) {
-			throw new OperationException(
-				ErrorCode::RollbackUnavailable,
-				'No recoverable snapshot can be captured for this target, so the change is refused before it executes.',
-				'Recover through WordPress revisions or the trash instead, or choose a target that supports snapshots.'
-			);
-		}
-
-		return [
-			'snapshot' => $capturable ? self::SNAPSHOT_WILL_CAPTURE : self::SNAPSHOT_NO_PRIOR_STATE,
-			'rollback' => $capturable ? self::ROLLBACK_WILL_OFFER : self::ROLLBACK_NOT_OFFERED,
-		];
-	}
-	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
-	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 
 	/**
 	 * Refuses to proceed when the engine's own local tables are missing.

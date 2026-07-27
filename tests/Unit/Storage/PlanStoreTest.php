@@ -161,10 +161,10 @@ final class PlanStoreTest extends TestCase {
 	/**
 	 * Expiry is re-checked in the claim itself, as defence in depth.
 	 *
-	 * ChangeEngine::apply() refuses an expired plan before reaching this method
-	 * and does so at least as strictly, so this can never reject a plan the
-	 * engine accepted. It exists so a row that outlived the prune grace cannot
-	 * bind for a direct caller that forgot the check.
+	 * PlanAdmission::findValidPlan() refuses an expired plan before reaching
+	 * this method and does so at least as strictly, so this can never reject a
+	 * plan the engine accepted. It exists so a row that outlived the prune
+	 * grace cannot bind for a direct caller that forgot the check.
 	 */
 	public function test_consume_requires_the_plan_to_be_unexpired(): void {
 		$this->wpdb->queryRowsQueue = [ 1 ];
