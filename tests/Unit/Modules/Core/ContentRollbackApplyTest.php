@@ -963,6 +963,11 @@ final class ContentRollbackApplyTest extends TestCase {
 			$this->fail( 'Expected OperationException' );
 		} catch ( OperationException $e ) {
 			$this->assertSame( ErrorCode::RollbackUnavailable, $e->errorCode );
+			// The message matters, not only the code: four other
+			// RollbackUnavailable throws sit earlier in planChange(), so an
+			// errorCode assertion alone would pass if the empty-promise guard
+			// were removed and an earlier gate refused for its own reason.
+			$this->assertStringContainsString( 'holds no value', $e->getMessage() );
 		}
 	}
 
@@ -980,6 +985,7 @@ final class ContentRollbackApplyTest extends TestCase {
 			$this->fail( 'Expected OperationException' );
 		} catch ( OperationException $e ) {
 			$this->assertSame( ErrorCode::RollbackUnavailable, $e->errorCode );
+			$this->assertStringContainsString( 'holds no value', $e->getMessage() );
 		}
 	}
 
