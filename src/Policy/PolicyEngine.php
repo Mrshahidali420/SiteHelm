@@ -40,7 +40,8 @@ final class PolicyEngine {
 	 * operation declaring it would have been granted term-assignment authority
 	 * on the strength of a capability that means something else. With no row
 	 * the fallback branch below asks WordPress for `assign_terms` as a
-	 * primitive, which no role holds, so a mistaken declaration fails closed.
+	 * primitive, which no default WordPress role holds, so a mistaken
+	 * declaration fails closed.
 	 * An operation that genuinely needs it checks the taxonomy's own
 	 * capability inside `planChange()`.
 	 */

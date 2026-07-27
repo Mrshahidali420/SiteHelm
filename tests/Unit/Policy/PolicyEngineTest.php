@@ -169,8 +169,19 @@ final class PolicyEngineTest extends TestCase {
 	 * pins the removal rather than merely observing a refusal.
 	 */
 	public function test_edit_posts_does_not_substitute_for_assign_terms(): void {
+		// Captured so the refusal is pinned to the capability actually checked.
+		// Without this the test passes for ANY capability other than edit_posts,
+		// and the message assertion below pins only the declared string, not the
+		// checked one — so a future substitution to some third capability would
+		// still be refused here and still be wrong.
+		$received = [];
+
 		Functions\when( 'user_can' )->alias(
-			static fn( int $user, string $capability, ...$args ): bool => 'edit_posts' === $capability
+			static function ( int $user, string $capability, ...$args ) use ( &$received ): bool {
+				$received[] = $capability;
+
+				return 'edit_posts' === $capability;
+			}
 		);
 
 		try {
@@ -182,6 +193,7 @@ final class PolicyEngineTest extends TestCase {
 		} catch ( OperationException $e ) {
 			$this->assertSame( ErrorCode::Forbidden, $e->errorCode );
 			$this->assertStringContainsString( 'assign_terms', $e->getMessage() );
+			$this->assertSame( [ 'assign_terms' ], $received );
 		}
 	}
 }
