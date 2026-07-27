@@ -15,7 +15,17 @@
 
 These two go first because they are the simplest, and because between them they exercise both pieces of new machinery every later write needs: **planning-time reference validation** (REQ-0017) and **a capability that depends on the payload** (REQ-0018).
 
-**The prep these two depend on is merged** (PR #6, `82313b5`): `ContentFields::DRAFT_LIKE_STATUSES` is a public constant at `src/Modules/Core/ContentFields.php:68`; `ContentTarget::snapshotOf()` records `post_status` and `post_name` via `ContentTarget::RESTORABLE_FIELDS` at `src/Modules/Core/ContentTarget.php:48-54`; and all three restore loops (`ContentTarget::restoreFields()` at `:198-202`, `ContentRollbackApply::planChange()` at `:195-199`, `ContentRollbackApply::applyChange()` at `:243-247`) gate on `array_key_exists` so an older stored snapshot restores only what it recorded.
+**The prep these two depend on is merged** (PR #6, `82313b5`): `ContentFields::DRAFT_LIKE_STATUSES` is a public constant at `src/Modules/Core/ContentFields.php:68`; `ContentTarget::snapshotOf()` records `post_status` and `post_name` via `ContentTarget::RESTORABLE_FIELDS` at `src/Modules/Core/ContentTarget.php:56-62`; and every restore loop gates on `array_key_exists` so an older stored snapshot restores only what it recorded.
+
+**Task 1 made that six loops, not three**, by adding a second field list — `ContentTarget::RESTORABLE_MEDIA_FIELDS` at `src/Modules/Core/ContentTarget.php:80` — for restorable values that are post meta rather than post columns, and therefore cannot be written by `wp_update_post()`. Current lines:
+
+| Loop | Columns (`RESTORABLE_FIELDS`) | Media (`RESTORABLE_MEDIA_FIELDS`) |
+|---|---|---|
+| `ContentTarget::restoreFields()` | `ContentTarget.php:230-234` | `ContentTarget.php:259-263` |
+| `ContentRollbackApply::planChange()` | `ContentRollbackApply.php:195-199` | `ContentRollbackApply.php:208-212` |
+| `ContentRollbackApply::applyChange()` | `ContentRollbackApply.php:256-260` | `ContentRollbackApply.php:262-266` |
+
+The three media loops gate on `array_key_exists` **and** `is_numeric`, because `(int) null` is `0` and a recorded `0` means "restore to no featured image" — so a key present with a null value would delete a live featured image and report the rollback verified. `restoreFields()` also skips `wp_update_post()` entirely when the recorded state held no column at all (`count( $update ) > 1`), since an ID-only update re-saves the row and fires `save_post` for a rollback that changed no column.
 
 ---
 

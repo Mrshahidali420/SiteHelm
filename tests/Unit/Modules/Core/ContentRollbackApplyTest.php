@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace SiteHelm\Tests\Unit\Modules\Core;
 
 use Brain\Monkey\Functions;
+use SiteHelm\Change\PlannedChange;
 use SiteHelm\Contracts\Domain;
 use SiteHelm\Contracts\ErrorCode;
 use SiteHelm\Contracts\Mode;
@@ -69,11 +70,23 @@ final class ContentRollbackApplyTest extends TestCase {
 		$this->writes          = [];
 		$this->thumbnailWrites = [];
 		$this->thumbnailId     = 0;
-		Functions\when( 'get_post_thumbnail_id' )->alias( fn(): int => $this->thumbnailId );
+		// Answers false rather than 0 when there is no thumbnail, exactly as
+		// WordPress does. See the matching note in ContentUpdateTest.
+		Functions\when( 'get_post_thumbnail_id' )->alias(
+			fn() => 0 === $this->thumbnailId ? false : $this->thumbnailId
+		);
 		Functions\when( 'set_post_thumbnail' )->alias(
 			function ( int $post_id, int $media_id ): bool {
 				$this->thumbnailWrites[] = [ 'set', $post_id, $media_id ];
 				$this->thumbnailId       = $media_id;
+
+				return true;
+			}
+		);
+		Functions\when( 'delete_post_thumbnail' )->alias(
+			function ( int $post_id ): bool {
+				$this->thumbnailWrites[] = [ 'delete', $post_id, 0 ];
+				$this->thumbnailId       = 0;
 
 				return true;
 			}
@@ -909,5 +922,54 @@ final class ContentRollbackApplyTest extends TestCase {
 		$this->assertSame( 'post:42', $this->operation->applyChange( $current, $planned, $this->makeContext() ) );
 		$this->assertSame( [ [ 'set', 42, 108 ] ], $this->thumbnailWrites );
 		$this->assertSame( [], $this->writes );
+	}
+
+	/**
+	 * A stored featured_media of JSON null must not be promised. `(int) null` is
+	 * 0, and a recorded 0 MEANS "restore to no featured image", so promising the
+	 * null as 0 would have the rollback offer — and then perform — the deletion of
+	 * a live featured image, reporting it verified.
+	 *
+	 * The recorded column is still promised, which is what keeps this a skip of
+	 * one unusable value rather than a refusal of the whole rollback.
+	 */
+	public function test_a_null_recorded_featured_media_is_not_promised(): void {
+		$restore_state = '{"featured_media":null,"post_id":42,"post_title":"Original title"}';
+		$this->queueSnapshot( [ 'restore_state' => $restore_state ], 2 );
+
+		$current = $this->operation->resolveTarget( [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+		$planned = $this->operation->planChange( $current, [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+
+		$this->assertSame( [ 'post_title' => 'Original title' ], $planned->afterFields );
+	}
+
+	/**
+	 * applyChange() carries its own is_numeric() gate rather than trusting
+	 * planChange() to have stripped the value. The two phases are separated by a
+	 * stored plan token, so applyChange() re-derives everything it writes; a
+	 * promise reaching it with a null media value must still not be turned into
+	 * the deletion that `(int) null` would make it.
+	 */
+	public function test_a_null_promised_featured_media_never_reaches_the_restore_state(): void {
+		$this->queueSnapshot( [], 2 );
+		$current = $this->operation->resolveTarget( [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+		$planned = new PlannedChange(
+			[
+				'rollbackRef' => self::REFERENCE,
+				'restore'     => [ 'post_title' => 'Original title' ],
+			],
+			[
+				'featured_media' => null,
+				'post_title'     => 'Original title',
+			],
+			ContentFields::FIELD_ORDER
+		);
+
+		$this->thumbnailId = 108;
+
+		$this->assertSame( 'post:42', $this->operation->applyChange( $current, $planned, $this->makeContext() ) );
+		$this->assertSame( [], $this->thumbnailWrites );
+		$this->assertSame( 108, $this->thumbnailId );
+		$this->assertSame( 'Original title', $this->writes[0]['post_title'] );
 	}
 }

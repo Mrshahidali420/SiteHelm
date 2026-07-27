@@ -201,8 +201,12 @@ final class ContentRollbackApply implements WriteOperation {
 		// as integers, so they are promised as integers: a string here would make
 		// the promise disagree with the read-back, which reports featured_media
 		// as an int, and a correct rollback would verify as adjusted.
+		// is_numeric() as well as array_key_exists(), because `(int) null` is 0 and
+		// a recorded 0 MEANS "restore to no featured image": promising a null as 0
+		// would have the rollback offer to delete a live featured image. A
+		// non-numeric recorded value is not something this restore may act on.
 		foreach ( ContentTarget::RESTORABLE_MEDIA_FIELDS as $field ) {
-			if ( array_key_exists( $field, $state ) ) {
+			if ( array_key_exists( $field, $state ) && is_numeric( $state[ $field ] ) ) {
 				$promised[ $field ] = (int) $state[ $field ];
 			}
 		}
@@ -256,7 +260,7 @@ final class ContentRollbackApply implements WriteOperation {
 		}
 
 		foreach ( ContentTarget::RESTORABLE_MEDIA_FIELDS as $field ) {
-			if ( array_key_exists( $field, $planned->afterFields ) ) {
+			if ( array_key_exists( $field, $planned->afterFields ) && is_numeric( $planned->afterFields[ $field ] ) ) {
 				$restore_state[ $field ] = (int) $planned->afterFields[ $field ];
 			}
 		}
