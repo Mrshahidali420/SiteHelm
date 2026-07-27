@@ -120,6 +120,26 @@ and response recorded verbatim.
   covering both branches of the write union. Validation at the dispatcher's
   return point is **required before V1 public release**, because that is the
   point at which the declared schema becomes a promise to third-party clients.
+- **The I6 mitigation was weaker than believed, and one operation still escapes
+  it entirely.** Phase 3b part 1 found that `assertConformsToOutputSchema` never
+  checked the shape of array *items*: with `items.type => object` the match fell
+  through to `default => true`, so every element of every array passed
+  unconditionally. Fixed there by delegating items to the existing
+  `conformsToSchema()` helper, proven by mutation rather than by assertion. But
+  the fix only engages where a schema declares `properties` on its items, and
+  **`audit-list` declares its entries as a bare `[ 'type' => 'object' ]`**:
+  `AuditRead::entry()` builds eleven members — `auditRef`, `correlationId`,
+  `actor`, `client`, `operation`, `target`, `planFingerprint`, `outcome`,
+  `summary`, `rollbackRef`, `timestamp` — that its schema describes nowhere. It
+  is therefore the one registered operation whose payload shape nothing checks,
+  and declaring those members is a contract change that must land before the
+  runtime validation above, not with it.
+- **An optional output member can never be pinned by conformance alone.**
+  `taxonomy-list`'s `unreadableTaxonomies` is declared but not `required`, and a
+  conformance test correctly passes when it is absent — including when it is
+  absent because the code that populates it was deleted. Optional members need an
+  explicit content assertion; whatever runtime validation ships must not be
+  mistaken for one.
 - **`OperationError` has no field for a recovery handle**, so a caller meeting
   `verification_failed` cannot self-serve a rollback reference and must ask an
   administrator to locate the record by `correlationId`. Recorded interpretation

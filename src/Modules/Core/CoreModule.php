@@ -371,9 +371,9 @@ final class CoreModule implements IntegrationModule {
 						],
 						'limit'                => [ 'type' => 'integer' ],
 						'offset'               => [ 'type' => 'integer' ],
-						// There is no top-level total: with several taxonomies
-						// each having its own term count one total is ambiguous,
-						// so termTotal sits inside each taxonomy instead.
+						// Deliberately absent from this schema: a top-level total.
+						// With several taxonomies each carrying its own term count,
+						// one total is ambiguous; termTotal sits inside each taxonomy.
 						'unreadableTaxonomies' => [
 							'type'        => 'array',
 							'items'       => [ 'type' => 'string' ],
