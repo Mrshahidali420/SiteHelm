@@ -65,12 +65,18 @@ That last point is the sharp edge: a payload naming three keys, one of which is 
 
 REQ-0019 is the only requirement whose rollback policy is `Required`, and no operation has ever declared it. `OperationDefinition` forces `SnapshotPolicy::Required` alongside it.
 
-Its acceptance evidence is "post present in WordPress trash after call **and restored to prior status after rollback call**". But `ContentTarget::restoreState()` captures exactly `post_id`, `post_title`, `post_content`, `post_excerpt` — **no `post_status`**. As it stands, the rollback REQ-0019 requires cannot be performed.
+Its acceptance evidence is "post present in WordPress trash after call **and restored to prior status after rollback call**". But `ContentTarget::snapshotOf()` captures exactly `post_id`, `post_title`, `post_content`, `post_excerpt` — **no `post_status`**. As it stands, the rollback REQ-0019 requires cannot be performed.
 
 The restore state widens to include `post_status` and `post_name`, and `restoreFields()` rewrites whichever of the recorded fields are present. Two consequences, both deliberate:
 
 - **Older stored snapshots lack the new keys.** `restoreFields()` must restore only keys actually present rather than assuming a fixed set, so a snapshot captured before this change still restores what it recorded. This is backward compatibility with rows already in a live database, not defensive coding.
 - **`content-update`'s rollback becomes more faithful too**, since it now records status and slug. That is a behaviour change to an existing operation and must be called out in its own commit with its own test, not smuggled in.
+
+**Amended 2026-07-27, during planning — this decision was incomplete as written, and the omission hid a data-loss bug.** The fixed field list is kept in **two** places, not one: `ContentRollbackApply` carries its own `private const RESTORED_FIELDS` and rebuilds the restore state from it in `applyChange()`. Widening `ContentTarget` alone would record `post_status` and `post_name` into every new snapshot and never write either back, so the claim above that `content-update`'s rollback "becomes more faithful" would simply be false.
+
+Worse, the obvious fix is dangerous. Both loops read with `?? ''`, so pointing them at the widened list re-materializes the absent keys as `''` for snapshot rows already stored in live databases — and `wp_update_post()` resolves an empty `post_status` to `draft`. That would **un-publish a live post during a rollback that promised only to restore its text, and report success.** The present-keys-only requirement therefore has to hold in three places, each with its own test.
+
+`src/Modules/Core/ContentRollbackApply.php` belongs in the Files table below and was missing from it.
 
 **Restore is explicit, not `wp_untrash_post()`.** WordPress stores the pre-trash status in `_wp_trash_meta_status` and `wp_untrash_post()` reads it, which is the platform-native path — but it depends on meta another plugin can clear, and it restores a status this plugin never recorded or promised. The engine's contract is *restore the state the snapshot recorded*; honouring that literally is what makes rollback auditable. The trade is that explicit restoration skips the `untrash_post` action other plugins may hook, and that is recorded as a known limitation rather than hidden.
 
@@ -112,7 +118,8 @@ REQ-0017 ships anyway. `content-get` already returns `featuredMedia`, so an id i
 | `src/Modules/Core/ContentStatusSet.php` | **New.** REQ-0018. |
 | `src/Modules/Core/ContentTrash.php` | **New.** REQ-0019. |
 | `src/Modules/Core/ContentFields.php` | `DRAFT_LIKE_STATUSES` promoted to public. |
-| `src/Modules/Core/ContentTarget.php` | Restore state gains `post_status` and `post_name`; `restoreFields()` restores present keys only. |
+| `src/Modules/Core/ContentTarget.php` | `snapshotOf()` gains `post_status` and `post_name`; `restoreFields()` restores present keys only. |
+| `src/Modules/Core/ContentRollbackApply.php` | Its second fixed list, `RESTORED_FIELDS`, must go; the rollback path must write back the widened state and read present keys only. |
 | `src/Modules/Core/ContentCreate.php` | Consumes the promoted constant. |
 | `src/Policy/PolicyEngine.php` | `assign_terms` row removed from `META_CAPABILITY_MAP`. |
 | `src/Modules/Core/CoreModule.php` | Five additive registrations in the table. |
