@@ -187,8 +187,10 @@ final class ContentFieldsTest extends TestCase {
 	 * would let a caller who may only draft create private content.
 	 */
 	public function test_draft_like_statuses_are_exactly_draft_and_pending(): void {
+		// One assertion, deliberately. assertSame on the exact array subsumes any
+		// assertNotContains against it — PHPUnit aborts the method here, so those
+		// lines could never fail and would only inflate the assertion count while
+		// reading as coverage. The docblock above carries the reason instead.
 		$this->assertSame( [ 'draft', 'pending' ], ContentFields::DRAFT_LIKE_STATUSES );
-		$this->assertNotContains( 'private', ContentFields::DRAFT_LIKE_STATUSES );
-		$this->assertNotContains( 'publish', ContentFields::DRAFT_LIKE_STATUSES );
 	}
 }
