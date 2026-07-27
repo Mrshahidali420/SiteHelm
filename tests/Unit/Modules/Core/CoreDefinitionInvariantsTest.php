@@ -145,9 +145,17 @@ final class CoreDefinitionInvariantsTest extends TestCase {
 	public function test_every_write_declares_the_shared_output_schema_rather_than_an_inlined_copy(): void {
 		$registry = $this->registryWithCoreModule();
 
+		// Derived from the catalog rather than from OPERATION_IDS. Filtering the
+		// hardcoded list would make the count below unable to fail: a fourth
+		// write registered under a new id would never enter $writes, so the
+		// assertion would keep passing while claiming to have noticed. Do not
+		// simplify this back to registeredDefinitions().
 		$writes = array_values(
 			array_filter(
-				$this->registeredDefinitions( $registry ),
+				array_map(
+					static fn( string $id ): OperationDefinition => $registry->definition( $id ),
+					$this->catalogVisibleIds( $registry )
+				),
 				static fn( OperationDefinition $d ): bool => $registry->hasWriteOperation( $d->id )
 			)
 		);
