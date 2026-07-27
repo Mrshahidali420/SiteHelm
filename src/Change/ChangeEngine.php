@@ -293,8 +293,9 @@ final class ChangeEngine {
 
 		// planChange() runs again here so the apply executes exactly what was
 		// previewed, and so every guard inside it is re-evaluated. The payload is
-		// the one the CLIENT re-supplied on this call; the digest comparison below
-		// is what proves it is the payload the preview was generated from.
+		// the one the CLIENT re-supplied on this call; the digest comparison in
+		// assertPayloadMatches() below is what proves it is the payload the
+		// preview was generated from.
 		$planned = $operation->planChange( $current, $payload, $context );
 
 		// The fingerprint is checked first, and deliberately. A concurrent edit

@@ -212,6 +212,18 @@ final class PlanAdmissionTest extends TestCase {
 		$this->assertRefusedAsStale( fn(): array => $this->findValidPlan( [], false ) );
 	}
 
+	public function test_a_replayed_plan_is_refused_as_stale(): void {
+		// find() selects on token_hash alone and does NOT filter consumed_at, so
+		// this PHP term is the only thing refusing a replayed token at the
+		// gate's first step. consume()'s `AND consumed_at IS NULL` catches the
+		// same case, but one step later and as a SQL predicate rather than a PHP
+		// condition, so either layer can be edited without the other. Without
+		// the term here a spent token would run resolveTarget() and planChange()
+		// — reads, so nothing mutates, but real work for a token already known
+		// to be spent.
+		$this->assertRefusedAsStale( fn(): array => $this->findValidPlan( [ 'consumed_at' => 1_800_000_050 ] ) );
+	}
+
 	public function test_an_expired_plan_is_refused_as_stale(): void {
 		// The comparison is `<=`, so a plan expiring exactly on the request
 		// second is already gone. Nothing else about this row differs, so the

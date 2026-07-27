@@ -165,9 +165,9 @@ final class PlanStore {
 	 * token the winner sees 1 and the loser sees 0. Reading first and writing
 	 * second would race; this does not.
 	 *
-	 * The expiry condition is defence in depth. ChangeEngine::apply() already
-	 * refuses an expired plan with the shared stale_plan exception before it
-	 * reaches this method, and does so at least as strictly (it compares
+	 * The expiry condition is defence in depth. PlanAdmission::findValidPlan()
+	 * already refuses an expired plan with the shared stale_plan exception
+	 * before it reaches this method, and does so at least as strictly (it compares
 	 * `expires_at <= requestTime` against the same clock). Repeating the check
 	 * here keeps a stale row that outlived the prune grace from binding for a
 	 * direct caller that forgot it. This method still reports failure the same
