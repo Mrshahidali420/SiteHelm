@@ -10,9 +10,17 @@ declare(strict_types=1);
 namespace SiteHelm\Modules\Core;
 
 use SiteHelm\Audit\AuditRecorder;
+use SiteHelm\Contracts\Domain;
 use SiteHelm\Contracts\ErrorCode;
+use SiteHelm\Contracts\Mode;
+use SiteHelm\Contracts\ModuleId;
 use SiteHelm\Contracts\OperationContext;
+use SiteHelm\Contracts\OperationDefinition;
 use SiteHelm\Contracts\OperationException;
+use SiteHelm\Contracts\PreviewPolicy;
+use SiteHelm\Contracts\Risk;
+use SiteHelm\Contracts\RollbackPolicy;
+use SiteHelm\Contracts\SnapshotPolicy;
 use SiteHelm\Storage\AuditStore;
 use SiteHelm\Storage\Installer;
 use stdClass;
@@ -29,6 +37,92 @@ use stdClass;
  * @package SiteHelm
  */
 final class AuditRead {
+
+	/**
+	 * The operation's registered definition, beside the code that produces
+	 * the payload. Static because a definition is a constant declaration: it
+	 * takes no dependencies, and the registry reads it without constructing
+	 * the operation.
+	 *
+	 * @return OperationDefinition The definition registered for audit-list.
+	 */
+	public static function definition(): OperationDefinition {
+		return new OperationDefinition(
+			id: 'audit-list',
+			domain: Domain::System,
+			mode: Mode::Read,
+			description: 'List recorded change events with actor, MCP client, operation, target, plan fingerprint, timestamp, and outcome.',
+			inputSchema: [
+				'type'                 => 'object',
+				'properties'           => [
+					'operationId'   => [
+						'type'        => 'string',
+						'maxLength'   => 64,
+						'description' => 'Return only events for this operation identifier.',
+					],
+					'correlationId' => [
+						'type'        => 'string',
+						'maxLength'   => 64,
+						'description' => 'Return only events for this request correlation identifier.',
+					],
+					'actorId'       => [
+						'type'        => 'integer',
+						'minimum'     => 1,
+						'description' => 'Return only events performed by this WordPress user.',
+					],
+					'since'         => [
+						'type'        => 'integer',
+						'minimum'     => 0,
+						'description' => 'Return only events recorded at or after this UTC instant.',
+					],
+					'until'         => [
+						'type'        => 'integer',
+						'minimum'     => 0,
+						'description' => 'Return only events recorded at or before this UTC instant.',
+					],
+					'limit'         => [
+						'type'        => 'integer',
+						'minimum'     => 1,
+						'description' => 'Page size, clamped to 100.',
+					],
+					'offset'        => [
+						'type'        => 'integer',
+						'minimum'     => 0,
+						'description' => 'Events to skip before the page begins.',
+					],
+				],
+				'additionalProperties' => false,
+			],
+			outputSchema: [
+				'type'                 => 'object',
+				'properties'           => [
+					'entries' => [
+						'type'  => 'array',
+						'items' => [ 'type' => 'object' ],
+					],
+					'total'   => [ 'type' => 'integer' ],
+					'limit'   => [ 'type' => 'integer' ],
+					'offset'  => [ 'type' => 'integer' ],
+				],
+				'additionalProperties' => false,
+			],
+			schemaVersion: 1,
+			requiredCapabilities: [ 'manage_options' ],
+			risk: Risk::Low,
+			isReadOnly: true,
+			isDestructive: false,
+			isIdempotent: true,
+			previewPolicy: PreviewPolicy::NotApplicable,
+			snapshotPolicy: SnapshotPolicy::NotApplicable,
+			rollbackPolicy: RollbackPolicy::NotApplicable,
+			module: ModuleId::Core,
+			supportedVersions: [ 'wordpress' => '>=' . SITEHELM_MIN_WP ],
+			example: [
+				'operation' => 'audit-list',
+				'arguments' => [ 'limit' => 20 ],
+			],
+		);
+	}
 
 	/**
 	 * The page size used when the request names none.
