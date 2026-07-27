@@ -476,8 +476,8 @@ final class ContentCreateTest extends TestCase {
 	}
 
 	/**
-	 * Covers the other half of the `oneOf` union: WRITE_OUTPUT_SCHEMA's plan
-	 * branch, which the apply-phase test above never exercises.
+	 * Covers the other half of the `oneOf` union: WriteOutputSchema::schema()'s
+	 * plan branch, which the apply-phase test above never exercises.
 	 */
 	public function test_the_plan_phase_payload_conforms_to_the_declared_output_schema(): void {
 		Functions\when( 'get_bloginfo' )->justReturn( '6.8.1' );
