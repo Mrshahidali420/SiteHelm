@@ -35,21 +35,13 @@ final class ContentListTest extends TestCase {
 	private int $foundPosts = 9;
 
 	/**
-	 * WP_Query is a class, so Brain Monkey cannot fake it. The double stands in
-	 * under the global name instead, which is what makes the operation's real
-	 * `new WP_Query( … )` observable without loading WordPress.
+	 * WP_Query is a class, so Brain Monkey cannot fake it. FakeWpQuery stands in
+	 * under the global name — installed process-wide by tests/bootstrap.php and
+	 * reset before every test by TestCase — which is what makes the operation's
+	 * real `new WP_Query( … )` observable without loading WordPress.
 	 */
-	public static function setUpBeforeClass(): void {
-		parent::setUpBeforeClass();
-
-		if ( ! class_exists( 'WP_Query', false ) ) {
-			class_alias( FakeWpQuery::class, 'WP_Query' );
-		}
-	}
-
 	protected function setUp(): void {
 		parent::setUp();
-		FakeWpQuery::reset();
 		$this->handler = new ContentList();
 	}
 
@@ -290,6 +282,18 @@ final class ContentListTest extends TestCase {
 		$args = $this->capturedQueryArgs( [ 'type' => 'post' ] );
 
 		$this->assertTrue( $args['ignore_sticky_posts'] );
+	}
+
+	/**
+	 * The summary carries neither meta nor terms, and the per-item edit_post
+	 * check reads the post row alone, so the two cache-priming queries WP_Query
+	 * runs by default would cost two queries per call for values nothing reads.
+	 */
+	public function test_the_query_primes_no_meta_or_term_caches(): void {
+		$args = $this->capturedQueryArgs( [ 'type' => 'post' ] );
+
+		$this->assertFalse( $args['update_post_meta_cache'] );
+		$this->assertFalse( $args['update_post_term_cache'] );
 	}
 
 	/**
