@@ -9,9 +9,17 @@ declare(strict_types=1);
 
 namespace SiteHelm\Modules\Core;
 
+use SiteHelm\Contracts\Domain;
 use SiteHelm\Contracts\ErrorCode;
+use SiteHelm\Contracts\Mode;
+use SiteHelm\Contracts\ModuleId;
 use SiteHelm\Contracts\OperationContext;
+use SiteHelm\Contracts\OperationDefinition;
 use SiteHelm\Contracts\OperationException;
+use SiteHelm\Contracts\PreviewPolicy;
+use SiteHelm\Contracts\Risk;
+use SiteHelm\Contracts\RollbackPolicy;
+use SiteHelm\Contracts\SnapshotPolicy;
 use WP_Query;
 
 /**
@@ -36,6 +44,104 @@ use WP_Query;
  * @package SiteHelm
  */
 final class ContentList {
+
+	/**
+	 * The operation's registered definition, beside the code that produces
+	 * the payload. Static because a definition is a constant declaration: it
+	 * takes no dependencies, and the registry reads it without constructing
+	 * the operation.
+	 *
+	 * @return OperationDefinition The definition registered for content-list.
+	 */
+	public static function definition(): OperationDefinition {
+		return new OperationDefinition(
+			id: 'content-list',
+			domain: Domain::Content,
+			mode: Mode::Read,
+			description: 'List summaries of content items matching a type, status, search term, or parent, most recently modified first, limited to the items the caller may edit.',
+			inputSchema: [
+				'type'                 => 'object',
+				'properties'           => [
+					'type'   => [
+						'type'        => 'string',
+						'maxLength'   => 32,
+						'description' => 'A public content type this site registers, for example post or page. Defaults to post.',
+					],
+					'status' => [
+						'type'        => 'string',
+						'enum'        => [ 'draft', 'pending', 'private', 'publish', 'trash' ],
+						'description' => 'Return only items in this status. Defaults to every status except trash.',
+					],
+					'search' => [
+						'type'        => 'string',
+						'maxLength'   => 255,
+						'description' => 'Return only items matching this search term.',
+					],
+					'parent' => [
+						'type'        => 'integer',
+						'minimum'     => 0,
+						'description' => 'Return only children of this content item; 0 returns top-level items.',
+					],
+					'limit'  => [
+						'type'        => 'integer',
+						'minimum'     => 1,
+						'description' => 'Page size, clamped to 100.',
+					],
+					'offset' => [
+						'type'        => 'integer',
+						'minimum'     => 0,
+						'description' => 'Items to skip before the page begins.',
+					],
+				],
+				'additionalProperties' => false,
+			],
+			outputSchema: [
+				'type'                 => 'object',
+				'properties'           => [
+					'items'  => [
+						'type'  => 'array',
+						'items' => [
+							'type'                 => 'object',
+							'properties'           => [
+								'id'          => [ 'type' => 'integer' ],
+								'type'        => [ 'type' => 'string' ],
+								'status'      => [ 'type' => 'string' ],
+								'title'       => [ 'type' => 'string' ],
+								'slug'        => [ 'type' => 'string' ],
+								'modifiedGmt' => [ 'type' => 'string' ],
+								'parent'      => [ 'type' => 'integer' ],
+							],
+							'required'             => [ 'id', 'type', 'status', 'title', 'slug', 'modifiedGmt', 'parent' ],
+							'additionalProperties' => false,
+						],
+					],
+					'total'  => [ 'type' => 'integer' ],
+					'limit'  => [ 'type' => 'integer' ],
+					'offset' => [ 'type' => 'integer' ],
+				],
+				'required'             => [ 'items', 'total', 'limit', 'offset' ],
+				'additionalProperties' => false,
+			],
+			schemaVersion: 1,
+			requiredCapabilities: [ 'edit_posts' ],
+			risk: Risk::Low,
+			isReadOnly: true,
+			isDestructive: false,
+			isIdempotent: true,
+			previewPolicy: PreviewPolicy::NotApplicable,
+			snapshotPolicy: SnapshotPolicy::NotApplicable,
+			rollbackPolicy: RollbackPolicy::NotApplicable,
+			module: ModuleId::Core,
+			supportedVersions: [ 'wordpress' => '>=' . SITEHELM_MIN_WP ],
+			example: [
+				'operation' => 'content-list',
+				'arguments' => [
+					'type'  => 'post',
+					'limit' => 20,
+				],
+			],
+		);
+	}
 
 	/**
 	 * The largest page a caller may request, matching audit-list's clamp.

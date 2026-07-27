@@ -9,9 +9,17 @@ declare(strict_types=1);
 
 namespace SiteHelm\Modules\Core;
 
+use SiteHelm\Contracts\Domain;
 use SiteHelm\Contracts\ErrorCode;
+use SiteHelm\Contracts\Mode;
+use SiteHelm\Contracts\ModuleId;
 use SiteHelm\Contracts\OperationContext;
+use SiteHelm\Contracts\OperationDefinition;
 use SiteHelm\Contracts\OperationException;
+use SiteHelm\Contracts\PreviewPolicy;
+use SiteHelm\Contracts\Risk;
+use SiteHelm\Contracts\RollbackPolicy;
+use SiteHelm\Contracts\SnapshotPolicy;
 
 /**
  * REQ-0012: taxonomy and term discovery. A client learns which taxonomies a
@@ -40,6 +48,107 @@ use SiteHelm\Contracts\OperationException;
  * @package SiteHelm
  */
 final class TaxonomyList {
+
+	/**
+	 * The operation's registered definition, beside the code that produces
+	 * the payload. Static because a definition is a constant declaration: it
+	 * takes no dependencies, and the registry reads it without constructing
+	 * the operation.
+	 *
+	 * @return OperationDefinition The definition registered for taxonomy-list.
+	 */
+	public static function definition(): OperationDefinition {
+		return new OperationDefinition(
+			id: 'taxonomy-list',
+			domain: Domain::Content,
+			mode: Mode::Read,
+			description: 'List the public taxonomies of a content type with a page of their terms, reporting for each whether the caller may assign its terms.',
+			inputSchema: [
+				'type'                 => 'object',
+				'properties'           => [
+					'type'   => [
+						'type'        => 'string',
+						'maxLength'   => 32,
+						'description' => 'A public content type this site registers, for example post or page.',
+					],
+					'limit'  => [
+						'type'        => 'integer',
+						'minimum'     => 1,
+						'description' => 'Terms returned per taxonomy, clamped to 100.',
+					],
+					'offset' => [
+						'type'        => 'integer',
+						'minimum'     => 0,
+						'description' => 'Terms to skip within each taxonomy before the page begins.',
+					],
+				],
+				'required'             => [ 'type' ],
+				'additionalProperties' => false,
+			],
+			outputSchema: [
+				'type'                 => 'object',
+				'properties'           => [
+					'taxonomies'           => [
+						'type'  => 'array',
+						'items' => [
+							'type'                 => 'object',
+							'properties'           => [
+								'name'           => [ 'type' => 'string' ],
+								'label'          => [ 'type' => 'string' ],
+								'hierarchical'   => [ 'type' => 'boolean' ],
+								'mayAssignTerms' => [ 'type' => 'boolean' ],
+								'termTotal'      => [ 'type' => 'integer' ],
+								'terms'          => [
+									'type'  => 'array',
+									'items' => [
+										'type'       => 'object',
+										'properties' => [
+											'id'     => [ 'type' => 'integer' ],
+											'name'   => [ 'type' => 'string' ],
+											'slug'   => [ 'type' => 'string' ],
+											'parent' => [ 'type' => 'integer' ],
+											'count'  => [ 'type' => 'integer' ],
+										],
+										'required'   => [ 'id', 'name', 'slug', 'parent', 'count' ],
+										'additionalProperties' => false,
+									],
+								],
+							],
+							'required'             => [ 'name', 'label', 'hierarchical', 'mayAssignTerms', 'termTotal', 'terms' ],
+							'additionalProperties' => false,
+						],
+					],
+					'limit'                => [ 'type' => 'integer' ],
+					'offset'               => [ 'type' => 'integer' ],
+					// Deliberately absent from this schema: a top-level total.
+					// With several taxonomies each carrying its own term count,
+					// one total is ambiguous; termTotal sits inside each taxonomy.
+					'unreadableTaxonomies' => [
+						'type'        => 'array',
+						'items'       => [ 'type' => 'string' ],
+						'description' => 'Names of taxonomies whose terms could not be read, matching taxonomies[].name. Their terms and termTotal are not trustworthy. Absent when every taxonomy was read successfully.',
+					],
+				],
+				'required'             => [ 'taxonomies', 'limit', 'offset' ],
+				'additionalProperties' => false,
+			],
+			schemaVersion: 1,
+			requiredCapabilities: [ 'edit_posts' ],
+			risk: Risk::Low,
+			isReadOnly: true,
+			isDestructive: false,
+			isIdempotent: true,
+			previewPolicy: PreviewPolicy::NotApplicable,
+			snapshotPolicy: SnapshotPolicy::NotApplicable,
+			rollbackPolicy: RollbackPolicy::NotApplicable,
+			module: ModuleId::Core,
+			supportedVersions: [ 'wordpress' => '>=' . SITEHELM_MIN_WP ],
+			example: [
+				'operation' => 'taxonomy-list',
+				'arguments' => [ 'type' => 'post' ],
+			],
+		);
+	}
 
 	/**
 	 * The largest page of terms a caller may request, matching content-list's
