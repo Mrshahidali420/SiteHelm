@@ -127,6 +127,11 @@ final class ContentList {
 	 * unpaginated match count comes from the query's own found_posts rather than
 	 * a second counting query.
 	 *
+	 * The two cache-priming queries WP_Query runs by default are switched off:
+	 * the summary carries neither meta nor terms, and map_meta_cap( 'edit_post' )
+	 * reads the post row alone, so priming them would cost two extra queries per
+	 * call for values nothing reads.
+	 *
 	 * @param string               $type   The resolved content type.
 	 * @param array<string, mixed> $input  Validated filters.
 	 * @param int                  $limit  The clamped page size.
@@ -139,13 +144,15 @@ final class ContentList {
 		$search = (string) ( $input['search'] ?? '' );
 
 		$args = [
-			'post_type'           => $type,
-			'post_status'         => '' === $status ? self::DEFAULT_STATUSES : $status,
-			'orderby'             => 'modified',
-			'order'               => 'DESC',
-			'posts_per_page'      => $limit,
-			'offset'              => $offset,
-			'ignore_sticky_posts' => true,
+			'post_type'              => $type,
+			'post_status'            => '' === $status ? self::DEFAULT_STATUSES : $status,
+			'orderby'                => 'modified',
+			'order'                  => 'DESC',
+			'posts_per_page'         => $limit,
+			'offset'                 => $offset,
+			'ignore_sticky_posts'    => true,
+			'update_post_meta_cache' => false,
+			'update_post_term_cache' => false,
 		];
 
 		if ( '' !== $search ) {
