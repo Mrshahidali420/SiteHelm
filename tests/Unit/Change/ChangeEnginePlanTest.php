@@ -14,6 +14,7 @@ use SiteHelm\Audit\AuditRecorder;
 use SiteHelm\Audit\AuditRedactor;
 use SiteHelm\Change\ChangeEngine;
 use SiteHelm\Change\PayloadNormalizer;
+use SiteHelm\Change\PlanAdmission;
 use SiteHelm\Change\PlannedChange;
 use SiteHelm\Change\PreviewRenderer;
 use SiteHelm\Change\SnapshotLifecycle;
@@ -67,14 +68,14 @@ final class ChangeEnginePlanTest extends TestCase {
 		$normalizer      = new PayloadNormalizer();
 		$this->engine    = new ChangeEngine(
 			new PlanStore(),
-			new SnapshotStore(),
 			new AuditRecorder( new AuditStore(), new AuditRedactor() ),
 			$normalizer,
 			new StateFingerprint( $normalizer ),
 			new PreviewRenderer(),
 			new Installer(),
 			new WriteVerifier( $normalizer ),
-			new SnapshotLifecycle( new SnapshotStore(), $normalizer )
+			new SnapshotLifecycle( new SnapshotStore(), $normalizer ),
+			new PlanAdmission( new PlanStore(), $normalizer, new StateFingerprint( $normalizer ) )
 		);
 		$this->operation = new StubWriteOperation();
 	}
