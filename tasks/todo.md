@@ -114,6 +114,26 @@ and response recorded verbatim.
 
 ### 4. Open items carried forward
 
+- **The gateway's generic failure handler discards the correlation id it holds.**
+  `src/Gateway/McpServer.php:191`'s `catch ( Throwable )` passes the literal
+  `'unresolved'` where the `OperationException` branch two lines above passes
+  `$context->correlationId`. So for any failure that is not an
+  `OperationException`, the envelope cannot be tied to the server-side log entry
+  that its own remediation text tells the operator to look up — and that is the
+  class of failure where the operator most needs the link, because the envelope
+  deliberately carries no detail. It affects **every dispatcher equally**, not
+  one module. The fix is one line and touches no module, but it is a gateway
+  change and wants its own test, so it is recorded rather than smuggled into a
+  module branch. **Do it before the remaining three core writes land**, since
+  every one of them can reach that handler. Found while closing an unrelated
+  escape in `ContentRollbackApply::planChange()`.
+- **`ErrorCode::ExecutionFailed` is declared retryable and
+  `RollbackUnavailable` is not** (`src/Contracts/ErrorCode.php:56`). That is
+  correct, and it is why the wrong error code escaping to a client is worse than
+  it looks: a generic handler reporting `execution_failed` tells the client to
+  retry an operation that can never succeed. This product's primary client is a
+  language model, which will retry. Recorded as context for the item above, not
+  as a defect in the enum.
 - **Runtime `outputSchema` validation is deferred** per recorded interpretation I6.
   Phase 2 shipped none and Phase 3a adds none; the interim mitigation is a
   per-operation conformance test for each of the five registered operations,
