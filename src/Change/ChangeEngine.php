@@ -62,7 +62,6 @@ final class ChangeEngine {
 	 * Constructs the engine over its collaborators.
 	 *
 	 * @param PlanStore         $plans       Pending plan storage.
-	 * @param SnapshotStore     $snapshots   Rollback snapshot storage.
 	 * @param AuditRecorder     $audit       Audit record lifecycle.
 	 * @param PayloadNormalizer $normalizer  Canonical form and hashing.
 	 * @param StateFingerprint  $fingerprint Target-state fingerprinting.
@@ -70,10 +69,10 @@ final class ChangeEngine {
 	 * @param Installer         $installer   Storage availability probe.
 	 * @param WriteVerifier     $verifier    Post-write state classification.
 	 * @param SnapshotLifecycle $lifecycle   Snapshot eligibility, capture, and compensation.
+	 * @param PlanAdmission     $admission   Whether a stored plan may be applied.
 	 */
 	public function __construct(
 		private readonly PlanStore $plans,
-		private readonly SnapshotStore $snapshots,
 		private readonly AuditRecorder $audit,
 		private readonly PayloadNormalizer $normalizer,
 		private readonly StateFingerprint $fingerprint,
@@ -81,6 +80,7 @@ final class ChangeEngine {
 		private readonly Installer $installer,
 		private readonly WriteVerifier $verifier,
 		private readonly SnapshotLifecycle $lifecycle,
+		private readonly PlanAdmission $admission,
 	) {
 	}
 
@@ -93,18 +93,20 @@ final class ChangeEngine {
 	 * @return self The default engine.
 	 */
 	public static function create(): self {
-		$normalizer = new PayloadNormalizer();
+		$normalizer  = new PayloadNormalizer();
+		$plans       = new PlanStore();
+		$fingerprint = new StateFingerprint( $normalizer );
 
 		return new self(
-			new PlanStore(),
-			new SnapshotStore(),
+			$plans,
 			new AuditRecorder( new AuditStore(), new AuditRedactor() ),
 			$normalizer,
-			new StateFingerprint( $normalizer ),
+			$fingerprint,
 			new PreviewRenderer(),
 			new Installer(),
 			new WriteVerifier( $normalizer ),
-			new SnapshotLifecycle( new SnapshotStore(), $normalizer )
+			new SnapshotLifecycle( new SnapshotStore(), $normalizer ),
+			new PlanAdmission( $plans, $normalizer, $fingerprint )
 		);
 	}
 
@@ -284,22 +286,10 @@ final class ChangeEngine {
 		$this->require_storage();
 
 		$digest = PlanStore::digest( $planToken );
-		$row    = $this->plans->find( $digest );
 
-		if ( null === $row
-			|| null !== $row['consumed_at']
-			|| (int) $row['expires_at'] <= $context->requestTime
-			|| (string) $row['site_id'] !== $context->siteId
-			|| (int) $row['user_id'] !== $context->userId
-			|| (string) $row['operation_id'] !== $definition->id
-			|| (int) $row['schema_version'] !== $definition->schemaVersion ) {
-			throw $this->stale_plan();
-		}
-
+		$row     = $this->admission->findValidPlan( $digest, $definition, $context );
 		$current = $operation->resolveTarget( $payload, $context );
-		if ( (string) $row['target_key'] !== $current->targetKey ) {
-			throw $this->stale_plan();
-		}
+		$this->admission->assertTargetMatches( $row, $current );
 
 		// planChange() runs again here so the apply executes exactly what was
 		// previewed, and so every guard inside it is re-evaluated. The payload is
@@ -311,21 +301,9 @@ final class ChangeEngine {
 		// invalidates both this and the payload hash at once, and the contract
 		// names that case `conflict`; checking the payload first would answer
 		// `stale_plan` for a situation the contract has a different code for.
-		if ( (string) $row['state_fingerprint'] !== $this->fingerprint->compute( $current, $context ) ) {
-			throw new OperationException(
-				ErrorCode::Conflict,
-				'The target changed between the preview and this approval, so nothing was applied.',
-				'Read the target again and generate a fresh preview.'
-			);
-		}
-
-		if ( (string) $row['payload_hash'] !== $this->normalizer->fingerprint( $planned->payload ) ) {
-			throw $this->stale_plan();
-		}
-
-		if ( ! $this->plans->consume( $digest, $context->requestTime ) ) {
-			throw $this->stale_plan();
-		}
+		$this->admission->assertStateUnchanged( $row, $current, $context );
+		$this->admission->assertPayloadMatches( $row, $planned );
+		$this->admission->consumeOrFail( $digest, $context->requestTime );
 
 		$warnings = $planned->warnings;
 		$snapshot = $this->lifecycle->capture( $definition, $operation, $current, $context );
@@ -670,20 +648,6 @@ final class ChangeEngine {
 		return $changed;
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
-
-	/**
-	 * The single stale-plan failure, used for every binding refusal so a caller
-	 * cannot learn which element of the binding was wrong.
-	 *
-	 * @return OperationException The failure to throw.
-	 */
-	private function stale_plan(): OperationException {
-		return new OperationException(
-			ErrorCode::StalePlan,
-			'This plan token is expired, already used, or bound to a different request.',
-			'Generate a fresh preview and approve that plan token instead.'
-		);
-	}
 
 	/**
 	 * Serializes a change plan for the wire.
