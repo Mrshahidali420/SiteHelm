@@ -49,6 +49,11 @@ final class ContentRollbackApplyTest extends TestCase {
 	/** @var array<int, array<string, mixed>> */
 	private array $writes = [];
 
+	/** @var array<int, array<int, int|string>> */
+	private array $thumbnailWrites = [];
+
+	private int $thumbnailId = 0;
+
 	protected function setUp(): void {
 		parent::setUp();
 		Functions\when( 'wp_json_encode' )->alias( 'json_encode' );
@@ -56,13 +61,23 @@ final class ContentRollbackApplyTest extends TestCase {
 		Functions\when( 'wp_slash' )->alias( static fn( array $v ): array => $v );
 		Functions\when( 'is_wp_error' )->justReturn( false );
 		Functions\when( 'clean_post_cache' )->justReturn( null );
-		Functions\when( 'get_post_thumbnail_id' )->justReturn( 0 );
 		Functions\when( 'get_object_taxonomies' )->justReturn( [] );
 		Functions\when( 'get_option' )->justReturn( [] );
 
-		$this->wpdb      = new FakeWpdb();
-		$GLOBALS['wpdb'] = $this->wpdb;
-		$this->writes    = [];
+		$this->wpdb            = new FakeWpdb();
+		$GLOBALS['wpdb']       = $this->wpdb;
+		$this->writes          = [];
+		$this->thumbnailWrites = [];
+		$this->thumbnailId     = 0;
+		Functions\when( 'get_post_thumbnail_id' )->alias( fn(): int => $this->thumbnailId );
+		Functions\when( 'set_post_thumbnail' )->alias(
+			function ( int $post_id, int $media_id ): bool {
+				$this->thumbnailWrites[] = [ 'set', $post_id, $media_id ];
+				$this->thumbnailId       = $media_id;
+
+				return true;
+			}
+		);
 		Functions\when( 'wp_update_post' )->alias(
 			function ( array $postarr ): int {
 				$this->writes[] = $postarr;
@@ -854,5 +869,45 @@ final class ContentRollbackApplyTest extends TestCase {
 			[ 'ID', 'post_title', 'post_content', 'post_excerpt' ],
 			array_keys( $this->writes[0] )
 		);
+	}
+
+	/**
+	 * A featured-media snapshot records no post column, so intersecting it with
+	 * RESTORABLE_FIELDS alone produced an empty promise — and PlannedChange
+	 * rejects an empty promise with InvalidArgumentException, which escapes
+	 * planChange() uncaught. RESTORABLE_MEDIA_FIELDS is promised separately, and
+	 * as an integer: the read-back reports featured_media as an int, so a string
+	 * promise would make a correct rollback verify as adjusted.
+	 */
+	public function test_a_featured_media_snapshot_is_promised_as_an_integer(): void {
+		$this->queueSnapshot( [ 'restore_state' => '{"featured_media":108,"post_id":42}' ], 2 );
+
+		$current = $this->operation->resolveTarget( [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+		$planned = $this->operation->planChange( $current, [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+
+		$this->assertSame( [ 'featured_media' => 108 ], $planned->afterFields );
+	}
+
+	/**
+	 * The promised media field must reach ContentTarget::restoreFields() as well,
+	 * or the rollback would report success having written nothing: a restore state
+	 * holding only post_id issues no wp_update_post() call and no thumbnail write.
+	 *
+	 * Deviation from the brief's draft name (`..._as_an_integer`): the integer
+	 * type of applyChange()'s own cast is not observable from outside.
+	 * restore_featured_media() casts to int before any double can see the value,
+	 * and both `int` and the string `'108'` produce the identical set write. The
+	 * promise's integer type IS pinned, by the assertSame in the test above; what
+	 * this test pins is that the loop exists at all.
+	 */
+	public function test_a_promised_featured_media_reaches_the_restore_state(): void {
+		$this->queueSnapshot( [ 'restore_state' => '{"featured_media":108,"post_id":42}' ], 3 );
+
+		$current = $this->operation->resolveTarget( [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+		$planned = $this->operation->planChange( $current, [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+
+		$this->assertSame( 'post:42', $this->operation->applyChange( $current, $planned, $this->makeContext() ) );
+		$this->assertSame( [ [ 'set', 42, 108 ] ], $this->thumbnailWrites );
+		$this->assertSame( [], $this->writes );
 	}
 }

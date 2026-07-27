@@ -197,6 +197,15 @@ final class ContentRollbackApply implements WriteOperation {
 				$promised[ $field ] = (string) $state[ $field ];
 			}
 		}
+		// Values outside RESTORABLE_FIELDS are not post columns and are recorded
+		// as integers, so they are promised as integers: a string here would make
+		// the promise disagree with the read-back, which reports featured_media
+		// as an int, and a correct rollback would verify as adjusted.
+		foreach ( ContentTarget::RESTORABLE_MEDIA_FIELDS as $field ) {
+			if ( array_key_exists( $field, $state ) ) {
+				$promised[ $field ] = (int) $state[ $field ];
+			}
+		}
 		ksort( $promised, SORT_STRING );
 
 		return new PlannedChange(
@@ -243,6 +252,12 @@ final class ContentRollbackApply implements WriteOperation {
 		foreach ( ContentTarget::RESTORABLE_FIELDS as $field ) {
 			if ( array_key_exists( $field, $planned->afterFields ) ) {
 				$restore_state[ $field ] = (string) $planned->afterFields[ $field ];
+			}
+		}
+
+		foreach ( ContentTarget::RESTORABLE_MEDIA_FIELDS as $field ) {
+			if ( array_key_exists( $field, $planned->afterFields ) ) {
+				$restore_state[ $field ] = (int) $planned->afterFields[ $field ];
 			}
 		}
 
