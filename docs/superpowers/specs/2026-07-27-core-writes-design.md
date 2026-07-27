@@ -61,7 +61,15 @@ The default `[]` means **nothing is writable until an administrator opts in**. T
 
 That last point is the sharp edge: a payload naming three keys, one of which is not allowlisted, must write **none** of them. Validate the whole payload, then write.
 
-## Decision 5 — Trash needs a wider restore state, and this is the only engine-adjacent change
+## Decision 5 — Trash needs a wider restore state
+
+**This heading originally claimed to be "the only engine-adjacent change", and that was wrong.** REQ-0017 needs one too, for a reason the design missed: a featured image is `_thumbnail_id` **post meta**, not a post column. `ContentRollbackApply` rebuilds every restoration from `ContentTarget::RESTORABLE_FIELDS`, which are five columns written through `wp_update_post`. A media-only snapshot therefore intersects that list to nothing, `$promised` comes out empty, and `PlannedChange` rejects an empty promise with `InvalidArgumentException` — which escapes `ChangeEngine::preview()` uncaught into the generic `Throwable` handler instead of the `rollback_unavailable` code the contract already has for exactly this.
+
+Widening the media snapshot to carry the five columns instead would be worse: it would restore columns nothing changed and silently skip the one that did, then report `verified`.
+
+The fix is a separate restorable-media field list, applying the same present-keys-only mechanism this decision establishes for columns. It lands **before** REQ-0017 so that operation is built on a safe base.
+
+
 
 REQ-0019 is the only requirement whose rollback policy is `Required`, and no operation has ever declared it. `OperationDefinition` forces `SnapshotPolicy::Required` alongside it.
 
@@ -115,6 +123,7 @@ REQ-0017 ships anyway. `content-get` already returns `featuredMedia`, so an id i
 | `src/Modules/Core/ContentMetaUpdate.php` | **New.** REQ-0015. |
 | `src/Modules/Core/ContentTermsAssign.php` | **New.** REQ-0016. |
 | `src/Modules/Core/ContentFeaturedMediaSet.php` | **New.** REQ-0017. |
+| `src/Modules/Core/ContentTarget.php` | Also gains a restorable-media field list, per the correction in Decision 5 — a featured image is post meta, not a column, so the column list cannot carry it. |
 | `src/Modules/Core/ContentStatusSet.php` | **New.** REQ-0018. |
 | `src/Modules/Core/ContentTrash.php` | **New.** REQ-0019. |
 | `src/Modules/Core/ContentFields.php` | `DRAFT_LIKE_STATUSES` promoted to public. |
