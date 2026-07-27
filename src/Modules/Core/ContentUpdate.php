@@ -188,7 +188,12 @@ final class ContentUpdate implements WriteOperation {
 	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 
 	/**
-	 * Captures the fields this operation can change.
+	 * Captures the restorable columns of the prior state.
+	 *
+	 * The recorded set is `ContentTarget::RESTORABLE_FIELDS`, which is wider than
+	 * this operation's own input: it also carries `post_status` and `post_name`
+	 * so a rollback restores where the content sat in its workflow and not only
+	 * its words.
 	 *
 	 * @param TargetState      $current The resolved current state.
 	 * @param OperationContext $context The request context.

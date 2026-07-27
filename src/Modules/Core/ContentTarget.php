@@ -33,6 +33,27 @@ final class ContentTarget {
 	}
 
 	/**
+	 * The post columns a content snapshot records and a restore writes back.
+	 *
+	 * Public because `ContentRollbackApply` needs the same list to promise what
+	 * a restore will put back, and a second copy of it would drift: the copy
+	 * that drifts decides which columns a rollback silently fails to restore.
+	 *
+	 * `post_status` and `post_name` joined the original three because a write
+	 * that moves content between statuses, or one that trashes it, changes both
+	 * — and WordPress renames a trashed slug to `slug__trashed`. Without them
+	 * recorded, a rollback restores the words and loses where the content was
+	 * in its workflow.
+	 */
+	public const RESTORABLE_FIELDS = [
+		'post_title',
+		'post_content',
+		'post_excerpt',
+		'post_status',
+		'post_name',
+	];
+
+	/**
 	 * Resolves one existing content item.
 	 *
 	 * @param int $postId The post identifier.
@@ -112,9 +133,10 @@ final class ContentTarget {
 	/**
 	 * The minimum local state required to reverse a content write.
 	 *
-	 * Only the three fields the content writes can change are captured, per the
-	 * design's requirement that a snapshot store the minimum state required for
-	 * restoration.
+	 * Every column a content write can change is captured, and nothing else,
+	 * per the design's requirement that a snapshot store the minimum state
+	 * required for restoration. The list is `RESTORABLE_FIELDS`, so widening it
+	 * widens the capture and the restore together rather than one of the two.
 	 *
 	 * @param TargetState $current The resolved current state.
 	 *
@@ -130,11 +152,11 @@ final class ContentTarget {
 		}
 
 		$snapshot = [
-			'post_id'      => $this->fields->postIdFromTargetKey( $current->targetKey ),
-			'post_title'   => (string) ( $current->fields['post_title'] ?? '' ),
-			'post_content' => (string) ( $current->fields['post_content'] ?? '' ),
-			'post_excerpt' => (string) ( $current->fields['post_excerpt'] ?? '' ),
+			'post_id' => $this->fields->postIdFromTargetKey( $current->targetKey ),
 		];
+		foreach ( self::RESTORABLE_FIELDS as $field ) {
+			$snapshot[ $field ] = (string) ( $current->fields[ $field ] ?? '' );
+		}
 		ksort( $snapshot, SORT_STRING );
 
 		return $snapshot;
@@ -144,6 +166,11 @@ final class ContentTarget {
 
 	/**
 	 * Writes a recorded restore state back to its content item.
+	 *
+	 * Only the fields the recorded state actually contains are written. A
+	 * snapshot captured before a field joined RESTORABLE_FIELDS does not carry
+	 * it, and the contract is to restore the state the snapshot recorded — not
+	 * to invent a value for a column it never observed.
 	 *
 	 * @param array<string, mixed> $restoreState The recorded restore state.
 	 *
@@ -167,17 +194,14 @@ final class ContentTarget {
 			);
 		}
 
-		$restored = wp_update_post(
-			wp_slash(
-				[
-					'ID'           => $post_id,
-					'post_title'   => (string) ( $restoreState['post_title'] ?? '' ),
-					'post_content' => (string) ( $restoreState['post_content'] ?? '' ),
-					'post_excerpt' => (string) ( $restoreState['post_excerpt'] ?? '' ),
-				]
-			),
-			true
-		);
+		$update = [ 'ID' => $post_id ];
+		foreach ( self::RESTORABLE_FIELDS as $field ) {
+			if ( array_key_exists( $field, $restoreState ) ) {
+				$update[ $field ] = (string) $restoreState[ $field ];
+			}
+		}
+
+		$restored = wp_update_post( wp_slash( $update ), true );
 
 		if ( is_wp_error( $restored ) || 0 === (int) $restored ) {
 			throw new OperationException(
