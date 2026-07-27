@@ -336,6 +336,24 @@ final class ContentStatusSet implements WriteOperation {
 	 * capability for at all, so an unreadable name refuses instead. Every member
 	 * is checked before it is read.
 	 *
+	 * The guard below holds FIVE conditions, and they are not equally load
+	 * bearing. Deleting any of these three changes the answer, and each has a
+	 * test that fails when it does:
+	 *
+	 * - `! isset( $object->cap )`                  — the type exposes no cap object
+	 * - `! isset( $object->cap->publish_posts )`   — cap declares no publish name
+	 * - `! is_string( $object->cap->publish_posts )` — the name is not a name
+	 *
+	 * The other two — `! is_object( $object )` and `! is_object( $object->cap )`
+	 * — are DEFENCE IN DEPTH and cannot currently change the answer, because
+	 * isset() on a property of null or of a scalar is already false, so the next
+	 * condition catches those shapes anyway. They are kept deliberately: they are
+	 * free, they state the intended shape, and an edit that reordered or narrowed
+	 * the isset() conditions would make them reachable again. Do not "clean them
+	 * up" on the strength of a surviving mutation — the redundancy is the point,
+	 * and it is recorded here so a future reader deletes neither by mistake nor a
+	 * load-bearing one by confusion.
+	 *
 	 * There is no separate `'' === $type` guard, and its absence is deliberate
 	 * rather than an omission: get_post_type_object() answers null for an empty
 	 * string exactly as it does for any other unregistered type, so a short
