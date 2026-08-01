@@ -395,9 +395,11 @@ final class ContentTargetRestoreTest extends TestCase {
 	 * bare string.
 	 */
 	public function test_a_custom_field_whose_value_list_cannot_be_read_is_refused_before_anything_is_written(): void {
-		Functions\when( 'get_post_meta' )->alias(
-			static fn( $post_id, $key = '', $single = false ) => $single ? 'current' : 'current'
-		);
+		// One value for both arities, which is what the short-circuit really does:
+		// get_metadata_raw() answers `$check[0]` for a single read only when the
+		// filter returned an ARRAY, and returns the value untouched otherwise. So a
+		// filter answering a bare string answers that same string to both.
+		Functions\when( 'get_post_meta' )->justReturn( 'current' );
 
 		try {
 			$this->targets->restoreFields(
@@ -455,6 +457,51 @@ final class ContentTargetRestoreTest extends TestCase {
 		} catch ( OperationException $e ) {
 			$this->assertSame( ErrorCode::ExecutionFailed, $e->errorCode );
 			$this->assertSame( 'WordPress refused to restore a recorded custom field value.', $e->getMessage() );
+			$this->assertSame( [ 'custom fields partially restored' ], $e->completedSteps );
+		}
+	}
+
+	/**
+	 * The same refusal after a COLUMN write has landed, which is the shape that
+	 * makes completedSteps worth carrying: the operator is told the title and
+	 * status are already back, and only the custom fields are in doubt.
+	 *
+	 * The list is accumulated as each step succeeds rather than declared up front,
+	 * so the meta-only case above reports one step and this one reports two. A
+	 * fixed list would report the column write for a snapshot that held no column.
+	 */
+	public function test_a_failed_custom_field_restore_reports_the_column_write_that_already_landed(): void {
+		Functions\when( 'wp_update_post' )->alias(
+			function ( $postarr, $wp_error = false ) {
+				$this->callOrder[] = 'wp_update_post';
+
+				return 42;
+			}
+		);
+		$reads = 0;
+		Functions\when( 'get_post_meta' )->alias(
+			static function ( $post_id, $key = '', $single = false ) use ( &$reads ) {
+				++$reads;
+
+				return 1 === $reads ? [ 'current' ] : [ 'something else entirely' ];
+			}
+		);
+
+		try {
+			$this->targets->restoreFields(
+				[
+					'post_id'     => 42,
+					'post_status' => 'publish',
+					'meta'        => [ 'subtitle' => 'recorded' ],
+				]
+			);
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::ExecutionFailed, $e->errorCode );
+			$this->assertSame(
+				[ 'content columns restored', 'custom fields partially restored' ],
+				$e->completedSteps
+			);
 		}
 	}
 
