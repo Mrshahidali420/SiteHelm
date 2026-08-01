@@ -285,13 +285,21 @@ final class ContentTermsAssignTest extends TestCase {
 	}
 
 	/**
-	 * get_term()'s four return shapes, modelled from wp-includes/taxonomy.php.
+	 * get_term()'s return, modelled from wp-includes/taxonomy.php.
 	 *
-	 * An empty id answers WP_Error ('Empty Term.'), a named taxonomy that does not
-	 * exist answers WP_Error ('Invalid taxonomy.'), a term that is not in the named
+	 * An empty id answers WP_Error ('Empty Term.'), a term that is not in the named
 	 * taxonomy answers NULL, and a found term is passed through the `get_term`
-	 * filter. With no taxonomy named — core's default — the lookup spans every
-	 * taxonomy, which is why omitting the argument is observable here.
+	 * filter — which core hands back whatever it produced, including something that
+	 * is no longer a WP_Term. With no taxonomy named — core's default — the lookup
+	 * spans every taxonomy, which is why omitting the argument is observable here.
+	 *
+	 * Core's OTHER WP_Error branch, `$taxonomy && ! taxonomy_exists( $taxonomy )`
+	 * answering 'Invalid taxonomy.', is deliberately NOT modelled. It is
+	 * unreachable from this operation: assert_terms_resolve() runs strictly after
+	 * assert_may_assign(), which refuses whenever get_taxonomy() answers false —
+	 * which is the same question taxonomy_exists() asks. A branch for it here would
+	 * be a fake answering a question the code under test can never ask, and the
+	 * docblock claiming it would be worse than the branch.
 	 *
 	 * @param int    $id  The requested term identifier.
 	 * @param string $tax The taxonomy it was requested under, or ''.
@@ -300,10 +308,6 @@ final class ContentTermsAssignTest extends TestCase {
 	 */
 	private function termObject( int $id, string $tax ) {
 		if ( 0 === $id ) {
-			return $this->wpError();
-		}
-
-		if ( '' !== $tax && ! in_array( $tax, $this->registeredTaxonomies, true ) ) {
 			return $this->wpError();
 		}
 
@@ -771,6 +775,43 @@ final class ContentTermsAssignTest extends TestCase {
 			$this->assertSame( ErrorCode::InvalidInput, $e->errorCode );
 			$this->assertSame( 'One of the requested term identifiers does not name a term in the taxonomy it was sent under.', $e->getMessage() );
 		}
+	}
+
+	/**
+	 * The ARRAY shape, and the only mechanism that produces it here.
+	 *
+	 * get_term()'s `$output` parameter is never passed by this operation, so
+	 * ARRAY_A cannot be how an array arrives. Core's filter bail-out is: after
+	 * running `get_term` and `get_{$taxonomy}` it does
+	 * `// Bail if a filter callback has changed the type of the `$_term` object.`
+	 * followed by `if ( ! ( $_term instanceof WP_Term ) ) { return $_term; }` — so a
+	 * site whose filter returns an array gets that array back, from the same call
+	 * this operation makes with the same arguments.
+	 *
+	 * An array carries no properties, so isset() answers false and the id is
+	 * refused rather than read as a term.
+	 */
+	public function test_a_filtered_term_returned_as_an_array_is_refused(): void {
+		$this->granted    = [ 'assign_terms' ];
+		$this->termFilter = static fn( int $id, string $taxonomy ): array => [
+			'term_id'  => $id,
+			'taxonomy' => $taxonomy,
+		];
+		$current          = $this->operation->resolveTarget( [ 'id' => 42 ], $this->makeContext() );
+
+		try {
+			$this->operation->planChange(
+				$current,
+				$this->input( [ $this->entry( 'category', [ 7 ] ) ] ),
+				$this->makeContext()
+			);
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::InvalidInput, $e->errorCode );
+			$this->assertSame( 'One of the requested term identifiers does not name a term in the taxonomy it was sent under.', $e->getMessage() );
+		}
+
+		$this->assertSame( [], $this->termWrites );
 	}
 
 	/**

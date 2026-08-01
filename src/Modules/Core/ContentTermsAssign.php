@@ -634,16 +634,32 @@ final class ContentTermsAssign implements WriteOperation {
 	 * Refuses unless every term id resolves IN THIS TAXONOMY.
 	 *
 	 * The call get_term( $id, $taxonomy ) is the right question because it asks
-	 * both halves at once. It answers a WP_Error when the taxonomy does not exist
-	 * or when the id is empty, and NULL when the term simply is not in that
+	 * both halves at once. It answers NULL when the term simply is not in that
 	 * taxonomy — which is exactly the case core would silently skip inside
 	 * wp_set_object_terms(), and exactly the case interpretation I7 forbids leaving
-	 * to verification. Its return is therefore checked as
-	 * WP_Term|array|WP_Error|null, all four, rather than for truthiness.
+	 * to verification. Its return is checked for SHAPE rather than for truthiness,
+	 * and its declared union is WP_Term|array|WP_Error|null. THREE of those four
+	 * are reachable from this call site, and each has a test:
 	 *
-	 * One isset() answers all four shapes, and NO is_object() guard stands in front
-	 * of it: isset() on a property of null, of an array or of a WP_Error — which is
-	 * an object but exposes neither member — is already false. Adding one would be a
+	 * - WP_Term — the ordinary answer.
+	 * - WP_Error — core opens with `if ( empty( $term ) )` answering 'Empty Term.',
+	 *   and an id of 0 reaches here because the schema's `minimum` is enforced by
+	 *   SchemaValidator while planChange() runs again at apply without it. It is an
+	 *   OBJECT, so truthiness would accept it as a term.
+	 * - array — NOT through `$output`, which this call never passes. Core runs the
+	 *   `get_term` and `get_{$taxonomy}` filters and then bails with
+	 *   `if ( ! ( $_term instanceof WP_Term ) ) { return $_term; }`, so a site whose
+	 *   filter returns an array gets that array back from this very call.
+	 *
+	 * The fourth, core's other WP_Error — `$taxonomy && ! taxonomy_exists( $taxonomy )`
+	 * answering 'Invalid taxonomy.' — is UNREACHABLE from here and is named so no
+	 * reader adds a test that could only assert against a fake:
+	 * assert_may_assign() has already refused whenever get_taxonomy() answered
+	 * false, which is the same question taxonomy_exists() asks.
+	 *
+	 * One isset() answers every shape, and NO is_object() guard stands in front of
+	 * it: isset() on a property of null, of an array or of a WP_Error — which is an
+	 * object but exposes neither member — is already false. Adding one would be a
 	 * condition no input could make matter, which deleting it and finding the suite
 	 * green confirmed.
 	 *
