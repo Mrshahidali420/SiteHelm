@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace SiteHelm\Gateway;
 
 use SiteHelm\Contracts\ErrorCode;
+use SiteHelm\Contracts\OperationContext;
 use SiteHelm\Contracts\OperationError;
 use SiteHelm\Contracts\OperationException;
 use SiteHelm\Registry\CapabilityRegistry;
@@ -27,6 +28,13 @@ final class McpServer {
 	 * MCP protocol version.
 	 */
 	public const PROTOCOL_VERSION = '2025-06-18';
+
+	/**
+	 * The correlation identifier reported when a request failed before it had
+	 * one. Not a placeholder for a value that exists somewhere else: a request
+	 * that never built a context never generated an identifier at all.
+	 */
+	private const UNRESOLVED_CORRELATION_ID = 'unresolved';
 
 	/**
 	 * Constructs the MCP server with its dependencies.
@@ -177,6 +185,11 @@ final class McpServer {
 			return $this->error( $id, -32602, 'Invalid params: unknown tool. Call tools/list for the available dispatchers.' );
 		}
 
+		// Declared before the try so that the failure branches can tell "no
+		// context yet" apart from a context, in a form the type system carries.
+		// Construction happens inside the try, so null is a reachable state.
+		$context = null;
+
 		try {
 			$context = $this->contextFactory->create( $this->moduleHealth, $clientId );
 			$payload = $this->dispatcher->dispatch(
@@ -186,8 +199,7 @@ final class McpServer {
 			);
 			return $this->toolResult( $id, $payload, false );
 		} catch ( OperationException $e ) {
-			$correlation = isset( $context ) ? $context->correlationId : 'unresolved';
-			return $this->safeErrorResult( $id, $e, $correlation );
+			return $this->safeErrorResult( $id, $e, $this->correlationIdOrUnresolved( $context ) );
 		} catch ( Throwable $e ) {
 			error_log( sprintf( 'SiteHelm unexpected failure in %s: %s', $tool, $e->getMessage() ) );
 			$safe = new OperationException(
@@ -195,7 +207,7 @@ final class McpServer {
 				'An unexpected error occurred. The details were logged on the server.',
 				'Check the SiteHelm diagnostics on the site, then retry with a fresh request.'
 			);
-			return $this->safeErrorResult( $id, $safe, 'unresolved' );
+			return $this->safeErrorResult( $id, $safe, $this->correlationIdOrUnresolved( $context ) );
 		}
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
@@ -203,6 +215,38 @@ final class McpServer {
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 	// phpcs:enable WordPress.PHP.DevelopmentFunctions.error_log_error_log
 	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+
+	/**
+	 * Resolves the correlation identifier a failing request should report.
+	 *
+	 * Both failure branches share this rather than each carrying its own copy,
+	 * because the two did diverge: the generic branch reported the sentinel
+	 * while holding a perfectly good context, so exactly the failures whose
+	 * envelope carries no message, path or trace were the ones that could not be
+	 * tied to the server log entry their own remediation text points at. One
+	 * resolution makes that divergence impossible to reintroduce in either
+	 * direction, which a repeated ternary does not.
+	 *
+	 * The null case is load-bearing rather than defensive. The context is built
+	 * inside the same try block both branches guard, so a failure during its
+	 * construction — an authentication failure being the routine one — arrives
+	 * here with nothing to read. Resolving unconditionally would turn a
+	 * contained failure into an uncontained one.
+	 *
+	 * @param OperationContext|null $context The request context, or null when the
+	 *                                       failure preceded its construction.
+	 *
+	 * @return string The request's correlation identifier, or the unresolved
+	 *                sentinel when it never had one.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+	 */
+	private function correlationIdOrUnresolved( ?OperationContext $context ): string {
+		return $context?->correlationId ?? self::UNRESOLVED_CORRELATION_ID;
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 
 	/**
 	 * Wraps envelope construction so that a failure to build the error envelope

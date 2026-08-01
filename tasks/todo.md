@@ -114,6 +114,20 @@ and response recorded verbatim.
 
 ### 4. Open items carried forward
 
+- **The gateway's generic failure branch reports a retryable code for failures
+  that may be permanent.** `src/Gateway/McpServer.php`'s `catch ( Throwable )`
+  reports `execution_failed`, which `ErrorCode::isRetryable()` declares
+  retryable — but an unexpected `Throwable` is as likely to be permanent as
+  transient. This product's primary client is a language model, which will
+  retry. The correlation-id fix made those attempts **traceable**, not
+  **bounded**: the loop is now diagnosable after the fact, and still a loop.
+  Left alone deliberately, because retryability is a frozen cross-cutting
+  contract and changing it inside a correlation fix would be exactly the
+  smuggling that fix's own entry warned against. **Needs a decision before V1
+  public release**, alongside the runtime `outputSchema` validation below —
+  either a non-retryable code for genuinely unexpected failures, or a documented
+  client-side attempt bound.
+
 - **The test doubles declare narrower return types than the WordPress functions
   they stand in for, which hides every guard written for the real type.** This is
   systemic, not one slip. A fake declared `alias( fn(): int => … )` for
@@ -136,26 +150,37 @@ and response recorded verbatim.
   path.** A fake narrower than the function it replaces silently deletes the
   coverage of every guard that exists for the wider type. Worth a sweep of every
   double in `tests/` against its WordPress signature, as its own task.
-- **The gateway's generic failure handler discards the correlation id it holds.**
-  `src/Gateway/McpServer.php:191`'s `catch ( Throwable )` passes the literal
-  `'unresolved'` where the `OperationException` branch two lines above passes
-  `$context->correlationId`. So for any failure that is not an
-  `OperationException`, the envelope cannot be tied to the server-side log entry
-  that its own remediation text tells the operator to look up — and that is the
-  class of failure where the operator most needs the link, because the envelope
-  deliberately carries no detail. It affects **every dispatcher equally**, not
-  one module. The fix is one line and touches no module, but it is a gateway
-  change and wants its own test, so it is recorded rather than smuggled into a
-  module branch. **Do it before the remaining core writes land**, since
-  every one of them can reach that handler. Found while closing an unrelated
-  escape in `ContentRollbackApply::planChange()`.
+- **RESOLVED — the gateway's generic failure handler discarded the correlation id
+  it held.** `src/Gateway/McpServer.php`'s `catch ( Throwable )` passed the
+  literal `'unresolved'` where the `OperationException` branch two lines above
+  passed `$context->correlationId`. So for any failure that was not an
+  `OperationException`, the envelope could not be tied to the server-side log
+  entry that its own remediation text tells the operator to look up — and that is
+  the class of failure where the operator most needs the link, because the
+  envelope deliberately carries no detail. It affected **every dispatcher
+  equally**, not one module. Found while closing an unrelated escape in
+  `ContentRollbackApply::planChange()`.
+  Both branches now resolve the identifier through one shared
+  `correlationIdOrUnresolved()`, so they cannot drift apart again, and the
+  sentinel is a named constant rather than a literal repeated at each site. The
+  absent-context case is still guarded: the context is built inside the same
+  `try` both branches cover, so a failure during its construction — an
+  authentication failure being the routine one — reaches them with nothing to
+  read, and resolving unconditionally would turn a contained failure into an
+  uncontained one. Closing it exposed a second gap of the same shape: the
+  `OperationException` branch's correlation id was asserted by **nothing**, so
+  reverting that branch to the sentinel left the whole suite green. Both halves
+  now carry a test, and all three mutations — revert the generic branch, revert
+  the `OperationException` branch, drop the null guard — fail on assertions
+  rather than on incidental errors.
 - **`ErrorCode::ExecutionFailed` is declared retryable and
   `RollbackUnavailable` is not** (`src/Contracts/ErrorCode.php:56`). That is
   correct, and it is why the wrong error code escaping to a client is worse than
   it looks: a generic handler reporting `execution_failed` tells the client to
   retry an operation that can never succeed. This product's primary client is a
   language model, which will retry. Recorded as context for the item above, not
-  as a defect in the enum.
+  as a defect in the enum. **The tracing half is now fixed and the retry half is
+  not** — see the live item below, which is where that risk now lives.
 - **Runtime `outputSchema` validation is deferred** per recorded interpretation I6.
   Phase 2 shipped none and Phase 3a adds none; the interim mitigation is a
   per-operation conformance test for each of the nine registered operations

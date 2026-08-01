@@ -222,8 +222,10 @@ final class ContentRollbackApply implements WriteOperation {
 		// outside any try block — so that escape lands in the gateway's generic
 		// Throwable handler and answers `execution_failed`, which is declared
 		// RETRYABLE. A client would be told to retry a rollback that can never
-		// succeed, and the correlation id is replaced with 'unresolved' on that
-		// path, so the response cannot even be tied to the logged cause.
+		// succeed. That handler now reports the request's real correlation id, so
+		// such a response could at least be tied to its logged cause — but a
+		// traceable wrong answer is still a wrong answer, and refusing here is
+		// what keeps the right code on the wire.
 		//
 		// Two stored shapes reach it, and one condition covers both because both
 		// end the same way: a snapshot whose only restorable key holds a value this
