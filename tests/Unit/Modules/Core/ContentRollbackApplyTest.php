@@ -1135,8 +1135,14 @@ final class ContentRollbackApplyTest extends TestCase {
 	 */
 	private function stubMetaAndTerms( array $meta, array $terms ): void {
 		Functions\when( 'get_option' )->justReturn( array_keys( $meta ) );
+		// Honours $single as get_metadata_raw() does: row 0 alone for a single read,
+		// the whole list otherwise. ContentFields::meta() takes the first and
+		// ContentTarget's restore guard takes the second, so a fake answering one
+		// shape to both would refuse every restore this class exercises.
 		Functions\when( 'get_post_meta' )->alias(
-			static fn( $post_id, $key = '', $single = false ) => $meta[ $key ] ?? ''
+			static fn( $post_id, $key = '', $single = false ) => $single
+				? ( $meta[ $key ] ?? '' )
+				: ( array_key_exists( $key, $meta ) ? [ $meta[ $key ] ] : [] )
 		);
 		Functions\when( 'get_object_taxonomies' )->justReturn( array_keys( $terms ) );
 		Functions\when( 'wp_get_object_terms' )->alias(
@@ -1340,7 +1346,11 @@ final class ContentRollbackApplyTest extends TestCase {
 				return 1;
 			}
 		);
-		Functions\when( 'get_post_meta' )->justReturn( 'Recorded subtitle' );
+		Functions\when( 'get_post_meta' )->alias(
+			static fn( $post_id, $key = '', $single = false ) => $single
+				? 'Recorded subtitle'
+				: [ 'Recorded subtitle' ]
+		);
 		Functions\when( 'wp_set_object_terms' )->alias(
 			static function ( $post_id, $ids, $taxonomy, $append = false ) use ( &$term_writes ) {
 				$term_writes[] = [ $taxonomy, $ids ];

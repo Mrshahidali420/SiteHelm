@@ -506,11 +506,15 @@ final class ContentMetaUpdate implements WriteOperation {
 	 *   'meta_key' => $meta_key )` and adds `$where['meta_value']` ONLY when a
 	 *   $prev_value was passed, which this operation does not pass. One
 	 *   `$wpdb->update()` then rewrites EVERY row under the key with the single new
-	 *   value. Verified against WordPress 7.0.2 wp-includes/meta.php; core's own
-	 *   comment above its unchanged-value shortcut reads "Compare existing value to
-	 *   new value if no prev value given and THE KEY EXISTS ONLY ONCE", and it
-	 *   guards that shortcut with `count( $old_value ) === 1` — core itself treats
-	 *   the multi-row case as distinct.
+	 *   value. Read from wp-includes/meta.php of the WordPress 6.8.1 install on this
+	 *   machine, and diffed against the 7.0.2 install beside it: update_metadata(),
+	 *   get_metadata_raw() and get_metadata_default() differ only in docblock lines
+	 *   naming the `blog` meta type, so the executable code is identical in both.
+	 *   Core's own comment above its unchanged-value shortcut reads "Compare
+	 *   existing value to new value if no prev value given and THE KEY EXISTS ONLY
+	 *   ONCE", and it guards that shortcut with
+	 *   `is_countable( $old_value ) && count( $old_value ) === 1` — core itself
+	 *   declines to reason about the multi-row case.
 	 *
 	 * The zero-row case is NOT refused, and must not be: an allowlisted key that
 	 * holds nothing yet is the ordinary state of a site that has just enabled its
@@ -526,9 +530,15 @@ final class ContentMetaUpdate implements WriteOperation {
 	 *
 	 * Only the REQUESTED keys are checked, not the whole allowlist. An unrequested
 	 * key is not something this write can destroy, and refusing on its account
-	 * would block an unrelated field's update. That key is still covered — a
-	 * rollback that would rewrite it is refused by writable_custom_fields(), which
-	 * is the known limitation recorded there.
+	 * would block an unrelated field's update.
+	 *
+	 * What happens to that key instead is ContentTarget::writable_custom_fields()'s
+	 * business, and this sentence is only true because that method tests the SAME
+	 * TWO SHAPES this one does: a rollback whose recorded map names a key now
+	 * holding a structured value or more than one row is refused there, before any
+	 * write, which is the known limitation recorded on it. When that method tested
+	 * only for a structured value, this paragraph claimed a coverage that did not
+	 * exist for the multi-row shape. Widening one without the other re-opens it.
 	 *
 	 * READ-ONLY, which is what lets it run before any write, and it runs AFTER the
 	 * allowlist pass so a key outside the allowlist gets one answer rather than an
