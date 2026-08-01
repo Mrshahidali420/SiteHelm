@@ -471,10 +471,15 @@ final class ContentTrashTest extends TestCase {
 
 	/**
 	 * The ordering, asserted as one ordered log rather than inferred from three
-	 * unordered records. Everything after the column write depends on the column
-	 * write having happened: core substitutes _wp_desired_post_slug for the
-	 * submitted slug on the branch that takes a post out of the trash, so removing
-	 * trash residue first would take away the value core falls back on.
+	 * unordered records.
+	 *
+	 * This DIVERGES FROM CORE and the divergence is deliberate: wp_untrash_post()
+	 * deletes _wp_trash_meta_status and _wp_trash_meta_time BEFORE its
+	 * wp_update_post(). The comment restoration is not a divergence — core calls
+	 * wp_untrash_post_comments() after its update, exactly as this does.
+	 *
+	 * The reason for the divergence is what a FAILURE leaves behind, and the test
+	 * below is the one that pins it. See ContentTrash::restore()'s docblock.
 	 */
 	public function test_restore_clears_the_trash_meta_after_the_column_write_not_before(): void {
 		$this->operation->restore( $this->snapshot(), $this->makeContext() );
@@ -488,6 +493,35 @@ final class ContentTrashTest extends TestCase {
 			],
 			$this->callLog
 		);
+	}
+
+	/**
+	 * THE REASON THE CLEANUP RUNS LAST, asserted rather than argued.
+	 *
+	 * A refused column write leaves the post still in the trash, and the
+	 * ExecutionFailed it raises tells the operator to recover another way — on a
+	 * trashed post, that is the WordPress admin's Restore button, which is
+	 * wp_untrash_post() reading exactly these two meta keys. Under core's own
+	 * ordering, which deletes them before the update, this refusal would have
+	 * removed the operator's fallback while reporting that the restore stopped.
+	 *
+	 * This test fails under core's order and passes under ours, which is what
+	 * makes the divergence a decision with evidence rather than an accident. It is
+	 * also the second killer for the reordering mutation, and the one whose
+	 * assertion says WHY the order matters instead of only that it changed.
+	 */
+	public function test_restore_that_fails_the_column_write_leaves_the_trash_residue_intact(): void {
+		Functions\when( 'wp_update_post' )->justReturn( 0 );
+
+		try {
+			$this->operation->restore( $this->snapshot(), $this->makeContext() );
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::ExecutionFailed, $e->errorCode );
+		}
+
+		$this->assertSame( [], $this->metaDeletes );
+		$this->assertSame( [], $this->commentUntrashes );
 	}
 
 	/**
@@ -632,7 +666,11 @@ final class ContentTrashTest extends TestCase {
 		$this->assertSame( RollbackPolicy::Required, $definition->rollbackPolicy );
 		$this->assertSame( SnapshotPolicy::Required, $definition->snapshotPolicy );
 		$this->assertSame( PreviewPolicy::Required, $definition->previewPolicy );
-		$this->assertFalse( $definition->isDestructive );
+		// True because docs/product/phase-2-foundation-contract.md's isDestructive
+		// row names "moving content to trash" as its own definitional example. The
+		// contract is frozen and governs; see the class docblock for the nuance
+		// that argued the other way and why it does not win.
+		$this->assertTrue( $definition->isDestructive );
 		$this->assertTrue( $definition->isIdempotent );
 	}
 
@@ -773,11 +811,17 @@ final class MagicStatusPost {
 	/**
 	 * Resolves a member that is not a declared property.
 	 *
+	 * Answers unconditionally. A `'post_status' === $name` branch beside a `: ''`
+	 * arm reads as discrimination but is not: the operation asks this object for
+	 * one member and no other, so the second arm was unreachable and its deletion
+	 * left the file green. Removed rather than kept, because a test double's dead
+	 * arm suggests coverage of a distinction nothing makes.
+	 *
 	 * @param string $name The member name.
 	 *
 	 * @return string The resolved value.
 	 */
 	public function __get( string $name ): string {
-		return 'post_status' === $name ? 'trash' : '';
+		return 'trash';
 	}
 }
