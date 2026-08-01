@@ -44,12 +44,19 @@ final class ContentMetaUpdateTest extends TestCase {
 	private ContentMetaUpdate $operation;
 
 	/**
-	 * The live post meta, keyed by meta key.
+	 * The live post meta, as the meta TABLE holds it: one key to a LIST of rows.
 	 *
-	 * Typed as mixed values, not strings, because get_post_meta() returns mixed
-	 * and a stored array is the case two guards in this operation exist for.
+	 * A key to a single value would have been simpler and would have made this
+	 * file structurally unable to see the defect it now guards. The table permits
+	 * many rows under one key; get_post_meta( …, true ) shows only row 0; and
+	 * update_post_meta() rewrites every row. Only a store shaped like the table
+	 * can express the gap between those three.
 	 *
-	 * @var array<string, mixed>
+	 * Row values are typed mixed, not string, because get_post_meta() returns
+	 * mixed and a stored array is one of the two cases the recoverability guard
+	 * exists for.
+	 *
+	 * @var array<string, array<int, mixed>>
 	 */
 	private array $meta = [];
 
@@ -87,8 +94,8 @@ final class ContentMetaUpdateTest extends TestCase {
 		$this->operation = new ContentMetaUpdate( $fields, new ContentTarget( $fields ) );
 
 		$this->meta = [
-			'byline'   => 'Sam Reporter',
-			'subtitle' => 'An original standfirst',
+			'byline'   => [ 'Sam Reporter' ],
+			'subtitle' => [ 'An original standfirst' ],
 		];
 		$this->metaWrites    = [];
 		$this->callOrder     = [];
@@ -128,23 +135,40 @@ final class ContentMetaUpdateTest extends TestCase {
 		// what lands in $this->meta is what would land in the database.
 		//
 		// Every parameter is UNTYPED, matching core.
+		// It COLLAPSES every row under the key to the one new value, because
+		// update_metadata() does: its $where is ( post_id, meta_key ) with no
+		// meta_value unless a $prev_value was passed, so one $wpdb->update()
+		// rewrites them all. A fake that replaced only row 0 would make the
+		// multi-row case look survivable and the guard against it untestable.
+		//
+		// It returns FALSE for an unchanged value only when the key holds exactly
+		// ONE row, matching core's own `count( $old_value ) === 1` condition.
 		Functions\when( 'update_post_meta' )->alias(
 			function ( $post_id, $key, $value, $prev_value = '' ) {
 				$this->callOrder[]  = 'update_post_meta';
 				$this->metaWrites[] = [ $key, $value ];
 				$stored             = is_string( $value ) ? stripslashes( $value ) : $value;
-				$unchanged          = array_key_exists( $key, $this->meta ) && $this->meta[ $key ] === $stored;
-				$this->meta[ $key ] = $stored;
+				$rows               = $this->meta[ $key ] ?? [];
+				$unchanged          = 1 === count( $rows ) && $rows[0] === $stored;
+				$this->meta[ $key ] = [ $stored ];
 
 				return $unchanged ? false : 1;
 			}
 		);
 
+		// Honours $single exactly as get_metadata_raw() does: true answers ROW 0
+		// alone, false answers the whole list, and an absent key answers '' or the
+		// empty array respectively — the shapes get_metadata_default() supplies.
+		//
 		// Returns MIXED. A fake typed `: string` could not express the serialized
 		// array case that both the plan-time recoverability guard and the
 		// apply-time is_scalar() guard were written for.
 		Functions\when( 'get_post_meta' )->alias(
-			fn( $post_id, $key = '', $single = false ) => $this->meta[ $key ] ?? ''
+			function ( $post_id, $key = '', $single = false ) {
+				$rows = $this->meta[ $key ] ?? [];
+
+				return $single ? ( $rows[0] ?? '' ) : $rows;
+			}
 		);
 
 		// The other three write mechanisms a content restore can reach. None of
@@ -370,8 +394,8 @@ final class ContentMetaUpdateTest extends TestCase {
 		);
 		$this->assertSame(
 			[
-				'byline'   => 'Sam Reporter',
-				'subtitle' => 'An original standfirst',
+				'byline'   => [ 'Sam Reporter' ],
+				'subtitle' => [ 'An original standfirst' ],
 			],
 			$this->meta
 		);
@@ -513,14 +537,98 @@ final class ContentMetaUpdateTest extends TestCase {
 	 * for this write".
 	 */
 	public function test_a_requested_key_holding_a_structured_value_is_refused_before_any_write(): void {
-		$this->meta['subtitle'] = [ 'serialized' => 'payload' ];
+		$this->meta['subtitle'] = [ [ 'serialized' => 'payload' ] ];
 
 		$this->assertRefusedWithoutWriting(
 			$this->planAndApply( $this->input( [ [ 'subtitle', 'A revised standfirst' ] ] ) ),
 			ErrorCode::RollbackUnavailable,
-			'One of the requested custom fields holds a structured value that no snapshot can record, so none of them were written.'
+			'One of the requested custom fields holds a structured value, or more than one value, that no snapshot can record, so none of them were written.'
 		);
-		$this->assertSame( [ 'serialized' => 'payload' ], $this->meta['subtitle'] );
+		$this->assertSame( [ [ 'serialized' => 'payload' ] ], $this->meta['subtitle'] );
+	}
+
+	/**
+	 * The SECOND shape the same guard has to catch, and the one a `$single = true`
+	 * read cannot see at all.
+	 *
+	 * get_metadata_raw() answers `$meta_cache[ $meta_key ][0]` for a single read,
+	 * so three rows preview and snapshot as one. update_metadata() then rewrites
+	 * ALL of them: its `$where` is ( post_id, meta_key ), and `meta_value` joins it
+	 * only when a $prev_value is passed, which this operation does not pass. So the
+	 * apply flattens three rows into one, the snapshot holds only the first, and a
+	 * rollback writes that one back, re-reads it, matches, and reports verified —
+	 * the same failure shape as the structured case, undetectable for the same
+	 * reason, and with the evidence destroyed by the write.
+	 *
+	 * Every row here is an ordinary scalar string, which is the point: each one
+	 * passes is_scalar() individually, so only counting them refuses this.
+	 */
+	public function test_a_requested_key_holding_more_than_one_row_is_refused_before_any_write(): void {
+		$this->meta['subtitle'] = [ 'First standfirst', 'Second standfirst', 'Third standfirst' ];
+
+		$this->assertRefusedWithoutWriting(
+			$this->planAndApply( $this->input( [ [ 'subtitle', 'A revised standfirst' ] ] ) ),
+			ErrorCode::RollbackUnavailable,
+			'One of the requested custom fields holds a structured value, or more than one value, that no snapshot can record, so none of them were written.'
+		);
+		$this->assertSame( [ 'First standfirst', 'Second standfirst', 'Third standfirst' ], $this->meta['subtitle'] );
+	}
+
+	/**
+	 * The third term of the same guard, which without this test no test reached at
+	 * all — the whole file passed with `! is_array( $rows )` deleted.
+	 *
+	 * It is reachable through core rather than through a malformed double:
+	 * get_metadata_raw() short-circuits on the `get_post_metadata` filter and, when
+	 * `$single` is false, returns the filter's value COMPLETELY UNTOUCHED —
+	 * `return $check;` with no type test of any kind. A caching or virtual-field
+	 * plugin filtering that hook can hand back a bare string, and a bare string is
+	 * not a row list this operation may reason about.
+	 */
+	public function test_a_key_whose_value_list_cannot_be_read_is_refused_before_any_write(): void {
+		Functions\when( 'get_post_meta' )->justReturn( 'An original standfirst' );
+
+		$this->assertRefusedWithoutWriting(
+			$this->planAndApply( $this->input( [ [ 'subtitle', 'A revised standfirst' ] ] ) ),
+			ErrorCode::RollbackUnavailable,
+			'One of the requested custom fields holds a structured value, or more than one value, that no snapshot can record, so none of them were written.'
+		);
+	}
+
+	/**
+	 * The zero-row case is NOT refused, and the guard would be worse than the gap
+	 * it closes if it were: an allowlisted key holding nothing yet is the ordinary
+	 * state of a site that has just enabled its first key.
+	 *
+	 * get_post_meta( …, false ) answers `array()` for an absent key, so the count
+	 * is 0 and `$rows[0] ?? ''` is what supplies a scalar for a list with no
+	 * member. Deleting that `?? ''` turns this ordinary write into a PHP warning.
+	 */
+	public function test_a_key_that_holds_no_value_yet_is_written_normally(): void {
+		$this->meta = [];
+
+		$outcome = $this->planAndApply( $this->input( [ [ 'subtitle', 'A first standfirst' ] ] ) );
+
+		$this->assertNull( $outcome, null === $outcome ? '' : $outcome->getMessage() );
+		$this->assertSame( [ 'A first standfirst' ], $this->meta['subtitle'] );
+	}
+
+	/**
+	 * A numeric allowlisted key. `allowlist()`'s /^[A-Za-z0-9_-]+$/ permits '2024',
+	 * but PHP coerces an integer-like array key to an int, so it reaches the
+	 * allowlist check as the int 2024 and a strict in_array() against the stored
+	 * string fails. It failed CLOSED, so nothing was writable that should not have
+	 * been — but the operator was told the key was not allowlisted when it was, and
+	 * no configuration change could have made that message stop.
+	 */
+	public function test_a_numeric_allowlisted_key_is_writable(): void {
+		$this->allowlisted = [ '2024' ];
+		$this->meta        = [];
+
+		$outcome = $this->planAndApply( $this->input( [ [ '2024', 'Annual report' ] ] ) );
+
+		$this->assertNull( $outcome, null === $outcome ? '' : $outcome->getMessage() );
+		$this->assertSame( [ 'Annual report' ], $this->meta['2024'] );
 	}
 
 	/**
@@ -531,13 +639,13 @@ final class ContentMetaUpdateTest extends TestCase {
 	 * whole-allowlist check would silently widen.
 	 */
 	public function test_an_unrequested_key_holding_a_structured_value_does_not_block_the_write(): void {
-		$this->meta['byline'] = [ 'serialized' => 'payload' ];
+		$this->meta['byline'] = [ [ 'serialized' => 'payload' ] ];
 
 		$outcome = $this->planAndApply( $this->input( [ [ 'subtitle', 'A revised standfirst' ] ] ) );
 
 		$this->assertNull( $outcome, null === $outcome ? '' : $outcome->getMessage() );
-		$this->assertSame( 'A revised standfirst', $this->meta['subtitle'] );
-		$this->assertSame( [ 'serialized' => 'payload' ], $this->meta['byline'] );
+		$this->assertSame( [ 'A revised standfirst' ], $this->meta['subtitle'] );
+		$this->assertSame( [ [ 'serialized' => 'payload' ] ], $this->meta['byline'] );
 	}
 
 	/**
@@ -546,7 +654,7 @@ final class ContentMetaUpdateTest extends TestCase {
 	 * itself would disclose whether an unlisted key carries structured data.
 	 */
 	public function test_an_unlisted_key_holding_a_structured_value_is_refused_as_forbidden(): void {
-		$this->meta['internal_ref'] = [ 'serialized' => 'payload' ];
+		$this->meta['internal_ref'] = [ [ 'serialized' => 'payload' ] ];
 
 		$this->assertRefusedWithoutWriting(
 			$this->planAndApply( $this->input( [ [ 'internal_ref', 'REF-9' ] ] ) ),
@@ -616,7 +724,7 @@ final class ContentMetaUpdateTest extends TestCase {
 		$this->assertSame( [ [ 'subtitle', addslashes( $value ) ] ], $this->metaWrites );
 		$this->assertNull( $outcome, null === $outcome ? '' : $outcome->getMessage() );
 		$this->assertSame( 'post:42', $this->appliedTarget );
-		$this->assertSame( $value, $this->meta['subtitle'] );
+		$this->assertSame( [ $value ], $this->meta['subtitle'] );
 	}
 
 	/**
@@ -695,7 +803,7 @@ final class ContentMetaUpdateTest extends TestCase {
 	}
 
 	public function test_read_back_reports_the_persisted_map(): void {
-		$this->meta['subtitle'] = 'A revised standfirst';
+		$this->meta['subtitle'] = [ 'A revised standfirst' ];
 
 		$state = $this->operation->readBack( 'post:42', $this->makeContext() );
 
@@ -727,7 +835,7 @@ final class ContentMetaUpdateTest extends TestCase {
 	 * column — asserted through the call order rather than assumed.
 	 */
 	public function test_restore_writes_the_recorded_map_back(): void {
-		$this->meta['subtitle'] = 'A revised standfirst';
+		$this->meta['subtitle'] = [ 'A revised standfirst' ];
 
 		$this->assertSame(
 			'post:42',
@@ -743,7 +851,7 @@ final class ContentMetaUpdateTest extends TestCase {
 			)
 		);
 
-		$this->assertSame( 'An original standfirst', $this->meta['subtitle'] );
+		$this->assertSame( [ 'An original standfirst' ], $this->meta['subtitle'] );
 		$this->assertSame( [ 'update_post_meta', 'update_post_meta' ], $this->callOrder );
 	}
 
