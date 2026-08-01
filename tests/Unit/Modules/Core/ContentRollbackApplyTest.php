@@ -1216,6 +1216,63 @@ final class ContentRollbackApplyTest extends TestCase {
 	}
 
 	/**
+	 * The same refusal when the current map is NOT empty, which emptiness of the
+	 * overlay alone does not catch.
+	 *
+	 * The snapshot recorded only `gone`, which has since left the allowlist, while
+	 * the post still carries `subtitle`. The overlay is therefore
+	 * `['subtitle' => 'new']` — non-empty, and entirely the value already stored.
+	 * Promising it would have the rollback verify having restored nothing at all,
+	 * which is the identical outcome to the empty-map case and must be refused the
+	 * same way. The test is whether any RECORDED key survived, not whether the
+	 * result has anything in it.
+	 *
+	 * It matters beyond this operation: all three writes still to come record
+	 * snapshots holding only `meta` or only `terms`, so this is the ordinary shape
+	 * of their rollbacks rather than an edge case of this one.
+	 */
+	public function test_a_recorded_meta_map_whose_every_key_left_the_allowlist_is_refused(): void {
+		$this->stubMetaAndTerms( [ 'subtitle' => 'new' ], [] );
+		$this->queueSnapshot( [ 'restore_state' => '{"meta":{"gone":"x"},"post_id":42}' ], 2 );
+
+		$current = $this->operation->resolveTarget( [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+
+		try {
+			$this->operation->planChange( $current, [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::RollbackUnavailable, $e->errorCode );
+			$this->assertSame(
+				'The recorded snapshot holds no value this rollback could put back, so it cannot be restored.',
+				$e->getMessage()
+			);
+		}
+	}
+
+	/**
+	 * The taxonomy loop carries the same condition and is deliberately a separate
+	 * loop, so it needs its own proof: a mutation to one is invisible to a test
+	 * that only exercises the other.
+	 */
+	public function test_a_recorded_term_map_whose_every_taxonomy_was_unregistered_is_refused(): void {
+		$this->stubMetaAndTerms( [], [ 'category' => [ 11 ] ] );
+		$this->queueSnapshot( [ 'restore_state' => '{"post_id":42,"terms":{"gone_tax":[9]}}' ], 2 );
+
+		$current = $this->operation->resolveTarget( [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+
+		try {
+			$this->operation->planChange( $current, [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::RollbackUnavailable, $e->errorCode );
+			$this->assertSame(
+				'The recorded snapshot holds no value this rollback could put back, so it cannot be restored.',
+				$e->getMessage()
+			);
+		}
+	}
+
+	/**
 	 * The capture must record everything applyChange() can now write, which is
 	 * two values wider than it was. Without this, reversing a rollback that
 	 * changed meta or terms would promise the columns, skip the absent keys in

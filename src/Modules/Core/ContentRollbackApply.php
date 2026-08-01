@@ -225,20 +225,29 @@ final class ContentRollbackApply implements WriteOperation {
 		// the value cannot be restored to somewhere the read path can no longer
 		// see.
 		//
-		// An overlay that comes back EMPTY is not promised at all, rather than
-		// promised as an empty map. Every recorded key was dropped, so there is
-		// nothing left for the restore to put back, and `meta => []` would be a
-		// promise restoreFields() satisfies by doing nothing — a rollback reported
-		// verified having restored none of what the snapshot recorded. Skipping it
-		// is what lets the empty-promise refusal below see such a snapshot as
-		// holding no restorable value, which is what it is.
+		// An overlay NONE of whose recorded keys survived is not promised at all.
+		// The test is array_intersect_key() against the recorded map rather than
+		// emptiness of the overlay, because those are different questions and only
+		// the first is the one that matters: did the snapshot contribute anything?
+		//
+		// Emptiness alone is under-inclusive. A snapshot recording `gone => x`
+		// against a current map of `subtitle => new` overlays to `subtitle => new` —
+		// non-empty, so it would be promised, and the rollback would verify having
+		// restored nothing but the value already there. That is the identical case
+		// to a snapshot overlaying onto an empty map, distinguished only by whether
+		// the current map happens to hold something else. Both must be refused, and
+		// the intersection refuses both.
+		//
+		// Every key having been dropped means an allowlist narrowed, or a taxonomy
+		// unregistered, since capture — so the value cannot be restored to anywhere
+		// the read path can still see, and saying so is the honest answer.
 		foreach ( ContentTarget::RESTORABLE_CUSTOM_FIELDS as $field ) {
 			if ( array_key_exists( $field, $state ) && is_array( $state[ $field ] ) ) {
 				$overlaid = $this->fields->overlayKnownKeys(
 					is_array( $current->fields[ $field ] ?? null ) ? $current->fields[ $field ] : [],
 					$state[ $field ]
 				);
-				if ( [] !== $overlaid ) {
+				if ( [] !== array_intersect_key( $state[ $field ], $overlaid ) ) {
 					$promised[ $field ] = $overlaid;
 				}
 			}
@@ -250,7 +259,7 @@ final class ContentRollbackApply implements WriteOperation {
 					is_array( $current->fields[ $field ] ?? null ) ? $current->fields[ $field ] : [],
 					$state[ $field ]
 				);
-				if ( [] !== $overlaid ) {
+				if ( [] !== array_intersect_key( $state[ $field ], $overlaid ) ) {
 					$promised[ $field ] = $overlaid;
 				}
 			}
