@@ -196,9 +196,9 @@ final class ContentFieldsTest extends TestCase {
 
 	/**
 	 * overlayKnownKeys() is tested here, against its contract, rather than only
-	 * through ContentRollbackApply.
+	 * through ContentRollbackApply and ContentMetaUpdate.
 	 *
-	 * Its only caller today supplies a base that read() has ALREADY sorted — meta()
+	 * Every caller today supplies a base that read() has ALREADY sorted — meta()
 	 * and terms() both ksort before returning — and an overlay never adds a key, so
 	 * the ksort inside this method cannot change anything on that path. Deleting it
 	 * leaves the whole suite green if the rollback tests are the only ones looking.

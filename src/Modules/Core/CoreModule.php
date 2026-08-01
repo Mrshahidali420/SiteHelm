@@ -137,6 +137,11 @@ final class CoreModule implements IntegrationModule {
 			new ContentStatusSet( $fields, $targets )
 		);
 
+		$registry->registerWrite(
+			ContentMetaUpdate::definition(),
+			new ContentMetaUpdate( $fields, $targets )
+		);
+
 		$registry->register( AuditRead::definition(), [ new AuditRead( new AuditStore(), new Installer() ), 'handle' ] );
 	}
 }
