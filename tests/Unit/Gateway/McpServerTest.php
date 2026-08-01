@@ -138,6 +138,12 @@ final class McpServerTest extends TestCase {
 				],
 			]
 		);
+		// Asserted before indexing, deliberately. A failure that escapes toolCall()
+		// into handle()'s outermost handler returns an envelope with no 'result'
+		// key at all, and indexing it blind would report that as an "Undefined
+		// array key" error rather than as a failed assertion — which is how a
+		// regression here would arrive looking like broken test infrastructure.
+		$this->assertArrayHasKey( 'result', $response, 'Expected a tool result, not an escaped failure.' );
 		$this->assertTrue( $response['result']['isError'], 'Expected an isError tool result.' );
 
 		return (array) json_decode( $response['result']['content'][0]['text'], true );

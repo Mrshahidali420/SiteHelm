@@ -114,6 +114,20 @@ and response recorded verbatim.
 
 ### 4. Open items carried forward
 
+- **The gateway's generic failure branch reports a retryable code for failures
+  that may be permanent.** `src/Gateway/McpServer.php`'s `catch ( Throwable )`
+  reports `execution_failed`, which `ErrorCode::isRetryable()` declares
+  retryable — but an unexpected `Throwable` is as likely to be permanent as
+  transient. This product's primary client is a language model, which will
+  retry. The correlation-id fix made those attempts **traceable**, not
+  **bounded**: the loop is now diagnosable after the fact, and still a loop.
+  Left alone deliberately, because retryability is a frozen cross-cutting
+  contract and changing it inside a correlation fix would be exactly the
+  smuggling that fix's own entry warned against. **Needs a decision before V1
+  public release**, alongside the runtime `outputSchema` validation below —
+  either a non-retryable code for genuinely unexpected failures, or a documented
+  client-side attempt bound.
+
 - **The test doubles declare narrower return types than the WordPress functions
   they stand in for, which hides every guard written for the real type.** This is
   systemic, not one slip. A fake declared `alias( fn(): int => … )` for
@@ -165,7 +179,8 @@ and response recorded verbatim.
   it looks: a generic handler reporting `execution_failed` tells the client to
   retry an operation that can never succeed. This product's primary client is a
   language model, which will retry. Recorded as context for the item above, not
-  as a defect in the enum.
+  as a defect in the enum. **The tracing half is now fixed and the retry half is
+  not** — see the live item below, which is where that risk now lives.
 - **Runtime `outputSchema` validation is deferred** per recorded interpretation I6.
   Phase 2 shipped none and Phase 3a adds none; the interim mitigation is a
   per-operation conformance test for each of the nine registered operations
