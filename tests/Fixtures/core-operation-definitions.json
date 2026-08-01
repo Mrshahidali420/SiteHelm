@@ -9,9 +9,10 @@
         "content-featured-media-set",
         "content-status-set",
         "content-meta-update",
+        "content-terms-assign",
         "audit-list"
     ],
-    "operationCount": 10,
+    "operationCount": 11,
     "definitions": {
         "content-get": {
             "inputSchema": {
@@ -694,6 +695,96 @@
                 "required": [
                     "id",
                     "meta"
+                ],
+                "additionalProperties": false
+            },
+            "outputSchema": {
+                "type": "object",
+                "oneOf": [
+                    {
+                        "title": "Plan phase",
+                        "type": "object",
+                        "properties": {
+                            "plan": {
+                                "type": "object",
+                                "description": "The change plan to approve, including its plan token."
+                            }
+                        },
+                        "required": [
+                            "plan"
+                        ],
+                        "additionalProperties": false
+                    },
+                    {
+                        "title": "Apply phase",
+                        "type": "object",
+                        "properties": {
+                            "target": {
+                                "type": "string",
+                                "description": "The concrete target that was written."
+                            },
+                            "changed": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                },
+                                "description": "The fields the approved plan changed."
+                            },
+                            "state": {
+                                "type": "object",
+                                "description": "The verified persisted state of the target."
+                            }
+                        },
+                        "required": [
+                            "target",
+                            "changed",
+                            "state"
+                        ],
+                        "additionalProperties": false
+                    }
+                ]
+            }
+        },
+        "content-terms-assign": {
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "Identifier of the content item being recategorized."
+                    },
+                    "terms": {
+                        "type": "array",
+                        "description": "One entry per taxonomy to replace. Taxonomies not named here are left unchanged; an empty term list removes the item's terms in that taxonomy.",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "taxonomy": {
+                                    "type": "string",
+                                    "maxLength": 32,
+                                    "description": "A taxonomy registered for this content type, as reported by taxonomy-list."
+                                },
+                                "termIds": {
+                                    "type": "array",
+                                    "description": "Identifiers of existing terms in that taxonomy. An empty list removes them all.",
+                                    "items": {
+                                        "type": "integer",
+                                        "minimum": 1
+                                    }
+                                }
+                            },
+                            "required": [
+                                "taxonomy",
+                                "termIds"
+                            ],
+                            "additionalProperties": false
+                        }
+                    }
+                },
+                "required": [
+                    "id",
+                    "terms"
                 ],
                 "additionalProperties": false
             },
