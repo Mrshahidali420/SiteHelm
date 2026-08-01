@@ -80,6 +80,42 @@ final class ContentTarget {
 	public const RESTORABLE_MEDIA_FIELDS = [ 'featured_media' ];
 
 	/**
+	 * The restorable value a content write can change that lives in the post
+	 * meta table under administrator-permitted keys.
+	 *
+	 * A THIRD list rather than more entries in either of the two above, for the
+	 * reason RESTORABLE_MEDIA_FIELDS gives for being the second: one list cannot
+	 * serve two write mechanisms. RESTORABLE_FIELDS is written by one
+	 * wp_update_post() call; RESTORABLE_MEDIA_FIELDS by set_post_thumbnail() with
+	 * one integer; this one by a loop of update_post_meta() calls over a map.
+	 *
+	 * The value in this list is an ARRAY — meta key to string value — covering
+	 * every key ContentFields::allowlist() permitted at the moment of capture,
+	 * not only the keys a write changed. That is what makes it comparable to the
+	 * read-back, which projects the same complete map.
+	 *
+	 * @var string[]
+	 */
+	public const RESTORABLE_CUSTOM_FIELDS = [ 'meta' ];
+
+	/**
+	 * The restorable value a content write can change that lives in the term
+	 * relationship tables.
+	 *
+	 * The fourth list, and the fourth write mechanism: wp_set_object_terms(),
+	 * one call per taxonomy. It cannot be folded into RESTORABLE_CUSTOM_FIELDS
+	 * even though both hold a map, because the values are int[] rather than
+	 * strings and the write is per-taxonomy rather than per-key.
+	 *
+	 * The value is a map of taxonomy name to a sorted, deduplicated list of term
+	 * ids, matching exactly what ContentFields::read() projects, so a restore can
+	 * be verified by re-reading through the same path.
+	 *
+	 * @var string[]
+	 */
+	public const RESTORABLE_TAXONOMY_FIELDS = [ 'terms' ];
+
+	/**
 	 * Resolves one existing content item.
 	 *
 	 * @param int $postId The post identifier.
@@ -198,10 +234,13 @@ final class ContentTarget {
 	 * it, and the contract is to restore the state the snapshot recorded — not
 	 * to invent a value for a column it never observed.
 	 *
-	 * Two write mechanisms are used, because RESTORABLE_MEDIA_FIELDS holds post
-	 * meta rather than post columns: one wp_update_post() call for whichever
-	 * RESTORABLE_FIELDS columns the state recorded, and set_post_thumbnail() /
-	 * delete_post_thumbnail() for a recorded featured-media id. A state holding
+	 * Four write mechanisms are used, one per field list, because only
+	 * RESTORABLE_FIELDS holds post columns: one wp_update_post() call for
+	 * whichever RESTORABLE_FIELDS columns the state recorded,
+	 * set_post_thumbnail() / delete_post_thumbnail() for a recorded
+	 * featured-media id, a loop of update_post_meta() calls for a recorded
+	 * RESTORABLE_CUSTOM_FIELDS map, and one wp_set_object_terms() call per
+	 * taxonomy for a recorded RESTORABLE_TAXONOMY_FIELDS map. A state holding
 	 * no column at all issues no wp_update_post() call.
 	 *
 	 * @param array<string, mixed> $restoreState The recorded restore state.
@@ -262,6 +301,24 @@ final class ContentTarget {
 			}
 		}
 
+		// is_array() as well as array_key_exists(), for the reason the media loop
+		// above uses is_numeric(): a recorded key holding something of the wrong
+		// shape is not a value this restore may act on, and casting it would
+		// manufacture an instruction the snapshot never gave. A stored snapshot
+		// predating these lists holds neither key at all, which is the ordinary
+		// case and is why presence is checked rather than assumed.
+		foreach ( self::RESTORABLE_CUSTOM_FIELDS as $field ) {
+			if ( array_key_exists( $field, $restoreState ) && is_array( $restoreState[ $field ] ) ) {
+				$this->restore_custom_fields( $post_id, $restoreState[ $field ] );
+			}
+		}
+
+		foreach ( self::RESTORABLE_TAXONOMY_FIELDS as $field ) {
+			if ( array_key_exists( $field, $restoreState ) && is_array( $restoreState[ $field ] ) ) {
+				$this->restore_terms( $post_id, $restoreState[ $field ] );
+			}
+		}
+
 		clean_post_cache( $post_id );
 
 		return $this->fields->targetKey( $post_id );
@@ -306,6 +363,128 @@ final class ContentTarget {
 				'WordPress refused to restore the recorded featured image.',
 				'Recover through WordPress revisions instead.'
 			);
+		}
+	}
+	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+
+	/**
+	 * Restores a recorded map of permitted custom fields, verifying by
+	 * measurement.
+	 *
+	 * The return value of update_post_meta() is NOT a success signal, and core
+	 * says so itself: update_metadata()'s docblock reads "false on failure or if the value
+	 * passed to the function is the same as the one that is already in the
+	 * database". The second half is the ordinary case for a restore — most keys in
+	 * a recorded map were never changed by the write being reversed, so most calls
+	 * return false while having done exactly what was asked. Judging by the
+	 * boolean would fail every rollback that restored an unchanged key. The stored
+	 * value is re-read instead, which is unambiguous, and is the same
+	 * verify-by-measurement restore_featured_media() uses for the same reason.
+	 *
+	 * The value is slashed on the way in. update_metadata() calls
+	 * wp_unslash( $meta_value ) before storing, exactly as wp_update_post() does
+	 * for post columns, so an unslashed value containing a backslash or a quote
+	 * loses characters and then fails the comparison below — correctly, but for a
+	 * reason the caller could not act on.
+	 *
+	 * A recorded empty string is written rather than deleted. ContentFields::meta()
+	 * projects an absent key and a key stored as '' identically, so the recorded
+	 * state cannot distinguish them; writing '' reads back as '' and satisfies the
+	 * promise, while deleting would too. Writing is chosen because it is the
+	 * smaller claim: it never removes a row the snapshot did not prove was absent.
+	 *
+	 * @param int                  $post_id The post identifier.
+	 * @param array<string, mixed> $values  The recorded key-to-value map.
+	 *
+	 * @throws OperationException With ErrorCode::ExecutionFailed when a stored
+	 *                           value does not match the recorded one.
+	 *
+	 * phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+	 */
+	private function restore_custom_fields( int $post_id, array $values ): void {
+		foreach ( $values as $key => $value ) {
+			if ( ! is_string( $key ) || '' === $key || ! is_scalar( $value ) ) {
+				continue;
+			}
+
+			update_post_meta( $post_id, $key, wp_slash( (string) $value ) );
+
+			$stored = get_post_meta( $post_id, $key, true );
+			if ( ! is_scalar( $stored ) || (string) $stored !== (string) $value ) {
+				throw new OperationException(
+					ErrorCode::ExecutionFailed,
+					'WordPress refused to restore a recorded custom field value.',
+					'Recover through WordPress revisions instead.'
+				);
+			}
+		}
+	}
+	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+
+	/**
+	 * Restores a recorded map of taxonomy term assignments, verifying by
+	 * measurement.
+	 *
+	 * The return value of wp_set_object_terms() cannot be judged either, in two
+	 * separate ways. It returns TERM TAXONOMY IDs, which are a different id space
+	 * from the term ids that were passed in and that ContentFields::read()
+	 * projects — they coincide on a default install and diverge on any site whose
+	 * terms were ever shared across taxonomies. And it SILENTLY DROPS an integer
+	 * term id that does not resolve in the named taxonomy; core's own comment
+	 * reads "// Skip if a non-existent term ID is passed." followed by
+	 * `if ( is_int( $term ) ) { continue; }`. A restore that trusted the return
+	 * would report success for a set it did not write.
+	 *
+	 * So the assignment is re-read through wp_get_object_terms() with
+	 * `fields => ids`, which is the same call ContentFields::read() makes, and
+	 * compared as a sorted set. Deduplication happens before the write rather than
+	 * after: a recorded list holding the same id twice would otherwise never match
+	 * a stored set that holds it once.
+	 *
+	 * An empty recorded list is an instruction, not a skip — it means the post had
+	 * no terms in that taxonomy, and restoring that is a removal.
+	 * wp_set_object_terms() with an empty array is core's own way to say so.
+	 *
+	 * @param int                  $post_id The post identifier.
+	 * @param array<string, mixed> $map     The recorded taxonomy-to-term-ids map.
+	 *
+	 * @throws OperationException With ErrorCode::ExecutionFailed when a taxonomy
+	 *                           cannot be written or does not read back.
+	 *
+	 * phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+	 */
+	private function restore_terms( int $post_id, array $map ): void {
+		foreach ( $map as $taxonomy => $ids ) {
+			if ( ! is_string( $taxonomy ) || '' === $taxonomy || ! is_array( $ids ) ) {
+				continue;
+			}
+
+			$wanted = array_values( array_unique( array_map( 'intval', $ids ) ) );
+			sort( $wanted, SORT_NUMERIC );
+
+			$written = wp_set_object_terms( $post_id, $wanted, $taxonomy );
+			$stored  = is_wp_error( $written )
+				? $written
+				: wp_get_object_terms( $post_id, $taxonomy, [ 'fields' => 'ids' ] );
+
+			if ( ! is_array( $stored ) ) {
+				throw new OperationException(
+					ErrorCode::ExecutionFailed,
+					'WordPress refused to restore the recorded taxonomy terms.',
+					'Recover through WordPress revisions instead.'
+				);
+			}
+
+			$actual = array_values( array_unique( array_map( 'intval', $stored ) ) );
+			sort( $actual, SORT_NUMERIC );
+
+			if ( $actual !== $wanted ) {
+				throw new OperationException(
+					ErrorCode::ExecutionFailed,
+					'WordPress stored a different set of taxonomy terms than the recorded snapshot held.',
+					'Recover through WordPress revisions instead.'
+				);
+			}
 		}
 	}
 	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped

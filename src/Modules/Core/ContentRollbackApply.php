@@ -201,7 +201,7 @@ final class ContentRollbackApply implements WriteOperation {
 				$promised[ $field ] = (string) $state[ $field ];
 			}
 		}
-		// Values outside RESTORABLE_FIELDS are not post columns and are recorded
+		// RESTORABLE_MEDIA_FIELDS values are not post columns and are recorded
 		// as integers, so they are promised as integers: a string here would make
 		// the promise disagree with the read-back, which reports featured_media
 		// as an int, and a correct rollback would verify as adjusted.
@@ -212,6 +212,47 @@ final class ContentRollbackApply implements WriteOperation {
 		foreach ( ContentTarget::RESTORABLE_MEDIA_FIELDS as $field ) {
 			if ( array_key_exists( $field, $state ) && is_numeric( $state[ $field ] ) ) {
 				$promised[ $field ] = (int) $state[ $field ];
+			}
+		}
+
+		// Overlaid onto the CURRENT map rather than promised as recorded. The
+		// read-back projects every allowlisted meta key and every taxonomy
+		// registered for the post type, so a promise has to be that same complete
+		// map or WriteVerifier compares different shapes and calls a correct
+		// restore not-applied. An allowlist narrowed, or a taxonomy unregistered,
+		// between capture and rollback therefore drops silently out of the promise
+		// instead of becoming an unverifiable write — which is the honest answer:
+		// the value cannot be restored to somewhere the read path can no longer
+		// see.
+		//
+		// An overlay that comes back EMPTY is not promised at all, rather than
+		// promised as an empty map. Every recorded key was dropped, so there is
+		// nothing left for the restore to put back, and `meta => []` would be a
+		// promise restoreFields() satisfies by doing nothing — a rollback reported
+		// verified having restored none of what the snapshot recorded. Skipping it
+		// is what lets the empty-promise refusal below see such a snapshot as
+		// holding no restorable value, which is what it is.
+		foreach ( ContentTarget::RESTORABLE_CUSTOM_FIELDS as $field ) {
+			if ( array_key_exists( $field, $state ) && is_array( $state[ $field ] ) ) {
+				$overlaid = $this->fields->overlayKnownKeys(
+					is_array( $current->fields[ $field ] ?? null ) ? $current->fields[ $field ] : [],
+					$state[ $field ]
+				);
+				if ( [] !== $overlaid ) {
+					$promised[ $field ] = $overlaid;
+				}
+			}
+		}
+
+		foreach ( ContentTarget::RESTORABLE_TAXONOMY_FIELDS as $field ) {
+			if ( array_key_exists( $field, $state ) && is_array( $state[ $field ] ) ) {
+				$overlaid = $this->fields->overlayKnownKeys(
+					is_array( $current->fields[ $field ] ?? null ) ? $current->fields[ $field ] : [],
+					$state[ $field ]
+				);
+				if ( [] !== $overlaid ) {
+					$promised[ $field ] = $overlaid;
+				}
 			}
 		}
 		ksort( $promised, SORT_STRING );
@@ -227,10 +268,13 @@ final class ContentRollbackApply implements WriteOperation {
 		// traceable wrong answer is still a wrong answer, and refusing here is
 		// what keeps the right code on the wire.
 		//
-		// Two stored shapes reach it, and one condition covers both because both
-		// end the same way: a snapshot whose only restorable key holds a value this
-		// restore may not act on (skipped by the gates above), and a snapshot
-		// holding nothing but `post_id`, which the capture path can already produce.
+		// Three stored shapes reach it, and one condition covers all three because
+		// they end the same way: a snapshot whose only restorable key holds a value
+		// this restore may not act on (skipped by the gates above); a snapshot
+		// holding nothing but `post_id`, which the capture path can already produce;
+		// and a snapshot whose only restorable value is a meta or term map every key
+		// of which the current allowlist or taxonomy registration has since dropped,
+		// leaving an overlay with nothing in it.
 		if ( [] === $promised ) {
 			throw new OperationException(
 				ErrorCode::RollbackUnavailable,
@@ -256,21 +300,23 @@ final class ContentRollbackApply implements WriteOperation {
 	 *
 	 * The shared ContentTarget::snapshotOf() is NOT enough on its own, and this
 	 * method must not be simplified back to delegating to it. That records
-	 * `post_id` plus the five RESTORABLE_FIELDS columns and no media id, while
-	 * applyChange() above writes RESTORABLE_MEDIA_FIELDS as well — so a capture
-	 * that stopped at the columns would record none of the one value this
-	 * rollback is about to change. Reversing that rollback would then promise the
-	 * five unchanged columns, skip the absent media key in restoreFields(), match
-	 * its own promise on read-back, and report `verified` while the featured image
-	 * stayed where the rollback put it. That is the outcome the design calls worse
-	 * than a refusal: restore what nothing changed, silently skip what did, report
-	 * success.
+	 * `post_id` plus the five RESTORABLE_FIELDS columns and nothing else, while
+	 * applyChange() above writes RESTORABLE_MEDIA_FIELDS, RESTORABLE_CUSTOM_FIELDS
+	 * and RESTORABLE_TAXONOMY_FIELDS as well — so a capture that stopped at the
+	 * columns would record none of the three values this rollback is about to
+	 * change. Reversing that rollback would then promise the five unchanged
+	 * columns, skip the absent media, meta and term keys in restoreFields(), match
+	 * its own promise on read-back, and report `verified` while the featured image,
+	 * the custom fields and the terms stayed where the rollback put them. That is
+	 * the outcome the design calls worse than a refusal: restore what nothing
+	 * changed, silently skip what did, report success.
 	 *
 	 * snapshotOf() itself is deliberately left alone. Every content write shares
 	 * it, so widening it there would make a `content-update` or
-	 * `content-status-set` rollback restore a featured image those writes never
-	 * touched — trading this defect for a wider one. The media id is added here,
-	 * on the one operation that can actually write it.
+	 * `content-status-set` rollback restore a featured image, a custom field or a
+	 * term those writes never touched — trading this defect for a wider one. The
+	 * three non-column values are added here, on the one operation that can
+	 * actually write them.
 	 *
 	 * 0 is recorded rather than null or an absent key for a post with no featured
 	 * image, for the reason ContentFeaturedMediaSet::captureSnapshot() records it:
@@ -306,6 +352,16 @@ final class ContentRollbackApply implements WriteOperation {
 		foreach ( ContentTarget::RESTORABLE_MEDIA_FIELDS as $field ) {
 			$snapshot[ $field ] = (int) ( $current->fields[ $field ] ?? 0 );
 		}
+
+		// Recorded as the complete maps the read path projects, because that is
+		// what planChange() will later overlay onto and what the read-back will be
+		// compared against. Defaulted to an empty map rather than skipped: a post
+		// with no permitted meta keys and no taxonomies is an ordinary post, and an
+		// absent key would be read by the restore loops as "this snapshot predates
+		// the list" — a different fact.
+		foreach ( array_merge( ContentTarget::RESTORABLE_CUSTOM_FIELDS, ContentTarget::RESTORABLE_TAXONOMY_FIELDS ) as $field ) {
+			$snapshot[ $field ] = is_array( $current->fields[ $field ] ?? null ) ? $current->fields[ $field ] : [];
+		}
 		ksort( $snapshot, SORT_STRING );
 
 		return $snapshot;
@@ -339,6 +395,17 @@ final class ContentRollbackApply implements WriteOperation {
 		foreach ( ContentTarget::RESTORABLE_MEDIA_FIELDS as $field ) {
 			if ( array_key_exists( $field, $planned->afterFields ) && is_numeric( $planned->afterFields[ $field ] ) ) {
 				$restore_state[ $field ] = (int) $planned->afterFields[ $field ];
+			}
+		}
+
+		// One loop where planChange() needed two, because both lists are copied
+		// through unchanged — the shape work already happened when the promise was
+		// built. planChange() is deliberately NOT simplified to match: there the
+		// two loops differ in nothing today and would differ the moment either
+		// value's normalization does.
+		foreach ( array_merge( ContentTarget::RESTORABLE_CUSTOM_FIELDS, ContentTarget::RESTORABLE_TAXONOMY_FIELDS ) as $field ) {
+			if ( array_key_exists( $field, $planned->afterFields ) && is_array( $planned->afterFields[ $field ] ) ) {
+				$restore_state[ $field ] = $planned->afterFields[ $field ];
 			}
 		}
 
