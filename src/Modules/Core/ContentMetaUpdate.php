@@ -211,9 +211,10 @@ final class ContentMetaUpdate implements WriteOperation {
 	 *    worth approving.
 	 * 5. Refuse every key that is not in the allowlist, BEFORE anything is
 	 *    written and before any per-key work.
-	 * 6. Refuse a requested key whose LIVE value is structured, for the reason
-	 *    ContentTarget::writable_custom_fields() refuses one on the restore side.
-	 *    Both passes are read-only, and both run before any write.
+	 * 6. Refuse a requested key whose LIVE value no snapshot can record — a
+	 *    structured one, or more than one row under the key — for the reason
+	 *    ContentTarget::writable_custom_fields() refuses a structured one on the
+	 *    restore side. Both passes are read-only, and both run before any write.
 	 * 7. Overlay onto the complete current map.
 	 *
 	 * A list rather than an object for `meta` is a deliberate asymmetry with
@@ -235,7 +236,7 @@ final class ContentMetaUpdate implements WriteOperation {
 	 *                           empty payload, ErrorCode::Forbidden for a key
 	 *                           outside the site's allowlist, or
 	 *                           ErrorCode::RollbackUnavailable for a key holding a
-	 *                           structured value.
+	 *                           value no snapshot can record.
 	 *
 	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 	 * phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped
@@ -448,7 +449,17 @@ final class ContentMetaUpdate implements WriteOperation {
 	 * offer. The remediation points at the administrator instead, because that is
 	 * genuinely the only way to change the answer.
 	 *
-	 * @param string[] $keys The requested keys.
+	 * The key is cast back to a string before the comparison, and that is not
+	 * belt-and-braces: PHP coerces an INTEGER-LIKE array key to an int, so a
+	 * requested key of '2024' — which allowlist()'s /^[A-Za-z0-9_-]+$/ permits —
+	 * comes out of array_keys() as the int 2024 and fails a strict in_array()
+	 * against the string the administrator stored. It failed closed, so nothing
+	 * was ever writable that should not have been, but it told the operator the
+	 * key was not allowlisted when it was, and no configuration change could have
+	 * made that message stop.
+	 *
+	 * @param array<int, int|string> $keys The requested keys, which PHP may have
+	 *                                     coerced to integers.
 	 *
 	 * @throws OperationException With ErrorCode::Forbidden.
 	 *
@@ -458,7 +469,7 @@ final class ContentMetaUpdate implements WriteOperation {
 		$permitted = $this->fields->allowlist();
 
 		foreach ( $keys as $key ) {
-			if ( ! in_array( $key, $permitted, true ) ) {
+			if ( ! in_array( (string) $key, $permitted, true ) ) {
 				throw new OperationException(
 					ErrorCode::Forbidden,
 					'One of the requested custom fields is not in this site\'s metadata allowlist, so none of them were written.',
@@ -474,21 +485,50 @@ final class ContentMetaUpdate implements WriteOperation {
 	 *
 	 * This is the write-side half of the guard ContentTarget's
 	 * writable_custom_fields() applies on the restore side, and it exists for the
-	 * same root cause: ContentFields::meta() projects a stored array or object as
-	 * '', so the current state this operation reads — and therefore the snapshot
-	 * it captures — records '' for a serialized payload another plugin owns under
-	 * an allowlisted key. Without this pass the operation would overwrite that
-	 * payload with a string, record '' as the prior value, and a later rollback
-	 * would write that '' back, re-read '', match, and report VERIFIED. Data loss
-	 * reported as success, on the write path, with the evidence destroyed by the
-	 * write itself. The preview would lie about it too, showing the field as
-	 * currently empty to the human asked to approve the change.
+	 * same root cause: what the read path projects is narrower than what the meta
+	 * table can hold, so the snapshot records something that is not the prior
+	 * state, the write destroys the evidence, and the rollback then reports
+	 * VERIFIED having replaced a payload it never recorded. Data loss reported as
+	 * success. The preview lies about it too, showing the operator a field that is
+	 * not what the field actually holds.
+	 *
+	 * TWO shapes produce it, and the guard must catch both. Reading with
+	 * `$single = false` answers both in ONE call:
+	 *
+	 * - A STRUCTURED value. ContentFields::meta() reports a stored array or object
+	 *   as '', so a serialized payload another plugin owns under an allowlisted key
+	 *   is recorded as ''.
+	 * - MORE THAN ONE ROW under the key. get_metadata_raw() with `$single = true`
+	 *   returns `maybe_unserialize( $meta_cache[ $meta_key ][0] )` — row 0 and
+	 *   nothing else — so three rows are previewed and recorded as one. That would
+	 *   be survivable if the write touched one row, and it does not:
+	 *   update_metadata() builds `$where = array( $column => $object_id,
+	 *   'meta_key' => $meta_key )` and adds `$where['meta_value']` ONLY when a
+	 *   $prev_value was passed, which this operation does not pass. One
+	 *   `$wpdb->update()` then rewrites EVERY row under the key with the single new
+	 *   value. Verified against WordPress 7.0.2 wp-includes/meta.php; core's own
+	 *   comment above its unchanged-value shortcut reads "Compare existing value to
+	 *   new value if no prev value given and THE KEY EXISTS ONLY ONCE", and it
+	 *   guards that shortcut with `count( $old_value ) === 1` — core itself treats
+	 *   the multi-row case as distinct.
+	 *
+	 * The zero-row case is NOT refused, and must not be: an allowlisted key that
+	 * holds nothing yet is the ordinary state of a site that has just enabled its
+	 * first key. get_post_meta( …, false ) answers `array()` for an absent key —
+	 * get_metadata_default() sets `$value = array()` when `$single` is false — so
+	 * the count is 0 and `$rows[0] ?? ''` supplies a scalar for a list with no
+	 * member.
+	 *
+	 * The is_array() test is not decoration either. get_metadata_raw() returns the
+	 * `get_post_metadata` filter's value UNTOUCHED when `$single` is false, so a
+	 * plugin short-circuiting that filter can hand back anything at all, and
+	 * count() on a non-array is a TypeError rather than a refusal.
 	 *
 	 * Only the REQUESTED keys are checked, not the whole allowlist. An unrequested
-	 * key holding structured data is not something this write can destroy, and
-	 * refusing on its account would block an unrelated field's update. That key is
-	 * still covered — a rollback that would rewrite it is refused by
-	 * writable_custom_fields(), which is the known limitation recorded there.
+	 * key is not something this write can destroy, and refusing on its account
+	 * would block an unrelated field's update. That key is still covered — a
+	 * rollback that would rewrite it is refused by writable_custom_fields(), which
+	 * is the known limitation recorded there.
 	 *
 	 * READ-ONLY, which is what lets it run before any write, and it runs AFTER the
 	 * allowlist pass so a key outside the allowlist gets one answer rather than an
@@ -505,8 +545,9 @@ final class ContentMetaUpdate implements WriteOperation {
 	 * above names none: a key is administrator-configured and a value is site
 	 * content. The audit row's target_key identifies the item.
 	 *
-	 * @param int      $post_id The post identifier.
-	 * @param string[] $keys    The requested keys.
+	 * @param int                    $post_id The post identifier.
+	 * @param array<int, int|string> $keys    The requested keys, which PHP may have
+	 *                                        coerced to integers.
 	 *
 	 * @throws OperationException With ErrorCode::RollbackUnavailable.
 	 *
@@ -514,10 +555,12 @@ final class ContentMetaUpdate implements WriteOperation {
 	 */
 	private function assert_every_key_recoverable( int $post_id, array $keys ): void {
 		foreach ( $keys as $key ) {
-			if ( ! is_scalar( get_post_meta( $post_id, $key, true ) ) ) {
+			$rows = get_post_meta( $post_id, (string) $key, false );
+
+			if ( ! is_array( $rows ) || count( $rows ) > 1 || ! is_scalar( $rows[0] ?? '' ) ) {
 				throw new OperationException(
 					ErrorCode::RollbackUnavailable,
-					'One of the requested custom fields holds a structured value that no snapshot can record, so none of them were written.',
+					'One of the requested custom fields holds a structured value, or more than one value, that no snapshot can record, so none of them were written.',
 					'Ask a site administrator to review which custom field keys are permitted, then request a fresh preview.'
 				);
 			}
