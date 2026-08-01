@@ -115,19 +115,30 @@ use SiteHelm\Contracts\SnapshotPolicy;
  * RECOVERABLE state — nothing is removed, the row keeps every column, and the one
  * configuration in which this operation would destroy anything is refused at plan
  * time above — so on a narrow reading of "data would be lost without a snapshot"
- * this operation loses none. Two things settle it against that reading anyway.
- * First, the flag means "this is destructive", and the costs of being wrong are
- * not symmetric: over-warning costs a caller one confirmation, under-warning
- * costs them a post. Second, the trash IS user-visible state removal in every
- * sense a client cares about — the item leaves every listing, every archive and
- * every feed — and wp_trash_post() additionally hides every comment on it.
+ * this operation loses none. What settles it against that reading is that the
+ * trash IS user-visible state removal in every sense a client cares about: the
+ * item leaves every listing, every archive and every feed, and wp_trash_post()
+ * additionally hides every comment on it.
+ *
+ * No argument from what a CALLER is warned about belongs here, and the temptation
+ * to make one is why the next paragraph is written so plainly.
+ *
+ * THE FLAG IS NOT SURFACED TO CLIENTS TODAY. Its only consumer anywhere in the
+ * plugin is OperationDefinition's own cross-field invariant, which reads it at
+ * :132 (read operations must not be destructive) and :145 (a destructive
+ * operation must declare all three policies Required). CatalogBuilder emits
+ * risk, previewPolicy, snapshotPolicy and rollbackPolicy — it does NOT emit
+ * isDestructive — so no catalog entry, no response envelope and no client ever
+ * sees this value, and no test observes it beyond the definition assertion in
+ * ContentTrashTest. That is precisely why it is cheap to get right now and
+ * expensive to discover wrong later: nothing today would fail if it were wrong,
+ * and the surface that eventually reads it will inherit whatever is recorded.
  *
  * Nothing about the operation's protection turns on the flag either way: the
  * three policies are Required regardless, because rollbackPolicy Required forces
  * snapshotPolicy Required and previewPolicy is declared Required outright, which
  * is exactly what the contract's own sentence about destructive operations
- * demands. The flag is a DECLARATION read by CatalogBuilder for display; it
- * gates no code path in the engine.
+ * demands. So setting it true tightens no gate and loosens none.
  *
  * @package SiteHelm
  */

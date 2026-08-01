@@ -670,6 +670,14 @@ final class ContentTrashTest extends TestCase {
 		// row names "moving content to trash" as its own definitional example. The
 		// contract is frozen and governs; see the class docblock for the nuance
 		// that argued the other way and why it does not win.
+		//
+		// THIS LINE IS THE ONLY OBSERVER OF THE FLAG IN THE REPOSITORY. Nothing
+		// surfaces isDestructive — CatalogBuilder emits risk and the three policies
+		// and not this — so its only other reader is OperationDefinition's own
+		// cross-field invariant, which a value of `true` satisfies here without
+		// changing anything. Delete this assertion and the flag becomes free to
+		// drift silently, which is exactly how it came to disagree with the frozen
+		// contract in the first place.
 		$this->assertTrue( $definition->isDestructive );
 		$this->assertTrue( $definition->isIdempotent );
 	}
