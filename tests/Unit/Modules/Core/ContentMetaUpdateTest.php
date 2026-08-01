@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace SiteHelm\Tests\Unit\Modules\Core;
 
+use ArrayObject;
 use Brain\Monkey\Functions;
 use SiteHelm\Change\TargetState;
 use SiteHelm\Contracts\ErrorCode;
@@ -610,11 +611,20 @@ final class ContentMetaUpdateTest extends TestCase {
 	 * get_metadata_raw() short-circuits on the `get_post_metadata` filter and, when
 	 * `$single` is false, returns the filter's value COMPLETELY UNTOUCHED —
 	 * `return $check;` with no type test of any kind. A caching or virtual-field
-	 * plugin filtering that hook can hand back a bare string, and a bare string is
-	 * not a row list this operation may reason about.
+	 * plugin filtering that hook can hand back anything at all.
+	 *
+	 * The value is an ArrayObject rather than a bare string, and the choice is
+	 * what makes the is_array() term ASSERTABLE rather than merely reached. The
+	 * filter does no type test, so both shapes are equally producible — but a
+	 * Countable-and-ArrayAccess value passes every later term of the guard (one
+	 * countable member, offset 0 scalar), leaving `! is_array( $rows )` the SOLE
+	 * refusing term. Deleting that term now fails this test on the call-order
+	 * assertion, where a bare string could only die as a count() TypeError at
+	 * the guard's own line — a limitation three rounds reported as inherent
+	 * that was in fact a property of the chosen input.
 	 */
 	public function test_a_key_whose_value_list_cannot_be_read_is_refused_before_any_write(): void {
-		Functions\when( 'get_post_meta' )->justReturn( 'An original standfirst' );
+		Functions\when( 'get_post_meta' )->justReturn( new ArrayObject( [ 'An original standfirst' ] ) );
 
 		$this->assertRefusedWithoutWriting(
 			$this->planAndApply( $this->input( [ [ 'subtitle', 'A revised standfirst' ] ] ) ),
@@ -776,11 +786,11 @@ final class ContentMetaUpdateTest extends TestCase {
 			$this->input( [ [ 'subtitle', 'A revised standfirst' ] ] ),
 			$this->makeContext()
 		);
-		Functions\when( 'get_post_meta' )->alias(
-			static fn( $post_id, $key = '', $single = false ) => $single
-				? 'something WordPress substituted'
-				: [ 'something WordPress substituted' ]
-		);
+		// One shape with no $single branch: applyChange() verifies through the
+		// LIST read alone, so a true arm branching on $single would be
+		// unreachable code reading as coverage — the constant-ternary shape this
+		// project has now removed four times.
+		Functions\when( 'get_post_meta' )->justReturn( [ 'something WordPress substituted' ] );
 
 		try {
 			$this->operation->applyChange( $current, $planned, $this->makeContext() );
@@ -788,7 +798,7 @@ final class ContentMetaUpdateTest extends TestCase {
 		} catch ( OperationException $e ) {
 			$this->assertSame( ErrorCode::ExecutionFailed, $e->errorCode );
 			$this->assertSame(
-				'WordPress did not store one of the requested custom field values.',
+				'One of the requested custom fields did not read back as exactly the one value this write stored.',
 				$e->getMessage()
 			);
 			$this->assertNotSame( [], $e->completedSteps );
@@ -819,9 +829,9 @@ final class ContentMetaUpdateTest extends TestCase {
 				return 'A revised standfirst';
 			}
 		};
-		Functions\when( 'get_post_meta' )->alias(
-			static fn( $post_id, $key = '', $single = false ) => $single ? $stringy : [ $stringy ]
-		);
+		// No $single branch, for the reason the previous test's fake has none:
+		// applyChange() only ever asks for the list.
+		Functions\when( 'get_post_meta' )->justReturn( [ $stringy ] );
 
 		try {
 			$this->operation->applyChange( $current, $planned, $this->makeContext() );
@@ -829,7 +839,7 @@ final class ContentMetaUpdateTest extends TestCase {
 		} catch ( OperationException $e ) {
 			$this->assertSame( ErrorCode::ExecutionFailed, $e->errorCode );
 			$this->assertSame(
-				'WordPress did not store one of the requested custom field values.',
+				'One of the requested custom fields did not read back as exactly the one value this write stored.',
 				$e->getMessage()
 			);
 		}
@@ -873,12 +883,64 @@ final class ContentMetaUpdateTest extends TestCase {
 		$this->assertInstanceOf( OperationException::class, $outcome );
 		$this->assertSame( ErrorCode::ExecutionFailed, $outcome->errorCode );
 		$this->assertSame(
-			'WordPress did not store one of the requested custom field values.',
+			'One of the requested custom fields did not read back as exactly the one value this write stored.',
 			$outcome->getMessage()
 		);
 		$this->assertSame( [ 'plan approved', 'snapshot captured' ], $outcome->completedSteps );
 		$this->assertSame( [ 'update_post_meta', 'update_post_meta' ], $this->callOrder );
 		$this->assertSame( [ 'Alex Editor' ], $this->meta['byline'] );
+	}
+
+	/**
+	 * The shape the refusal's wording is written for, and the one that made the
+	 * old wording untrue: a plugin appends its own row to the key it just saw
+	 * written — an audit trail, a translation shadow — so row 0 holds EXACTLY
+	 * the requested value. "WordPress did not store the value" would be false;
+	 * the value stored, and then stopped being the only thing there. Row 0 is
+	 * asserted to hold the requested value for precisely that reason.
+	 *
+	 * The remediation is asserted too, because its old text named a dead end: a
+	 * plain "retry" of this shape is refused at plan time. The second half of
+	 * this test EXECUTES the retry the remediation describes and pins that it is
+	 * refused, so the conditional clause describes something real.
+	 */
+	public function test_a_plugin_appending_a_row_to_the_key_just_written_is_refused_with_a_true_message(): void {
+		$this->onMetaWritten = function ( $key ): void {
+			if ( 'subtitle' === $key ) {
+				$this->meta['subtitle'][] = 'an audit row another plugin appended';
+			}
+		};
+
+		$outcome = $this->planAndApply( $this->input( [ [ 'subtitle', 'A revised standfirst' ] ] ) );
+
+		$this->assertInstanceOf( OperationException::class, $outcome );
+		$this->assertSame( ErrorCode::ExecutionFailed, $outcome->errorCode );
+		$this->assertSame( 'A revised standfirst', $this->meta['subtitle'][0] );
+		$this->assertSame(
+			'One of the requested custom fields did not read back as exactly the one value this write stored.',
+			$outcome->getMessage()
+		);
+		$this->assertSame(
+			'Generate a fresh preview and retry; if the new preview is refused, another plugin is also writing this content item\'s custom fields, so ask a site administrator to review the site\'s plugins.',
+			$outcome->remediation
+		);
+		$this->assertSame( [ 'plan approved', 'snapshot captured' ], $outcome->completedSteps );
+
+		// The retry the remediation names, executed: the fresh preview reads the
+		// same two rows and is refused by the recoverability guard, which is the
+		// "if the new preview is refused" the remediation prepares the operator
+		// for. A remediation that named an always-working retry here would be the
+		// old dead end with nicer words.
+		try {
+			$this->operation->planChange(
+				$this->currentState(),
+				$this->input( [ [ 'subtitle', 'A revised standfirst' ] ] ),
+				$this->makeContext()
+			);
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::RollbackUnavailable, $e->errorCode );
+		}
 	}
 
 	/**
@@ -888,12 +950,19 @@ final class ContentMetaUpdateTest extends TestCase {
 	 * registering on `get_post_metadata` during added_post_meta, for instance.
 	 * get_metadata_raw() returns that filter's value with `return $check;` and no
 	 * type test when $single is false.
+	 *
+	 * An ArrayObject rather than a bare string, for the reason the plan-side
+	 * test uses one: it satisfies every later term of the verification — exactly
+	 * one countable member, offset 0 scalar and equal to the written value — so
+	 * `! is_array( $rows )` is the SOLE refusing term, and deleting it fails
+	 * this test on the instance assertion below instead of dying as a count()
+	 * TypeError at the guard's own line.
 	 */
 	public function test_a_stored_value_list_that_cannot_be_read_back_is_execution_failed(): void {
 		Functions\when( 'get_post_meta' )->alias(
 			function ( $post_id, $key = '', $single = false ) {
 				if ( ! $single && [] !== $this->callOrder ) {
-					return 'a bare string';
+					return new ArrayObject( [ 'A revised standfirst' ] );
 				}
 
 				$rows = $this->meta[ $key ] ?? [];
@@ -907,7 +976,7 @@ final class ContentMetaUpdateTest extends TestCase {
 		$this->assertInstanceOf( OperationException::class, $outcome );
 		$this->assertSame( ErrorCode::ExecutionFailed, $outcome->errorCode );
 		$this->assertSame(
-			'WordPress did not store one of the requested custom field values.',
+			'One of the requested custom fields did not read back as exactly the one value this write stored.',
 			$outcome->getMessage()
 		);
 	}
