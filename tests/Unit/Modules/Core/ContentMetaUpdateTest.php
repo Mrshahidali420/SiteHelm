@@ -11,6 +11,7 @@ namespace SiteHelm\Tests\Unit\Modules\Core;
 
 use ArrayObject;
 use Brain\Monkey\Functions;
+use SiteHelm\Change\PlannedChange;
 use SiteHelm\Change\TargetState;
 use SiteHelm\Contracts\ErrorCode;
 use SiteHelm\Contracts\OperationContext;
@@ -23,6 +24,7 @@ use SiteHelm\Modules\Core\CoreModule;
 use SiteHelm\Registry\CapabilityRegistry;
 use SiteHelm\Tests\TestCase;
 use stdClass;
+use Throwable;
 
 /**
  * REQ-0015: an allowlisted custom field is updated while a key outside the
@@ -316,6 +318,35 @@ final class ContentMetaUpdateTest extends TestCase {
 		}
 
 		return null;
+	}
+
+	/**
+	 * Plans alone and reports the outcome without letting a throwable escape,
+	 * mirroring ContentTargetRestoreTest::restoreOutcome() on the plan phase.
+	 *
+	 * A test whose claim is "this plan is LEGITIMATE" needs a PHP warning to
+	 * surface as a failed assertion with the cause named, not as a test error
+	 * that proves only that something somewhere went wrong. planAndApply()
+	 * cannot serve that: it deliberately catches OperationException alone,
+	 * because every refusal test depends on any other throwable escaping
+	 * loudly, so this narrower helper exists beside it rather than widening it.
+	 *
+	 * @param array<string, mixed> $input The operation arguments.
+	 *
+	 * @return array{0: PlannedChange|null, 1: string} The planned change or
+	 *                                                 null, and a description
+	 *                                                 of any throwable.
+	 */
+	private function planOutcome( array $input ): array {
+		$context = $this->makeContext();
+
+		try {
+			$current = $this->operation->resolveTarget( $input, $context );
+
+			return [ $this->operation->planChange( $current, $input, $context ), 'the plan threw nothing' ];
+		} catch ( Throwable $error ) {
+			return [ null, 'the plan threw ' . get_class( $error ) . ': ' . $error->getMessage() ];
+		}
 	}
 
 	/**
@@ -640,10 +671,21 @@ final class ContentMetaUpdateTest extends TestCase {
 	 *
 	 * get_post_meta( …, false ) answers `array()` for an absent key, so the count
 	 * is 0 and `$rows[0] ?? ''` is what supplies a scalar for a list with no
-	 * member. Deleting that `?? ''` turns this ordinary write into a PHP warning.
+	 * member.
+	 *
+	 * The plan half runs through planOutcome(), which folds any throwable into
+	 * the assertion message the way restoreOutcome() does on the restore side.
+	 * That is what makes the `?? ''` deletable-by-assertion: without the fold it
+	 * could only die as the undefined-offset warning it suppresses, a
+	 * disclosure made in round 1 and withdrawn in round 5 — the fourth
+	 * "inherent" limit that was actually a harness choice.
 	 */
 	public function test_a_key_that_holds_no_value_yet_is_written_normally(): void {
 		$this->meta = [];
+
+		list( $planned, $why ) = $this->planOutcome( $this->input( [ [ 'subtitle', 'A first standfirst' ] ] ) );
+
+		$this->assertInstanceOf( PlannedChange::class, $planned, $why );
 
 		$outcome = $this->planAndApply( $this->input( [ [ 'subtitle', 'A first standfirst' ] ] ) );
 

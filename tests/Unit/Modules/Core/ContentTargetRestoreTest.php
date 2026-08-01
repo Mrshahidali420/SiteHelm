@@ -122,14 +122,18 @@ final class ContentTargetRestoreTest extends TestCase {
 			}
 		);
 
-		// Honours $single as get_metadata_raw() does: true answers ROW 0 alone,
-		// false answers the whole list, and an absent key answers '' or the empty
-		// array respectively — the shapes get_metadata_default() supplies.
+		// Answers the LIST unconditionally, because that is the only read the
+		// code under test issues: every get_post_meta() call in restoreFields() —
+		// the hoisted guard and both verifications — passes $single = false, and
+		// injecting a throw on $single leaves this whole file green. A $single
+		// arm here answered row 0 to a read no test ever makes, the same
+		// unreachable-arm shape round 4 removed from four per-test fakes:
+		// documentation of behaviour nothing reaches, reading as coverage. The
+		// parameter stays declared so the fake keeps core's untyped
+		// three-argument shape and cannot reject a call the platform accepts.
 		Functions\when( 'get_post_meta' )->alias(
 			function ( $post_id, $key = '', $single = false ) {
-				$rows = $this->meta[ $key ] ?? [];
-
-				return $single ? ( $rows[0] ?? '' ) : $rows;
+				return $this->meta[ $key ] ?? [];
 			}
 		);
 
@@ -707,10 +711,6 @@ final class ContentTargetRestoreTest extends TestCase {
 	 * exercise.
 	 */
 	public function test_a_recorded_key_with_no_live_rows_restores_through_the_add_fall_through(): void {
-		// Explicit although setUp leaves the store empty: the emptiness is the
-		// test's whole subject, not an accident of the fixture.
-		$this->meta = [];
-
 		list( $key, $why ) = $this->restoreOutcome(
 			[
 				'post_id' => 42,
@@ -846,11 +846,56 @@ final class ContentTargetRestoreTest extends TestCase {
 		} catch ( OperationException $e ) {
 			$this->assertSame( ErrorCode::ExecutionFailed, $e->errorCode );
 			$this->assertSame( 'WordPress refused to restore the recorded taxonomy terms.', $e->getMessage() );
-			// A terms-only snapshot reports the term marker ALONE: the list is
-			// accumulated, so it cannot claim a column, media or meta write that
-			// this restore never issued.
+			// A refused FIRST write claims no step at all. WordPress answered
+			// WP_Error — for an invalid taxonomy it does so before touching the
+			// relationship table — and the partial marker is earned by a write
+			// that executed, not by entering the loop. Round 4 asserted the
+			// marker here, which claimed a term write that never happened.
+			$this->assertSame( [], $e->completedSteps );
+		}
+	}
+
+	/**
+	 * The marker across loop iterations: the first taxonomy lands, the second is
+	 * refused, and the refusal must carry the marker — the flag is per-restore,
+	 * not per-taxonomy. Without it, a refused second write would report the same
+	 * empty list as a refused first one, hiding the category write that landed.
+	 */
+	public function test_a_term_write_refused_after_another_taxonomy_landed_reports_the_partial_step(): void {
+		Functions\when( 'wp_set_object_terms' )->alias(
+			function ( $post_id, $ids, $taxonomy, $append = false ) {
+				$this->termWrites[] = [ $taxonomy, $ids ];
+
+				if ( 'post_tag' === $taxonomy ) {
+					return new stdClass();
+				}
+
+				$this->terms[ $taxonomy ] = array_values( array_map( 'intval', $ids ) );
+
+				return array_map( static fn( int $id ): int => $id + 1000, $this->terms[ $taxonomy ] );
+			}
+		);
+
+		try {
+			$this->targets->restoreFields(
+				[
+					'post_id' => 42,
+					'terms'   => [
+						'category' => [ 3 ],
+						'post_tag' => [ 9 ],
+					],
+				]
+			);
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::ExecutionFailed, $e->errorCode );
 			$this->assertSame( [ 'taxonomy terms partially restored' ], $e->completedSteps );
 		}
+
+		// The category write genuinely landed before the refusal, which is the
+		// claim the marker carries.
+		$this->assertSame( [ [ 'category', [ 3 ] ], [ 'post_tag', [ 9 ] ] ], $this->termWrites );
+		$this->assertSame( [ 3 ], $this->terms['category'] );
 	}
 
 	/**
@@ -893,6 +938,11 @@ final class ContentTargetRestoreTest extends TestCase {
 		} catch ( OperationException $e ) {
 			$this->assertSame( ErrorCode::ExecutionFailed, $e->errorCode );
 			$this->assertSame( 'WordPress refused to restore the recorded taxonomy terms.', $e->getMessage() );
+			// Unlike the refused-write case above, the write itself EXECUTED —
+			// only the read-back failed — so here the partial marker is truthful
+			// and required. This is the assertion that separates the two arms of
+			// the same throw.
+			$this->assertSame( [ 'taxonomy terms partially restored' ], $e->completedSteps );
 		}
 	}
 
