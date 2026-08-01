@@ -8,9 +8,10 @@
         "content-rollback-apply",
         "content-featured-media-set",
         "content-status-set",
+        "content-meta-update",
         "audit-list"
     ],
-    "operationCount": 9,
+    "operationCount": 10,
     "definitions": {
         "content-get": {
             "inputSchema": {
@@ -606,6 +607,93 @@
                 "required": [
                     "id",
                     "status"
+                ],
+                "additionalProperties": false
+            },
+            "outputSchema": {
+                "type": "object",
+                "oneOf": [
+                    {
+                        "title": "Plan phase",
+                        "type": "object",
+                        "properties": {
+                            "plan": {
+                                "type": "object",
+                                "description": "The change plan to approve, including its plan token."
+                            }
+                        },
+                        "required": [
+                            "plan"
+                        ],
+                        "additionalProperties": false
+                    },
+                    {
+                        "title": "Apply phase",
+                        "type": "object",
+                        "properties": {
+                            "target": {
+                                "type": "string",
+                                "description": "The concrete target that was written."
+                            },
+                            "changed": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                },
+                                "description": "The fields the approved plan changed."
+                            },
+                            "state": {
+                                "type": "object",
+                                "description": "The verified persisted state of the target."
+                            }
+                        },
+                        "required": [
+                            "target",
+                            "changed",
+                            "state"
+                        ],
+                        "additionalProperties": false
+                    }
+                ]
+            }
+        },
+        "content-meta-update": {
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "Identifier of the content item whose custom fields are being updated."
+                    },
+                    "meta": {
+                        "type": "array",
+                        "description": "Custom fields to write. Every key must appear in the site's metadata allowlist; if any does not, none are written.",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "key": {
+                                    "type": "string",
+                                    "maxLength": 255,
+                                    "description": "An allowlisted custom field name."
+                                },
+                                "value": {
+                                    "type": "string",
+                                    "maxLength": 65535,
+                                    "description": "The value to store, as text."
+                                }
+                            },
+                            "required": [
+                                "key",
+                                "value"
+                            ],
+                            "additionalProperties": false
+                        }
+                    }
+                },
+                "required": [
+                    "id",
+                    "meta"
                 ],
                 "additionalProperties": false
             },
