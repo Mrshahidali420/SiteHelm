@@ -33,11 +33,18 @@ final class ContentUpdateTest extends TestCase {
 	/** @var array<int, array<string, mixed>> */
 	private array $writes = [];
 
+	/** @var array<int, array<int, int|string>> */
+	private array $thumbnailWrites = [];
+
+	private int $thumbnailId = 0;
+
 	protected function setUp(): void {
 		parent::setUp();
-		$fields          = new ContentFields();
-		$this->operation = new ContentUpdate( $fields, new ContentTarget( $fields ) );
-		$this->writes    = [];
+		$fields                = new ContentFields();
+		$this->operation       = new ContentUpdate( $fields, new ContentTarget( $fields ) );
+		$this->writes          = [];
+		$this->thumbnailWrites = [];
+		$this->thumbnailId     = 0;
 
 		Functions\when( 'user_can' )->justReturn( false );
 		Functions\when( 'wp_kses_post' )->alias( static fn( string $v ): string => str_replace( '<script>', '', $v ) );
@@ -45,7 +52,30 @@ final class ContentUpdateTest extends TestCase {
 		Functions\when( 'wp_slash' )->alias( static fn( array $v ): array => $v );
 		Functions\when( 'is_wp_error' )->justReturn( false );
 		Functions\when( 'clean_post_cache' )->justReturn( null );
-		Functions\when( 'get_post_thumbnail_id' )->justReturn( 0 );
+		// Answers what WordPress answers: false when there is no thumbnail, not 0.
+		// A `: int` return type here would make false unreachable and quietly
+		// retire the (int) cast in restore_featured_media()'s comparison — which is
+		// load-bearing, since `false !== 0` would refuse every legitimate restore
+		// to "no featured image".
+		Functions\when( 'get_post_thumbnail_id' )->alias(
+			fn() => 0 === $this->thumbnailId ? false : $this->thumbnailId
+		);
+		Functions\when( 'set_post_thumbnail' )->alias(
+			function ( int $post_id, int $media_id ): bool {
+				$this->thumbnailWrites[] = [ 'set', $post_id, $media_id ];
+				$this->thumbnailId       = $media_id;
+
+				return true;
+			}
+		);
+		Functions\when( 'delete_post_thumbnail' )->alias(
+			function ( int $post_id ): bool {
+				$this->thumbnailWrites[] = [ 'delete', $post_id, 0 ];
+				$this->thumbnailId       = 0;
+
+				return true;
+			}
+		);
 		Functions\when( 'get_object_taxonomies' )->justReturn( [] );
 		Functions\when( 'get_option' )->justReturn( [] );
 		Functions\when( 'wp_update_post' )->alias(
@@ -496,6 +526,199 @@ final class ContentUpdateTest extends TestCase {
 		$this->assertSame(
 			[ 'ID', 'post_title', 'post_content', 'post_excerpt' ],
 			array_keys( $this->writes[0] )
+		);
+	}
+
+	/**
+	 * The column write's own refusal path. It was reachable unconditionally before
+	 * the `count( $update ) > 1` guard was introduced, and no test covered it then
+	 * — restoreFields()'s ExecutionFailed throw was the only uncovered statement
+	 * group in ContentTarget. Now that a condition stands in front of it, "the
+	 * write still happens when a column is recorded" is not sufficient: the
+	 * failure branch inside the guard has to be shown still to fire.
+	 */
+	public function test_restore_reports_a_refused_column_write_as_execution_failed(): void {
+		Functions\when( 'wp_update_post' )->justReturn( 0 );
+
+		try {
+			$this->operation->restore(
+				[
+					'post_id'    => 42,
+					'post_title' => 'Original title',
+				],
+				$this->makeContext()
+			);
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::ExecutionFailed, $e->errorCode );
+		}
+	}
+
+	/**
+	 * A featured-media snapshot records no post column at all. Restoring it must
+	 * set the thumbnail and must NOT issue a wp_update_post() call: an update
+	 * carrying only an ID re-saves the row, bumping post_modified and firing
+	 * save_post for a rollback that changed no column.
+	 */
+	public function test_restore_sets_a_recorded_featured_image_without_touching_any_column(): void {
+		$this->thumbnailId = 5;
+
+		$this->assertSame(
+			'post:42',
+			$this->operation->restore(
+				[
+					'post_id'        => 42,
+					'featured_media' => 108,
+				],
+				$this->makeContext()
+			)
+		);
+
+		$this->assertSame( [ [ 'set', 42, 108 ] ], $this->thumbnailWrites );
+		$this->assertSame( [], $this->writes );
+	}
+
+	/**
+	 * A recorded 0 is a legal value: it means the post had no featured image, and
+	 * restoring it is a deletion. It is also the only falsy value in any restore
+	 * state, so it is what separates array_key_exists from `! empty()` — the
+	 * latter would skip it and leave a thumbnail the rollback promised to remove.
+	 */
+	public function test_restore_deletes_the_thumbnail_when_the_snapshot_recorded_none(): void {
+		$this->thumbnailId = 108;
+
+		$this->operation->restore(
+			[
+				'post_id'        => 42,
+				'featured_media' => 0,
+			],
+			$this->makeContext()
+		);
+
+		$this->assertSame( [ [ 'delete', 42, 0 ] ], $this->thumbnailWrites );
+	}
+
+	/**
+	 * The platform declines the write, and the measurement catches it.
+	 *
+	 * The fake returns TRUE deliberately. A fake returning false would let this
+	 * test pass off either signal — the boolean or the re-read — and the whole
+	 * point of restore_featured_media() is that it reads the second. With the
+	 * boolean claiming success and the stored id still 0, the only thing that can
+	 * produce this refusal is the re-read.
+	 */
+	public function test_restore_reports_a_featured_image_that_did_not_land_as_execution_failed(): void {
+		Functions\when( 'set_post_thumbnail' )->justReturn( true );
+		$this->thumbnailId = 0;
+
+		try {
+			$this->operation->restore(
+				[
+					'post_id'        => 42,
+					'featured_media' => 108,
+				],
+				$this->makeContext()
+			);
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::ExecutionFailed, $e->errorCode );
+		}
+	}
+
+	/**
+	 * A snapshot recorded by content-update carries no featured_media key at all,
+	 * and a rollback of it must leave the thumbnail alone. Restoring a value the
+	 * snapshot never observed is the same defect class as defaulting an absent
+	 * post_status to '', which wp_update_post() resolves to 'draft'.
+	 */
+	public function test_restore_leaves_the_thumbnail_untouched_when_the_snapshot_recorded_none_at_all(): void {
+		$this->thumbnailId = 108;
+
+		$this->operation->restore(
+			[
+				'post_id'      => 42,
+				'post_title'   => 'Original title',
+				'post_content' => '<p>Original body.</p>',
+				'post_excerpt' => '',
+			],
+			$this->makeContext()
+		);
+
+		$this->assertSame( [], $this->thumbnailWrites );
+		$this->assertSame( 108, $this->thumbnailId );
+	}
+
+	/**
+	 * `(int) null` is 0, and 0 is the recorded value that MEANS "restore to no
+	 * featured image". So a featured_media key present with a null value — a
+	 * shape a hand-edited or truncated snapshot row can hold — would DELETE a
+	 * live featured image and report the rollback verified.
+	 *
+	 * This is the same defect class as an absent post_status defaulting to '',
+	 * which wp_update_post() resolves to 'draft': a value nothing ever observed
+	 * turning into a destructive instruction. The recorded columns are still
+	 * restored; only the unusable media value is skipped.
+	 */
+	public function test_restore_skips_a_recorded_featured_media_that_is_not_numeric(): void {
+		$this->thumbnailId = 108;
+
+		$this->operation->restore(
+			[
+				'post_id'        => 42,
+				'post_title'     => 'Original title',
+				'featured_media' => null,
+			],
+			$this->makeContext()
+		);
+
+		$this->assertSame( [], $this->thumbnailWrites );
+		$this->assertSame( 108, $this->thumbnailId );
+		$this->assertSame( 'Original title', $this->writes[0]['post_title'] );
+	}
+
+	/**
+	 * The other half of "the boolean is not the signal", and the half that makes
+	 * the rollback idempotent: BOTH platform calls answer false when the recorded
+	 * state already holds. set_post_thumbnail() forwards update_post_meta(), which
+	 * returns false when the stored value is already the requested one, and
+	 * delete_post_thumbnail() returns false when there was no thumbnail to delete.
+	 * Treating either as a failure would make re-applying a rollback — the
+	 * ordinary case for an idempotent operation — report execution_failed on a
+	 * post that is already in exactly the recorded state.
+	 *
+	 * Added beyond the brief's six tests. The brief pinned the wrong-value
+	 * direction only, which leaves the direction that actually motivates the
+	 * re-read unpinned: inverting the comparison to `===` would keep every other
+	 * test in this file green.
+	 */
+	public function test_restore_treats_an_unchanged_featured_image_as_already_restored(): void {
+		Functions\when( 'set_post_thumbnail' )->justReturn( false );
+		Functions\when( 'delete_post_thumbnail' )->justReturn( false );
+
+		// Recorded 108, already stored 108: update_post_meta() answers false.
+		$this->thumbnailId = 108;
+		$this->assertSame(
+			'post:42',
+			$this->operation->restore(
+				[
+					'post_id'        => 42,
+					'featured_media' => 108,
+				],
+				$this->makeContext()
+			)
+		);
+
+		// Recorded 0, none stored: delete_post_thumbnail() answers false.
+		$this->thumbnailId = 0;
+		$this->assertSame(
+			'post:42',
+			$this->operation->restore(
+				[
+					'post_id'        => 42,
+					'featured_media' => 0,
+				],
+				$this->makeContext()
+			)
 		);
 	}
 }

@@ -55,13 +55,15 @@ final class CoreDefinitionInvariantsTest extends TestCase {
 		'content-update',
 		'content-create',
 		'content-rollback-apply',
+		'content-featured-media-set',
+		'content-status-set',
 		'audit-list',
 	];
 
 	/**
 	 * The core module's frozen write count.
 	 */
-	private const CORE_WRITE_COUNT = 3;
+	private const CORE_WRITE_COUNT = 5;
 
 	/**
 	 * A registry with the core module registered.
@@ -146,7 +148,7 @@ final class CoreDefinitionInvariantsTest extends TestCase {
 		$registry = $this->registryWithCoreModule();
 
 		// Derived from the catalog rather than from OPERATION_IDS. Filtering the
-		// hardcoded list would make the count below unable to fail: a fourth
+		// hardcoded list would make the count below unable to fail: a further
 		// write registered under a new id would never enter $writes, so the
 		// assertion would keep passing while claiming to have noticed. Do not
 		// simplify this back to registeredDefinitions().
@@ -163,7 +165,7 @@ final class CoreDefinitionInvariantsTest extends TestCase {
 		$this->assertCount(
 			self::CORE_WRITE_COUNT,
 			$writes,
-			'The core module must expose three writes; a fourth write has to declare the shared union too, and this count is what makes it say so.'
+			'The core module must expose five writes; a sixth write has to declare the shared union too, and this count is what makes it say so.'
 		);
 
 		foreach ( $writes as $write ) {

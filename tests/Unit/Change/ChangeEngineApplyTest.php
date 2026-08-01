@@ -1135,4 +1135,81 @@ final class ChangeEngineApplyTest extends TestCase {
 		$this->assertArrayHasKey( 'target', $applied->data );
 		$this->assertSame( 1, $this->operation->applyCalls );
 	}
+
+	/**
+	 * The load-bearing property behind every payload-dependent capability check
+	 * in the core writes.
+	 *
+	 * PolicyEngine::authorize() receives the definition, the context and one
+	 * integer target id — never the payload — and Dispatcher calls it once, up
+	 * front. So a capability that depends on WHAT is being written
+	 * (publish_posts only for a publish transition, assign_terms only for the
+	 * taxonomies actually named) cannot live in the gate, and lives inside
+	 * planChange() instead.
+	 *
+	 * That is as strong as a gate check for exactly one reason: apply() calls
+	 * planChange() AGAIN, so every guard inside it is re-evaluated against the
+	 * capabilities the user holds now. A caller cannot preview while holding a
+	 * capability, lose it, and then apply on the stale authorization.
+	 *
+	 * Both halves of the property are pinned here, in one test, because neither
+	 * half is evidence on its own: a call count says nothing about whether the
+	 * refusal is honoured, and the refusal cannot arrive at all unless the call
+	 * happens. The assertions are ordered so that each of the two mutations
+	 * reports itself precisely, and the exception is captured into a variable
+	 * rather than asserted inside a catch block for exactly that ordering:
+	 *
+	 * - Hoist planChange() out of apply() — reusing the previewed PlannedChange
+	 *   from the stored plan body, which reads like an obvious optimisation
+	 *   since the payload hash already proves the payload is unchanged — and
+	 *   planCalls fails first, at 0 where 1 was expected. That refactor would
+	 *   otherwise convert every conditional capability in this design into a
+	 *   preview-time-only check with the whole suite green.
+	 * - Swallow the refusal, or catch and re-raise it as something generic, and
+	 *   the assertions on the exception fail while planCalls still passes.
+	 *
+	 * Message and remediation are asserted alongside the code because they are
+	 * what proves the operation's own refusal reached the caller verbatim rather
+	 * than being rebuilt into a generic failure. applyCalls and the absence of
+	 * any inserted row are what prove the refusal arrived in time: a test
+	 * asserting only the error code would also pass if the write had already
+	 * landed and the exception were raised afterwards.
+	 */
+	public function test_apply_re_runs_plan_change_so_a_refusal_inside_it_stops_the_write(): void {
+		$this->operation->planThrows = new OperationException(
+			ErrorCode::Forbidden,
+			'Your WordPress user may not publish this content type.',
+			'Set the item to draft or pending instead.'
+		);
+
+		$refusal = null;
+
+		try {
+			$this->apply();
+		} catch ( OperationException $e ) {
+			$refusal = $e;
+		}
+
+		$this->assertSame(
+			1,
+			$this->operation->planCalls,
+			'apply() must call planChange() again rather than reuse the previewed plan.'
+		);
+
+		$this->assertNotNull(
+			$refusal,
+			'A refusal raised inside planChange() must refuse the apply.'
+		);
+		$this->assertSame( ErrorCode::Forbidden, $refusal->errorCode );
+		$this->assertSame(
+			'Your WordPress user may not publish this content type.',
+			$refusal->getMessage()
+		);
+		$this->assertSame( 'Set the item to draft or pending instead.', $refusal->remediation );
+
+		// Nothing executed, and no snapshot or audit row was opened for a write
+		// that never happened.
+		$this->assertSame( 0, $this->operation->applyCalls );
+		$this->assertSame( [], $this->wpdb->inserts );
+	}
 }

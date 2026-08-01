@@ -61,7 +61,22 @@ The default `[]` means **nothing is writable until an administrator opts in**. T
 
 That last point is the sharp edge: a payload naming three keys, one of which is not allowlisted, must write **none** of them. Validate the whole payload, then write.
 
-## Decision 5 — Trash needs a wider restore state, and this is the only engine-adjacent change
+## Decision 5 — Trash needs a wider restore state
+
+**This heading originally claimed to be "the only engine-adjacent change", and that was wrong.** REQ-0017 needs one too, for a reason the design missed: a featured image is `_thumbnail_id` **post meta**, not a post column. `ContentRollbackApply` rebuilds every restoration from `ContentTarget::RESTORABLE_FIELDS`, which are five columns written through `wp_update_post`. A media-only snapshot therefore intersects that list to nothing, `$promised` comes out empty, and `PlannedChange` rejects an empty promise with `InvalidArgumentException` — which escapes `ChangeEngine::preview()` uncaught into the generic `Throwable` handler instead of the `rollback_unavailable` code the contract already has for exactly this.
+
+Widening the media snapshot to carry the five columns instead would be worse: it would restore columns nothing changed and silently skip the one that did, then report `verified`.
+
+The fix is a separate restorable-media field list, applying the same present-keys-only mechanism this decision establishes for columns. It lands **before** REQ-0017 so that operation is built on a safe base.
+
+**Implemented (2026-07-27, with REQ-0017 and REQ-0018).** `ContentTarget::RESTORABLE_MEDIA_FIELDS` now sits beside `RESTORABLE_FIELDS`, and the correction above is therefore no longer only a claim about `RESTORED_FIELDS`: **three** methods loop over both lists, not one — `ContentTarget::restoreFields()`, `ContentRollbackApply::planChange()` and `ContentRollbackApply::applyChange()`, six loops in total, each gated on `array_key_exists`. Two consequences the amendment above did not anticipate:
+
+- `restoreFields()` uses **two write mechanisms**, because the media list holds post meta: one `wp_update_post()` call for whichever columns the state recorded, and `set_post_thumbnail()` / `delete_post_thumbnail()` for a recorded featured-media id. A state holding no column at all — which is exactly what a featured-media snapshot looks like — issues **no** `wp_update_post()` call, because calling it with an `ID` alone is not a no-op: WordPress re-saves the row, bumping `post_modified` and firing `save_post` for a rollback that changed no column.
+- The media values are promised as **integers** and gated on `is_numeric` as well as presence, because `(int) null` is `0` and a recorded `0` means "restore to no featured image"; promising a null as `0` would have the rollback offer to delete a live featured image.
+
+`ContentRollbackApply::planChange()` also now refuses an empty promise with `ErrorCode::RollbackUnavailable` rather than letting `PlannedChange`'s `InvalidArgumentException` escape into the generic `Throwable` handler, which is the hole this decision identified above.
+
+
 
 REQ-0019 is the only requirement whose rollback policy is `Required`, and no operation has ever declared it. `OperationDefinition` forces `SnapshotPolicy::Required` alongside it.
 
@@ -110,33 +125,36 @@ REQ-0017 ships anyway. `content-get` already returns `featuredMedia`, so an id i
 
 ## Files
 
+Status is recorded inline, matching the Testing section below, so a reader does not have to re-derive which rows have landed.
+
 | File | Change |
 |---|---|
-| `src/Modules/Core/ContentMetaUpdate.php` | **New.** REQ-0015. |
-| `src/Modules/Core/ContentTermsAssign.php` | **New.** REQ-0016. |
-| `src/Modules/Core/ContentFeaturedMediaSet.php` | **New.** REQ-0017. |
-| `src/Modules/Core/ContentStatusSet.php` | **New.** REQ-0018. |
-| `src/Modules/Core/ContentTrash.php` | **New.** REQ-0019. |
-| `src/Modules/Core/ContentFields.php` | `DRAFT_LIKE_STATUSES` promoted to public. |
-| `src/Modules/Core/ContentTarget.php` | `snapshotOf()` gains `post_status` and `post_name`; `restoreFields()` restores present keys only. |
-| `src/Modules/Core/ContentRollbackApply.php` | Its second fixed list, `RESTORED_FIELDS`, must go; the rollback path must write back the widened state and read present keys only. |
-| `src/Modules/Core/ContentCreate.php` | Consumes the promoted constant. |
-| `src/Policy/PolicyEngine.php` | `assign_terms` row removed from `META_CAPABILITY_MAP`. |
-| `src/Modules/Core/CoreModule.php` | Five additive registrations in the table. |
-| `tests/Unit/Modules/Core/CoreDefinitionInvariantsTest.php` | Five ids added to `OPERATION_IDS`. |
-| `tests/fixtures/…` | Golden fixture regenerated for twelve operations. |
+| `src/Modules/Core/ContentMetaUpdate.php` | **New.** REQ-0015. **Still outstanding.** |
+| `src/Modules/Core/ContentTermsAssign.php` | **New.** REQ-0016. **Still outstanding.** |
+| `src/Modules/Core/ContentFeaturedMediaSet.php` | **New.** REQ-0017. **Shipped 2026-07-27.** |
+| `src/Modules/Core/ContentTarget.php` | Also gains a restorable-media field list, per the correction in Decision 5 — a featured image is post meta, not a column, so the column list cannot carry it. `restoreFields()` therefore also writes that list, through `set_post_thumbnail()` / `delete_post_thumbnail()`, and skips `wp_update_post()` entirely when the recorded state held no column. **Shipped 2026-07-27**, with one addition the design did not anticipate: the media write is judged by re-reading the stored id, never by `set_post_thumbnail()`'s return value, which is `false` for an already-stored value and `true` for a non-renderable attachment whose `_thumbnail_id` it just deleted. |
+| `src/Modules/Core/ContentStatusSet.php` | **New.** REQ-0018. **Shipped 2026-07-27.** |
+| `src/Modules/Core/ContentTrash.php` | **New.** REQ-0019. **Still outstanding.** |
+| `src/Modules/Core/ContentFields.php` | `DRAFT_LIKE_STATUSES` promoted to public. **Shipped 2026-07-27.** |
+| `src/Modules/Core/ContentTarget.php` | `snapshotOf()` gains `post_status` and `post_name`; `restoreFields()` restores present keys only. **Shipped.** `snapshotOf()` deliberately does NOT gain the media id: every content write shares it, so a rollback of `content-update` would restore a featured image that write never touched. |
+| `src/Modules/Core/ContentRollbackApply.php` | Its second fixed list, `RESTORED_FIELDS`, must go; the rollback path must write back the widened state and read present keys only. **Also, for REQ-0017:** both `planChange()` and `applyChange()` loop `RESTORABLE_MEDIA_FIELDS` after the column list, promising and restoring the media id as an integer; and `planChange()` refuses an empty promise with `rollback_unavailable`. **Shipped 2026-07-27**, plus a fourth change this table originally missed: `captureSnapshot()` must add the media id too. It delegated to `snapshotOf()`, so it recorded none of the one value the widened `applyChange()` writes — leaving the rollback unable to reverse itself while reporting `verified`. Whatever a write can change, its own capture must record. |
+| `src/Modules/Core/ContentCreate.php` | Consumes the promoted constant. **Shipped 2026-07-27.** |
+| `src/Policy/PolicyEngine.php` | `assign_terms` row removed from `META_CAPABILITY_MAP`. **Still outstanding** — it belongs with REQ-0016. |
+| `src/Modules/Core/CoreModule.php` | Five additive registrations in the table. **Two of five landed** (REQ-0017, REQ-0018). |
+| `tests/Unit/Modules/Core/CoreDefinitionInvariantsTest.php` | Five ids added to `OPERATION_IDS`. **Two of five added**, along with `CORE_WRITE_COUNT`. |
+| `tests/Fixtures/core-operation-definitions.json` | Golden fixture regenerated. **Nine operations today**; twelve once all five writes land. |
 
 Each new operation carries its own `definition()`, per the convention PR #5 established.
 
 ## Testing
 
-Beyond each operation's own behaviour, five properties need pinning because nothing else catches them:
+Beyond each operation's own behaviour, five properties need pinning because nothing else catches them. Three are now pinned; the status of each is recorded inline so a reader does not have to re-derive which are still outstanding:
 
-- **`planChange()` re-checks capability at apply**, not only at preview. Without this the payload-dependent checks in Decision 1 are weaker than a gate check.
-- **A term id valid in another taxonomy is refused**, not silently dropped.
-- **A partially-allowlisted metadata payload writes nothing.**
-- **A restore state lacking the new keys still restores** what it does contain.
-- **Declaring `assign_terms` in `requiredCapabilities` now fails closed.**
+- **`planChange()` re-checks capability at apply**, not only at preview. Without this the payload-dependent checks in Decision 1 are weaker than a gate check. **Pinned 2026-07-27** by `ChangeEngineApplyTest::test_apply_re_runs_plan_change_so_a_refusal_inside_it_stops_the_write`, which asserts both the call count and that a refusal thrown inside `planChange()` stops the write.
+- **A term id valid in another taxonomy is refused**, not silently dropped. **Still outstanding** — REQ-0016 is not built.
+- **A partially-allowlisted metadata payload writes nothing.** **Still outstanding** — REQ-0015 is not built.
+- **A restore state lacking the new keys still restores** what it does contain. **Pinned by the prep branch (PR #6)**, `ContentRollbackApplyTest::test_a_snapshot_recorded_before_the_widening_restores_only_what_it_holds`.
+- **Declaring `assign_terms` in `requiredCapabilities` now fails closed.** **Pinned by the prep branch (PR #6)**, `PolicyEngineTest::test_declaring_assign_terms_asks_for_the_primitive_not_a_post_scoped_check` and `::test_edit_posts_does_not_substitute_for_assign_terms`.
 
 Plus the four live cases PR #2 could not exercise because these operations did not exist: `publish`→`future`, the trash slug rename, metadata unslashing, and a dropped featured media id. Each is a transformation that would have produced a false verification failure before interpretation I7.
 
@@ -146,4 +164,4 @@ Plus the four live cases PR #2 could not exercise because these operations did n
 - `audit-list`'s undeclared entry members.
 - Widening `OperationResult`'s warnings channel to reads.
 - Media, menu, Elementor, Meta Box and ACF blocks.
-- Extracting `ContentRollbackApply`, now 523 lines.
+- Extracting `ContentRollbackApply`, now 578 lines after REQ-0017's media loops landed in it.
