@@ -12,11 +12,11 @@
 
 | Requirement | Operation id | Declared capability | Risk | Rollback |
 |---|---|---|---|---|
-| REQ-0015 | `content-meta-update` | `edit_post` + allowlist | high | supported |
-| REQ-0016 | `content-terms-assign` | `edit_post` + per-taxonomy `assign_terms` | medium | supported |
+| REQ-0015 | `content-meta-update` | `edit_post` + allowlist | high | supported — **see Decision 4b**, which this required a restorable-meta list to make true |
+| REQ-0016 | `content-terms-assign` | `edit_post` + per-taxonomy `assign_terms` | medium | supported — **see Decision 4b**, same reason |
 | REQ-0017 | `content-featured-media-set` | `edit_post` | medium | supported |
 | REQ-0018 | `content-status-set` | `edit_post`, conditionally `publish_posts` | medium | supported |
-| REQ-0019 | `content-trash` | `delete_post` | medium | **required** |
+| REQ-0019 | `content-trash` | `delete_post` | medium | **required** — and refused outright when the site disables the trash, **see Decision 5b** |
 
 Ids follow the established `<domain>-<verb>` shape, extended to `<domain>-<noun>-<verb>` where the noun is needed to distinguish which part of the content record is written. `content-update` already owns title, content and excerpt.
 
@@ -60,6 +60,26 @@ REQ-0015 adds that check, reusing `allowlist()` rather than introducing a second
 The default `[]` means **nothing is writable until an administrator opts in**. That is the correct default and is not softened: an MCP client that can write arbitrary post meta can write `_edit_lock`, serialized option-like payloads, and other plugins' private state. A key absent from the allowlist is refused with `Forbidden`, matching REQ-0015's acceptance evidence — "a protected key write was rejected with forbidden error leaving its value unchanged" — and the "leaving its value unchanged" half means **the refusal happens before any key is written**, not partway through.
 
 That last point is the sharp edge: a payload naming three keys, one of which is not allowlisted, must write **none** of them. Validate the whole payload, then write.
+
+## Decision 4b — Added 2026-08-01: `rollbackPolicy: supported` was false for REQ-0015 and REQ-0016 as designed
+
+Planning group B found the table above promises something the system could not deliver. The foundation contract defines `rollbackPolicy` as reversibility **through `rollback-apply`** — and that operation does not call the write's own `restore()`. It rebuilds state from `RESTORABLE_FIELDS` plus `RESTORABLE_MEDIA_FIELDS` and calls `ContentTarget::restoreFields()`.
+
+`meta` and `terms` are in neither list. So a metadata or term snapshot produces an empty promise and is refused with `rollback_unavailable` — **after the write's own response has already handed the client a `rollbackRef`.** A reference to a rollback that cannot run is worse than declaring the operation irreversible, because the client only discovers it at the moment it needs recovery.
+
+This is the third instance of one root cause: **a value a write can change must appear in some restorable-field list, or its rollback is a promise the system cannot keep.** REQ-0017 hit it for media; these two hit it for meta and terms.
+
+The fix applies Decision 5's own mechanism — one list per write mechanism, since meta, terms, media and columns each need a different WordPress call. `ContentTarget::snapshotOf()` is **still not widened**: every content write shares it, so widening would make unrelated rollbacks restore values their write never touched.
+
+## Decision 5b — Added 2026-08-01: `wp_trash_post()` permanently deletes on a common configuration
+
+`wp_trash_post()`'s **first statement** is `if ( ! EMPTY_TRASH_DAYS ) { return wp_delete_post( $post_id, true ); }`.
+
+`define( 'EMPTY_TRASH_DAYS', 0 )` is a documented WordPress setting that disables the trash entirely. On such a site, the operation whose rollback policy is **`required`** and whose user outcome is "an agency operator retires client content recoverably so a mistake never destroys data" would **permanently destroy the content instead**, and nothing after the call could detect or undo it.
+
+`content-trash` therefore refuses with `Forbidden` when the trash is disabled, in `planChange()`, before anything is written. Declining to act is the only honest answer: the requirement's entire value is recoverability, and on that configuration recoverability does not exist.
+
+This is the same shape as the `set_post_thumbnail()` finding — a core function whose behaviour on a legitimate configuration is the opposite of what its name implies, found by reading the source rather than trusting it.
 
 ## Decision 5 — Trash needs a wider restore state
 
@@ -139,7 +159,7 @@ Status is recorded inline, matching the Testing section below, so a reader does 
 | `src/Modules/Core/ContentTarget.php` | `snapshotOf()` gains `post_status` and `post_name`; `restoreFields()` restores present keys only. **Shipped.** `snapshotOf()` deliberately does NOT gain the media id: every content write shares it, so a rollback of `content-update` would restore a featured image that write never touched. |
 | `src/Modules/Core/ContentRollbackApply.php` | Its second fixed list, `RESTORED_FIELDS`, must go; the rollback path must write back the widened state and read present keys only. **Also, for REQ-0017:** both `planChange()` and `applyChange()` loop `RESTORABLE_MEDIA_FIELDS` after the column list, promising and restoring the media id as an integer; and `planChange()` refuses an empty promise with `rollback_unavailable`. **Shipped 2026-07-27**, plus a fourth change this table originally missed: `captureSnapshot()` must add the media id too. It delegated to `snapshotOf()`, so it recorded none of the one value the widened `applyChange()` writes — leaving the rollback unable to reverse itself while reporting `verified`. Whatever a write can change, its own capture must record. |
 | `src/Modules/Core/ContentCreate.php` | Consumes the promoted constant. **Shipped 2026-07-27.** |
-| `src/Policy/PolicyEngine.php` | `assign_terms` row removed from `META_CAPABILITY_MAP`. **Still outstanding** — it belongs with REQ-0016. |
+| `src/Policy/PolicyEngine.php` | `assign_terms` row removed from `META_CAPABILITY_MAP`. **Shipped in PR #6**, ahead of REQ-0016 rather than with it. |
 | `src/Modules/Core/CoreModule.php` | Five additive registrations in the table. **Two of five landed** (REQ-0017, REQ-0018). |
 | `tests/Unit/Modules/Core/CoreDefinitionInvariantsTest.php` | Five ids added to `OPERATION_IDS`. **Two of five added**, along with `CORE_WRITE_COUNT`. |
 | `tests/Fixtures/core-operation-definitions.json` | Golden fixture regenerated. **Nine operations today**; twelve once all five writes land. |
