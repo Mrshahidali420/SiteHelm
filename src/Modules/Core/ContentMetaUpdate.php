@@ -377,6 +377,16 @@ final class ContentMetaUpdate implements WriteOperation {
 	 * to add_metadata() only when there are none, so a key admitted by the plan
 	 * guard holding zero or one row must hold exactly one afterwards.
 	 *
+	 * The refusal's wording is written for the shape this guard most plausibly
+	 * refuses: a plugin that appends its own row to the key just written — an
+	 * audit trail, a translation shadow — leaves row 0 holding EXACTLY the
+	 * requested value, so "WordPress did not store the value" would be false.
+	 * The value stored; it stopped being the only thing there. And the
+	 * remediation cannot promise that a retry succeeds, because a fresh preview
+	 * of that shape is refused at plan time by assert_every_key_recoverable()
+	 * reading the same two rows — so it says what to do when that happens
+	 * instead of naming a dead end. Neither sentence names the key.
+	 *
 	 * @param TargetState      $current The resolved current state.
 	 * @param PlannedChange    $planned The promised change.
 	 * @param OperationContext $context The request context.
@@ -398,8 +408,8 @@ final class ContentMetaUpdate implements WriteOperation {
 			if ( ! is_array( $rows ) || 1 !== count( $rows ) || ! is_scalar( $rows[0] ) || (string) $rows[0] !== (string) $value ) {
 				throw new OperationException(
 					ErrorCode::ExecutionFailed,
-					'WordPress did not store one of the requested custom field values.',
-					'Generate a fresh preview and retry; the prior values remain recorded for rollback.',
+					'One of the requested custom fields did not read back as exactly the one value this write stored.',
+					'Generate a fresh preview and retry; if the new preview is refused, another plugin is also writing this content item\'s custom fields, so ask a site administrator to review the site\'s plugins.',
 					[ 'plan approved', 'snapshot captured' ]
 				);
 			}

@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace SiteHelm\Tests\Unit\Modules\Core;
 
+use ArrayObject;
 use Brain\Monkey\Functions;
 use SiteHelm\Contracts\ErrorCode;
 use SiteHelm\Contracts\OperationException;
@@ -266,11 +267,10 @@ final class ContentTargetRestoreTest extends TestCase {
 	}
 
 	public function test_a_custom_field_that_does_not_read_back_is_execution_failed(): void {
-		Functions\when( 'get_post_meta' )->alias(
-			static fn( $post_id, $key = '', $single = false ) => $single
-				? 'something else entirely'
-				: [ 'something else entirely' ]
-		);
+		// One shape with no $single branch: both reads in the restore path — the
+		// hoisted guard and the verification — ask for the LIST, so a true arm
+		// branching on $single would be unreachable code reading as coverage.
+		Functions\when( 'get_post_meta' )->justReturn( [ 'something else entirely' ] );
 
 		try {
 			$this->targets->restoreFields(
@@ -391,15 +391,22 @@ final class ContentTargetRestoreTest extends TestCase {
 	 * It is reachable through core rather than through a malformed double:
 	 * get_metadata_raw() short-circuits on the `get_post_metadata` filter and, when
 	 * `$single` is false, returns the filter's value with `return $check;` and no
-	 * type test of any kind, so a caching or virtual-field plugin can hand back a
-	 * bare string.
+	 * type test of any kind, so a caching or virtual-field plugin can hand back
+	 * anything at all.
+	 *
+	 * An ArrayObject rather than a bare string, because the choice is what makes
+	 * the is_array() term ASSERTABLE rather than merely reached: a
+	 * Countable-and-ArrayAccess value passes every later term of the guard (one
+	 * countable member, offset 0 scalar), leaving `! is_array( $rows )` the SOLE
+	 * refusing term, so deleting it fails on the message assertion below — the
+	 * write proceeds and dies at the verification with the OTHER message — where
+	 * a bare string could only die as a count() TypeError at the guard's line.
 	 */
 	public function test_a_custom_field_whose_value_list_cannot_be_read_is_refused_before_anything_is_written(): void {
 		// One value for both arities, which is what the short-circuit really does:
 		// get_metadata_raw() answers `$check[0]` for a single read only when the
-		// filter returned an ARRAY, and returns the value untouched otherwise. So a
-		// filter answering a bare string answers that same string to both.
-		Functions\when( 'get_post_meta' )->justReturn( 'current' );
+		// filter returned an ARRAY, and returns any other value untouched to both.
+		Functions\when( 'get_post_meta' )->justReturn( new ArrayObject( [ 'current' ] ) );
 
 		try {
 			$this->targets->restoreFields(
@@ -506,10 +513,111 @@ final class ContentTargetRestoreTest extends TestCase {
 	}
 
 	/**
+	 * A failed featured-media restore reports the column write that already
+	 * landed. The media write runs AFTER wp_update_post(), so its refusal is
+	 * reachable with the title and status already back — the accumulated list
+	 * was built for exactly this and then never handed to this throw, which
+	 * reported an empty list and told the operator nothing had been restored.
+	 *
+	 * The list is asserted in FULL rather than by length: it must name the
+	 * column write and nothing else, because the media step itself failed and no
+	 * entry may claim it.
+	 */
+	public function test_a_failed_featured_media_restore_reports_the_column_write_that_already_landed(): void {
+		Functions\when( 'wp_update_post' )->alias(
+			function ( $postarr, $wp_error = false ) {
+				$this->callOrder[] = 'wp_update_post';
+
+				return 42;
+			}
+		);
+		Functions\when( 'set_post_thumbnail' )->justReturn( true );
+		Functions\when( 'get_post_thumbnail_id' )->justReturn( 900 );
+
+		try {
+			$this->targets->restoreFields(
+				[
+					'post_id'        => 42,
+					'post_title'     => 'Original title',
+					'featured_media' => 55,
+				]
+			);
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::ExecutionFailed, $e->errorCode );
+			$this->assertSame( 'WordPress refused to restore the recorded featured image.', $e->getMessage() );
+			$this->assertSame( [ 'content columns restored' ], $e->completedSteps );
+		}
+	}
+
+	/**
+	 * The LAST mechanism refusing after every other one landed — the fullest
+	 * accumulation restoreFields() can produce. Columns, featured image and
+	 * custom fields are all verifiably back; the term write stores a different
+	 * set; the operator must be told all three survived.
+	 *
+	 * 'taxonomy terms partially restored' rather than silence about the step
+	 * that failed, because the mechanism was entered without verifiably
+	 * completing: an earlier taxonomy in the same map may already have been
+	 * written, and core's wp_set_object_terms() inserts relationships one term
+	 * at a time, so even this single-taxonomy failure cannot claim the term
+	 * state is untouched. The order of the list pins the accumulation order,
+	 * which is the write order.
+	 */
+	public function test_a_failed_term_restore_reports_every_step_that_already_landed(): void {
+		Functions\when( 'wp_update_post' )->alias(
+			function ( $postarr, $wp_error = false ) {
+				$this->callOrder[] = 'wp_update_post';
+
+				return 42;
+			}
+		);
+		Functions\when( 'set_post_thumbnail' )->justReturn( true );
+		Functions\when( 'get_post_thumbnail_id' )->justReturn( 55 );
+		Functions\when( 'wp_get_object_terms' )->justReturn( [ 3 ] );
+		$this->meta = [ 'subtitle' => [ 'current' ] ];
+
+		try {
+			$this->targets->restoreFields(
+				[
+					'post_id'        => 42,
+					'post_title'     => 'Original title',
+					'featured_media' => 55,
+					'meta'           => [ 'subtitle' => 'recorded' ],
+					'terms'          => [ 'category' => [ 3, 9 ] ],
+				]
+			);
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::ExecutionFailed, $e->errorCode );
+			$this->assertSame(
+				'WordPress stored a different set of taxonomy terms than the recorded snapshot held.',
+				$e->getMessage()
+			);
+			$this->assertSame(
+				[
+					'content columns restored',
+					'featured image restored',
+					'custom fields restored',
+					'taxonomy terms partially restored',
+				],
+				$e->completedSteps
+			);
+		}
+	}
+
+	/**
 	 * The is_array() term of the VERIFICATION, which the guard's own test cannot
 	 * reach: the guard refuses a non-array before the write ever happens, so the
 	 * verification only sees one if the reading changes between the two calls —
 	 * a filter registered on `get_post_metadata` during save_post, for instance.
+	 *
+	 * An ArrayObject rather than a bare string, for the reason the guard's test
+	 * uses one: it satisfies every later term of the verification — exactly one
+	 * countable member, offset 0 scalar and equal to the recorded value — so
+	 * `! is_array( $rows )` is the sole refusing term, and deleting it fails
+	 * this test on its own fail() assertion instead of dying as a count()
+	 * TypeError at the guard's line.
 	 */
 	public function test_a_custom_field_whose_value_list_cannot_be_read_back_is_execution_failed(): void {
 		$reads = 0;
@@ -517,7 +625,7 @@ final class ContentTargetRestoreTest extends TestCase {
 			static function ( $post_id, $key = '', $single = false ) use ( &$reads ) {
 				++$reads;
 
-				return 1 === $reads ? [ 'current' ] : 'recorded';
+				return 1 === $reads ? [ 'current' ] : new ArrayObject( [ 'recorded' ] );
 			}
 		);
 
@@ -583,6 +691,39 @@ final class ContentTargetRestoreTest extends TestCase {
 	}
 
 	/**
+	 * The zero-row arm of the guard and of the verification, which every other
+	 * test in this file skips by seeding the restored key with a live row.
+	 *
+	 * A key holding NOTHING yet is an ordinary restore target: the write being
+	 * reversed may have been that key's first ever write, unwound by the
+	 * engine's compensation path through this same method. get_post_meta( …,
+	 * false ) answers array() for the absent key, so the guard's `$rows[0] ?? ''`
+	 * is what supplies a scalar for a list with no member — deleting that `?? ''`
+	 * fails here on the outcome assertion, because restoreOutcome() folds the
+	 * undefined-offset error into $why rather than dying of it. After the write,
+	 * update_metadata() has fallen through to add_metadata(), so the exactly-one
+	 * verification sees one row and must accept: the add-fall-through half of
+	 * "exactly one refuses no legitimate restore", which no seeded-row test can
+	 * exercise.
+	 */
+	public function test_a_recorded_key_with_no_live_rows_restores_through_the_add_fall_through(): void {
+		// Explicit although setUp leaves the store empty: the emptiness is the
+		// test's whole subject, not an accident of the fixture.
+		$this->meta = [];
+
+		list( $key, $why ) = $this->restoreOutcome(
+			[
+				'post_id' => 42,
+				'meta'    => [ 'subtitle' => 'recorded' ],
+			]
+		);
+
+		$this->assertSame( 'post:42', $key, $why );
+		$this->assertSame( [ [ 'subtitle', 'recorded' ] ], $this->metaWrites );
+		$this->assertSame( [ 'recorded' ], $this->meta['subtitle'] );
+	}
+
+	/**
 	 * The verification read's own is_scalar() half, which the pre-write guard does
 	 * NOT subsume: a save_post hook belonging to another plugin can replace the row
 	 * between the write and the read-back.
@@ -631,11 +772,9 @@ final class ContentTargetRestoreTest extends TestCase {
 	 * error envelope, and both would travel to the client in one.
 	 */
 	public function test_the_custom_field_refusal_names_neither_the_key_nor_the_value(): void {
-		Functions\when( 'get_post_meta' )->alias(
-			static fn( $post_id, $key = '', $single = false ) => $single
-				? 'stored-secret-value'
-				: [ 'stored-secret-value' ]
-		);
+		// One shape with no $single branch, for the reason the does-not-read-back
+		// test's fake has none: the restore path only ever asks for the list.
+		Functions\when( 'get_post_meta' )->justReturn( [ 'stored-secret-value' ] );
 
 		try {
 			$this->targets->restoreFields(
@@ -707,6 +846,10 @@ final class ContentTargetRestoreTest extends TestCase {
 		} catch ( OperationException $e ) {
 			$this->assertSame( ErrorCode::ExecutionFailed, $e->errorCode );
 			$this->assertSame( 'WordPress refused to restore the recorded taxonomy terms.', $e->getMessage() );
+			// A terms-only snapshot reports the term marker ALONE: the list is
+			// accumulated, so it cannot claim a column, media or meta write that
+			// this restore never issued.
+			$this->assertSame( [ 'taxonomy terms partially restored' ], $e->completedSteps );
 		}
 	}
 

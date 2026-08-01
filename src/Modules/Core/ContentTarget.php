@@ -295,20 +295,22 @@ final class ContentTarget {
 			}
 		}
 
+		// What has actually landed by the time a later step refuses. Every write
+		// mechanism below except the first can fail after earlier ones succeeded —
+		// the featured-media write after the columns, the custom-field
+		// verification after both, the term writes after all three — so each of
+		// those refusals carries this list; a bare ExecutionFailed from any of
+		// them would tell the operator nothing about which restores to expect.
+		// Accumulated as each step succeeds rather than declared up front, so it
+		// can never claim a step that was skipped: a meta-only snapshot names no
+		// column write, because it issued none.
+		$completed = [];
+
 		// Only 'ID' means the recorded state held no post column at all, which is
 		// what a featured-media snapshot looks like. Calling wp_update_post() with
 		// an ID alone is not a no-op: WordPress re-saves the row, bumping
 		// post_modified and firing save_post for a rollback that changed no
 		// column. So the column write is skipped rather than issued empty.
-		// What has actually landed by the time a later step refuses. The custom-field
-		// write is the one step that can fail AFTER earlier steps succeeded — its
-		// own pre-write guard is hoisted, but its verification is not, and a refusal
-		// there leaves the columns and the featured image already restored. A bare
-		// ExecutionFailed would tell the operator nothing about which of those to
-		// expect. Accumulated as each step succeeds rather than declared up front,
-		// so it can never claim a step that was skipped.
-		$completed = [];
-
 		if ( count( $update ) > 1 ) {
 			$restored = wp_update_post( wp_slash( $update ), true );
 
@@ -329,16 +331,29 @@ final class ContentTarget {
 		// the rollback verified. Structurally the same as an absent post_status
 		// defaulting to '' and resolving to 'draft' — a value nothing observed
 		// becoming a destructive instruction. Skipped rather than guessed.
+		// The completed entry is appended AFTER the loop rather than inside it, so
+		// a second member joining RESTORABLE_MEDIA_FIELDS could not duplicate the
+		// step; the flag records that at least one media write landed.
+		$media_restored = false;
 		foreach ( self::RESTORABLE_MEDIA_FIELDS as $field ) {
 			if ( array_key_exists( $field, $restoreState ) && is_numeric( $restoreState[ $field ] ) ) {
-				$this->restore_featured_media( $post_id, (int) $restoreState[ $field ] );
-				$completed[] = 'featured image restored';
+				$this->restore_featured_media( $post_id, (int) $restoreState[ $field ], $completed );
+				$media_restored = true;
 			}
 		}
 
+		if ( $media_restored ) {
+			$completed[] = 'featured image restored';
+		}
+
 		// Already validated and flattened by the hoisted pass above, so this only
-		// writes. An empty map issues no call.
+		// writes. An empty map issues no call — and records no step, for the same
+		// reason the column write only records itself when it was issued.
 		$this->restore_custom_fields( $post_id, $custom_fields, $completed );
+
+		if ( [] !== $custom_fields ) {
+			$completed[] = 'custom fields restored';
+		}
 
 		// is_array() as well as array_key_exists(), for the reason the media loop
 		// above uses is_numeric(): a recorded key holding something of the wrong
@@ -348,7 +363,7 @@ final class ContentTarget {
 		// case and is why presence is checked rather than assumed.
 		foreach ( self::RESTORABLE_TAXONOMY_FIELDS as $field ) {
 			if ( array_key_exists( $field, $restoreState ) && is_array( $restoreState[ $field ] ) ) {
-				$this->restore_terms( $post_id, $restoreState[ $field ] );
+				$this->restore_terms( $post_id, $restoreState[ $field ], $completed );
 			}
 		}
 
@@ -375,15 +390,23 @@ final class ContentTarget {
 	 * a deletion, not a skip. get_post_thumbnail_id() answers false when there
 	 * is none, which casts to the same 0.
 	 *
-	 * @param int $post_id  The post identifier.
-	 * @param int $media_id The recorded attachment identifier, or 0 for none.
+	 * The refusal carries the steps that already landed, which the caller
+	 * accumulates and passes in: this write runs after the column write, so its
+	 * failure is reachable with the title and status already back, and an empty
+	 * list here would tell the operator nothing was restored — which is false
+	 * for the ordinary column-and-media snapshot. The media step itself appears
+	 * in no list, because it is the step that failed.
+	 *
+	 * @param int      $post_id   The post identifier.
+	 * @param int      $media_id  The recorded attachment identifier, or 0 for none.
+	 * @param string[] $completed The restore steps that have already succeeded.
 	 *
 	 * @throws OperationException With ErrorCode::ExecutionFailed when the stored
 	 *                           thumbnail does not match the recorded one.
 	 *
 	 * phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 	 */
-	private function restore_featured_media( int $post_id, int $media_id ): void {
+	private function restore_featured_media( int $post_id, int $media_id, array $completed ): void {
 		if ( 0 === $media_id ) {
 			delete_post_thumbnail( $post_id );
 		} else {
@@ -394,7 +417,8 @@ final class ContentTarget {
 			throw new OperationException(
 				ErrorCode::ExecutionFailed,
 				'WordPress refused to restore the recorded featured image.',
-				'Recover through WordPress revisions instead.'
+				'Recover through WordPress revisions instead.',
+				$completed
 			);
 		}
 	}
@@ -431,12 +455,16 @@ final class ContentTarget {
 	 * the method. See writable_custom_fields() for why.
 	 *
 	 * The refusal carries the steps that ALREADY LANDED, which the caller
-	 * accumulates and passes in. This is the one write in restoreFields() whose
-	 * failure is reachable after earlier writes succeeded — its own pre-write guard
-	 * is hoisted above everything, but its verification cannot be — so a bare
-	 * ExecutionFailed here would tell an operator that a rollback failed without
-	 * saying that the columns and the featured image are already back. The steps
-	 * name mechanisms, never keys or values.
+	 * accumulates and passes in — as every restore write that runs after another
+	 * one does: restore_featured_media() can fail after the column write, and
+	 * restore_terms() after columns, media and meta have all landed. This
+	 * method's own pre-write guard is hoisted above everything, but its
+	 * verification cannot be, so a bare ExecutionFailed here would tell an
+	 * operator that a rollback failed without saying that the columns and the
+	 * featured image are already back. The step is 'partially restored' rather
+	 * than nothing, because the throw fires mid-loop: an earlier key may already
+	 * have been written, and the failing key's own row no longer holds anything
+	 * the snapshot describes. The steps name mechanisms, never keys or values.
 	 *
 	 * @param int                   $post_id   The post identifier.
 	 * @param array<string, string> $values    The validated key-to-value map.
@@ -613,15 +641,27 @@ final class ContentTarget {
 	 * no terms in that taxonomy, and restoring that is a removal.
 	 * wp_set_object_terms() with an empty array is core's own way to say so.
 	 *
-	 * @param int                  $post_id The post identifier.
-	 * @param array<string, mixed> $map     The recorded taxonomy-to-term-ids map.
+	 * Both refusals carry the steps that already landed, merged with a
+	 * 'taxonomy terms partially restored' marker. This loop runs LAST, after the
+	 * columns, the featured image and the custom fields have all been written,
+	 * so a bare ExecutionFailed here would hide three completed restores from
+	 * the operator. The marker says the mechanism was entered without verifiably
+	 * completing, and it cannot say less: an earlier taxonomy in the same map
+	 * may already have been written, and core's wp_set_object_terms() inserts
+	 * relationships one term at a time, so even a single-taxonomy failure cannot
+	 * claim the term state is untouched.
+	 *
+	 * @param int                  $post_id   The post identifier.
+	 * @param array<string, mixed> $map       The recorded taxonomy-to-term-ids map.
+	 * @param string[]             $completed The restore steps that have already
+	 *                                        succeeded.
 	 *
 	 * @throws OperationException With ErrorCode::ExecutionFailed when a taxonomy
 	 *                           cannot be written or does not read back.
 	 *
 	 * phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 	 */
-	private function restore_terms( int $post_id, array $map ): void {
+	private function restore_terms( int $post_id, array $map, array $completed ): void {
 		foreach ( $map as $taxonomy => $ids ) {
 			if ( ! is_string( $taxonomy ) || '' === $taxonomy || ! is_array( $ids ) ) {
 				continue;
@@ -639,7 +679,8 @@ final class ContentTarget {
 				throw new OperationException(
 					ErrorCode::ExecutionFailed,
 					'WordPress refused to restore the recorded taxonomy terms.',
-					'Recover through WordPress revisions instead.'
+					'Recover through WordPress revisions instead.',
+					array_merge( $completed, [ 'taxonomy terms partially restored' ] )
 				);
 			}
 
@@ -650,7 +691,8 @@ final class ContentTarget {
 				throw new OperationException(
 					ErrorCode::ExecutionFailed,
 					'WordPress stored a different set of taxonomy terms than the recorded snapshot held.',
-					'Recover through WordPress revisions instead.'
+					'Recover through WordPress revisions instead.',
+					array_merge( $completed, [ 'taxonomy terms partially restored' ] )
 				);
 			}
 		}
