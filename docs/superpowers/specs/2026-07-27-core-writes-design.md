@@ -125,22 +125,24 @@ REQ-0017 ships anyway. `content-get` already returns `featuredMedia`, so an id i
 
 ## Files
 
+Status is recorded inline, matching the Testing section below, so a reader does not have to re-derive which rows have landed.
+
 | File | Change |
 |---|---|
-| `src/Modules/Core/ContentMetaUpdate.php` | **New.** REQ-0015. |
-| `src/Modules/Core/ContentTermsAssign.php` | **New.** REQ-0016. |
-| `src/Modules/Core/ContentFeaturedMediaSet.php` | **New.** REQ-0017. |
-| `src/Modules/Core/ContentTarget.php` | Also gains a restorable-media field list, per the correction in Decision 5 — a featured image is post meta, not a column, so the column list cannot carry it. `restoreFields()` therefore also writes that list, through `set_post_thumbnail()` / `delete_post_thumbnail()`, and skips `wp_update_post()` entirely when the recorded state held no column. |
-| `src/Modules/Core/ContentStatusSet.php` | **New.** REQ-0018. |
-| `src/Modules/Core/ContentTrash.php` | **New.** REQ-0019. |
-| `src/Modules/Core/ContentFields.php` | `DRAFT_LIKE_STATUSES` promoted to public. |
-| `src/Modules/Core/ContentTarget.php` | `snapshotOf()` gains `post_status` and `post_name`; `restoreFields()` restores present keys only. |
-| `src/Modules/Core/ContentRollbackApply.php` | Its second fixed list, `RESTORED_FIELDS`, must go; the rollback path must write back the widened state and read present keys only. **Also, for REQ-0017:** both `planChange()` and `applyChange()` loop `RESTORABLE_MEDIA_FIELDS` after the column list, promising and restoring the media id as an integer; and `planChange()` refuses an empty promise with `rollback_unavailable`. |
-| `src/Modules/Core/ContentCreate.php` | Consumes the promoted constant. |
-| `src/Policy/PolicyEngine.php` | `assign_terms` row removed from `META_CAPABILITY_MAP`. |
-| `src/Modules/Core/CoreModule.php` | Five additive registrations in the table. |
-| `tests/Unit/Modules/Core/CoreDefinitionInvariantsTest.php` | Five ids added to `OPERATION_IDS`. |
-| `tests/fixtures/…` | Golden fixture regenerated for twelve operations. |
+| `src/Modules/Core/ContentMetaUpdate.php` | **New.** REQ-0015. **Still outstanding.** |
+| `src/Modules/Core/ContentTermsAssign.php` | **New.** REQ-0016. **Still outstanding.** |
+| `src/Modules/Core/ContentFeaturedMediaSet.php` | **New.** REQ-0017. **Shipped 2026-07-27.** |
+| `src/Modules/Core/ContentTarget.php` | Also gains a restorable-media field list, per the correction in Decision 5 — a featured image is post meta, not a column, so the column list cannot carry it. `restoreFields()` therefore also writes that list, through `set_post_thumbnail()` / `delete_post_thumbnail()`, and skips `wp_update_post()` entirely when the recorded state held no column. **Shipped 2026-07-27**, with one addition the design did not anticipate: the media write is judged by re-reading the stored id, never by `set_post_thumbnail()`'s return value, which is `false` for an already-stored value and `true` for a non-renderable attachment whose `_thumbnail_id` it just deleted. |
+| `src/Modules/Core/ContentStatusSet.php` | **New.** REQ-0018. **Shipped 2026-07-27.** |
+| `src/Modules/Core/ContentTrash.php` | **New.** REQ-0019. **Still outstanding.** |
+| `src/Modules/Core/ContentFields.php` | `DRAFT_LIKE_STATUSES` promoted to public. **Shipped 2026-07-27.** |
+| `src/Modules/Core/ContentTarget.php` | `snapshotOf()` gains `post_status` and `post_name`; `restoreFields()` restores present keys only. **Shipped.** `snapshotOf()` deliberately does NOT gain the media id: every content write shares it, so a rollback of `content-update` would restore a featured image that write never touched. |
+| `src/Modules/Core/ContentRollbackApply.php` | Its second fixed list, `RESTORED_FIELDS`, must go; the rollback path must write back the widened state and read present keys only. **Also, for REQ-0017:** both `planChange()` and `applyChange()` loop `RESTORABLE_MEDIA_FIELDS` after the column list, promising and restoring the media id as an integer; and `planChange()` refuses an empty promise with `rollback_unavailable`. **Shipped 2026-07-27**, plus a fourth change this table originally missed: `captureSnapshot()` must add the media id too. It delegated to `snapshotOf()`, so it recorded none of the one value the widened `applyChange()` writes — leaving the rollback unable to reverse itself while reporting `verified`. Whatever a write can change, its own capture must record. |
+| `src/Modules/Core/ContentCreate.php` | Consumes the promoted constant. **Shipped 2026-07-27.** |
+| `src/Policy/PolicyEngine.php` | `assign_terms` row removed from `META_CAPABILITY_MAP`. **Still outstanding** — it belongs with REQ-0016. |
+| `src/Modules/Core/CoreModule.php` | Five additive registrations in the table. **Two of five landed** (REQ-0017, REQ-0018). |
+| `tests/Unit/Modules/Core/CoreDefinitionInvariantsTest.php` | Five ids added to `OPERATION_IDS`. **Two of five added**, along with `CORE_WRITE_COUNT`. |
+| `tests/Fixtures/core-operation-definitions.json` | Golden fixture regenerated. **Nine operations today**; twelve once all five writes land. |
 
 Each new operation carries its own `definition()`, per the convention PR #5 established.
 
