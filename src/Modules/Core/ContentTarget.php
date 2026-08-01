@@ -641,15 +641,25 @@ final class ContentTarget {
 	 * no terms in that taxonomy, and restoring that is a removal.
 	 * wp_set_object_terms() with an empty array is core's own way to say so.
 	 *
-	 * Both refusals carry the steps that already landed, merged with a
-	 * 'taxonomy terms partially restored' marker. This loop runs LAST, after the
-	 * columns, the featured image and the custom fields have all been written,
-	 * so a bare ExecutionFailed here would hide three completed restores from
-	 * the operator. The marker says the mechanism was entered without verifiably
-	 * completing, and it cannot say less: an earlier taxonomy in the same map
-	 * may already have been written, and core's wp_set_object_terms() inserts
-	 * relationships one term at a time, so even a single-taxonomy failure cannot
-	 * claim the term state is untouched.
+	 * Both refusals carry the steps that already landed. This loop runs LAST,
+	 * after the columns, the featured image and the custom fields have all been
+	 * written, so a bare ExecutionFailed here would hide three completed
+	 * restores from the operator.
+	 *
+	 * The 'taxonomy terms partially restored' marker is EARNED BY A WRITE, not
+	 * by entering the loop. A verification failure always carries it — the
+	 * write executed and stored something other than the recorded set — and so
+	 * does a refusal after an earlier taxonomy in the same map was written. But
+	 * a wp_set_object_terms() that answered WP_Error is counted as "did not
+	 * write", which core guarantees for an invalid taxonomy — it refuses before
+	 * touching the relationship table — so a refused FIRST write reports the
+	 * incoming steps unchanged rather than a term step that never happened. A
+	 * step list claiming more than happened is the same defect, one arm over,
+	 * as the empty list this parameter was added to fix. The boundary is
+	 * accepted as an under-claim: a WP_Error core returns MID-insert, from a
+	 * term lookup failing inside its loop, leaves relationships it already
+	 * wrote unnamed — erring toward never claiming an unproven step, the same
+	 * direction as the accumulated list itself.
 	 *
 	 * @param int                  $post_id   The post identifier.
 	 * @param array<string, mixed> $map       The recorded taxonomy-to-term-ids map.
@@ -662,6 +672,8 @@ final class ContentTarget {
 	 * phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 	 */
 	private function restore_terms( int $post_id, array $map, array $completed ): void {
+		$terms_written = false;
+
 		foreach ( $map as $taxonomy => $ids ) {
 			if ( ! is_string( $taxonomy ) || '' === $taxonomy || ! is_array( $ids ) ) {
 				continue;
@@ -671,7 +683,15 @@ final class ContentTarget {
 			sort( $wanted, SORT_NUMERIC );
 
 			$written = wp_set_object_terms( $post_id, $wanted, $taxonomy );
-			$stored  = is_wp_error( $written )
+
+			// A non-error return means core wrote this taxonomy's relationships,
+			// whatever the read-back below says — so from here on, every refusal
+			// in this restore has a term write behind it and earns the marker.
+			if ( ! is_wp_error( $written ) ) {
+				$terms_written = true;
+			}
+
+			$stored = is_wp_error( $written )
 				? $written
 				: wp_get_object_terms( $post_id, $taxonomy, [ 'fields' => 'ids' ] );
 
@@ -680,7 +700,9 @@ final class ContentTarget {
 					ErrorCode::ExecutionFailed,
 					'WordPress refused to restore the recorded taxonomy terms.',
 					'Recover through WordPress revisions instead.',
-					array_merge( $completed, [ 'taxonomy terms partially restored' ] )
+					$terms_written
+						? array_merge( $completed, [ 'taxonomy terms partially restored' ] )
+						: $completed
 				);
 			}
 
