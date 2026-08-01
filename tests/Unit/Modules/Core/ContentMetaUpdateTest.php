@@ -135,11 +135,18 @@ final class ContentMetaUpdateTest extends TestCase {
 		// what lands in $this->meta is what would land in the database.
 		//
 		// Every parameter is UNTYPED, matching core.
-		// It COLLAPSES every row under the key to the one new value, because
-		// update_metadata() does: its $where is ( post_id, meta_key ) with no
-		// meta_value unless a $prev_value was passed, so one $wpdb->update()
-		// rewrites them all. A fake that replaced only row 0 would make the
-		// multi-row case look survivable and the guard against it untestable.
+		// Models update_metadata() row for row, and the row COUNT is the part that
+		// matters. It does not delete anything: `$where` is ( post_id, meta_key )
+		// with no meta_value unless a $prev_value was passed, so one
+		// $wpdb->update() sets EVERY existing row to the new value and N rows stay
+		// N rows. Only when there are none does it fall through to add_metadata()
+		// and create one.
+		//
+		// Collapsing to a single row here would have been close enough to prove
+		// today's tests — the data loss is identical either way — but it would hide
+		// the surviving rows from any future relaxation of the guard, which is the
+		// same class of convenient double that made the multi-row defect invisible
+		// in the first place.
 		//
 		// It returns FALSE for an unchanged value only when the key holds exactly
 		// ONE row, matching core's own `count( $old_value ) === 1` condition.
@@ -150,7 +157,7 @@ final class ContentMetaUpdateTest extends TestCase {
 				$stored             = is_string( $value ) ? stripslashes( $value ) : $value;
 				$rows               = $this->meta[ $key ] ?? [];
 				$unchanged          = 1 === count( $rows ) && $rows[0] === $stored;
-				$this->meta[ $key ] = [ $stored ];
+				$this->meta[ $key ] = array_fill( 0, max( 1, count( $rows ) ), $stored );
 
 				return $unchanged ? false : 1;
 			}

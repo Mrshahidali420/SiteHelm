@@ -250,8 +250,9 @@ final class ContentTarget {
 	 * @throws OperationException With ErrorCode::RollbackUnavailable when the
 	 *                           snapshot names no target, or
 	 *                           ErrorCode::ExecutionFailed when a permitted custom
-	 *                           field holds a structured value — raised before any
-	 *                           write — or when a write itself fails.
+	 *                           field holds a structured value, or more than one
+	 *                           value — raised before any write — or when a write
+	 *                           itself fails.
 	 *
 	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
 	 * phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
@@ -429,8 +430,19 @@ final class ContentTarget {
 		foreach ( $values as $key => $value ) {
 			update_post_meta( $post_id, $key, wp_slash( $value ) );
 
-			$stored = get_post_meta( $post_id, $key, true );
-			if ( ! is_scalar( $stored ) || (string) $stored !== $value ) {
+			// Read as a LIST, and require EXACTLY ONE row, for the reason
+			// writable_custom_fields() reads one: get_metadata_raw() with
+			// $single = true answers `$meta_cache[ $meta_key ][0]` and nothing
+			// else, so a single read cannot tell one row from five. Exactly one is
+			// the only correct count after this write — update_metadata() rewrites
+			// every existing row to the new value, and calls add_metadata() when
+			// there were none, so anything other than one means rows appeared
+			// between the pre-write guard and here. save_post fires from the
+			// wp_update_post() call above and any plugin may add meta on it, which
+			// is precisely the window a row-0 comparison cannot see: three rows all
+			// holding the new value match on row 0 and would be reported verified.
+			$rows = get_post_meta( $post_id, $key, false );
+			if ( ! is_array( $rows ) || 1 !== count( $rows ) || ! is_scalar( $rows[0] ) || (string) $rows[0] !== $value ) {
 				throw new OperationException(
 					ErrorCode::ExecutionFailed,
 					'WordPress refused to restore a recorded custom field value.',
@@ -448,17 +460,51 @@ final class ContentTarget {
 	 * each live value and refuses a non-scalar one BEFORE any write in
 	 * restoreFields() has happened.
 	 *
-	 * The projection collapse is why the live value is what gets checked:
-	 * ContentFields::meta() reports a stored array or object as '', so a snapshot
-	 * records '' for a serialized payload another plugin owns under an allowlisted
-	 * key. Writing that recorded '' would replace the payload with an empty string,
-	 * re-read '', match, and report the rollback VERIFIED — data loss reported as
-	 * success. The RECORDED value cannot reveal it: a recorded '' is
-	 * indistinguishable from a legitimately empty field. Only the live one carries
-	 * the evidence.
+	 * The projection collapse is why the live value is what gets checked, and it
+	 * has TWO shapes, both of which this one read answers:
+	 *
+	 * - A STRUCTURED live value. ContentFields::meta() reports a stored array or
+	 *   object as '', so a snapshot records '' for a serialized payload another
+	 *   plugin owns under an allowlisted key. Writing that recorded '' would
+	 *   replace the payload with an empty string, re-read '', match, and report the
+	 *   rollback VERIFIED — data loss reported as success.
+	 * - MORE THAN ONE ROW under the key. get_metadata_raw() with $single = true
+	 *   returns `maybe_unserialize( $meta_cache[ $meta_key ][0] )` — row 0 alone —
+	 *   so three rows are projected, recorded and re-read as one. And the write is
+	 *   not confined to row 0: update_metadata() builds
+	 *   `$where = array( $column => $object_id, 'meta_key' => $meta_key )` and adds
+	 *   `$where['meta_value']` only when a $prev_value was passed, which
+	 *   restore_custom_fields() does not pass, so one $wpdb->update() flattens every
+	 *   row to the recorded value. Identical failure to the structured case,
+	 *   identical undetectability. Core itself declines to reason about this shape:
+	 *   its own unchanged-value shortcut is guarded by
+	 *   `is_countable( $old_value ) && count( $old_value ) === 1`, under the comment
+	 *   "Compare existing value to new value if no prev value given and the key
+	 *   exists only once."
+	 *
+	 * Read from wp-includes/meta.php of the WordPress 6.8.1 install on this
+	 * machine, and diffed against the 7.0.2 install beside it: update_metadata(),
+	 * get_metadata_raw() and get_metadata_default() differ between the two only in
+	 * docblock lines naming the `blog` meta type, so the executable code this
+	 * reasoning depends on is identical in both.
+	 *
+	 * The RECORDED value cannot reveal either shape: a recorded '' is
+	 * indistinguishable from a legitimately empty field, and a recorded scalar is
+	 * indistinguishable from row 0 of five. Only the live one carries the evidence.
+	 *
+	 * ZERO rows is not refused and must not be: an allowlisted key holding nothing
+	 * is ordinary. get_post_meta( …, false ) answers array() for an absent key —
+	 * get_metadata_default() sets `$value = array()` when $single is false — so the
+	 * count is 0 and `$rows[0] ?? ''` supplies the scalar for a list with no member.
+	 *
+	 * The is_array() test is not decoration. get_metadata_raw() returns the
+	 * `get_post_metadata` filter's value UNTOUCHED when $single is false, so a
+	 * plugin short-circuiting that filter can hand back anything at all, and
+	 * count() on a non-array is a TypeError rather than a refusal.
 	 *
 	 * KNOWN LIMITATION, accepted deliberately. While any permitted key on a post
-	 * holds structured data, EVERY rollback of that post is refused — including one
+	 * holds structured data or more than one row, EVERY rollback of that post is
+	 * refused — including one
 	 * that only restores the title and never touches meta. That is a hard block
 	 * rather than a degraded restore, because captureSnapshot() records the whole
 	 * meta map alongside the columns, so the unsafe key is present in the recorded
@@ -489,10 +535,12 @@ final class ContentTarget {
 				continue;
 			}
 
-			if ( ! is_scalar( get_post_meta( $post_id, $key, true ) ) ) {
+			$rows = get_post_meta( $post_id, $key, false );
+
+			if ( ! is_array( $rows ) || count( $rows ) > 1 || ! is_scalar( $rows[0] ?? '' ) ) {
 				throw new OperationException(
 					ErrorCode::ExecutionFailed,
-					'A permitted custom field on this content item holds a structured value, so this restore stopped without changing anything.',
+					'A permitted custom field on this content item holds a structured value, or more than one value, so this restore stopped without changing anything.',
 					'Ask a site administrator to review which custom field keys are permitted, then retry.'
 				);
 			}

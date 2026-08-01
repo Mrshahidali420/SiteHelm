@@ -43,11 +43,18 @@ final class ContentTargetRestoreTest extends TestCase {
 	private ContentTarget $targets;
 
 	/**
-	 * Stored meta, keyed by meta key. Values are `mixed` rather than `string`
-	 * because get_post_meta() returns mixed and a stored array is the case the
-	 * pre-write guard exists for.
+	 * Stored meta, as the meta TABLE holds it: one key to a LIST of rows.
 	 *
-	 * @var array<string, mixed>
+	 * A key to a single value would be simpler and would make this file
+	 * structurally unable to see one of the two shapes the pre-write guard exists
+	 * for. The table permits many rows under one key, get_post_meta( …, true )
+	 * shows only row 0, and update_metadata() rewrites every row; only a store
+	 * shaped like the table can express the gap between those three.
+	 *
+	 * Row values are `mixed` rather than `string` because get_post_meta() returns
+	 * mixed and a stored array is the other shape the guard exists for.
+	 *
+	 * @var array<string, array<int, mixed>>
 	 */
 	private array $meta = [];
 
@@ -94,19 +101,35 @@ final class ContentTargetRestoreTest extends TestCase {
 		// the "judge by re-reading" claim untestable. It also unslashes before
 		// storing, as update_metadata()'s wp_unslash( $meta_value ) does, so what
 		// lands in $this->meta is what would land in the database.
+		//
+		// It sets EVERY existing row to the new value and deletes none, because
+		// update_metadata()'s $where is ( post_id, meta_key ) with no meta_value
+		// unless a $prev_value was passed: N rows stay N rows, all holding the new
+		// value. Only an absent key falls through to add_metadata() and becomes one
+		// row. The unchanged-value FALSE is conditioned on there being exactly one
+		// row, matching core's own `count( $old_value ) === 1`.
 		Functions\when( 'update_post_meta' )->alias(
 			function ( $post_id, $key, $value, $prev_value = '' ) {
 				$this->callOrder[]  = 'update_post_meta';
 				$this->metaWrites[] = [ $key, $value ];
 				$stored             = is_string( $value ) ? stripslashes( $value ) : $value;
-				$unchanged          = array_key_exists( $key, $this->meta ) && $this->meta[ $key ] === $stored;
-				$this->meta[ $key ] = $stored;
+				$rows               = $this->meta[ $key ] ?? [];
+				$unchanged          = 1 === count( $rows ) && $rows[0] === $stored;
+				$this->meta[ $key ] = array_fill( 0, max( 1, count( $rows ) ), $stored );
 
 				return $unchanged ? false : 1;
 			}
 		);
+
+		// Honours $single as get_metadata_raw() does: true answers ROW 0 alone,
+		// false answers the whole list, and an absent key answers '' or the empty
+		// array respectively — the shapes get_metadata_default() supplies.
 		Functions\when( 'get_post_meta' )->alias(
-			fn( $post_id, $key = '', $single = false ) => $this->meta[ $key ] ?? ''
+			function ( $post_id, $key = '', $single = false ) {
+				$rows = $this->meta[ $key ] ?? [];
+
+				return $single ? ( $rows[0] ?? '' ) : $rows;
+			}
 		);
 
 		// Returns term taxonomy ids, deliberately offset from the term ids passed
@@ -152,7 +175,7 @@ final class ContentTargetRestoreTest extends TestCase {
 	}
 
 	public function test_a_recorded_custom_field_map_is_written_back_and_verified(): void {
-		$this->meta = [ 'subtitle' => 'current' ];
+		$this->meta = [ 'subtitle' => [ 'current' ] ];
 
 		list( $key, $why ) = $this->restoreOutcome(
 			[
@@ -180,7 +203,7 @@ final class ContentTargetRestoreTest extends TestCase {
 		// Literal: back\slash
 		$recorded = 'back\\slash';
 
-		$this->meta = [ 'note' => 'set by the write being reversed' ];
+		$this->meta = [ 'note' => [ 'set by the write being reversed' ] ];
 
 		list( $key, $why ) = $this->restoreOutcome(
 			[
@@ -193,7 +216,7 @@ final class ContentTargetRestoreTest extends TestCase {
 		// Literal: back\\slash — the slashed form handed to update_post_meta(),
 		// which unslashes it again before storing.
 		$this->assertSame( [ [ 'note', 'back\\\\slash' ] ], $this->metaWrites );
-		$this->assertSame( $recorded, $this->meta['note'] );
+		$this->assertSame( [ $recorded ], $this->meta['note'] );
 	}
 
 	/**
@@ -204,7 +227,7 @@ final class ContentTargetRestoreTest extends TestCase {
 	 * failure would fail almost every rollback it attempted.
 	 */
 	public function test_an_unchanged_custom_field_restores_even_though_the_write_answers_false(): void {
-		$this->meta = [ 'subtitle' => 'same' ];
+		$this->meta = [ 'subtitle' => [ 'same' ] ];
 
 		list( $key, $why ) = $this->restoreOutcome(
 			[
@@ -228,7 +251,7 @@ final class ContentTargetRestoreTest extends TestCase {
 	 * the row: it never removes something the snapshot did not prove was absent.
 	 */
 	public function test_a_recorded_empty_custom_field_value_is_written_rather_than_skipped(): void {
-		$this->meta = [ 'subtitle' => 'set by the write being reversed' ];
+		$this->meta = [ 'subtitle' => [ 'set by the write being reversed' ] ];
 
 		list( $key, $why ) = $this->restoreOutcome(
 			[
@@ -239,11 +262,15 @@ final class ContentTargetRestoreTest extends TestCase {
 
 		$this->assertSame( 'post:42', $key, $why );
 		$this->assertSame( [ [ 'subtitle', '' ] ], $this->metaWrites );
-		$this->assertSame( '', $this->meta['subtitle'] );
+		$this->assertSame( [ '' ], $this->meta['subtitle'] );
 	}
 
 	public function test_a_custom_field_that_does_not_read_back_is_execution_failed(): void {
-		Functions\when( 'get_post_meta' )->justReturn( 'something else entirely' );
+		Functions\when( 'get_post_meta' )->alias(
+			static fn( $post_id, $key = '', $single = false ) => $single
+				? 'something else entirely'
+				: [ 'something else entirely' ]
+		);
 
 		try {
 			$this->targets->restoreFields(
@@ -281,8 +308,8 @@ final class ContentTargetRestoreTest extends TestCase {
 	 */
 	public function test_a_non_scalar_live_custom_field_is_refused_before_anything_is_written(): void {
 		$this->meta = [
-			'subtitle' => 'current',
-			'payload'  => [ 'nested' => 'another plugin owns this' ],
+			'subtitle' => [ 'current' ],
+			'payload'  => [ [ 'nested' => 'another plugin owns this' ] ],
 		];
 
 		try {
@@ -299,7 +326,7 @@ final class ContentTargetRestoreTest extends TestCase {
 		} catch ( OperationException $e ) {
 			$this->assertSame( ErrorCode::ExecutionFailed, $e->errorCode );
 			$this->assertSame(
-				'A permitted custom field on this content item holds a structured value, so this restore stopped without changing anything.',
+				'A permitted custom field on this content item holds a structured value, or more than one value, so this restore stopped without changing anything.',
 				$e->getMessage()
 			);
 			$this->assertSame(
@@ -309,7 +336,156 @@ final class ContentTargetRestoreTest extends TestCase {
 		}
 
 		$this->assertSame( [], $this->metaWrites );
-		$this->assertSame( [ 'nested' => 'another plugin owns this' ], $this->meta['payload'] );
+		$this->assertSame( [ [ 'nested' => 'another plugin owns this' ] ], $this->meta['payload'] );
+	}
+
+	/**
+	 * The SECOND shape the same guard has to catch, and the one a `$single = true`
+	 * read cannot see at all.
+	 *
+	 * Every row here is an ordinary scalar string, so each passes is_scalar()
+	 * individually and the structured-value half of the guard is blind to them.
+	 * get_metadata_raw() answers row 0 for a single read, so the snapshot recorded
+	 * one value; update_metadata() then rewrites ALL of them, because its `$where`
+	 * is ( post_id, meta_key ) and `meta_value` joins it only when a $prev_value was
+	 * passed, which restore_custom_fields() does not pass. The restore would flatten
+	 * three rows into one, re-read row 0, match, and report VERIFIED.
+	 *
+	 * `subtitle` is listed FIRST and is perfectly writable, so the empty
+	 * metaWrites assertion also pins that the refusal precedes every write rather
+	 * than happening partway through the map.
+	 */
+	public function test_a_multi_row_live_custom_field_is_refused_before_anything_is_written(): void {
+		$this->meta = [
+			'subtitle' => [ 'current' ],
+			'aliases'  => [ 'first', 'second', 'third' ],
+		];
+
+		try {
+			$this->targets->restoreFields(
+				[
+					'post_id' => 42,
+					'meta'    => [
+						'subtitle' => 'recorded',
+						'aliases'  => 'recorded alias',
+					],
+				]
+			);
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::ExecutionFailed, $e->errorCode );
+			$this->assertSame(
+				'A permitted custom field on this content item holds a structured value, or more than one value, so this restore stopped without changing anything.',
+				$e->getMessage()
+			);
+		}
+
+		$this->assertSame( [], $this->metaWrites );
+		$this->assertSame( [ 'first', 'second', 'third' ], $this->meta['aliases'] );
+	}
+
+	/**
+	 * The third term of the same guard, which without this test no test reached —
+	 * every double in this file answers an array.
+	 *
+	 * It is reachable through core rather than through a malformed double:
+	 * get_metadata_raw() short-circuits on the `get_post_metadata` filter and, when
+	 * `$single` is false, returns the filter's value with `return $check;` and no
+	 * type test of any kind, so a caching or virtual-field plugin can hand back a
+	 * bare string.
+	 */
+	public function test_a_custom_field_whose_value_list_cannot_be_read_is_refused_before_anything_is_written(): void {
+		Functions\when( 'get_post_meta' )->alias(
+			static fn( $post_id, $key = '', $single = false ) => $single ? 'current' : 'current'
+		);
+
+		try {
+			$this->targets->restoreFields(
+				[
+					'post_id' => 42,
+					'meta'    => [ 'subtitle' => 'recorded' ],
+				]
+			);
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::ExecutionFailed, $e->errorCode );
+			$this->assertSame(
+				'A permitted custom field on this content item holds a structured value, or more than one value, so this restore stopped without changing anything.',
+				$e->getMessage()
+			);
+		}
+
+		$this->assertSame( [], $this->metaWrites );
+	}
+
+	/**
+	 * The verification is checked on the same axis as the guard, and this is the
+	 * window that makes it necessary rather than symmetric-for-its-own-sake.
+	 *
+	 * The pre-write guard runs above wp_update_post(), and wp_update_post() fires
+	 * save_post, on which any plugin may add meta rows. A row-0 comparison cannot
+	 * see that: update_metadata() sets EVERY row to the recorded value, so two rows
+	 * both holding it match on row 0 and the restore reports verified while the item
+	 * carries a row the snapshot never described.
+	 *
+	 * Exactly one row is the only correct count after this write — core rewrites the
+	 * rows it finds and calls add_metadata() when it finds none — so anything else
+	 * means rows appeared mid-restore.
+	 */
+	public function test_a_custom_field_that_gained_a_row_during_the_restore_is_not_reported_verified(): void {
+		$reads = 0;
+		Functions\when( 'get_post_meta' )->alias(
+			static function ( $post_id, $key = '', $single = false ) use ( &$reads ) {
+				++$reads;
+
+				// One row for the pre-write guard; two by the time the write is
+				// verified, both holding exactly what was asked for.
+				return 1 === $reads ? [ 'current' ] : [ 'recorded', 'recorded' ];
+			}
+		);
+
+		try {
+			$this->targets->restoreFields(
+				[
+					'post_id' => 42,
+					'meta'    => [ 'subtitle' => 'recorded' ],
+				]
+			);
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::ExecutionFailed, $e->errorCode );
+			$this->assertSame( 'WordPress refused to restore a recorded custom field value.', $e->getMessage() );
+		}
+	}
+
+	/**
+	 * The is_array() term of the VERIFICATION, which the guard's own test cannot
+	 * reach: the guard refuses a non-array before the write ever happens, so the
+	 * verification only sees one if the reading changes between the two calls —
+	 * a filter registered on `get_post_metadata` during save_post, for instance.
+	 */
+	public function test_a_custom_field_whose_value_list_cannot_be_read_back_is_execution_failed(): void {
+		$reads = 0;
+		Functions\when( 'get_post_meta' )->alias(
+			static function ( $post_id, $key = '', $single = false ) use ( &$reads ) {
+				++$reads;
+
+				return 1 === $reads ? [ 'current' ] : 'recorded';
+			}
+		);
+
+		try {
+			$this->targets->restoreFields(
+				[
+					'post_id' => 42,
+					'meta'    => [ 'subtitle' => 'recorded' ],
+				]
+			);
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::ExecutionFailed, $e->errorCode );
+			$this->assertSame( 'WordPress refused to restore a recorded custom field value.', $e->getMessage() );
+		}
 	}
 
 	/**
@@ -336,7 +512,7 @@ final class ContentTargetRestoreTest extends TestCase {
 				return 42;
 			}
 		);
-		$this->meta = [ 'payload' => [ 'nested' => 'another plugin owns this' ] ];
+		$this->meta = [ 'payload' => [ [ 'nested' => 'another plugin owns this' ] ] ];
 
 		try {
 			$this->targets->restoreFields(
@@ -351,7 +527,7 @@ final class ContentTargetRestoreTest extends TestCase {
 		} catch ( OperationException $e ) {
 			$this->assertSame( ErrorCode::ExecutionFailed, $e->errorCode );
 			$this->assertSame(
-				'A permitted custom field on this content item holds a structured value, so this restore stopped without changing anything.',
+				'A permitted custom field on this content item holds a structured value, or more than one value, so this restore stopped without changing anything.',
 				$e->getMessage()
 			);
 		}
@@ -382,8 +558,9 @@ final class ContentTargetRestoreTest extends TestCase {
 			static function ( $post_id, $key = '', $single = false ) use ( &$reads, $stringy ) {
 				++$reads;
 
-				// Scalar for the pre-write guard, non-scalar for the verification.
-				return 1 === $reads ? 'current' : $stringy;
+				// One scalar row for the pre-write guard, one non-scalar row for the
+				// verification. Both reads ask for the LIST, so both answer one.
+				return 1 === $reads ? [ 'current' ] : [ $stringy ];
 			}
 		);
 
@@ -407,7 +584,11 @@ final class ContentTargetRestoreTest extends TestCase {
 	 * error envelope, and both would travel to the client in one.
 	 */
 	public function test_the_custom_field_refusal_names_neither_the_key_nor_the_value(): void {
-		Functions\when( 'get_post_meta' )->justReturn( 'stored-secret-value' );
+		Functions\when( 'get_post_meta' )->alias(
+			static fn( $post_id, $key = '', $single = false ) => $single
+				? 'stored-secret-value'
+				: [ 'stored-secret-value' ]
+		);
 
 		try {
 			$this->targets->restoreFields(
@@ -619,7 +800,7 @@ final class ContentTargetRestoreTest extends TestCase {
 				return 42;
 			}
 		);
-		$this->meta = [ 'subtitle' => 'recorded' ];
+		$this->meta = [ 'subtitle' => [ 'recorded' ] ];
 
 		list( $key, $why ) = $this->restoreOutcome(
 			[
