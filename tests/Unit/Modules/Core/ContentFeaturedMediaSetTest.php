@@ -28,6 +28,20 @@ use stdClass;
  */
 final class ContentFeaturedMediaSetTest extends TestCase {
 
+	/**
+	 * The reference refusal, written out rather than read from the operation.
+	 * Every media-reference refusal must carry this exact text — a message that
+	 * varied with the reason would let a caller tell "no such id" from "not an
+	 * attachment" and probe which post ids exist.
+	 */
+	private const REFUSAL_MESSAGE = 'The requested media identifier does not name an attachment in this site\'s media library.';
+
+	/**
+	 * The remediation that accompanies it. Held to the same rule: a remediation
+	 * that varied with the reason would be the same probe by another field.
+	 */
+	private const REFUSAL_REMEDIATION = 'Choose the identifier of an existing media library attachment and request a fresh preview.';
+
 	private ContentFeaturedMediaSet $operation;
 
 	/** @var array<int, array<int, int|string>> */
@@ -174,14 +188,20 @@ final class ContentFeaturedMediaSetTest extends TestCase {
 	}
 
 	/**
-	 * Asserts planChange() refuses one media identifier, returning the message so
-	 * a caller can compare two refusals without restating the try/catch.
+	 * Returns the refusal planChange() raises for one media identifier, so a
+	 * caller can assert against its message and remediation without restating the
+	 * try/catch.
+	 *
+	 * This helper deliberately asserts NOTHING about the message. It ends in
+	 * fail(), so any assertion here on the returned value would be one the helper
+	 * has already made unreachable — which is exactly how three assertions in this
+	 * file were previously inert. Callers assert the literal instead.
 	 *
 	 * @param int $media_id The requested attachment identifier.
 	 *
-	 * @return string The refusal message.
+	 * @return OperationException The refusal.
 	 */
-	private function refusalMessageFor( int $media_id ): string {
+	private function refusalFor( int $media_id ): OperationException {
 		$context = $this->makeContext();
 		$current = $this->operation->resolveTarget( [ 'id' => 42 ], $context );
 
@@ -195,9 +215,7 @@ final class ContentFeaturedMediaSetTest extends TestCase {
 				$context
 			);
 		} catch ( OperationException $e ) {
-			$this->assertSame( ErrorCode::InvalidInput, $e->errorCode );
-
-			return $e->getMessage();
+			return $e;
 		}
 
 		$this->fail( "Expected OperationException for mediaId {$media_id}" );
@@ -235,7 +253,10 @@ final class ContentFeaturedMediaSetTest extends TestCase {
 	 * only place operator error and platform adjustment are separable.
 	 */
 	public function test_plan_change_refuses_a_media_identifier_that_does_not_exist(): void {
-		$this->assertNotSame( '', $this->refusalMessageFor( 12345 ) );
+		$refusal = $this->refusalFor( 12345 );
+
+		$this->assertSame( ErrorCode::InvalidInput, $refusal->errorCode );
+		$this->assertSame( self::REFUSAL_MESSAGE, $refusal->getMessage() );
 	}
 
 	/**
@@ -245,7 +266,10 @@ final class ContentFeaturedMediaSetTest extends TestCase {
 	 * thumbnail. A check that only asked "does this id resolve" would pass here.
 	 */
 	public function test_plan_change_refuses_an_identifier_that_resolves_but_is_not_an_attachment(): void {
-		$this->assertNotSame( '', $this->refusalMessageFor( 900 ) );
+		$refusal = $this->refusalFor( 900 );
+
+		$this->assertSame( ErrorCode::InvalidInput, $refusal->errorCode );
+		$this->assertSame( self::REFUSAL_MESSAGE, $refusal->getMessage() );
 	}
 
 	/**
@@ -260,23 +284,36 @@ final class ContentFeaturedMediaSetTest extends TestCase {
 	public function test_plan_change_refuses_an_empty_identifier_rather_than_taking_the_global_post(): void {
 		$this->globalPost = $this->post( 108, 'attachment' );
 
-		$this->assertNotSame( '', $this->refusalMessageFor( 0 ) );
+		$refusal = $this->refusalFor( 0 );
+
+		$this->assertSame( ErrorCode::InvalidInput, $refusal->errorCode );
+		$this->assertSame( self::REFUSAL_MESSAGE, $refusal->getMessage() );
 	}
 
 	/**
 	 * The refusals are indistinguishable from the caller's side on purpose. A
 	 * different message for "no such id" and "not an attachment" would turn the
 	 * response into a probe for which post ids exist on the site.
+	 *
+	 * Asserted as a DISTINCTNESS property against the literal, not by comparing
+	 * the three results to each other. Comparing them to each other would derive
+	 * the expectation from the same source as the code under test, and a uniform
+	 * change to all three messages would pass. The remediation is checked too:
+	 * three refusals that differ only in remediation are just as good a probe.
 	 */
 	public function test_every_reference_refusal_discloses_the_same_message(): void {
 		$this->globalPost = $this->post( 108, 'attachment' );
 
-		$messages = array_map(
-			fn( int $media_id ): string => $this->refusalMessageFor( $media_id ),
-			[ 12345, 900, 0 ]
-		);
+		$refusals = array_map( fn( int $media_id ): OperationException => $this->refusalFor( $media_id ), [ 12345, 900, 0 ] );
 
-		$this->assertSame( [ $messages[0], $messages[0], $messages[0] ], $messages );
+		$this->assertSame(
+			[ self::REFUSAL_MESSAGE ],
+			array_values( array_unique( array_map( static fn( OperationException $e ): string => $e->getMessage(), $refusals ) ) )
+		);
+		$this->assertSame(
+			[ self::REFUSAL_REMEDIATION ],
+			array_values( array_unique( array_map( static fn( OperationException $e ): ?string => $e->remediation, $refusals ) ) )
+		);
 	}
 
 	/**

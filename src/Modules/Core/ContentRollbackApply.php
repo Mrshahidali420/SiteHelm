@@ -252,14 +252,63 @@ final class ContentRollbackApply implements WriteOperation {
 	 * Captures the state the rollback is about to overwrite, so the rollback can
 	 * itself be reversed.
 	 *
+	 * The shared ContentTarget::snapshotOf() is NOT enough on its own, and this
+	 * method must not be simplified back to delegating to it. That records
+	 * `post_id` plus the five RESTORABLE_FIELDS columns and no media id, while
+	 * applyChange() above writes RESTORABLE_MEDIA_FIELDS as well — so a capture
+	 * that stopped at the columns would record none of the one value this
+	 * rollback is about to change. Reversing that rollback would then promise the
+	 * five unchanged columns, skip the absent media key in restoreFields(), match
+	 * its own promise on read-back, and report `verified` while the featured image
+	 * stayed where the rollback put it. That is the outcome the design calls worse
+	 * than a refusal: restore what nothing changed, silently skip what did, report
+	 * success.
+	 *
+	 * snapshotOf() itself is deliberately left alone. Every content write shares
+	 * it, so widening it there would make a `content-update` or
+	 * `content-status-set` rollback restore a featured image those writes never
+	 * touched — trading this defect for a wider one. The media id is added here,
+	 * on the one operation that can actually write it.
+	 *
+	 * 0 is recorded rather than null or an absent key for a post with no featured
+	 * image, for the reason ContentFeaturedMediaSet::captureSnapshot() records it:
+	 * SnapshotLifecycle::eligibility() reads null as nothing recoverable, and this
+	 * operation's snapshot policy is `required`, so the plan would be refused with
+	 * rollback_unavailable for the ordinary case. 0 is a legal recorded value and
+	 * restoring it is a deletion.
+	 *
+	 * The result is re-sorted because snapshotOf() sorts its own: the restore
+	 * state is stored as canonical JSON, and appending after that sort would make
+	 * the stored row depend on the order this method appends rather than on the
+	 * state it recorded.
+	 *
 	 * @param TargetState      $current The resolved current state.
 	 * @param OperationContext $context The request context.
 	 *
-	 * @return array<string, mixed>|null The restore state.
+	 * @return array<string, mixed>|null The restore state, or null when the
+	 *                                   target does not exist.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 	 */
 	public function captureSnapshot( TargetState $current, OperationContext $context ): ?array {
-		return $this->targets->snapshotOf( $current );
+		$snapshot = $this->targets->snapshotOf( $current );
+
+		// Guarding the null rather than indexing it blind: assigning a key to null
+		// auto-vivifies an array in PHP, so "there was no prior state" would become
+		// a snapshot holding a featured media id and nothing else — which
+		// SnapshotLifecycle would then treat as recoverable.
+		if ( null === $snapshot ) {
+			return null;
+		}
+
+		foreach ( ContentTarget::RESTORABLE_MEDIA_FIELDS as $field ) {
+			$snapshot[ $field ] = (int) ( $current->fields[ $field ] ?? 0 );
+		}
+		ksort( $snapshot, SORT_STRING );
+
+		return $snapshot;
 	}
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 
 	/**
 	 * Writes the recorded prior state back and stamps the snapshot as restored.

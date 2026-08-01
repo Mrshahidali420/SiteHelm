@@ -11,6 +11,7 @@ namespace SiteHelm\Tests\Unit\Modules\Core;
 
 use Brain\Monkey\Functions;
 use SiteHelm\Change\PlannedChange;
+use SiteHelm\Change\TargetState;
 use SiteHelm\Contracts\Domain;
 use SiteHelm\Contracts\ErrorCode;
 use SiteHelm\Contracts\Mode;
@@ -693,22 +694,92 @@ final class ContentRollbackApplyTest extends TestCase {
 	}
 
 	/**
-	 * The rollback's own snapshot is captured through the shared
-	 * ContentTarget::snapshotOf(), so it records every column in
-	 * RESTORABLE_FIELDS. post_status and post_name are asserted here because
-	 * this operation is what un-does a rollback: if its capture were to lose
-	 * either column, restore() would be unable to put a post back the way the
-	 * rollback found it.
+	 * The rollback's own snapshot must record everything the rollback can WRITE,
+	 * because this operation is what un-does a rollback: whatever the capture
+	 * loses, restore() cannot put back, and the reversal would report verified
+	 * having silently skipped it.
+	 *
+	 * That is wider than the shared ContentTarget::snapshotOf(). applyChange()
+	 * writes RESTORABLE_MEDIA_FIELDS as well as the five RESTORABLE_FIELDS
+	 * columns, so captureSnapshot() adds the media id on top of snapshotOf()'s
+	 * result rather than delegating to it — see the round-trip test below.
+	 *
+	 * The whole array is asserted, not four keys of it. That pins the key SET
+	 * (a dropped key fails on the assertion rather than on an undefined-index
+	 * warning), the values, and the sorted order the canonical-JSON storage
+	 * depends on. `featured_media` is 0 here, not absent and not null: a post
+	 * with no featured image records a legal 0, since null would read to
+	 * SnapshotLifecycle as nothing recoverable under a `required` policy.
 	 */
 	public function test_capture_snapshot_records_the_pre_rollback_state(): void {
 		$this->queueSnapshot();
 		$current  = $this->operation->resolveTarget( [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
 		$snapshot = $this->operation->captureSnapshot( $current, $this->makeContext() );
 
-		$this->assertSame( 'Edited title', $snapshot['post_title'] );
-		$this->assertSame( 42, $snapshot['post_id'] );
-		$this->assertSame( 'draft', $snapshot['post_status'] );
-		$this->assertSame( 'original-title', $snapshot['post_name'] );
+		$this->assertSame(
+			[
+				'featured_media' => 0,
+				'post_content'   => '<p>Edited body.</p>',
+				'post_excerpt'   => 'Edited excerpt.',
+				'post_id'        => 42,
+				'post_name'      => 'original-title',
+				'post_status'    => 'draft',
+				'post_title'     => 'Edited title',
+			],
+			$snapshot
+		);
+	}
+
+	/**
+	 * The defect this branch made reachable, stated as a round trip.
+	 *
+	 * Post 42 is live with featured image 200. The referenced snapshot records
+	 * 100, so the rollback moves it to 100 — and the state it overwrote, 200, is
+	 * only recoverable if this operation's own capture recorded it. Before the
+	 * capture was widened, it recorded the five post columns and no media id, so
+	 * reversing this rollback promised five unchanged columns, skipped the absent
+	 * media key in restoreFields(), matched its promise on read-back and reported
+	 * VERIFIED while the featured image stayed at 100. The 200 was gone.
+	 *
+	 * assertArrayHasKey runs before the value assertion on purpose: with
+	 * failOnWarning="true" a missing key would otherwise fail the test on an
+	 * undefined-index warning, which is an incidental failure and proves nothing
+	 * about the capture.
+	 */
+	public function test_the_rollback_of_a_featured_media_change_can_itself_be_reversed(): void {
+		$this->thumbnailId = 200;
+		$this->queueSnapshot( [ 'restore_state' => '{"featured_media":100,"post_id":42}' ], 3 );
+
+		$context  = $this->makeContext();
+		$current  = $this->operation->resolveTarget( [ 'rollbackRef' => self::REFERENCE ], $context );
+		$captured = $this->operation->captureSnapshot( $current, $context );
+
+		$this->assertArrayHasKey(
+			'featured_media',
+			$captured,
+			'The rollback must record the featured image it is about to overwrite, or reversing it cannot put that image back.'
+		);
+		$this->assertSame( 200, $captured['featured_media'] );
+
+		$planned = $this->operation->planChange( $current, [ 'rollbackRef' => self::REFERENCE ], $context );
+		$this->operation->applyChange( $current, $planned, $context );
+		$this->assertSame( 100, $this->thumbnailId );
+
+		$this->operation->restore( $captured, $context );
+		$this->assertSame( 200, $this->thumbnailId );
+	}
+
+	/**
+	 * The null guard is not decoration. Assigning a key to null auto-vivifies an
+	 * array in PHP, so indexing snapshotOf()'s result blind would turn "there was
+	 * no prior state" into a snapshot holding a media id and nothing else — a
+	 * restore state naming no target, which restoreFields() then refuses as
+	 * rollback_unavailable instead of the engine treating the capture as absent.
+	 */
+	public function test_capture_snapshot_returns_null_for_a_target_that_does_not_exist(): void {
+		$this->assertNull(
+			$this->operation->captureSnapshot( new TargetState( 'post:new', false, [] ), $this->makeContext() )
+		);
 	}
 
 	public function test_apply_change_writes_the_prior_state_and_stamps_the_snapshot(): void {
