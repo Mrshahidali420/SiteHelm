@@ -249,7 +249,9 @@ final class ContentTarget {
 	 *
 	 * @throws OperationException With ErrorCode::RollbackUnavailable when the
 	 *                           snapshot names no target, or
-	 *                           ErrorCode::ExecutionFailed when the write fails.
+	 *                           ErrorCode::ExecutionFailed when a permitted custom
+	 *                           field holds a structured value — raised before any
+	 *                           write — or when a write itself fails.
 	 *
 	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
 	 * phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
@@ -263,6 +265,26 @@ final class ContentTarget {
 				'The recorded snapshot does not identify a content item, so it cannot be restored.',
 				'Recover through WordPress revisions instead.'
 			);
+		}
+
+		// HOISTED ABOVE EVERY WRITE IN THIS METHOD, and read-only so it can be.
+		// The refusal it raises says the restore stopped without changing anything,
+		// and that sentence has to be true: run from inside the custom-field loop
+		// below, wp_update_post() and the featured-media write would already have
+		// landed, leaving the item holding snapshot columns beside live meta and
+		// telling the operator no recovery was needed. A refusal that claims to
+		// have changed nothing while having changed something is worse than the
+		// partial write it reports, and captureSnapshot() records columns and meta
+		// together, so that combination is the ordinary shape rather than an edge
+		// case.
+		$custom_fields = [];
+		foreach ( self::RESTORABLE_CUSTOM_FIELDS as $field ) {
+			if ( array_key_exists( $field, $restoreState ) && is_array( $restoreState[ $field ] ) ) {
+				$custom_fields = array_merge(
+					$custom_fields,
+					$this->writable_custom_fields( $post_id, $restoreState[ $field ] )
+				);
+			}
 		}
 
 		$update = [ 'ID' => $post_id ];
@@ -301,18 +323,16 @@ final class ContentTarget {
 			}
 		}
 
+		// Already validated and flattened by the hoisted pass above, so this only
+		// writes. An empty map issues no call.
+		$this->restore_custom_fields( $post_id, $custom_fields );
+
 		// is_array() as well as array_key_exists(), for the reason the media loop
 		// above uses is_numeric(): a recorded key holding something of the wrong
 		// shape is not a value this restore may act on, and casting it would
 		// manufacture an instruction the snapshot never gave. A stored snapshot
 		// predating these lists holds neither key at all, which is the ordinary
 		// case and is why presence is checked rather than assumed.
-		foreach ( self::RESTORABLE_CUSTOM_FIELDS as $field ) {
-			if ( array_key_exists( $field, $restoreState ) && is_array( $restoreState[ $field ] ) ) {
-				$this->restore_custom_fields( $post_id, $restoreState[ $field ] );
-			}
-		}
-
 		foreach ( self::RESTORABLE_TAXONOMY_FIELDS as $field ) {
 			if ( array_key_exists( $field, $restoreState ) && is_array( $restoreState[ $field ] ) ) {
 				$this->restore_terms( $post_id, $restoreState[ $field ] );
@@ -393,31 +413,76 @@ final class ContentTarget {
 	 * promise, while deleting would too. Writing is chosen because it is the
 	 * smaller claim: it never removes a row the snapshot did not prove was absent.
 	 *
-	 * THE LIVE VALUE IS READ BEFORE ANYTHING IS WRITTEN, and a non-scalar one is
-	 * refused. That projection collapse is the reason: ContentFields::meta() reports
-	 * a stored array or object as '', so a snapshot records '' for a serialized
-	 * payload another plugin owns under an allowlisted key. Writing the recorded ''
-	 * would replace that payload with an empty string, re-read '', match, and report
-	 * the rollback VERIFIED — data loss reported as success. Judging the RECORDED
-	 * value cannot catch it, because the recorded value is a perfectly ordinary
-	 * empty string; only the live one carries the evidence.
+	 * The live value having been checked first is what makes this safe, and that
+	 * check is NOT here — it is hoisted into restoreFields(), above every write in
+	 * the method. See writable_custom_fields() for why.
 	 *
-	 * The reads are therefore a separate pass from the writes, so the refusal is
-	 * all-or-nothing. A map whose second key is unsafe must not leave the first key
-	 * already overwritten: a restore that half-applied would leave the item in a
-	 * state neither the snapshot nor the live site ever held, and nothing records
-	 * what to put back.
+	 * @param int                   $post_id The post identifier.
+	 * @param array<string, string> $values  The validated key-to-value map.
 	 *
-	 * @param int                  $post_id The post identifier.
-	 * @param array<string, mixed> $values  The recorded key-to-value map.
-	 *
-	 * @throws OperationException With ErrorCode::ExecutionFailed when a live value
-	 *                           is not scalar, or when a stored value does not
-	 *                           match the recorded one.
+	 * @throws OperationException With ErrorCode::ExecutionFailed when a stored
+	 *                           value does not match the recorded one.
 	 *
 	 * phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 	 */
 	private function restore_custom_fields( int $post_id, array $values ): void {
+		foreach ( $values as $key => $value ) {
+			update_post_meta( $post_id, $key, wp_slash( $value ) );
+
+			$stored = get_post_meta( $post_id, $key, true );
+			if ( ! is_scalar( $stored ) || (string) $stored !== $value ) {
+				throw new OperationException(
+					ErrorCode::ExecutionFailed,
+					'WordPress refused to restore a recorded custom field value.',
+					'Recover through WordPress revisions instead.'
+				);
+			}
+		}
+	}
+	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+
+	/**
+	 * The recorded custom fields this restore may write, or a refusal.
+	 *
+	 * READ-ONLY, which is the entire reason it can be a separate pass. It reads
+	 * each live value and refuses a non-scalar one BEFORE any write in
+	 * restoreFields() has happened.
+	 *
+	 * The projection collapse is why the live value is what gets checked:
+	 * ContentFields::meta() reports a stored array or object as '', so a snapshot
+	 * records '' for a serialized payload another plugin owns under an allowlisted
+	 * key. Writing that recorded '' would replace the payload with an empty string,
+	 * re-read '', match, and report the rollback VERIFIED — data loss reported as
+	 * success. The RECORDED value cannot reveal it: a recorded '' is
+	 * indistinguishable from a legitimately empty field. Only the live one carries
+	 * the evidence.
+	 *
+	 * KNOWN LIMITATION, accepted deliberately. While any permitted key on a post
+	 * holds structured data, EVERY rollback of that post is refused — including one
+	 * that only restores the title and never touches meta. That is a hard block
+	 * rather than a degraded restore, because captureSnapshot() records the whole
+	 * meta map alongside the columns, so the unsafe key is present in the recorded
+	 * state of every snapshot taken for that post. Refusing is the conservative
+	 * direction — nothing is destroyed, and the remediation names the fix — but the
+	 * blast radius is the post rather than the key, and a narrower version would
+	 * have to drop the unsafe key from the promise rather than refuse the plan.
+	 *
+	 * The refusal names no key and no value. A key is administrator-configured and
+	 * a value is site content; neither belongs in an error envelope, and nothing
+	 * records the key anywhere, so the correlation id routes an operator to the
+	 * ITEM rather than to the key.
+	 *
+	 * @param int                  $post_id The post identifier.
+	 * @param array<string, mixed> $values  One recorded key-to-value map.
+	 *
+	 * @return array<string, string> The keys safe to write, with string values.
+	 *
+	 * @throws OperationException With ErrorCode::ExecutionFailed when a live value
+	 *                           is not scalar.
+	 *
+	 * phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+	 */
+	private function writable_custom_fields( int $post_id, array $values ): array {
 		$writable = [];
 		foreach ( $values as $key => $value ) {
 			if ( ! is_string( $key ) || '' === $key || ! is_scalar( $value ) ) {
@@ -435,18 +500,7 @@ final class ContentTarget {
 			$writable[ $key ] = (string) $value;
 		}
 
-		foreach ( $writable as $key => $value ) {
-			update_post_meta( $post_id, $key, wp_slash( $value ) );
-
-			$stored = get_post_meta( $post_id, $key, true );
-			if ( ! is_scalar( $stored ) || (string) $stored !== $value ) {
-				throw new OperationException(
-					ErrorCode::ExecutionFailed,
-					'WordPress refused to restore a recorded custom field value.',
-					'Recover through WordPress revisions instead.'
-				);
-			}
-		}
+		return $writable;
 	}
 	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 

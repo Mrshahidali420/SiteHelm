@@ -313,6 +313,53 @@ final class ContentTargetRestoreTest extends TestCase {
 	}
 
 	/**
+	 * The refusal must precede the COLUMN write too, not merely the meta writes.
+	 *
+	 * The guard began life inside the custom-field loop, which runs after
+	 * wp_update_post() and the featured-media write. A snapshot carrying both a
+	 * column and an unsafe meta value therefore reverted the title, then refused
+	 * with a message reading "stopped without changing anything" — a false sentence
+	 * that tells the operator no recovery is needed while the item sits holding
+	 * snapshot columns beside live meta. captureSnapshot() records columns and meta
+	 * together, so that combination is the ordinary shape of a snapshot rather than
+	 * an edge case.
+	 *
+	 * Asserting callOrder is EMPTY is the whole claim: not one of the three write
+	 * functions was reached. Asserting only metaWrites would pass with the guard
+	 * left where it was.
+	 */
+	public function test_an_unsafe_custom_field_refuses_before_the_column_write(): void {
+		Functions\when( 'wp_update_post' )->alias(
+			function ( $postarr, $wp_error = false ) {
+				$this->callOrder[] = 'wp_update_post';
+
+				return 42;
+			}
+		);
+		$this->meta = [ 'payload' => [ 'nested' => 'another plugin owns this' ] ];
+
+		try {
+			$this->targets->restoreFields(
+				[
+					'post_id'    => 42,
+					'post_title' => 'Original title',
+					'meta'       => [ 'payload' => '' ],
+					'terms'      => [ 'category' => [ 3 ] ],
+				]
+			);
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::ExecutionFailed, $e->errorCode );
+			$this->assertSame(
+				'A permitted custom field on this content item holds a structured value, so this restore stopped without changing anything.',
+				$e->getMessage()
+			);
+		}
+
+		$this->assertSame( [], $this->callOrder );
+	}
+
+	/**
 	 * The verification read's own is_scalar() half, which the pre-write guard does
 	 * NOT subsume: a save_post hook belonging to another plugin can replace the row
 	 * between the write and the read-back.
