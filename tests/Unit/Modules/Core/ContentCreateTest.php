@@ -43,7 +43,7 @@ final class ContentCreateTest extends TestCase {
 		// nothing else, so tests exercise the same distinction WordPress does
 		// between "may create at all" and "may publish".
 		Functions\when( 'user_can' )->alias(
-			static fn( int $user_id, string $capability ): bool => 'edit_posts' === $capability
+			static fn( int $user_id, $capability ): bool => 'edit_posts' === $capability
 		);
 		Functions\when( 'wp_kses_post' )->alias( static fn( string $v ): string => $v );
 		Functions\when( 'wp_kses_data' )->alias( static fn( string $v ): string => $v );
@@ -220,7 +220,7 @@ final class ContentCreateTest extends TestCase {
 
 		$checked = [];
 		Functions\when( 'user_can' )->alias(
-			static function ( int $user_id, string $capability ) use ( &$checked ): bool {
+			static function ( int $user_id, $capability ) use ( &$checked ): bool {
 				$checked[] = $capability;
 
 				return true;
@@ -262,21 +262,37 @@ final class ContentCreateTest extends TestCase {
 		$missing_publish->cap               = new stdClass();
 		$missing_publish->cap->create_posts = 'edit_posts';
 
-		$non_string_create                    = new stdClass();
-		$non_string_create->cap               = new stdClass();
-		$non_string_create->cap->create_posts = true;
+		$non_string_create                     = new stdClass();
+		$non_string_create->cap                = new stdClass();
+		$non_string_create->cap->create_posts  = true;
 		$non_string_create->cap->publish_posts = 'publish_posts';
 
-		foreach ( [ $cap_not_object, $missing_create, $missing_publish, $non_string_create ] as $type ) {
+		// create_posts is a VALID string here, so every earlier condition in the
+		// guard passes and the publish_posts is_string() check is the one that has
+		// to refuse. Without this case that condition is dead: a reviewer deleted
+		// it and the whole file stayed green, because 'create_posts is not a
+		// string' refuses at the earlier condition and 'cap omits publish_posts'
+		// refuses at the isset() before it. The shape is reachable — a plugin's
+		// `capabilities` array reaches register_post_type() unvalidated — and
+		// handing a non-string to user_can() is a fatal rather than a denial:
+		// core forwards it to WP_User::has_cap() and then map_meta_cap(), which
+		// uses the value as an array key.
+		$non_string_publish                     = new stdClass();
+		$non_string_publish->cap                = new stdClass();
+		$non_string_publish->cap->create_posts  = 'edit_posts';
+		$non_string_publish->cap->publish_posts = true;
+
+		foreach ( [ $cap_not_object, $missing_create, $missing_publish, $non_string_create, $non_string_publish ] as $type ) {
 			$type->public = true;
 		}
 
 		return [
-			'no cap object at all'         => [ $no_cap ],
-			'cap is not an object'         => [ $cap_not_object ],
-			'cap omits create_posts'       => [ $missing_create ],
-			'cap omits publish_posts'      => [ $missing_publish ],
-			'create_posts is not a string' => [ $non_string_create ],
+			'no cap object at all'          => [ $no_cap ],
+			'cap is not an object'          => [ $cap_not_object ],
+			'cap omits create_posts'        => [ $missing_create ],
+			'cap omits publish_posts'       => [ $missing_publish ],
+			'create_posts is not a string'  => [ $non_string_create ],
+			'publish_posts is not a string' => [ $non_string_publish ],
 		];
 	}
 
@@ -307,7 +323,7 @@ final class ContentCreateTest extends TestCase {
 
 	public function test_a_publish_request_succeeds_with_the_publish_capability(): void {
 		Functions\when( 'user_can' )->alias(
-			static fn( int $user_id, string $capability ): bool => in_array( $capability, [ 'edit_posts', 'publish_posts' ], true )
+			static fn( int $user_id, $capability ): bool => in_array( $capability, [ 'edit_posts', 'publish_posts' ], true )
 		);
 		$current = $this->operation->resolveTarget( $this->input( 'publish' ), $this->makeContext() );
 		$planned = $this->operation->planChange( $current, $this->input( 'publish' ), $this->makeContext() );
@@ -335,7 +351,7 @@ final class ContentCreateTest extends TestCase {
 
 	public function test_a_private_request_succeeds_with_the_publish_capability(): void {
 		Functions\when( 'user_can' )->alias(
-			static fn( int $user_id, string $capability ): bool => in_array( $capability, [ 'edit_posts', 'publish_posts' ], true )
+			static fn( int $user_id, $capability ): bool => in_array( $capability, [ 'edit_posts', 'publish_posts' ], true )
 		);
 		$current = $this->operation->resolveTarget( $this->input( 'private' ), $this->makeContext() );
 		$planned = $this->operation->planChange( $current, $this->input( 'private' ), $this->makeContext() );
@@ -362,7 +378,7 @@ final class ContentCreateTest extends TestCase {
 	 */
 	public function test_plan_change_rejects_a_caller_without_the_post_types_own_create_capability(): void {
 		Functions\when( 'user_can' )->alias(
-			static fn( int $user_id, string $capability ): bool => in_array( $capability, [ 'edit_posts', 'publish_posts' ], true )
+			static fn( int $user_id, $capability ): bool => in_array( $capability, [ 'edit_posts', 'publish_posts' ], true )
 		);
 		Functions\when( 'get_post_type_object' )->justReturn(
 			$this->postTypeObject( 'edit_products', 'publish_products' )
@@ -386,7 +402,7 @@ final class ContentCreateTest extends TestCase {
 
 	public function test_plan_change_succeeds_with_the_post_types_own_create_capability(): void {
 		Functions\when( 'user_can' )->alias(
-			static fn( int $user_id, string $capability ): bool => 'edit_products' === $capability
+			static fn( int $user_id, $capability ): bool => 'edit_products' === $capability
 		);
 		Functions\when( 'get_post_type_object' )->justReturn(
 			$this->postTypeObject( 'edit_products', 'publish_products' )

@@ -17,8 +17,8 @@ use SiteHelm\Contracts\OperationException;
  * The three things every content write does identically: resolve the target,
  * re-read it for verification, and write a recorded restore state back.
  *
- * Extracted so create, update, and rollback share one implementation rather
- * than three that could drift apart.
+ * Extracted so create, update, rollback, featured-media assignment and status
+ * change share one implementation rather than five that could drift apart.
  *
  * @package SiteHelm
  */
@@ -33,11 +33,19 @@ final class ContentTarget {
 	}
 
 	/**
-	 * The post columns a content snapshot records and a restore writes back.
+	 * The post columns a content snapshot records, and the half of a restore that
+	 * `wp_update_post()` writes.
 	 *
 	 * Public because `ContentRollbackApply` needs the same list to promise what
 	 * a restore will put back, and a second copy of it would drift: the copy
 	 * that drifts decides which columns a rollback silently fails to restore.
+	 *
+	 * BEFORE ADDING A FIELD HERE, check it is really a post column. Every loop
+	 * over this list casts to string and hands the result to `wp_update_post()`,
+	 * so anything stored as post meta would be recorded, promised, silently
+	 * ignored on the way in, and then reported as restored. That is what
+	 * `RESTORABLE_MEDIA_FIELDS` exists for, and why it is a second list rather
+	 * than more entries here: one list cannot serve two write mechanisms.
 	 *
 	 * `post_status` and `post_name` joined the original three because a write
 	 * that moves content between statuses, or one that trashes it, changes both
@@ -52,6 +60,24 @@ final class ContentTarget {
 		'post_status',
 		'post_name',
 	];
+
+	/**
+	 * The restorable values a content write can change that are NOT post
+	 * columns, and therefore cannot be written by wp_update_post().
+	 *
+	 * `featured_media` is stored as the `_thumbnail_id` post meta, so a restore
+	 * has to go through set_post_thumbnail() / delete_post_thumbnail() instead.
+	 * It is a SEPARATE list rather than a sixth entry in RESTORABLE_FIELDS
+	 * because every loop over that list casts its values to string and hands
+	 * them to wp_update_post(): a string thumbnail id added there would be
+	 * recorded, promised, silently ignored on the way in, and reported as
+	 * restored. One list with two write mechanisms is how that happens.
+	 *
+	 * Values in this list are integers, not strings.
+	 *
+	 * @var string[]
+	 */
+	public const RESTORABLE_MEDIA_FIELDS = [ 'featured_media' ];
 
 	/**
 	 * Resolves one existing content item.
@@ -172,6 +198,12 @@ final class ContentTarget {
 	 * it, and the contract is to restore the state the snapshot recorded — not
 	 * to invent a value for a column it never observed.
 	 *
+	 * Two write mechanisms are used, because RESTORABLE_MEDIA_FIELDS holds post
+	 * meta rather than post columns: one wp_update_post() call for whichever
+	 * RESTORABLE_FIELDS columns the state recorded, and set_post_thumbnail() /
+	 * delete_post_thumbnail() for a recorded featured-media id. A state holding
+	 * no column at all issues no wp_update_post() call.
+	 *
 	 * @param array<string, mixed> $restoreState The recorded restore state.
 	 *
 	 * @return string The restored target key.
@@ -201,14 +233,33 @@ final class ContentTarget {
 			}
 		}
 
-		$restored = wp_update_post( wp_slash( $update ), true );
+		// Only 'ID' means the recorded state held no post column at all, which is
+		// what a featured-media snapshot looks like. Calling wp_update_post() with
+		// an ID alone is not a no-op: WordPress re-saves the row, bumping
+		// post_modified and firing save_post for a rollback that changed no
+		// column. So the column write is skipped rather than issued empty.
+		if ( count( $update ) > 1 ) {
+			$restored = wp_update_post( wp_slash( $update ), true );
 
-		if ( is_wp_error( $restored ) || 0 === (int) $restored ) {
-			throw new OperationException(
-				ErrorCode::ExecutionFailed,
-				'WordPress refused to restore the recorded snapshot.',
-				'Recover through WordPress revisions instead.'
-			);
+			if ( is_wp_error( $restored ) || 0 === (int) $restored ) {
+				throw new OperationException(
+					ErrorCode::ExecutionFailed,
+					'WordPress refused to restore the recorded snapshot.',
+					'Recover through WordPress revisions instead.'
+				);
+			}
+		}
+
+		// is_numeric() is not defensive padding: `(int) null` is 0, and 0 is the
+		// recorded value that MEANS "restore to no featured image". So a key
+		// present with a null value would delete a live featured image and report
+		// the rollback verified. Structurally the same as an absent post_status
+		// defaulting to '' and resolving to 'draft' — a value nothing observed
+		// becoming a destructive instruction. Skipped rather than guessed.
+		foreach ( self::RESTORABLE_MEDIA_FIELDS as $field ) {
+			if ( array_key_exists( $field, $restoreState ) && is_numeric( $restoreState[ $field ] ) ) {
+				$this->restore_featured_media( $post_id, (int) $restoreState[ $field ] );
+			}
 		}
 
 		clean_post_cache( $post_id );
@@ -217,5 +268,45 @@ final class ContentTarget {
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
 	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+
+	/**
+	 * Restores one recorded featured-media id, verifying by measurement.
+	 *
+	 * The return values of set_post_thumbnail() and delete_post_thumbnail() are
+	 * NOT usable as a success signal. set_post_thumbnail() forwards
+	 * update_post_meta(), which returns false when the stored value is already
+	 * the requested one, and delete_post_thumbnail() returns false when there
+	 * was no thumbnail to delete. Both cases mean the recorded state already
+	 * holds — the opposite of a failure. So the stored id is re-read and
+	 * compared instead, which is unambiguous.
+	 *
+	 * A recorded 0 means the post had no featured image, and restoring that is
+	 * a deletion, not a skip. get_post_thumbnail_id() answers false when there
+	 * is none, which casts to the same 0.
+	 *
+	 * @param int $post_id  The post identifier.
+	 * @param int $media_id The recorded attachment identifier, or 0 for none.
+	 *
+	 * @throws OperationException With ErrorCode::ExecutionFailed when the stored
+	 *                           thumbnail does not match the recorded one.
+	 *
+	 * phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+	 */
+	private function restore_featured_media( int $post_id, int $media_id ): void {
+		if ( 0 === $media_id ) {
+			delete_post_thumbnail( $post_id );
+		} else {
+			set_post_thumbnail( $post_id, $media_id );
+		}
+
+		if ( (int) get_post_thumbnail_id( $post_id ) !== $media_id ) {
+			throw new OperationException(
+				ErrorCode::ExecutionFailed,
+				'WordPress refused to restore the recorded featured image.',
+				'Recover through WordPress revisions instead.'
+			);
+		}
+	}
 	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 }

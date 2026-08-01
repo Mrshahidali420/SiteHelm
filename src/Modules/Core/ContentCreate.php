@@ -298,6 +298,20 @@ final class ContentCreate implements WriteOperation {
 	 * no capability for at all, so an unresolvable type is refused instead of
 	 * silently treated as creatable.
 	 *
+	 * The capability guard holds SIX conditions, and they are not equally load
+	 * bearing. Five change the answer and each has a `unresolvableTypeObjects`
+	 * case that fails when it is deleted — including `publish_posts is not a
+	 * string`, which was added after a reviewer deleted that condition and the
+	 * whole file stayed green: every other case refused at an earlier condition,
+	 * so the last one was never the one doing the work.
+	 *
+	 * `! is_object( $object->cap )` is DEFENCE IN DEPTH and cannot currently
+	 * change the answer, because isset() on a property of a scalar is already
+	 * false and the next condition catches that shape anyway. It is kept
+	 * deliberately: it is free, it states the intended shape, and an edit that
+	 * reordered or narrowed the isset() conditions would make it reachable again.
+	 * Do not delete it on the strength of a surviving mutation.
+	 *
 	 * @param string $type The requested content type.
 	 *
 	 * @return object|null The post type object, or null when it is not

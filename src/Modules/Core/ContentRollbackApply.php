@@ -172,7 +172,11 @@ final class ContentRollbackApply implements WriteOperation {
 	 *
 	 * @throws OperationException With ErrorCode::TargetNotFound,
 	 *                           ErrorCode::Forbidden, or
-	 *                           ErrorCode::RollbackUnavailable.
+	 *                           ErrorCode::RollbackUnavailable — the last both
+	 *                           from the compatibility re-checks and when the
+	 *                           stored snapshot promises nothing restorable.
+	 *
+	 * phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 	 */
 	public function planChange( TargetState $current, array $input, OperationContext $context ): PlannedChange {
 		$reference = (string) ( $input['rollbackRef'] ?? '' );
@@ -197,7 +201,41 @@ final class ContentRollbackApply implements WriteOperation {
 				$promised[ $field ] = (string) $state[ $field ];
 			}
 		}
+		// Values outside RESTORABLE_FIELDS are not post columns and are recorded
+		// as integers, so they are promised as integers: a string here would make
+		// the promise disagree with the read-back, which reports featured_media
+		// as an int, and a correct rollback would verify as adjusted.
+		// is_numeric() as well as array_key_exists(), because `(int) null` is 0 and
+		// a recorded 0 MEANS "restore to no featured image": promising a null as 0
+		// would have the rollback offer to delete a live featured image. A
+		// non-numeric recorded value is not something this restore may act on.
+		foreach ( ContentTarget::RESTORABLE_MEDIA_FIELDS as $field ) {
+			if ( array_key_exists( $field, $state ) && is_numeric( $state[ $field ] ) ) {
+				$promised[ $field ] = (int) $state[ $field ];
+			}
+		}
 		ksort( $promised, SORT_STRING );
+
+		// A promise with nothing in it is refused HERE, with the code the contract
+		// has for it. PlannedChange::__construct() also rejects an empty promise,
+		// but it throws InvalidArgumentException, and preview() calls planChange()
+		// outside any try block — so that escape lands in the gateway's generic
+		// Throwable handler and answers `execution_failed`, which is declared
+		// RETRYABLE. A client would be told to retry a rollback that can never
+		// succeed, and the correlation id is replaced with 'unresolved' on that
+		// path, so the response cannot even be tied to the logged cause.
+		//
+		// Two stored shapes reach it, and one condition covers both because both
+		// end the same way: a snapshot whose only restorable key holds a value this
+		// restore may not act on (skipped by the gates above), and a snapshot
+		// holding nothing but `post_id`, which the capture path can already produce.
+		if ( [] === $promised ) {
+			throw new OperationException(
+				ErrorCode::RollbackUnavailable,
+				'The recorded snapshot holds no value this rollback could put back, so it cannot be restored.',
+				'Recover through WordPress revisions instead.'
+			);
+		}
 
 		return new PlannedChange(
 			[
@@ -208,19 +246,69 @@ final class ContentRollbackApply implements WriteOperation {
 			ContentFields::FIELD_ORDER
 		);
 	}
+	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 
 	/**
 	 * Captures the state the rollback is about to overwrite, so the rollback can
 	 * itself be reversed.
 	 *
+	 * The shared ContentTarget::snapshotOf() is NOT enough on its own, and this
+	 * method must not be simplified back to delegating to it. That records
+	 * `post_id` plus the five RESTORABLE_FIELDS columns and no media id, while
+	 * applyChange() above writes RESTORABLE_MEDIA_FIELDS as well — so a capture
+	 * that stopped at the columns would record none of the one value this
+	 * rollback is about to change. Reversing that rollback would then promise the
+	 * five unchanged columns, skip the absent media key in restoreFields(), match
+	 * its own promise on read-back, and report `verified` while the featured image
+	 * stayed where the rollback put it. That is the outcome the design calls worse
+	 * than a refusal: restore what nothing changed, silently skip what did, report
+	 * success.
+	 *
+	 * snapshotOf() itself is deliberately left alone. Every content write shares
+	 * it, so widening it there would make a `content-update` or
+	 * `content-status-set` rollback restore a featured image those writes never
+	 * touched — trading this defect for a wider one. The media id is added here,
+	 * on the one operation that can actually write it.
+	 *
+	 * 0 is recorded rather than null or an absent key for a post with no featured
+	 * image, for the reason ContentFeaturedMediaSet::captureSnapshot() records it:
+	 * SnapshotLifecycle::eligibility() reads null as nothing recoverable, and this
+	 * operation's snapshot policy is `required`, so the plan would be refused with
+	 * rollback_unavailable for the ordinary case. 0 is a legal recorded value and
+	 * restoring it is a deletion.
+	 *
+	 * The result is re-sorted because snapshotOf() sorts its own: the restore
+	 * state is stored as canonical JSON, and appending after that sort would make
+	 * the stored row depend on the order this method appends rather than on the
+	 * state it recorded.
+	 *
 	 * @param TargetState      $current The resolved current state.
 	 * @param OperationContext $context The request context.
 	 *
-	 * @return array<string, mixed>|null The restore state.
+	 * @return array<string, mixed>|null The restore state, or null when the
+	 *                                   target does not exist.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 	 */
 	public function captureSnapshot( TargetState $current, OperationContext $context ): ?array {
-		return $this->targets->snapshotOf( $current );
+		$snapshot = $this->targets->snapshotOf( $current );
+
+		// Guarding the null rather than indexing it blind: assigning a key to null
+		// auto-vivifies an array in PHP, so "there was no prior state" would become
+		// a snapshot holding a featured media id and nothing else — which
+		// SnapshotLifecycle would then treat as recoverable.
+		if ( null === $snapshot ) {
+			return null;
+		}
+
+		foreach ( ContentTarget::RESTORABLE_MEDIA_FIELDS as $field ) {
+			$snapshot[ $field ] = (int) ( $current->fields[ $field ] ?? 0 );
+		}
+		ksort( $snapshot, SORT_STRING );
+
+		return $snapshot;
 	}
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 
 	/**
 	 * Writes the recorded prior state back and stamps the snapshot as restored.
@@ -243,6 +331,12 @@ final class ContentRollbackApply implements WriteOperation {
 		foreach ( ContentTarget::RESTORABLE_FIELDS as $field ) {
 			if ( array_key_exists( $field, $planned->afterFields ) ) {
 				$restore_state[ $field ] = (string) $planned->afterFields[ $field ];
+			}
+		}
+
+		foreach ( ContentTarget::RESTORABLE_MEDIA_FIELDS as $field ) {
+			if ( array_key_exists( $field, $planned->afterFields ) && is_numeric( $planned->afterFields[ $field ] ) ) {
+				$restore_state[ $field ] = (int) $planned->afterFields[ $field ];
 			}
 		}
 
@@ -389,10 +483,14 @@ final class ContentRollbackApply implements WriteOperation {
 	 * whichever operation happened to record the snapshot: a reviewer probed the
 	 * previous behaviour and found a Contributor holding only the site-wide
 	 * primitive `edit_posts` was allowed to overwrite post 42 whenever the origin
-	 * declared that primitive. Unreachable today, because reads cannot record
-	 * snapshots and a creation's captureSnapshot() returns null, but live the
-	 * moment REQ-0018 ships. Changing one operation's declared capability closed
-	 * the chained-reference entrance to that hole; this closes the general one,
+	 * declared that primitive. It was unreachable when that was written, because
+	 * reads cannot record snapshots and a creation's captureSnapshot() returns
+	 * null, and REQ-0018 was expected to make it live. REQ-0018 has since shipped
+	 * and did not, only because `content-status-set` declares the target-bound
+	 * `edit_post` rather than the site-wide primitive — which is precisely the
+	 * per-operation declaration this check refuses to take its strength from.
+	 * Changing one operation's declared capability closed the chained-reference
+	 * entrance to that hole; this closes the general one,
 	 * because a target-bound capability evaluated against the target itself cannot
 	 * be weakened by a declaration made anywhere else.
 	 *

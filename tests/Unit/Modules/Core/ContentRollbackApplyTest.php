@@ -10,6 +10,8 @@ declare(strict_types=1);
 namespace SiteHelm\Tests\Unit\Modules\Core;
 
 use Brain\Monkey\Functions;
+use SiteHelm\Change\PlannedChange;
+use SiteHelm\Change\TargetState;
 use SiteHelm\Contracts\Domain;
 use SiteHelm\Contracts\ErrorCode;
 use SiteHelm\Contracts\Mode;
@@ -49,6 +51,11 @@ final class ContentRollbackApplyTest extends TestCase {
 	/** @var array<int, array<string, mixed>> */
 	private array $writes = [];
 
+	/** @var array<int, array<int, int|string>> */
+	private array $thumbnailWrites = [];
+
+	private int $thumbnailId = 0;
+
 	protected function setUp(): void {
 		parent::setUp();
 		Functions\when( 'wp_json_encode' )->alias( 'json_encode' );
@@ -56,13 +63,35 @@ final class ContentRollbackApplyTest extends TestCase {
 		Functions\when( 'wp_slash' )->alias( static fn( array $v ): array => $v );
 		Functions\when( 'is_wp_error' )->justReturn( false );
 		Functions\when( 'clean_post_cache' )->justReturn( null );
-		Functions\when( 'get_post_thumbnail_id' )->justReturn( 0 );
 		Functions\when( 'get_object_taxonomies' )->justReturn( [] );
 		Functions\when( 'get_option' )->justReturn( [] );
 
-		$this->wpdb      = new FakeWpdb();
-		$GLOBALS['wpdb'] = $this->wpdb;
-		$this->writes    = [];
+		$this->wpdb            = new FakeWpdb();
+		$GLOBALS['wpdb']       = $this->wpdb;
+		$this->writes          = [];
+		$this->thumbnailWrites = [];
+		$this->thumbnailId     = 0;
+		// Answers false rather than 0 when there is no thumbnail, exactly as
+		// WordPress does. See the matching note in ContentUpdateTest.
+		Functions\when( 'get_post_thumbnail_id' )->alias(
+			fn() => 0 === $this->thumbnailId ? false : $this->thumbnailId
+		);
+		Functions\when( 'set_post_thumbnail' )->alias(
+			function ( int $post_id, int $media_id ): bool {
+				$this->thumbnailWrites[] = [ 'set', $post_id, $media_id ];
+				$this->thumbnailId       = $media_id;
+
+				return true;
+			}
+		);
+		Functions\when( 'delete_post_thumbnail' )->alias(
+			function ( int $post_id ): bool {
+				$this->thumbnailWrites[] = [ 'delete', $post_id, 0 ];
+				$this->thumbnailId       = 0;
+
+				return true;
+			}
+		);
 		Functions\when( 'wp_update_post' )->alias(
 			function ( array $postarr ): int {
 				$this->writes[] = $postarr;
@@ -377,9 +406,13 @@ final class ContentRollbackApplyTest extends TestCase {
 	 * A reviewer probed the previous behaviour: a Contributor holding only the
 	 * site-wide primitive edit_posts was allowed to overwrite post 42 whenever the
 	 * origin's declaration named that primitive, because the re-check simply
-	 * re-authorized the origin's own definition. It is unreachable today — reads
-	 * cannot record snapshots and a creation's captureSnapshot() returns null —
-	 * but it goes live the moment REQ-0018 ships. This is the same Critical as
+	 * re-authorized the origin's own definition. It was unreachable when that was
+	 * written — reads cannot record snapshots and a creation's captureSnapshot()
+	 * returns null — and REQ-0018 was expected to make it live. REQ-0018 has since
+	 * shipped and did not, only because `content-status-set` declares the
+	 * target-bound edit_post rather than the site-wide primitive. That is a
+	 * property of one declaration, which is exactly what this test exists to stop
+	 * the re-check depending on. This is the same Critical as
 	 * the chained-reference case through a different door: changing the declared
 	 * capability closed one entrance, and this closes the other.
 	 */
@@ -661,22 +694,92 @@ final class ContentRollbackApplyTest extends TestCase {
 	}
 
 	/**
-	 * The rollback's own snapshot is captured through the shared
-	 * ContentTarget::snapshotOf(), so it records every column in
-	 * RESTORABLE_FIELDS. post_status and post_name are asserted here because
-	 * this operation is what un-does a rollback: if its capture were to lose
-	 * either column, restore() would be unable to put a post back the way the
-	 * rollback found it.
+	 * The rollback's own snapshot must record everything the rollback can WRITE,
+	 * because this operation is what un-does a rollback: whatever the capture
+	 * loses, restore() cannot put back, and the reversal would report verified
+	 * having silently skipped it.
+	 *
+	 * That is wider than the shared ContentTarget::snapshotOf(). applyChange()
+	 * writes RESTORABLE_MEDIA_FIELDS as well as the five RESTORABLE_FIELDS
+	 * columns, so captureSnapshot() adds the media id on top of snapshotOf()'s
+	 * result rather than delegating to it — see the round-trip test below.
+	 *
+	 * The whole array is asserted, not four keys of it. That pins the key SET
+	 * (a dropped key fails on the assertion rather than on an undefined-index
+	 * warning), the values, and the sorted order the canonical-JSON storage
+	 * depends on. `featured_media` is 0 here, not absent and not null: a post
+	 * with no featured image records a legal 0, since null would read to
+	 * SnapshotLifecycle as nothing recoverable under a `required` policy.
 	 */
 	public function test_capture_snapshot_records_the_pre_rollback_state(): void {
 		$this->queueSnapshot();
 		$current  = $this->operation->resolveTarget( [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
 		$snapshot = $this->operation->captureSnapshot( $current, $this->makeContext() );
 
-		$this->assertSame( 'Edited title', $snapshot['post_title'] );
-		$this->assertSame( 42, $snapshot['post_id'] );
-		$this->assertSame( 'draft', $snapshot['post_status'] );
-		$this->assertSame( 'original-title', $snapshot['post_name'] );
+		$this->assertSame(
+			[
+				'featured_media' => 0,
+				'post_content'   => '<p>Edited body.</p>',
+				'post_excerpt'   => 'Edited excerpt.',
+				'post_id'        => 42,
+				'post_name'      => 'original-title',
+				'post_status'    => 'draft',
+				'post_title'     => 'Edited title',
+			],
+			$snapshot
+		);
+	}
+
+	/**
+	 * The defect this branch made reachable, stated as a round trip.
+	 *
+	 * Post 42 is live with featured image 200. The referenced snapshot records
+	 * 100, so the rollback moves it to 100 — and the state it overwrote, 200, is
+	 * only recoverable if this operation's own capture recorded it. Before the
+	 * capture was widened, it recorded the five post columns and no media id, so
+	 * reversing this rollback promised five unchanged columns, skipped the absent
+	 * media key in restoreFields(), matched its promise on read-back and reported
+	 * VERIFIED while the featured image stayed at 100. The 200 was gone.
+	 *
+	 * assertArrayHasKey runs before the value assertion on purpose: with
+	 * failOnWarning="true" a missing key would otherwise fail the test on an
+	 * undefined-index warning, which is an incidental failure and proves nothing
+	 * about the capture.
+	 */
+	public function test_the_rollback_of_a_featured_media_change_can_itself_be_reversed(): void {
+		$this->thumbnailId = 200;
+		$this->queueSnapshot( [ 'restore_state' => '{"featured_media":100,"post_id":42}' ], 3 );
+
+		$context  = $this->makeContext();
+		$current  = $this->operation->resolveTarget( [ 'rollbackRef' => self::REFERENCE ], $context );
+		$captured = $this->operation->captureSnapshot( $current, $context );
+
+		$this->assertArrayHasKey(
+			'featured_media',
+			$captured,
+			'The rollback must record the featured image it is about to overwrite, or reversing it cannot put that image back.'
+		);
+		$this->assertSame( 200, $captured['featured_media'] );
+
+		$planned = $this->operation->planChange( $current, [ 'rollbackRef' => self::REFERENCE ], $context );
+		$this->operation->applyChange( $current, $planned, $context );
+		$this->assertSame( 100, $this->thumbnailId );
+
+		$this->operation->restore( $captured, $context );
+		$this->assertSame( 200, $this->thumbnailId );
+	}
+
+	/**
+	 * The null guard is not decoration. Assigning a key to null auto-vivifies an
+	 * array in PHP, so indexing snapshotOf()'s result blind would turn "there was
+	 * no prior state" into a snapshot holding a media id and nothing else — a
+	 * restore state naming no target, which restoreFields() then refuses as
+	 * rollback_unavailable instead of the engine treating the capture as absent.
+	 */
+	public function test_capture_snapshot_returns_null_for_a_target_that_does_not_exist(): void {
+		$this->assertNull(
+			$this->operation->captureSnapshot( new TargetState( 'post:new', false, [] ), $this->makeContext() )
+		);
 	}
 
 	public function test_apply_change_writes_the_prior_state_and_stamps_the_snapshot(): void {
@@ -854,5 +957,157 @@ final class ContentRollbackApplyTest extends TestCase {
 			[ 'ID', 'post_title', 'post_content', 'post_excerpt' ],
 			array_keys( $this->writes[0] )
 		);
+	}
+
+	/**
+	 * A featured-media snapshot records no post column, so intersecting it with
+	 * RESTORABLE_FIELDS alone produced an empty promise — and PlannedChange
+	 * rejects an empty promise with InvalidArgumentException, which escapes
+	 * planChange() uncaught. RESTORABLE_MEDIA_FIELDS is promised separately, and
+	 * as an integer: the read-back reports featured_media as an int, so a string
+	 * promise would make a correct rollback verify as adjusted.
+	 */
+	public function test_a_featured_media_snapshot_is_promised_as_an_integer(): void {
+		$this->queueSnapshot( [ 'restore_state' => '{"featured_media":108,"post_id":42}' ], 2 );
+
+		$current = $this->operation->resolveTarget( [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+		$planned = $this->operation->planChange( $current, [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+
+		$this->assertSame( [ 'featured_media' => 108 ], $planned->afterFields );
+	}
+
+	/**
+	 * The promised media field must reach ContentTarget::restoreFields() as well,
+	 * or the rollback would report success having written nothing: a restore state
+	 * holding only post_id issues no wp_update_post() call and no thumbnail write.
+	 *
+	 * Deviation from the brief's draft name (`..._as_an_integer`): the integer
+	 * type of applyChange()'s own cast is not observable from outside.
+	 * restore_featured_media() casts to int before any double can see the value,
+	 * and both `int` and the string `'108'` produce the identical set write. The
+	 * promise's integer type IS pinned, by the assertSame in the test above; what
+	 * this test pins is that the loop exists at all.
+	 */
+	public function test_a_promised_featured_media_reaches_the_restore_state(): void {
+		$this->queueSnapshot( [ 'restore_state' => '{"featured_media":108,"post_id":42}' ], 3 );
+
+		$current = $this->operation->resolveTarget( [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+		$planned = $this->operation->planChange( $current, [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+
+		$this->assertSame( 'post:42', $this->operation->applyChange( $current, $planned, $this->makeContext() ) );
+		$this->assertSame( [ [ 'set', 42, 108 ] ], $this->thumbnailWrites );
+		$this->assertSame( [], $this->writes );
+	}
+
+	/**
+	 * A stored featured_media of JSON null must not be promised. `(int) null` is
+	 * 0, and a recorded 0 MEANS "restore to no featured image", so promising the
+	 * null as 0 would have the rollback offer — and then perform — the deletion of
+	 * a live featured image, reporting it verified.
+	 *
+	 * The recorded column is still promised, which is what keeps this a skip of
+	 * one unusable value rather than a refusal of the whole rollback.
+	 */
+	public function test_a_null_recorded_featured_media_is_not_promised(): void {
+		$restore_state = '{"featured_media":null,"post_id":42,"post_title":"Original title"}';
+		$this->queueSnapshot( [ 'restore_state' => $restore_state ], 2 );
+
+		$current = $this->operation->resolveTarget( [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+		$planned = $this->operation->planChange( $current, [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+
+		$this->assertSame( [ 'post_title' => 'Original title' ], $planned->afterFields );
+	}
+
+	/**
+	 * Shape one of the empty promise: the snapshot's only restorable key holds a
+	 * value the media gate refuses, so nothing is promised.
+	 *
+	 * Without the explicit refusal this reaches PlannedChange::__construct(),
+	 * which throws InvalidArgumentException — and because preview() calls
+	 * planChange() outside any try block, that escape is answered as
+	 * `execution_failed`, which ErrorCode declares RETRYABLE. The caller would be
+	 * told to retry a rollback that can never succeed. `rollback_unavailable`
+	 * exists for exactly this and is not retryable.
+	 */
+	public function test_a_snapshot_promising_nothing_is_rollback_unavailable(): void {
+		$this->queueSnapshot( [ 'restore_state' => '{"featured_media":null,"post_id":42}' ], 2 );
+		$current = $this->operation->resolveTarget( [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+
+		try {
+			$this->operation->planChange( $current, [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::RollbackUnavailable, $e->errorCode );
+			// The message matters, not only the code: four other
+			// RollbackUnavailable throws sit earlier in planChange(), so an
+			// errorCode assertion alone would pass if the empty-promise guard
+			// were removed and an earlier gate refused for its own reason.
+			$this->assertStringContainsString( 'holds no value', $e->getMessage() );
+		}
+	}
+
+	/**
+	 * Shape two, and the older of the two: a stored snapshot holding nothing but
+	 * `post_id`. It reaches the same empty promise by a different route — no key
+	 * to skip, simply nothing recorded — and one condition covers both.
+	 */
+	public function test_a_snapshot_holding_only_a_post_id_is_rollback_unavailable(): void {
+		$this->queueSnapshot( [ 'restore_state' => '{"post_id":42}' ], 2 );
+		$current = $this->operation->resolveTarget( [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+
+		try {
+			$this->operation->planChange( $current, [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::RollbackUnavailable, $e->errorCode );
+			$this->assertStringContainsString( 'holds no value', $e->getMessage() );
+		}
+	}
+
+	/**
+	 * The refusal must not over-fire. A snapshot whose ONLY restorable value is a
+	 * featured media id of 0 promises exactly that, and 0 is both falsy and the
+	 * legal "no featured image" value — so a guard written as `! $promised` or
+	 * `empty( $promised )` on the value rather than the array would refuse a
+	 * perfectly restorable snapshot. A guard that refuses too much is worse than
+	 * the escape it replaces.
+	 */
+	public function test_a_snapshot_promising_only_a_zero_featured_media_is_still_planned(): void {
+		$this->queueSnapshot( [ 'restore_state' => '{"featured_media":0,"post_id":42}' ], 2 );
+		$current = $this->operation->resolveTarget( [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+
+		$planned = $this->operation->planChange( $current, [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+
+		$this->assertSame( [ 'featured_media' => 0 ], $planned->afterFields );
+	}
+
+	/**
+	 * applyChange() carries its own is_numeric() gate rather than trusting
+	 * planChange() to have stripped the value. The two phases are separated by a
+	 * stored plan token, so applyChange() re-derives everything it writes; a
+	 * promise reaching it with a null media value must still not be turned into
+	 * the deletion that `(int) null` would make it.
+	 */
+	public function test_a_null_promised_featured_media_never_reaches_the_restore_state(): void {
+		$this->queueSnapshot( [], 2 );
+		$current = $this->operation->resolveTarget( [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+		$planned = new PlannedChange(
+			[
+				'rollbackRef' => self::REFERENCE,
+				'restore'     => [ 'post_title' => 'Original title' ],
+			],
+			[
+				'featured_media' => null,
+				'post_title'     => 'Original title',
+			],
+			ContentFields::FIELD_ORDER
+		);
+
+		$this->thumbnailId = 108;
+
+		$this->assertSame( 'post:42', $this->operation->applyChange( $current, $planned, $this->makeContext() ) );
+		$this->assertSame( [], $this->thumbnailWrites );
+		$this->assertSame( 108, $this->thumbnailId );
+		$this->assertSame( 'Original title', $this->writes[0]['post_title'] );
 	}
 }

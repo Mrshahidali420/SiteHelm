@@ -164,8 +164,10 @@ final class ContentFields {
 	 * is not part of that bypass, because core does not register it with the
 	 * kses set.
 	 *
-	 * Both content write operations call this. They previously held a
-	 * byte-identical private copy each, and the trim was absent from both.
+	 * Both content writes that accept free text — create and update — call this.
+	 * They previously held a byte-identical private copy each, and the trim was
+	 * absent from both. The writes that set a single non-text field, such as
+	 * status or featured media, have nothing for it to sanitize.
 	 *
 	 * The boundary is deliberate and bounded: this models only PURE, INPUT-ONLY
 	 * transformations — deterministic functions of the requested value alone,

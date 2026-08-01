@@ -92,7 +92,7 @@ No dispatcher, no error code, no change-engine code, no existing operation. Both
 | `tests/Unit/Modules/Core/TaxonomyListTest.php` | **New.** |
 | `docs/product/v1-requirements-matrix.csv` | No change — these rows are already correct. |
 
-`CoreModule.php` is 478 lines and will grow by roughly 120. That stays under the 800 ceiling, but it is the file every future operation registers into, so its trajectory is worth watching: after the five writes it will be near the limit and will want the same treatment `ChangeEngine` just received.
+**As this design was written**, `CoreModule.php` was 478 lines and expected to grow by roughly 120 — under the 800 ceiling, but on a trajectory that would reach it after the five writes, and so wanting the same treatment `ChangeEngine` had just received. That treatment has since happened: every definition moved onto the operation class it describes, `register()` is now only a registration table, and the file is 142 lines. The concern is closed, not outstanding.
 
 ## Testing
 
