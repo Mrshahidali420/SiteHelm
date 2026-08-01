@@ -136,19 +136,29 @@ and response recorded verbatim.
   path.** A fake narrower than the function it replaces silently deletes the
   coverage of every guard that exists for the wider type. Worth a sweep of every
   double in `tests/` against its WordPress signature, as its own task.
-- **The gateway's generic failure handler discards the correlation id it holds.**
-  `src/Gateway/McpServer.php:191`'s `catch ( Throwable )` passes the literal
-  `'unresolved'` where the `OperationException` branch two lines above passes
-  `$context->correlationId`. So for any failure that is not an
-  `OperationException`, the envelope cannot be tied to the server-side log entry
-  that its own remediation text tells the operator to look up — and that is the
-  class of failure where the operator most needs the link, because the envelope
-  deliberately carries no detail. It affects **every dispatcher equally**, not
-  one module. The fix is one line and touches no module, but it is a gateway
-  change and wants its own test, so it is recorded rather than smuggled into a
-  module branch. **Do it before the remaining core writes land**, since
-  every one of them can reach that handler. Found while closing an unrelated
-  escape in `ContentRollbackApply::planChange()`.
+- **RESOLVED — the gateway's generic failure handler discarded the correlation id
+  it held.** `src/Gateway/McpServer.php`'s `catch ( Throwable )` passed the
+  literal `'unresolved'` where the `OperationException` branch two lines above
+  passed `$context->correlationId`. So for any failure that was not an
+  `OperationException`, the envelope could not be tied to the server-side log
+  entry that its own remediation text tells the operator to look up — and that is
+  the class of failure where the operator most needs the link, because the
+  envelope deliberately carries no detail. It affected **every dispatcher
+  equally**, not one module. Found while closing an unrelated escape in
+  `ContentRollbackApply::planChange()`.
+  Both branches now resolve the identifier through one shared
+  `correlationIdOrUnresolved()`, so they cannot drift apart again, and the
+  sentinel is a named constant rather than a literal repeated at each site. The
+  absent-context case is still guarded: the context is built inside the same
+  `try` both branches cover, so a failure during its construction — an
+  authentication failure being the routine one — reaches them with nothing to
+  read, and resolving unconditionally would turn a contained failure into an
+  uncontained one. Closing it exposed a second gap of the same shape: the
+  `OperationException` branch's correlation id was asserted by **nothing**, so
+  reverting that branch to the sentinel left the whole suite green. Both halves
+  now carry a test, and all three mutations — revert the generic branch, revert
+  the `OperationException` branch, drop the null guard — fail on assertions
+  rather than on incidental errors.
 - **`ErrorCode::ExecutionFailed` is declared retryable and
   `RollbackUnavailable` is not** (`src/Contracts/ErrorCode.php:56`). That is
   correct, and it is why the wrong error code escaping to a client is worse than
