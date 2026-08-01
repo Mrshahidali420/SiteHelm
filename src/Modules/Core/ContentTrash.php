@@ -102,12 +102,32 @@ use SiteHelm\Contracts\SnapshotPolicy;
  * than hidden: explicit restoration skips the `untrash_post` action other
  * plugins may hook.
  *
- * isDestructive is false, and that is a claim about this operation rather than
- * about trash in general. WordPress's trash is a recoverable state; the one
- * configuration in which this operation would destroy anything is refused above.
- * The three policies are Required regardless, because rollbackPolicy Required
- * forces snapshotPolicy Required and previewPolicy is declared Required outright,
- * so nothing about the operation's protection depends on this flag.
+ * isDestructive IS TRUE, AND THE CONTRACT DECIDES IT, not this file.
+ * docs/product/phase-2-foundation-contract.md's `isDestructive` row names
+ * "moving content to trash" as its own definitional example of the flag being
+ * true. That document is frozen; a frozen contract and code that silently
+ * disagree is the drift this branch exists to avoid, so the flag follows the
+ * contract and any argument against it is raised by amending the contract rather
+ * than by diverging in a comment.
+ *
+ * The nuance that argued the other way is kept here rather than deleted, because
+ * it is what a future amendment would have to answer. WordPress's trash is a
+ * RECOVERABLE state — nothing is removed, the row keeps every column, and the one
+ * configuration in which this operation would destroy anything is refused at plan
+ * time above — so on a narrow reading of "data would be lost without a snapshot"
+ * this operation loses none. Two things settle it against that reading anyway.
+ * First, the flag means "this is destructive", and the costs of being wrong are
+ * not symmetric: over-warning costs a caller one confirmation, under-warning
+ * costs them a post. Second, the trash IS user-visible state removal in every
+ * sense a client cares about — the item leaves every listing, every archive and
+ * every feed — and wp_trash_post() additionally hides every comment on it.
+ *
+ * Nothing about the operation's protection turns on the flag either way: the
+ * three policies are Required regardless, because rollbackPolicy Required forces
+ * snapshotPolicy Required and previewPolicy is declared Required outright, which
+ * is exactly what the contract's own sentence about destructive operations
+ * demands. The flag is a DECLARATION read by CatalogBuilder for display; it
+ * gates no code path in the engine.
  *
  * @package SiteHelm
  */
@@ -178,7 +198,7 @@ final class ContentTrash implements WriteOperation {
 			requiredCapabilities: [ 'delete_post' ],
 			risk: Risk::Medium,
 			isReadOnly: false,
-			isDestructive: false,
+			isDestructive: true,
 			isIdempotent: true,
 			previewPolicy: PreviewPolicy::Required,
 			snapshotPolicy: SnapshotPolicy::Required,
@@ -428,10 +448,34 @@ final class ContentTrash implements WriteOperation {
 	 * snapshot was restored", which the engine verifies, plus a best-effort
 	 * cleanup, which it does not.
 	 *
-	 * The cleanup runs AFTER the column write. Removing _wp_desired_post_slug
-	 * before wp_update_post() ran would take away the value core falls back on if
-	 * anything filtered the submitted slug away, and both remaining keys are read
-	 * by core paths the column write can reach.
+	 * THE CLEANUP RUNS AFTER THE COLUMN WRITE, AND THAT DIVERGES FROM CORE ON
+	 * PURPOSE. wp_untrash_post() deletes _wp_trash_meta_status and
+	 * _wp_trash_meta_time BEFORE its wp_update_post(); this method deletes them
+	 * after. (The comment restoration is not a divergence — core calls
+	 * wp_untrash_post_comments() after its update too, and so does this.)
+	 *
+	 * The reason is that restoreFields() CAN REFUSE, and this method must not have
+	 * destroyed anything when it does. wp_update_post() answering 0 or a WP_Error
+	 * raises ExecutionFailed, whose remediation tells the operator to recover
+	 * another way — and on a post that is still in the trash, the most obvious
+	 * other way is the WordPress admin's own Restore button, which is
+	 * wp_untrash_post() reading exactly these two keys. Deleting them first would
+	 * mean a refusal that claims the restore stopped while having removed the
+	 * operator's fallback, which is the discipline ContentTarget::restoreFields()
+	 * states at length for its own hoisted guard: a refusal that changed something
+	 * is worse than the partial write it reports.
+	 *
+	 * Core can afford the other order because it has already read
+	 * _wp_trash_meta_status into $previous_status before it deletes anything, and
+	 * because wp_untrash_post() is the platform's single untrash path rather than
+	 * one of two. Nothing in core READS these two keys during the update itself —
+	 * wp_insert_post()'s untrash branch reads _wp_desired_post_slug, a different
+	 * key this method never deletes and core deletes itself — so neither order is
+	 * required for the write to be correct, and the tie is broken on what a
+	 * failure leaves behind.
+	 *
+	 * Pinned by test_restore_that_fails_the_column_write_leaves_the_trash_residue
+	 * _intact, which fails under core's order.
 	 *
 	 * KNOWN LIMITATION, recorded rather than hidden: content-rollback-apply does
 	 * not call this method. It rebuilds a restore state from the shared field
@@ -454,7 +498,14 @@ final class ContentTrash implements WriteOperation {
 	 */
 	public function restore( array $restoreState, OperationContext $context ): string {
 		$target_key = $this->targets->restoreFields( $restoreState );
-		$post_id    = (int) ( $restoreState['post_id'] ?? 0 );
+
+		// Derived from what the column write RETURNED rather than re-read from the
+		// recorded state. Both answer the same id, but this one cannot answer a
+		// different one: the cleanup below is then provably scoped to the post that
+		// was just restored. It also removes a `?? 0` that could never be reached —
+		// restoreFields() refuses a state without a positive post_id before it
+		// returns anything — so nothing here depends on that precondition holding.
+		$post_id = $this->fields->postIdFromTargetKey( $target_key );
 
 		wp_untrash_post_comments( $post_id );
 
