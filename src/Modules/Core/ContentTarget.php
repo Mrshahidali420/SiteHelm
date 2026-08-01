@@ -393,24 +393,53 @@ final class ContentTarget {
 	 * promise, while deleting would too. Writing is chosen because it is the
 	 * smaller claim: it never removes a row the snapshot did not prove was absent.
 	 *
+	 * THE LIVE VALUE IS READ BEFORE ANYTHING IS WRITTEN, and a non-scalar one is
+	 * refused. That projection collapse is the reason: ContentFields::meta() reports
+	 * a stored array or object as '', so a snapshot records '' for a serialized
+	 * payload another plugin owns under an allowlisted key. Writing the recorded ''
+	 * would replace that payload with an empty string, re-read '', match, and report
+	 * the rollback VERIFIED — data loss reported as success. Judging the RECORDED
+	 * value cannot catch it, because the recorded value is a perfectly ordinary
+	 * empty string; only the live one carries the evidence.
+	 *
+	 * The reads are therefore a separate pass from the writes, so the refusal is
+	 * all-or-nothing. A map whose second key is unsafe must not leave the first key
+	 * already overwritten: a restore that half-applied would leave the item in a
+	 * state neither the snapshot nor the live site ever held, and nothing records
+	 * what to put back.
+	 *
 	 * @param int                  $post_id The post identifier.
 	 * @param array<string, mixed> $values  The recorded key-to-value map.
 	 *
-	 * @throws OperationException With ErrorCode::ExecutionFailed when a stored
-	 *                           value does not match the recorded one.
+	 * @throws OperationException With ErrorCode::ExecutionFailed when a live value
+	 *                           is not scalar, or when a stored value does not
+	 *                           match the recorded one.
 	 *
 	 * phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 	 */
 	private function restore_custom_fields( int $post_id, array $values ): void {
+		$writable = [];
 		foreach ( $values as $key => $value ) {
 			if ( ! is_string( $key ) || '' === $key || ! is_scalar( $value ) ) {
 				continue;
 			}
 
-			update_post_meta( $post_id, $key, wp_slash( (string) $value ) );
+			if ( ! is_scalar( get_post_meta( $post_id, $key, true ) ) ) {
+				throw new OperationException(
+					ErrorCode::ExecutionFailed,
+					'A permitted custom field on this content item holds a structured value, so this restore stopped without changing anything.',
+					'Ask a site administrator to review which custom field keys are permitted, then retry.'
+				);
+			}
+
+			$writable[ $key ] = (string) $value;
+		}
+
+		foreach ( $writable as $key => $value ) {
+			update_post_meta( $post_id, $key, wp_slash( $value ) );
 
 			$stored = get_post_meta( $post_id, $key, true );
-			if ( ! is_scalar( $stored ) || (string) $stored !== (string) $value ) {
+			if ( ! is_scalar( $stored ) || (string) $stored !== $value ) {
 				throw new OperationException(
 					ErrorCode::ExecutionFailed,
 					'WordPress refused to restore a recorded custom field value.',

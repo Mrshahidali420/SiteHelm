@@ -42,7 +42,13 @@ final class ContentTargetRestoreTest extends TestCase {
 
 	private ContentTarget $targets;
 
-	/** @var array<string, string> Stored meta, keyed by meta key. */
+	/**
+	 * Stored meta, keyed by meta key. Values are `mixed` rather than `string`
+	 * because get_post_meta() returns mixed and a stored array is the case the
+	 * pre-write guard exists for.
+	 *
+	 * @var array<string, mixed>
+	 */
 	private array $meta = [];
 
 	/** @var array<string, int[]> Stored term ids, keyed by taxonomy. */
@@ -68,17 +74,33 @@ final class ContentTargetRestoreTest extends TestCase {
 
 		Functions\when( 'clean_post_cache' )->justReturn( null );
 		Functions\when( 'is_wp_error' )->alias( static fn( $thing ): bool => $thing instanceof stdClass );
-		Functions\when( 'wp_slash' )->alias( static fn( $v ) => $v );
+
+		// Really slashes, and the meta write below really unslashes, because an
+		// identity pair makes wp_slash() unobservable: deleting it from
+		// restore_custom_fields() would leave every test green while a value holding
+		// a backslash lost characters on the way into the database. Recursive over
+		// arrays, as core's wp_slash() is, because restoreFields() also slashes the
+		// wp_update_post() array.
+		Functions\when( 'wp_slash' )->alias(
+			static function ( $value ) {
+				$slash = static fn( $v ) => is_string( $v ) ? addslashes( $v ) : $v;
+
+				return is_array( $value ) ? array_map( $slash, $value ) : $slash( $value );
+			}
+		);
 
 		// Typed int|bool, and answering FALSE for an unchanged value, exactly as
 		// update_metadata() documents. A fake that always returned true would make
-		// the "judge by re-reading" claim untestable.
+		// the "judge by re-reading" claim untestable. It also unslashes before
+		// storing, as update_metadata()'s wp_unslash( $meta_value ) does, so what
+		// lands in $this->meta is what would land in the database.
 		Functions\when( 'update_post_meta' )->alias(
 			function ( $post_id, $key, $value, $prev_value = '' ) {
 				$this->callOrder[]  = 'update_post_meta';
 				$this->metaWrites[] = [ $key, $value ];
-				$unchanged          = array_key_exists( $key, $this->meta ) && $this->meta[ $key ] === $value;
-				$this->meta[ $key ] = (string) $value;
+				$stored             = is_string( $value ) ? stripslashes( $value ) : $value;
+				$unchanged          = array_key_exists( $key, $this->meta ) && $this->meta[ $key ] === $stored;
+				$this->meta[ $key ] = $stored;
 
 				return $unchanged ? false : 1;
 			}
@@ -129,7 +151,7 @@ final class ContentTargetRestoreTest extends TestCase {
 		}
 	}
 
-	public function test_a_recorded_custom_field_map_is_written_back_slashed_and_verified(): void {
+	public function test_a_recorded_custom_field_map_is_written_back_and_verified(): void {
 		$this->meta = [ 'subtitle' => 'current' ];
 
 		list( $key, $why ) = $this->restoreOutcome(
@@ -141,6 +163,37 @@ final class ContentTargetRestoreTest extends TestCase {
 
 		$this->assertSame( 'post:42', $key, $why );
 		$this->assertSame( [ [ 'subtitle', 'recorded' ] ], $this->metaWrites );
+	}
+
+	/**
+	 * The slashing is a real step with a real consequence, so it is asserted
+	 * rather than named.
+	 *
+	 * update_metadata() calls wp_unslash( $meta_value ) before storing, exactly as
+	 * wp_update_post() does for post columns. An unslashed value carrying a
+	 * backslash therefore loses characters on the way in and then fails the
+	 * verification comparison — correctly, but for a reason the caller could do
+	 * nothing about. Both halves of the round trip are pinned: the slashed form is
+	 * what reaches WordPress, and the original is what survives into storage.
+	 */
+	public function test_a_custom_field_value_is_slashed_so_a_backslash_survives_the_write(): void {
+		// Literal: back\slash
+		$recorded = 'back\\slash';
+
+		$this->meta = [ 'note' => 'set by the write being reversed' ];
+
+		list( $key, $why ) = $this->restoreOutcome(
+			[
+				'post_id' => 42,
+				'meta'    => [ 'note' => $recorded ],
+			]
+		);
+
+		$this->assertSame( 'post:42', $key, $why );
+		// Literal: back\\slash — the slashed form handed to update_post_meta(),
+		// which unslashes it again before storing.
+		$this->assertSame( [ [ 'note', 'back\\\\slash' ] ], $this->metaWrites );
+		$this->assertSame( $recorded, $this->meta['note'] );
 	}
 
 	/**
@@ -207,15 +260,85 @@ final class ContentTargetRestoreTest extends TestCase {
 	}
 
 	/**
-	 * get_post_meta() returns MIXED. A key whose stored value is an array — a
-	 * serialized payload another plugin wrote under a name the administrator
-	 * happened to allowlist — must refuse rather than be cast. (string) on an
-	 * array is a warning and yields the literal "Array" in PHP 8, so the
-	 * is_scalar() half of the guard is what stands between a rollback and a
-	 * comparison against a value that means nothing.
+	 * Data loss reported as success, which is why the LIVE value is read before
+	 * anything is written.
+	 *
+	 * ContentFields::meta() projects a stored array as '', so a snapshot records ''
+	 * for a serialized payload another plugin owns under an allowlisted key.
+	 * Writing that recorded '' would replace the payload with an empty string,
+	 * re-read '', match, and report the rollback VERIFIED. The recorded value is a
+	 * perfectly ordinary empty string and carries no evidence of the problem —
+	 * only the live value does.
+	 *
+	 * This is reachable today: content-rollback-apply's own captureSnapshot() is
+	 * the one path that records `meta`.
+	 *
+	 * `subtitle` is listed FIRST and is perfectly writable, so a guard that read
+	 * and wrote in one pass would already have overwritten it before reaching
+	 * `payload`. Asserting metaWrites is empty is what pins the all-or-nothing
+	 * rule: a half-applied restore leaves the item in a state neither the snapshot
+	 * nor the live site ever held, and nothing records what to put back.
 	 */
-	public function test_a_non_scalar_stored_value_is_refused_rather_than_cast(): void {
-		Functions\when( 'get_post_meta' )->justReturn( [ 'nested' => 'payload' ] );
+	public function test_a_non_scalar_live_custom_field_is_refused_before_anything_is_written(): void {
+		$this->meta = [
+			'subtitle' => 'current',
+			'payload'  => [ 'nested' => 'another plugin owns this' ],
+		];
+
+		try {
+			$this->targets->restoreFields(
+				[
+					'post_id' => 42,
+					'meta'    => [
+						'subtitle' => 'recorded',
+						'payload'  => '',
+					],
+				]
+			);
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::ExecutionFailed, $e->errorCode );
+			$this->assertSame(
+				'A permitted custom field on this content item holds a structured value, so this restore stopped without changing anything.',
+				$e->getMessage()
+			);
+			$this->assertSame(
+				'Ask a site administrator to review which custom field keys are permitted, then retry.',
+				$e->remediation
+			);
+		}
+
+		$this->assertSame( [], $this->metaWrites );
+		$this->assertSame( [ 'nested' => 'another plugin owns this' ], $this->meta['payload'] );
+	}
+
+	/**
+	 * The verification read's own is_scalar() half, which the pre-write guard does
+	 * NOT subsume: a save_post hook belonging to another plugin can replace the row
+	 * between the write and the read-back.
+	 *
+	 * The stand-in stringifies to exactly the recorded value, so without
+	 * `! is_scalar( $stored )` the comparison passes and the restore reports
+	 * success. An array would instead raise an Array-to-string warning and fail the
+	 * test incidentally through failOnWarning, proving nothing about the guard —
+	 * which is why this uses an object with __toString() rather than an array.
+	 */
+	public function test_a_value_that_reads_back_non_scalar_is_refused_rather_than_cast(): void {
+		$stringy = new class() {
+			public function __toString(): string {
+				return 'recorded';
+			}
+		};
+
+		$reads = 0;
+		Functions\when( 'get_post_meta' )->alias(
+			static function ( $post_id, $key = '', $single = false ) use ( &$reads, $stringy ) {
+				++$reads;
+
+				// Scalar for the pre-write guard, non-scalar for the verification.
+				return 1 === $reads ? 'current' : $stringy;
+			}
+		);
 
 		try {
 			$this->targets->restoreFields(
