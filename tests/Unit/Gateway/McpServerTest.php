@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace SiteHelm\Tests\Unit\Gateway;
 
 use Brain\Monkey\Functions;
+use RuntimeException;
 use SiteHelm\Change\ChangeEngine;
 use SiteHelm\Contracts\Domain;
 use SiteHelm\Contracts\Mode;
@@ -55,6 +56,21 @@ final class McpServerTest extends TestCase {
 		Functions\when( 'user_can' )->justReturn( true );
 		Functions\when( 'wp_json_encode' )->alias( 'json_encode' );
 
+		$this->server = $this->serverRunning( static fn(): array => [ 'wordpress' => '6.8.1' ] );
+	}
+
+	/**
+	 * Builds a server whose single registered operation runs the given handler.
+	 *
+	 * The handler is a parameter so a test can choose what the operation does
+	 * once the gateway has already built its context — including raising a
+	 * failure the gateway did not anticipate.
+	 *
+	 * @param callable $handler The handler backing `system-environment`.
+	 *
+	 * @return McpServer The configured server.
+	 */
+	private function serverRunning( callable $handler ): McpServer {
 		$registry = new CapabilityRegistry();
 		$registry->register(
 			new OperationDefinition(
@@ -88,10 +104,10 @@ final class McpServerTest extends TestCase {
 					'arguments' => [],
 				],
 			),
-			static fn(): array => [ 'wordpress' => '6.8.1' ]
+			$handler
 		);
 
-		$this->server = new McpServer(
+		return new McpServer(
 			new Dispatcher( $registry, new CatalogBuilder( $registry ), new PolicyEngine(), new SchemaValidator(), ChangeEngine::create() ),
 			new ContextFactory(),
 			[
@@ -421,6 +437,115 @@ final class McpServerTest extends TestCase {
 
 		$this->assertSame( -32602, $response['error']['code'] );
 		$this->assertStringNotContainsString( 'plugins-write', $response['error']['message'] );
+	}
+
+	/**
+	 * An OperationException raised once the context exists reports that
+	 * request's correlation id.
+	 *
+	 * This branch was already correct, and nothing asserted it: reverting it to
+	 * the sentinel left all 597 tests green. Both branches now resolve the
+	 * identifier through one shared method, so leaving this half unasserted
+	 * would mean half of that method's contract is pinned by nothing — the same
+	 * shape of gap that let the generic branch drift in the first place.
+	 */
+	public function test_operation_failure_after_the_context_exists_reports_its_correlation_id(): void {
+		$payload = $this->callSystemRead( [ 'operation' => 'no-such-operation' ] );
+
+		$this->assertSame( 'invalid_input', $payload['code'] );
+		$this->assertSame( 'corr-uuid', $payload['correlationId'] );
+	}
+
+	/**
+	 * A failure that is NOT an OperationException must report the correlation id
+	 * of the request it failed, exactly as the OperationException branch does.
+	 *
+	 * This envelope carries no message, no path and no trace by design, so the
+	 * correlation id is the only handle it offers — and its own remediation
+	 * tells the operator to go read the server-side log. Reporting the
+	 * 'unresolved' sentinel while a context existed severed that link for
+	 * precisely the failures that have nothing else to go on. It matters more
+	 * than a missing field: `execution_failed` is declared retryable, so the
+	 * client is told to try again, and this product's primary client is a
+	 * language model that will.
+	 */
+	public function test_unexpected_failure_after_the_context_exists_reports_its_correlation_id(): void {
+		$server = $this->serverRunning(
+			static fn(): array => throw new RuntimeException( 'Boom in C:/wp-content/db-password.php' )
+		);
+
+		$response = $server->handle(
+			[
+				'jsonrpc' => '2.0',
+				'id'      => 10,
+				'method'  => 'tools/call',
+				'params'  => [
+					'name'      => 'system-read',
+					'arguments' => [ 'operation' => 'system-environment' ],
+				],
+			]
+		);
+
+		$this->assertArrayHasKey(
+			'result',
+			$response,
+			'The failure must be contained as a tool result rather than escaping to the outermost handler.'
+		);
+		$this->assertTrue( $response['result']['isError'] );
+
+		$text    = $response['result']['content'][0]['text'];
+		$payload = json_decode( $text, true );
+
+		$this->assertSame( 'execution_failed', $payload['code'] );
+		// The id is the one the context generated, and is that opaque value
+		// alone: the assertion is identity against wp_generate_uuid4()'s return,
+		// so anything appended or substituted fails here.
+		$this->assertSame( 'corr-uuid', $payload['correlationId'] );
+		// Restoring the link must not widen what this branch lets through. The
+		// raw failure names a filesystem path; none of it may reach the wire.
+		$this->assertStringNotContainsString( 'db-password', $text );
+		$this->assertStringNotContainsString( 'wp-content', $text );
+		$this->assertStringNotContainsString( 'Boom', $text );
+	}
+
+	/**
+	 * The same branch must survive a failure raised DURING context construction,
+	 * where there genuinely is no correlation id to report.
+	 *
+	 * The context is built inside the same try block, so this state is reachable
+	 * rather than defensive: here the correlation id's own generator is what
+	 * fails. Resolving the id unconditionally would read a property off nothing
+	 * and turn a contained failure into an uncontained one — strictly worse than
+	 * the sentinel this asserts.
+	 */
+	public function test_unexpected_failure_before_the_context_exists_reports_unresolved(): void {
+		Functions\when( 'wp_generate_uuid4' )->alias(
+			static fn(): string => throw new RuntimeException( 'No randomness source available.' )
+		);
+
+		$response = $this->server->handle(
+			[
+				'jsonrpc' => '2.0',
+				'id'      => 11,
+				'method'  => 'tools/call',
+				'params'  => [
+					'name'      => 'system-read',
+					'arguments' => [ 'operation' => 'system-environment' ],
+				],
+			]
+		);
+
+		$this->assertArrayHasKey(
+			'result',
+			$response,
+			'A failure with no context must still be contained as a tool result, not escape to the outermost handler.'
+		);
+		$this->assertTrue( $response['result']['isError'] );
+
+		$payload = json_decode( $response['result']['content'][0]['text'], true );
+
+		$this->assertSame( 'execution_failed', $payload['code'] );
+		$this->assertSame( 'unresolved', $payload['correlationId'] );
 	}
 
 	public function test_every_dispatcher_tool_advertises_the_reserved_plan_token(): void {
