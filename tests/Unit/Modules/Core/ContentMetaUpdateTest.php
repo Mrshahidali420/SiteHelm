@@ -70,6 +70,20 @@ final class ContentMetaUpdateTest extends TestCase {
 	private ?string $appliedTarget = null;
 
 	/**
+	 * A plugin registered on `updated_post_meta` / `added_post_meta`, if a test
+	 * installs one.
+	 *
+	 * update_post_meta() fires both hooks, and a handler on either may touch other
+	 * meta on the same post. Modelling that is the only way to reach the window
+	 * inside applyChange()'s own loop: the plan-time guard proved every key held
+	 * zero or one row, but it proved it before the first write, and a later key can
+	 * gain a row while an earlier one is being written.
+	 *
+	 * @var callable|null
+	 */
+	private $onMetaWritten = null;
+
+	/**
 	 * The stored value of the metadata allowlist option, or NULL when the option
 	 * has never been written.
 	 *
@@ -100,6 +114,7 @@ final class ContentMetaUpdateTest extends TestCase {
 		$this->metaWrites    = [];
 		$this->callOrder     = [];
 		$this->appliedTarget = null;
+		$this->onMetaWritten = null;
 		$this->allowlisted   = [ 'byline', 'subtitle' ];
 
 		Functions\when( 'clean_post_cache' )->justReturn( null );
@@ -158,6 +173,12 @@ final class ContentMetaUpdateTest extends TestCase {
 				$rows               = $this->meta[ $key ] ?? [];
 				$unchanged          = 1 === count( $rows ) && $rows[0] === $stored;
 				$this->meta[ $key ] = array_fill( 0, max( 1, count( $rows ) ), $stored );
+
+				// added_post_meta / updated_post_meta, fired AFTER the row is
+				// stored, exactly as update_metadata() and add_metadata() do.
+				if ( null !== $this->onMetaWritten ) {
+					( $this->onMetaWritten )( $key );
+				}
 
 				return $unchanged ? false : 1;
 			}
@@ -755,7 +776,11 @@ final class ContentMetaUpdateTest extends TestCase {
 			$this->input( [ [ 'subtitle', 'A revised standfirst' ] ] ),
 			$this->makeContext()
 		);
-		Functions\when( 'get_post_meta' )->justReturn( 'something WordPress substituted' );
+		Functions\when( 'get_post_meta' )->alias(
+			static fn( $post_id, $key = '', $single = false ) => $single
+				? 'something WordPress substituted'
+				: [ 'something WordPress substituted' ]
+		);
 
 		try {
 			$this->operation->applyChange( $current, $planned, $this->makeContext() );
@@ -789,12 +814,13 @@ final class ContentMetaUpdateTest extends TestCase {
 			$this->input( [ [ 'subtitle', 'A revised standfirst' ] ] ),
 			$this->makeContext()
 		);
-		Functions\when( 'get_post_meta' )->justReturn(
-			new class() {
-				public function __toString(): string {
-					return 'A revised standfirst';
-				}
+		$stringy = new class() {
+			public function __toString(): string {
+				return 'A revised standfirst';
 			}
+		};
+		Functions\when( 'get_post_meta' )->alias(
+			static fn( $post_id, $key = '', $single = false ) => $single ? $stringy : [ $stringy ]
 		);
 
 		try {
@@ -807,6 +833,83 @@ final class ContentMetaUpdateTest extends TestCase {
 				$e->getMessage()
 			);
 		}
+	}
+
+	/**
+	 * The window the plan-time guard cannot close, because it closes before the
+	 * loop that opens it.
+	 *
+	 * planChange() proved both keys held one row. applyChange() then writes
+	 * `byline`, and update_post_meta() fires added_post_meta / updated_post_meta; a
+	 * plugin on either hook adds a row to `subtitle`, which this loop has not
+	 * reached. The `subtitle` write then flattens both rows, because
+	 * update_metadata() rewrites every row it finds — and a row-0 comparison would
+	 * read back the value it had just written and pass. Rows destroyed, reported
+	 * verified.
+	 *
+	 * Requiring exactly one row afterwards is what sees it: `byline` is written and
+	 * verified normally, so this also pins that the check refuses no legitimate
+	 * write.
+	 *
+	 * completedSteps must be non-empty. The refusal lands after a write, so an
+	 * operator needs to know something was applied.
+	 */
+	public function test_a_key_that_gains_a_row_while_an_earlier_key_is_written_is_not_reported_verified(): void {
+		$this->onMetaWritten = function ( $key ): void {
+			if ( 'byline' === $key ) {
+				$this->meta['subtitle'][] = 'a row another plugin added';
+			}
+		};
+
+		$outcome = $this->planAndApply(
+			$this->input(
+				[
+					[ 'byline', 'Alex Editor' ],
+					[ 'subtitle', 'A revised standfirst' ],
+				]
+			)
+		);
+
+		$this->assertInstanceOf( OperationException::class, $outcome );
+		$this->assertSame( ErrorCode::ExecutionFailed, $outcome->errorCode );
+		$this->assertSame(
+			'WordPress did not store one of the requested custom field values.',
+			$outcome->getMessage()
+		);
+		$this->assertSame( [ 'plan approved', 'snapshot captured' ], $outcome->completedSteps );
+		$this->assertSame( [ 'update_post_meta', 'update_post_meta' ], $this->callOrder );
+		$this->assertSame( [ 'Alex Editor' ], $this->meta['byline'] );
+	}
+
+	/**
+	 * The is_array() term of the VERIFICATION, which no other test reaches: the
+	 * plan-time guard refuses a non-array before any write, so the verification
+	 * only meets one if the reading changes between the two calls — a plugin
+	 * registering on `get_post_metadata` during added_post_meta, for instance.
+	 * get_metadata_raw() returns that filter's value with `return $check;` and no
+	 * type test when $single is false.
+	 */
+	public function test_a_stored_value_list_that_cannot_be_read_back_is_execution_failed(): void {
+		Functions\when( 'get_post_meta' )->alias(
+			function ( $post_id, $key = '', $single = false ) {
+				if ( ! $single && [] !== $this->callOrder ) {
+					return 'a bare string';
+				}
+
+				$rows = $this->meta[ $key ] ?? [];
+
+				return $single ? ( $rows[0] ?? '' ) : $rows;
+			}
+		);
+
+		$outcome = $this->planAndApply( $this->input( [ [ 'subtitle', 'A revised standfirst' ] ] ) );
+
+		$this->assertInstanceOf( OperationException::class, $outcome );
+		$this->assertSame( ErrorCode::ExecutionFailed, $outcome->errorCode );
+		$this->assertSame(
+			'WordPress did not store one of the requested custom field values.',
+			$outcome->getMessage()
+		);
 	}
 
 	public function test_read_back_reports_the_persisted_map(): void {

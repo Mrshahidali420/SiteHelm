@@ -361,6 +361,22 @@ final class ContentMetaUpdate implements WriteOperation {
 	 * follows for post columns, so an unslashed value containing a backslash or a
 	 * quote is stored short of a character and then fails the comparison below.
 	 *
+	 * The re-read asks for the LIST and requires EXACTLY ONE row, not just a
+	 * matching row 0, and the difference is the loop itself. planChange() proved
+	 * every requested key held zero or one row, but it proved that BEFORE this loop
+	 * began, and each update_post_meta() call inside it fires added_post_meta or
+	 * updated_post_meta. A plugin on either hook can add a row to a key this loop
+	 * has not reached yet; that key's write then flattens it, because
+	 * update_metadata() rewrites every row it finds; and a row-0 comparison would
+	 * see the value it just wrote and pass. Rows destroyed, reported verified — the
+	 * same shape ContentTarget::restore_custom_fields() requires exactly one row
+	 * for, on a path whose window is opened by save_post rather than by a meta hook.
+	 *
+	 * Exactly one is the only correct count after this write, and it refuses no
+	 * legitimate one: update_metadata() collects the existing rows and falls through
+	 * to add_metadata() only when there are none, so a key admitted by the plan
+	 * guard holding zero or one row must hold exactly one afterwards.
+	 *
 	 * @param TargetState      $current The resolved current state.
 	 * @param PlannedChange    $planned The promised change.
 	 * @param OperationContext $context The request context.
@@ -378,8 +394,8 @@ final class ContentMetaUpdate implements WriteOperation {
 		foreach ( (array) ( $planned->payload[ self::PROMISED_FIELD ] ?? [] ) as $key => $value ) {
 			update_post_meta( $post_id, (string) $key, wp_slash( (string) $value ) );
 
-			$stored = get_post_meta( $post_id, (string) $key, true );
-			if ( ! is_scalar( $stored ) || (string) $stored !== (string) $value ) {
+			$rows = get_post_meta( $post_id, (string) $key, false );
+			if ( ! is_array( $rows ) || 1 !== count( $rows ) || ! is_scalar( $rows[0] ) || (string) $rows[0] !== (string) $value ) {
 				throw new OperationException(
 					ErrorCode::ExecutionFailed,
 					'WordPress did not store one of the requested custom field values.',

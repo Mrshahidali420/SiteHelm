@@ -300,6 +300,15 @@ final class ContentTarget {
 		// an ID alone is not a no-op: WordPress re-saves the row, bumping
 		// post_modified and firing save_post for a rollback that changed no
 		// column. So the column write is skipped rather than issued empty.
+		// What has actually landed by the time a later step refuses. The custom-field
+		// write is the one step that can fail AFTER earlier steps succeeded — its
+		// own pre-write guard is hoisted, but its verification is not, and a refusal
+		// there leaves the columns and the featured image already restored. A bare
+		// ExecutionFailed would tell the operator nothing about which of those to
+		// expect. Accumulated as each step succeeds rather than declared up front,
+		// so it can never claim a step that was skipped.
+		$completed = [];
+
 		if ( count( $update ) > 1 ) {
 			$restored = wp_update_post( wp_slash( $update ), true );
 
@@ -310,6 +319,8 @@ final class ContentTarget {
 					'Recover through WordPress revisions instead.'
 				);
 			}
+
+			$completed[] = 'content columns restored';
 		}
 
 		// is_numeric() is not defensive padding: `(int) null` is 0, and 0 is the
@@ -321,12 +332,13 @@ final class ContentTarget {
 		foreach ( self::RESTORABLE_MEDIA_FIELDS as $field ) {
 			if ( array_key_exists( $field, $restoreState ) && is_numeric( $restoreState[ $field ] ) ) {
 				$this->restore_featured_media( $post_id, (int) $restoreState[ $field ] );
+				$completed[] = 'featured image restored';
 			}
 		}
 
 		// Already validated and flattened by the hoisted pass above, so this only
 		// writes. An empty map issues no call.
-		$this->restore_custom_fields( $post_id, $custom_fields );
+		$this->restore_custom_fields( $post_id, $custom_fields, $completed );
 
 		// is_array() as well as array_key_exists(), for the reason the media loop
 		// above uses is_numeric(): a recorded key holding something of the wrong
@@ -418,15 +430,25 @@ final class ContentTarget {
 	 * check is NOT here — it is hoisted into restoreFields(), above every write in
 	 * the method. See writable_custom_fields() for why.
 	 *
-	 * @param int                   $post_id The post identifier.
-	 * @param array<string, string> $values  The validated key-to-value map.
+	 * The refusal carries the steps that ALREADY LANDED, which the caller
+	 * accumulates and passes in. This is the one write in restoreFields() whose
+	 * failure is reachable after earlier writes succeeded — its own pre-write guard
+	 * is hoisted above everything, but its verification cannot be — so a bare
+	 * ExecutionFailed here would tell an operator that a rollback failed without
+	 * saying that the columns and the featured image are already back. The steps
+	 * name mechanisms, never keys or values.
+	 *
+	 * @param int                   $post_id   The post identifier.
+	 * @param array<string, string> $values    The validated key-to-value map.
+	 * @param string[]              $completed The restore steps that have already
+	 *                                         succeeded.
 	 *
 	 * @throws OperationException With ErrorCode::ExecutionFailed when a stored
 	 *                           value does not match the recorded one.
 	 *
 	 * phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 	 */
-	private function restore_custom_fields( int $post_id, array $values ): void {
+	private function restore_custom_fields( int $post_id, array $values, array $completed ): void {
 		foreach ( $values as $key => $value ) {
 			update_post_meta( $post_id, $key, wp_slash( $value ) );
 
@@ -446,7 +468,8 @@ final class ContentTarget {
 				throw new OperationException(
 					ErrorCode::ExecutionFailed,
 					'WordPress refused to restore a recorded custom field value.',
-					'Recover through WordPress revisions instead.'
+					'Recover through WordPress revisions instead.',
+					array_merge( $completed, [ 'custom fields partially restored' ] )
 				);
 			}
 		}
@@ -512,6 +535,20 @@ final class ContentTarget {
 	 * direction — nothing is destroyed, and the remediation names the fix — but the
 	 * blast radius is the post rather than the key, and a narrower version would
 	 * have to drop the unsafe key from the promise rather than refuse the plan.
+	 *
+	 * A SECOND, unrelated limitation lives in the skip condition below, and it is
+	 * recorded here because this is where a reader looks for what this method does
+	 * not restore. `! is_string( $key )` skips a key PHP has coerced to an integer,
+	 * and PHP coerces every integer-like array key — so an allowlisted key of
+	 * '2024', which ContentFields::allowlist()'s /^[A-Za-z0-9_-]+$/ permits and
+	 * content-meta-update can therefore write, arrives in the recorded map as the
+	 * int 2024 and is silently not written back. It is not silent to the CLIENT:
+	 * ContentRollbackApply promises the complete overlaid map including that key, so
+	 * the read-back disagrees with the promise and WriteVerifier reports it — a
+	 * mixed map comes back as an adjustment naming `meta`, and a numeric key on its
+	 * own comes back as not applied. Deliberately left rather than fixed, because
+	 * the skip is a decision made elsewhere and pinned by
+	 * test_malformed_inner_entries_are_skipped_rather_than_written.
 	 *
 	 * The refusal names no key and no value. A key is administrator-configured and
 	 * a value is site content; neither belongs in an error envelope, and nothing
