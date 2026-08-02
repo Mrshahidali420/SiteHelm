@@ -566,6 +566,24 @@ final class ContentMetaUpdate implements WriteOperation {
 	 * only for a structured value, this paragraph claimed a coverage that did not
 	 * exist for the multi-row shape. Widening one without the other re-opens it.
 	 *
+	 * WHAT THAT ASYMMETRY COSTS, recorded here because a reader of this method
+	 * would otherwise have to find it in another file. This guard predicts the
+	 * requested keys; the restore refuses on the WHOLE recorded map, because
+	 * captureSnapshot() records the complete projected map rather than the
+	 * requested subset. So a post carrying an UNREQUESTED allowlisted key that
+	 * another plugin stores as a serialized array, or across more than one row,
+	 * passes this guard, executes, and is handed a rollbackRef that
+	 * ContentTarget::writable_custom_fields() will refuse with ExecutionFailed
+	 * whenever it is redeemed. The reference is issued and cannot be redeemed.
+	 *
+	 * Deliberately NOT closed by widening this check to the whole allowlist. That
+	 * would refuse, at planning time, payloads that succeed today — an update to
+	 * one field blocked by an unrelated field's stored shape — and the refusal
+	 * direction is already the safe one: the unredeemable reference costs a
+	 * recovery path, never data. The narrower fix is the one named on
+	 * writable_custom_fields(): drop the unsafe key from the promise instead of
+	 * refusing the plan, which would make both halves agree at the key level.
+	 *
 	 * READ-ONLY, which is what lets it run before any write, and it runs AFTER the
 	 * allowlist pass so a key outside the allowlist gets one answer rather than an
 	 * answer that depends on what it happens to hold.
