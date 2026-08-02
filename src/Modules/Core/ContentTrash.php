@@ -495,7 +495,44 @@ final class ContentTrash implements WriteOperation {
 	 * leaves the comments hidden and the two trash meta rows in place. The rows
 	 * are inert on a post that is not in the trash; the consequence is that a
 	 * later trash through the WordPress admin adds a second _wp_trash_meta_status
-	 * row, and the admin's Restore button then reads the older of the two.
+	 * row, and the admin's Restore button then reads the older of the two. The
+	 * comments are the worse half: they stay at `comment_approved =
+	 * 'post-trashed'` on a post that is no longer in the trash, so neither this
+	 * plugin nor the WordPress admin offers the untrash that would bring them
+	 * back, and _wp_trash_meta_comments_status sits there unreachable.
+	 *
+	 * TRIAGED 2026-08-01 AND DELIBERATELY NOT FIXED HERE. The shape of the fix
+	 * is known: ContentRollbackApply::applyChange() already holds the origin
+	 * operation's id (it reads $snapshot['operation_id'] to re-check the
+	 * capability) and already holds a CapabilityRegistry that can answer
+	 * writeOperation( $id ), so it could dispatch to the ORIGIN's restore()
+	 * instead of calling restoreFields() itself. The restore state it rebuilds
+	 * is already the shape that operation's captureSnapshot() produced, so the
+	 * dispatch would type-check and this method would run for a trash rollback.
+	 *
+	 * THAT FIX INTRODUCES A WORSE DEFECT THAN IT CLOSES, which is why it is not
+	 * being made on this task. wp_untrash_post_comments() ends by calling
+	 * delete_post_meta( $post_id, '_wp_trash_meta_comments_status' ) — read from
+	 * wp-includes/post.php on this machine — so it DESTROYS the record of which
+	 * comments were hidden as it restores them. ContentRollbackApply declares
+	 * SnapshotPolicy::Required and captures its own pre-rollback snapshot, but
+	 * that snapshot records post columns, the featured media id, the meta map
+	 * and the term map: no comment state, because the read projection has none.
+	 * So a dispatched un-trash whose verification then failed would compensate
+	 * through ContentRollbackApply::restore(), write the trash status back, and
+	 * be unable to re-hide the comments OR to recover the statuses it had just
+	 * deleted. That converts a residue into an irreversible loss, in an
+	 * operation whose whole contract is reversibility.
+	 *
+	 * Closing it properly needs one of: a comment-state field on the shared
+	 * restore lists so the reverse direction is recordable; or a restore()
+	 * contract split into "reverse my own failed write" and "apply my recorded
+	 * state", so the rollback path can dispatch without inheriting the
+	 * compensation semantics. Both are design changes across every write, not a
+	 * change to this method, and both belong to whoever also settles the
+	 * `rollbackPolicy: required` open issue in
+	 * docs/product/phase-2-foundation-contract.md, which is the same question
+	 * asked from the other end.
 	 *
 	 * @param array<string, mixed> $restoreState The recorded restore state.
 	 * @param OperationContext     $context      The request context.

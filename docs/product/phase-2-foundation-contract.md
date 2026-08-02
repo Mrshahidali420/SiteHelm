@@ -111,6 +111,27 @@ Cross-field rules (the registry rejects definitions that violate them):
 - `rollbackPolicy` = `required` forces `snapshotPolicy` = `required`.
 - Every `write` operation with `previewPolicy` = `required` participates in the audit log; no such operation may execute without producing an audit record.
 
+### Open issue, raised 2026-08-01 — `rollbackPolicy: required` promises more than the engine proves
+
+**This is recorded for a V1 decision, not resolved here. It is a trap for the next operation that declares `required`.**
+
+The `rollbackPolicy` row above says a `required` operation *"may not execute unless complete restoration is **proven available**"*. What the engine actually proves is weaker: that a snapshot was **captured**. `SnapshotLifecycle::eligibility()` computes `$capturable = null !== $operation->captureSnapshot( … )` and refuses with `rollback_unavailable` only when that is false and `snapshotPolicy` is `required` — which `rollbackPolicy: required` implies through the cross-field rule above. That is the whole of the check: a non-null return is treated as proof, and no restore path is consulted. Capture is necessary for restoration but not sufficient for it — `ContentTarget`'s restore helpers can refuse a snapshot that captured perfectly cleanly, for instance when a recorded meta key now holds multiple rows or a structured value, or when a recorded taxonomy will not write back.
+
+**Verified not to be a live defect today**, which is why nothing is being changed under it:
+
+- `content-trash` is the only operation declaring `rollbackPolicy: required`, and its snapshot records post columns alone, through the shared `ContentTarget::snapshotOf()`.
+- `restoreFields()` gates the meta and taxonomy helpers on `array_key_exists`, so a columns-only restore state never reaches the refusals that could fire.
+- Every operation that *can* reach those refusals — `content-meta-update`, `content-terms-assign`, `content-rollback-apply` — declares `supported`, whose wording already permits a rollback to turn out unavailable ("rollback is offered **when** the recorded snapshot proves complete and safe restoration, otherwise the result omits the rollback reference").
+
+The gap opens the moment an operation declares `required` **and** records a value whose restore can refuse. Such an operation would pass the plan-time check, execute, hand the client a `rollbackRef`, and only discover at rollback time that the recorded state cannot be put back — which is exactly the outcome `required` exists to prevent.
+
+Two ways out, both V1 decisions:
+
+1. **Weaken the wording** to match the engine — "may not execute unless a snapshot was captured" — and rely on each operation's own plan-time refusals (as `content-terms-assign` and `content-rollback-apply` already do for `sort => true`) to close the specific holes.
+2. **Strengthen the engine** to make the promise true, by having `captureSnapshot()` prove restorability rather than only recording, or by adding a plan-time dry-run of the restore refusals for `required` operations.
+
+Option 1 is the smaller change and matches what every shipped operation already does. Option 2 is what the sentence currently claims.
+
 ## OperationContext
 
 Every dispatched request runs inside one immutable `OperationContext`, constructed by the gateway before any module code executes. Modules receive the context; they never construct or alter it.

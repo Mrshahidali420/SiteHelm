@@ -331,6 +331,15 @@ final class ContentMetaUpdateTest extends TestCase {
 	 * because every refusal test depends on any other throwable escaping
 	 * loudly, so this narrower helper exists beside it rather than widening it.
 	 *
+	 * The caller compares the RETURNED REASON rather than passing it as an
+	 * assertion message. Element 1 is the assertion's expected value in the
+	 * success case and the diagnostic in the failure case, which is what keeps
+	 * 'the plan threw nothing' reachable — as an assertion message on an
+	 * instanceof check against a non-nullable return type it could not be. That
+	 * is the one way this helper is NOT a copy of restoreOutcome(): there,
+	 * restoreFields() returns a string the callers compare by value, so the
+	 * message-argument form is already live.
+	 *
 	 * @param array<string, mixed> $input The operation arguments.
 	 *
 	 * @return array{0: PlannedChange|null, 1: string} The planned change or
@@ -685,7 +694,16 @@ final class ContentMetaUpdateTest extends TestCase {
 
 		list( $planned, $why ) = $this->planOutcome( $this->input( [ [ 'subtitle', 'A first standfirst' ] ] ) );
 
-		$this->assertInstanceOf( PlannedChange::class, $planned, $why );
+		// Asserted on $why, NOT as assertInstanceOf( …, $planned, $why ). planChange()
+		// is declared `: PlannedChange`, so a non-null $planned satisfies instanceof
+		// by its signature and the message could only ever be printed on the null
+		// branch — where the catch has already overwritten it. That made the success
+		// literal unreachable: the fifteenth dead construct found on this project.
+		// Comparing the reason itself makes it the expected value, so it is live, and
+		// a throwable now fails HERE naming its class and message rather than failing
+		// an instanceof that says only that something was null.
+		$this->assertSame( 'the plan threw nothing', $why );
+		$this->assertSame( 'A first standfirst', $planned->afterFields['meta']['subtitle'] ?? null );
 
 		$outcome = $this->planAndApply( $this->input( [ [ 'subtitle', 'A first standfirst' ] ] ) );
 
