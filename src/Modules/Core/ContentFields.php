@@ -414,4 +414,47 @@ final class ContentFields {
 
 		return $map;
 	}
+
+	/**
+	 * Whether any named taxonomy stores its terms in a curated order.
+	 *
+	 * THE ONE DEFINITION OF "ORDER-SENSITIVE" FOR THIS MODULE. It lives beside
+	 * terms() deliberately: that projection is what makes the question matter.
+	 * terms() reads with no `orderby` and sorts SORT_NUMERIC, so it reports a SET,
+	 * while `WP_Taxonomy::$sort` makes wp_set_object_terms() rewrite `term_order`
+	 * over the tt_ids it accumulated in the order the caller passed, filtered
+	 * against a fresh read. For such a taxonomy the projection therefore has no
+	 * inverse: a snapshot records a set where the state was a sequence, a restore
+	 * flattens it, and the numerically sorted read-back matches the promise while
+	 * the curated order is gone.
+	 *
+	 * Both writers that can reach a term write consult this — ContentTermsAssign
+	 * refuses while planning, ContentRollbackApply refuses and additionally omits
+	 * the key from its capture. They ask at different scopes, which is why this
+	 * answers the narrow question and neither policy lives here.
+	 *
+	 * `! empty()` rather than an isset()/is_object() pair: get_taxonomy() answers
+	 * `false` for a name it does not know, and empty() reads a property of `false`
+	 * as absent without warning, so a guard in front of it could never change the
+	 * answer. The truthiness matches the truthiness core applies to the same
+	 * member.
+	 *
+	 * @param string[] $taxonomies The taxonomy names to test.
+	 *
+	 * @return bool True when at least one is registered `sort => true`.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+	 */
+	public function anyTaxonomyIsOrdered( array $taxonomies ): bool {
+		foreach ( $taxonomies as $taxonomy ) {
+			$object = get_taxonomy( (string) $taxonomy );
+
+			if ( ! empty( $object->sort ) ) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 }
