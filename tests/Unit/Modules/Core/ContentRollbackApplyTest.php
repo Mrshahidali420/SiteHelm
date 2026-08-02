@@ -1225,6 +1225,60 @@ final class ContentRollbackApplyTest extends TestCase {
 	}
 
 	/**
+	 * The drop the two tests above pin is DISCLOSED. Without a warning the promise
+	 * is the narrowed map, the restore matches it, and the engine reports verified
+	 * while a value the snapshot recorded was never put back.
+	 *
+	 * The warning names the field and nothing else: `gone` is administrator
+	 * configured, so it must not reach the envelope.
+	 */
+	public function test_a_meta_key_the_allowlist_no_longer_holds_is_disclosed_as_a_warning(): void {
+		$this->stubMetaAndTerms( [ 'subtitle' => 'new' ], [] );
+		$this->queueSnapshot( [ 'restore_state' => '{"meta":{"gone":"x","subtitle":"old"},"post_id":42}' ], 2 );
+
+		$current = $this->operation->resolveTarget( [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+		$planned = $this->operation->planChange( $current, [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+
+		$this->assertCount( 1, $planned->warnings );
+		$this->assertStringContainsString( 'meta', $planned->warnings[0] );
+		$this->assertStringNotContainsString( 'gone', $planned->warnings[0] );
+		$this->assertStringNotContainsString( 'x', $planned->warnings[0] );
+	}
+
+	/**
+	 * The same disclosure for the terms overlay, whose drop means a taxonomy was
+	 * unregistered from the post type since capture.
+	 */
+	public function test_a_taxonomy_no_longer_registered_is_disclosed_as_a_warning(): void {
+		$this->stubMetaAndTerms( [], [ 'category' => [ 11 ] ] );
+		$this->queueSnapshot(
+			[ 'restore_state' => '{"post_id":42,"terms":{"category":[3,5],"gone_tax":[9]}}' ],
+			2
+		);
+
+		$current = $this->operation->resolveTarget( [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+		$planned = $this->operation->planChange( $current, [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+
+		$this->assertCount( 1, $planned->warnings );
+		$this->assertStringContainsString( 'terms', $planned->warnings[0] );
+	}
+
+	/**
+	 * A rollback that CAN put every recorded key back warns about nothing. Without
+	 * this the disclosure above could be unconditional and still pass.
+	 */
+	public function test_an_overlay_that_keeps_every_recorded_key_warns_about_nothing(): void {
+		$this->stubMetaAndTerms( [ 'subtitle' => 'new' ], [] );
+		$this->queueSnapshot( [ 'restore_state' => '{"meta":{"subtitle":"old"},"post_id":42}' ], 2 );
+
+		$current = $this->operation->resolveTarget( [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+		$planned = $this->operation->planChange( $current, [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+
+		$this->assertSame( [ 'meta' => [ 'subtitle' => 'old' ] ], $planned->afterFields );
+		$this->assertSame( [], $planned->warnings );
+	}
+
+	/**
 	 * A snapshot that RECORDED TERMS is refused when the map it would write holds
 	 * an order-sensitive taxonomy.
 	 *

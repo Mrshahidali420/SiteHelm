@@ -275,6 +275,20 @@ final class ContentRollbackApply implements WriteOperation {
 		}
 		ksort( $promised, SORT_STRING );
 
+		// A key dropped above leaves no trace in the read-back — the promise IS the
+		// narrowed map, so the restore matches it and verifies: skip silently, report
+		// success, which this design calls worse than a refusal. An incomplete overlay
+		// therefore says so, at preview as well as apply, naming the FIELD and nothing
+		// else — a dropped meta key is administrator-configured and never belongs in
+		// an envelope, and the audit row's target_key identifies the item.
+		$warnings = [];
+		foreach ( array_merge( ContentTarget::RESTORABLE_CUSTOM_FIELDS, ContentTarget::RESTORABLE_TAXONOMY_FIELDS ) as $field ) {
+			$recorded = is_array( $promised[ $field ] ?? null ) ? $state[ $field ] : [];
+			if ( count( array_intersect_key( $recorded, $promised[ $field ] ?? [] ) ) < count( $recorded ) ) {
+				$warnings[] = sprintf( 'This site can no longer restore every value the snapshot recorded for %s, so this rollback leaves the ones it cannot restore at their current values.', $field );
+			}
+		}
+
 		// A promise with nothing in it is refused HERE, with the code the contract
 		// has for it. PlannedChange::__construct() also rejects an empty promise,
 		// but it throws InvalidArgumentException, and preview() calls planChange()
@@ -307,7 +321,8 @@ final class ContentRollbackApply implements WriteOperation {
 				'restore'     => $promised,
 			],
 			$promised,
-			ContentFields::FIELD_ORDER
+			ContentFields::FIELD_ORDER,
+			$warnings
 		);
 	}
 	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
