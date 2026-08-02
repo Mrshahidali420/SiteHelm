@@ -6118,6 +6118,13 @@ final class MediaAttachTest extends TestCase {
 		Functions\when( 'get_attached_file' )->justReturn( '/does/not/exist/cat.jpg' );
 		Functions\when( 'get_post_meta' )->justReturn( [] );
 
+		// MediaFields::read() calls both of these on every path once
+		// get_attached_file() answers a non-empty string, so faking
+		// get_attached_file() without them fatals on an undefined function.
+		// Same pair, same aliases, as MediaGetTest.
+		Functions\when( 'wp_basename' )->alias( static fn( string $path ): string => basename( $path ) );
+		Functions\when( 'wp_filesize' )->justReturn( 0 );
+
 		// get_post( 0 ) answers $GLOBALS['post'] in core, and the fake reproduces
 		// that rather than answering null, because the identity check in the
 		// operation exists precisely for it. A fake that returned null for 0 would
@@ -8414,6 +8421,10 @@ final class MediaUploadTest extends TestCase {
 			]
 		);
 		Functions\when( 'wp_basename' )->alias( static fn( string $p ): string => basename( $p ) );
+		// MediaFields::read() calls wp_filesize() alongside wp_basename() on
+		// every path where get_attached_file() answers a non-empty string;
+		// without it the test fatals on an undefined function.
+		Functions\when( 'wp_filesize' )->justReturn( 0 );
 		Functions\when( 'user_can' )->justReturn( true );
 		Functions\when( 'current_user_can' )->justReturn( true );
 	}
