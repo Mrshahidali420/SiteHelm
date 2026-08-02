@@ -45,6 +45,11 @@ use SiteHelm\Storage\SnapshotStore;
  * compatible. The first is about identity and the third is about health; they are
  * not the same check and neither substitutes for the other.
  *
+ * A fourth plan-time refusal sits beside them but is not a re-check of the
+ * snapshot: assert_order_is_recordable() refuses a restoration that would WRITE
+ * a taxonomy registered `sort => true`, paired with captureSnapshot() omitting
+ * the `terms` key for such an item. Neither half is correct alone.
+ *
  * @package SiteHelm
  */
 final class ContentRollbackApply implements WriteOperation {
@@ -194,14 +199,19 @@ final class ContentRollbackApply implements WriteOperation {
 		// that is not cosmetic: wp_update_post() resolves an empty status to
 		// 'draft', so a rollback of an older snapshot would silently
 		// un-publish a live post while reporting success.
+		// is_scalar() too, for the reason the three loops below gate before casting:
+		// $state is decoded JSON, and a value of the wrong shape is not one this
+		// restore may act on — (string) on an array promises 'Array' and writes it to
+		// a post column. Unreachable through any plugin path; it is the gate the one
+		// loop of the four that writes post columns was alone in not having.
 		$state    = $this->decode( (string) $snapshot['restore_state'] );
 		$promised = [];
 		foreach ( ContentTarget::RESTORABLE_FIELDS as $field ) {
-			if ( array_key_exists( $field, $state ) ) {
+			if ( array_key_exists( $field, $state ) && is_scalar( $state[ $field ] ) ) {
 				$promised[ $field ] = (string) $state[ $field ];
 			}
 		}
-		// Values outside RESTORABLE_FIELDS are not post columns and are recorded
+		// RESTORABLE_MEDIA_FIELDS values are not post columns and are recorded
 		// as integers, so they are promised as integers: a string here would make
 		// the promise disagree with the read-back, which reports featured_media
 		// as an int, and a correct rollback would verify as adjusted.
@@ -214,7 +224,75 @@ final class ContentRollbackApply implements WriteOperation {
 				$promised[ $field ] = (int) $state[ $field ];
 			}
 		}
+
+		// Overlaid onto the CURRENT map rather than promised as recorded. The
+		// read-back projects every allowlisted meta key and every taxonomy
+		// registered for the post type, so a promise has to be that same complete
+		// map or WriteVerifier compares different shapes and calls a correct
+		// restore not-applied. An allowlist narrowed, or a taxonomy unregistered,
+		// between capture and rollback therefore drops silently out of the promise
+		// instead of becoming an unverifiable write — which is the honest answer:
+		// the value cannot be restored to somewhere the read path can no longer
+		// see.
+		//
+		// An overlay NONE of whose recorded keys survived is not promised at all.
+		// The test is array_intersect_key() against the recorded map rather than
+		// emptiness of the overlay, because those are different questions and only
+		// the first is the one that matters: did the snapshot contribute anything?
+		//
+		// Emptiness alone is under-inclusive. A snapshot recording `gone => x`
+		// against a current map of `subtitle => new` overlays to `subtitle => new` —
+		// non-empty, so it would be promised, and the rollback would verify having
+		// restored nothing but the value already there. That is the identical case
+		// to a snapshot overlaying onto an empty map, distinguished only by whether
+		// the current map happens to hold something else. Both must be refused, and
+		// the intersection refuses both.
+		//
+		// Every key having been dropped means an allowlist narrowed, or a taxonomy
+		// unregistered, since capture — so the value cannot be restored to anywhere
+		// the read path can still see, and saying so is the honest answer.
+		foreach ( ContentTarget::RESTORABLE_CUSTOM_FIELDS as $field ) {
+			if ( array_key_exists( $field, $state ) && is_array( $state[ $field ] ) ) {
+				$overlaid = $this->fields->overlayKnownKeys(
+					is_array( $current->fields[ $field ] ?? null ) ? $current->fields[ $field ] : [],
+					$state[ $field ]
+				);
+				if ( [] !== array_intersect_key( $state[ $field ], $overlaid ) ) {
+					$promised[ $field ] = $overlaid;
+				}
+			}
+		}
+
+		// Carries one thing the custom-field loop does not: the order-recordability
+		// refusal, sited HERE so it sees the promised map rather than the wider
+		// projection. See assert_order_is_recordable().
+		foreach ( ContentTarget::RESTORABLE_TAXONOMY_FIELDS as $field ) {
+			if ( array_key_exists( $field, $state ) && is_array( $state[ $field ] ) ) {
+				$overlaid = $this->fields->overlayKnownKeys(
+					is_array( $current->fields[ $field ] ?? null ) ? $current->fields[ $field ] : [],
+					$state[ $field ]
+				);
+				if ( [] !== array_intersect_key( $state[ $field ], $overlaid ) ) {
+					$this->assert_order_is_recordable( $overlaid );
+					$promised[ $field ] = $overlaid;
+				}
+			}
+		}
 		ksort( $promised, SORT_STRING );
+
+		// A key dropped above leaves no trace in the read-back — the promise IS the
+		// narrowed map, so the restore matches it and verifies: skip silently, report
+		// success, which this design calls worse than a refusal. An incomplete overlay
+		// therefore says so, at preview as well as apply, naming the FIELD and nothing
+		// else — a dropped meta key is administrator-configured and never belongs in
+		// an envelope, and the audit row's target_key identifies the item.
+		$warnings = [];
+		foreach ( array_merge( ContentTarget::RESTORABLE_CUSTOM_FIELDS, ContentTarget::RESTORABLE_TAXONOMY_FIELDS ) as $field ) {
+			$recorded = is_array( $state[ $field ] ?? null ) ? $state[ $field ] : [];
+			if ( count( array_intersect_key( $recorded, $promised[ $field ] ?? [] ) ) < count( $recorded ) ) {
+				$warnings[] = sprintf( 'This site can no longer restore every value the snapshot recorded for %s, so this rollback leaves the ones it cannot restore at their current values.', $field );
+			}
+		}
 
 		// A promise with nothing in it is refused HERE, with the code the contract
 		// has for it. PlannedChange::__construct() also rejects an empty promise,
@@ -227,10 +305,13 @@ final class ContentRollbackApply implements WriteOperation {
 		// traceable wrong answer is still a wrong answer, and refusing here is
 		// what keeps the right code on the wire.
 		//
-		// Two stored shapes reach it, and one condition covers both because both
-		// end the same way: a snapshot whose only restorable key holds a value this
-		// restore may not act on (skipped by the gates above), and a snapshot
-		// holding nothing but `post_id`, which the capture path can already produce.
+		// Three stored shapes reach it, and one condition covers all three because
+		// they end the same way: a snapshot whose only restorable key holds a value
+		// this restore may not act on (skipped by the gates above); a snapshot
+		// holding nothing but `post_id`, which the capture path can already produce;
+		// and a snapshot whose only restorable value is a meta or term map every key
+		// of which the current allowlist or taxonomy registration has since dropped,
+		// leaving an overlay with nothing in it.
 		if ( [] === $promised ) {
 			throw new OperationException(
 				ErrorCode::RollbackUnavailable,
@@ -245,7 +326,8 @@ final class ContentRollbackApply implements WriteOperation {
 				'restore'     => $promised,
 			],
 			$promised,
-			ContentFields::FIELD_ORDER
+			ContentFields::FIELD_ORDER,
+			$warnings
 		);
 	}
 	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
@@ -256,21 +338,23 @@ final class ContentRollbackApply implements WriteOperation {
 	 *
 	 * The shared ContentTarget::snapshotOf() is NOT enough on its own, and this
 	 * method must not be simplified back to delegating to it. That records
-	 * `post_id` plus the five RESTORABLE_FIELDS columns and no media id, while
-	 * applyChange() above writes RESTORABLE_MEDIA_FIELDS as well — so a capture
-	 * that stopped at the columns would record none of the one value this
-	 * rollback is about to change. Reversing that rollback would then promise the
-	 * five unchanged columns, skip the absent media key in restoreFields(), match
-	 * its own promise on read-back, and report `verified` while the featured image
-	 * stayed where the rollback put it. That is the outcome the design calls worse
-	 * than a refusal: restore what nothing changed, silently skip what did, report
-	 * success.
+	 * `post_id` plus the five RESTORABLE_FIELDS columns and nothing else, while
+	 * applyChange() above writes RESTORABLE_MEDIA_FIELDS, RESTORABLE_CUSTOM_FIELDS
+	 * and RESTORABLE_TAXONOMY_FIELDS as well — so a capture that stopped at the
+	 * columns would record none of the three values this rollback is about to
+	 * change. Reversing that rollback would then promise the five unchanged
+	 * columns, skip the absent media, meta and term keys in restoreFields(), match
+	 * its own promise on read-back, and report `verified` while the featured image,
+	 * the custom fields and the terms stayed where the rollback put them. That is
+	 * the outcome the design calls worse than a refusal: restore what nothing
+	 * changed, silently skip what did, report success.
 	 *
 	 * snapshotOf() itself is deliberately left alone. Every content write shares
 	 * it, so widening it there would make a `content-update` or
-	 * `content-status-set` rollback restore a featured image those writes never
-	 * touched — trading this defect for a wider one. The media id is added here,
-	 * on the one operation that can actually write it.
+	 * `content-status-set` rollback restore a featured image, a custom field or a
+	 * term those writes never touched — trading this defect for a wider one. The
+	 * three non-column values are added here, on the one operation that can
+	 * actually write them.
 	 *
 	 * 0 is recorded rather than null or an absent key for a post with no featured
 	 * image, for the reason ContentFeaturedMediaSet::captureSnapshot() records it:
@@ -283,6 +367,10 @@ final class ContentRollbackApply implements WriteOperation {
 	 * state is stored as canonical JSON, and appending after that sort would make
 	 * the stored row depend on the order this method appends rather than on the
 	 * state it recorded.
+	 *
+	 * The `terms` map is a SET, and for a `sort => true` taxonomy the state it
+	 * came from was a SEQUENCE — so that key is omitted rather than recorded
+	 * flattened. See the loop below. Every other taxonomy round-trips exactly.
 	 *
 	 * @param TargetState      $current The resolved current state.
 	 * @param OperationContext $context The request context.
@@ -306,6 +394,32 @@ final class ContentRollbackApply implements WriteOperation {
 		foreach ( ContentTarget::RESTORABLE_MEDIA_FIELDS as $field ) {
 			$snapshot[ $field ] = (int) ( $current->fields[ $field ] ?? 0 );
 		}
+
+		// Recorded as the complete maps the read path projects, because that is
+		// what planChange() will later overlay onto and what the read-back will be
+		// compared against. Defaulted to an empty map rather than skipped: a post
+		// with no permitted meta keys and no taxonomies is an ordinary post, and an
+		// absent key would be read by the restore loops as "this snapshot predates
+		// the list" — a different fact.
+		foreach ( ContentTarget::RESTORABLE_CUSTOM_FIELDS as $field ) {
+			$snapshot[ $field ] = is_array( $current->fields[ $field ] ?? null ) ? $current->fields[ $field ] : [];
+		}
+
+		// Separate from the loop above for one case that list does not have: a map
+		// holding an order-sensitive taxonomy is OMITTED, not recorded flattened.
+		// The WHOLE key goes — dropping only the sorted members achieves nothing,
+		// since overlayKnownKeys() returns the complete CURRENT map and so
+		// re-introduces them whatever was recorded. This is the half that makes
+		// planChange()'s narrowed refusal safe. An absent key now means two things
+		// — this, and a snapshot predating the list — and restoreFields() reads
+		// both as "do not restore terms", which is correct for each.
+		foreach ( ContentTarget::RESTORABLE_TAXONOMY_FIELDS as $field ) {
+			$projected = is_array( $current->fields[ $field ] ?? null ) ? $current->fields[ $field ] : [];
+
+			if ( ! $this->fields->anyTaxonomyIsOrdered( array_keys( $projected ) ) ) {
+				$snapshot[ $field ] = $projected;
+			}
+		}
 		ksort( $snapshot, SORT_STRING );
 
 		return $snapshot;
@@ -314,6 +428,13 @@ final class ContentRollbackApply implements WriteOperation {
 
 	/**
 	 * Writes the recorded prior state back and stamps the snapshot as restored.
+	 *
+	 * THE RESTORE IS PERFORMED HERE, NOT DISPATCHED TO THE ORIGIN OPERATION —
+	 * a known limitation, not an oversight. Every origin's restore() is bypassed,
+	 * so cleanup an origin does beyond writing fields back is skipped. Today only
+	 * `content-trash` has such cleanup, and ContentTrash::restore() carries the
+	 * full triage: the obvious fix, why it would introduce an irreversible loss
+	 * here, and what closing it properly requires. Read it before changing this.
 	 *
 	 * @param TargetState      $current The resolved current state.
 	 * @param PlannedChange    $planned The promised restoration.
@@ -339,6 +460,17 @@ final class ContentRollbackApply implements WriteOperation {
 		foreach ( ContentTarget::RESTORABLE_MEDIA_FIELDS as $field ) {
 			if ( array_key_exists( $field, $planned->afterFields ) && is_numeric( $planned->afterFields[ $field ] ) ) {
 				$restore_state[ $field ] = (int) $planned->afterFields[ $field ];
+			}
+		}
+
+		// One loop where planChange() needed two, because both lists are copied
+		// through unchanged — the shape work already happened when the promise was
+		// built. planChange() is deliberately NOT simplified to match: there the
+		// two loops differ in nothing today and would differ the moment either
+		// value's normalization does.
+		foreach ( array_merge( ContentTarget::RESTORABLE_CUSTOM_FIELDS, ContentTarget::RESTORABLE_TAXONOMY_FIELDS ) as $field ) {
+			if ( array_key_exists( $field, $planned->afterFields ) && is_array( $planned->afterFields[ $field ] ) ) {
+				$restore_state[ $field ] = $planned->afterFields[ $field ];
 			}
 		}
 
@@ -593,6 +725,45 @@ final class ContentRollbackApply implements WriteOperation {
 		}
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+
+	/**
+	 * Refuses a restoration that would write a taxonomy storing term ORDER.
+	 *
+	 * SCOPED TO THE PROMISED MAP, NOT TO EVERY TAXONOMY THE ITEM CARRIES, unlike
+	 * ContentTermsAssign's. The wide scope refused a COLUMN-ONLY rollback merely
+	 * because the post carried an unrelated sorted taxonomy, though such a
+	 * rollback writes no terms — and over-refusing is worse here than anywhere
+	 * else, because this operation IS the recovery path.
+	 *
+	 * The promise is not narrower than the write. Whenever a `terms` promise is
+	 * made at all, overlayKnownKeys() has returned the COMPLETE CURRENT map, so it
+	 * names every taxonomy on the item, and applyChange() hands exactly that map to
+	 * ContentTarget::restore_terms(). The refusal set therefore contains the write
+	 * set. When NO recorded key survives the overlay the promise is not made — the
+	 * caller's array_intersect_key() guard skips it — and this check does not run;
+	 * that is safe rather than a gap, because a `terms` value that was never
+	 * promised is never written either.
+	 *
+	 * PAIRED WITH captureSnapshot() OMITTING THE `terms` KEY; neither half is
+	 * correct alone. See the core-writes design's ContentRollbackApply row.
+	 *
+	 * @param array<string, mixed> $promised The complete taxonomy map this
+	 *                                       restore would write.
+	 *
+	 * @throws OperationException With ErrorCode::RollbackUnavailable.
+	 *
+	 * phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+	 */
+	private function assert_order_is_recordable( array $promised ): void {
+		if ( $this->fields->anyTaxonomyIsOrdered( array_keys( $promised ) ) ) {
+			throw new OperationException(
+				ErrorCode::RollbackUnavailable,
+				'This content item carries a taxonomy that stores its terms in a curated order, which no snapshot can record, so nothing was restored.',
+				'Ask a site administrator to review how that taxonomy is registered on this site, then request a fresh preview.'
+			);
+		}
+	}
 	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 
 	/**

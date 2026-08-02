@@ -244,6 +244,52 @@ final class ContentFields {
 		return $keys;
 	}
 
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+	/**
+	 * A base map with incoming values applied ONLY to keys the base already has.
+	 *
+	 * Both `meta` and `terms` are read back as a COMPLETE map — every allowlisted
+	 * meta key, every taxonomy registered for the post type — so a promise about
+	 * either must be that same complete map with the changed entries substituted
+	 * in. Promising a partial map would make WriteVerifier compare a two-key
+	 * promise against an eight-key stored value and report a correct write as not
+	 * applied.
+	 *
+	 * Keys the base does NOT hold are dropped rather than added, and that is the
+	 * whole reason this is a shared method rather than array_merge(). Three
+	 * situations produce them and all three must degrade the same way:
+	 *
+	 * - A snapshot recorded a meta key that the administrator has since removed
+	 *   from the allowlist. Restoring it would write a value the read projection
+	 *   cannot see, so the rollback would report verification_failed for a write
+	 *   that landed.
+	 * - A snapshot recorded terms for a taxonomy since unregistered from the post
+	 *   type, with the same outcome.
+	 * - A caller names a key that is not allowlisted. That one is refused earlier,
+	 *   with Forbidden, by the operation itself — this method is the second line,
+	 *   not the first, and must not be relied on as the allowlist check.
+	 *
+	 * Sorted, because both consumers store the result in canonical JSON and
+	 * compare it by fingerprint: the same state must produce the same bytes
+	 * whatever order the caller happened to supply.
+	 *
+	 * @param array<string, mixed> $base     The complete current map.
+	 * @param array<string, mixed> $incoming The values to substitute in.
+	 *
+	 * @return array<string, mixed> The complete map, sorted, with known keys replaced.
+	 */
+	public function overlayKnownKeys( array $base, array $incoming ): array {
+		foreach ( $incoming as $key => $value ) {
+			if ( array_key_exists( $key, $base ) ) {
+				$base[ $key ] = $value;
+			}
+		}
+		ksort( $base, SORT_STRING );
+
+		return $base;
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+
 	/**
 	 * Reads the normalized field map for one post.
 	 *
@@ -368,4 +414,57 @@ final class ContentFields {
 
 		return $map;
 	}
+
+	/**
+	 * Whether any named taxonomy stores its terms in a curated order.
+	 *
+	 * THE ONE DEFINITION OF "ORDER-SENSITIVE" FOR THIS MODULE. It lives beside
+	 * terms() deliberately: that projection is what makes the question matter.
+	 * terms() reads with no `orderby` and sorts SORT_NUMERIC, so it reports a SET,
+	 * while `WP_Taxonomy::$sort` makes wp_set_object_terms() rewrite `term_order`
+	 * over the tt_ids it accumulated in the order the caller passed, filtered
+	 * against a fresh read. For such a taxonomy the projection therefore has no
+	 * inverse: a snapshot records a set where the state was a sequence, a restore
+	 * flattens it, and the numerically sorted read-back matches the promise while
+	 * the curated order is gone.
+	 *
+	 * Both writers that can reach a term write consult this — ContentTermsAssign
+	 * refuses while planning, ContentRollbackApply refuses and additionally omits
+	 * the key from its capture. They ask at different scopes, which is why this
+	 * answers the narrow question and neither policy lives here.
+	 *
+	 * `! empty()` rather than an isset()/is_object() pair: get_taxonomy() answers
+	 * `false` for a name it does not know, and empty() reads a property of `false`
+	 * as absent without warning, so a guard in front of it could never change the
+	 * answer. The truthiness matches the truthiness core applies to the same
+	 * member.
+	 *
+	 * `(string)` on each name, for the reason ContentTermsAssign::planChange()
+	 * already records at its own three call sites: both callers pass
+	 * `array_keys()` of a taxonomy-indexed map, and PHP coerces an integer-like
+	 * array key to an int — so a taxonomy registered as '2024', which
+	 * register_taxonomy() accepts, arrives here as the int 2024. Without the cast
+	 * it reaches get_taxonomy() as an int, which is not the name any registration
+	 * is stored under. Hence `(int|string)[]` below rather than `string[]`: the
+	 * int is not a caller error, it is what array_keys() is required to produce.
+	 *
+	 * @param (int|string)[] $taxonomies The taxonomy names to test, as returned by
+	 *                                   array_keys() and so possibly int-coerced.
+	 *
+	 * @return bool True when at least one is registered `sort => true`.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+	 */
+	public function anyTaxonomyIsOrdered( array $taxonomies ): bool {
+		foreach ( $taxonomies as $taxonomy ) {
+			$object = get_taxonomy( (string) $taxonomy );
+
+			if ( ! empty( $object->sort ) ) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 }
