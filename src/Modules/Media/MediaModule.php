@@ -106,5 +106,6 @@ final class MediaModule implements IntegrationModule {
 		$fields = new MediaFields();
 
 		$registry->register( MediaGet::definition(), [ new MediaGet( $fields ), 'handle' ] );
+		$registry->register( MediaList::definition(), [ new MediaList( $fields ), 'handle' ] );
 	}
 }

@@ -1,8 +1,9 @@
 {
     "operationIds": [
-        "media-get"
+        "media-get",
+        "media-list"
     ],
-    "operationCount": 1,
+    "operationCount": 2,
     "definitions": {
         "media-get": {
             "inputSchema": {
@@ -113,6 +114,99 @@
                     "height",
                     "filesize",
                     "sizes"
+                ],
+                "additionalProperties": false
+            }
+        },
+        "media-list": {
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "search": {
+                        "type": "string",
+                        "maxLength": 255,
+                        "description": "Return only items matching this search term."
+                    },
+                    "mimeType": {
+                        "type": "string",
+                        "maxLength": 255,
+                        "description": "Return only items of this MIME type, either a full type such as image/png or a bare top-level type such as image."
+                    },
+                    "parent": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "Return only items attached to this content item; 0 returns unattached items."
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "Page size, clamped to 100."
+                    },
+                    "offset": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "Items to skip before the page begins."
+                    }
+                },
+                "additionalProperties": false
+            },
+            "outputSchema": {
+                "type": "object",
+                "properties": {
+                    "items": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {
+                                    "type": "integer"
+                                },
+                                "title": {
+                                    "type": "string"
+                                },
+                                "filename": {
+                                    "type": "string"
+                                },
+                                "mimeType": {
+                                    "type": "string"
+                                },
+                                "url": {
+                                    "type": "string"
+                                },
+                                "parent": {
+                                    "type": "integer"
+                                },
+                                "uploadedGmt": {
+                                    "type": "string"
+                                }
+                            },
+                            "required": [
+                                "id",
+                                "title",
+                                "filename",
+                                "mimeType",
+                                "url",
+                                "parent",
+                                "uploadedGmt"
+                            ],
+                            "additionalProperties": false
+                        }
+                    },
+                    "total": {
+                        "type": "integer"
+                    },
+                    "limit": {
+                        "type": "integer"
+                    },
+                    "offset": {
+                        "type": "integer"
+                    }
+                },
+                "required": [
+                    "items",
+                    "total",
+                    "limit",
+                    "offset"
                 ],
                 "additionalProperties": false
             }
