@@ -288,7 +288,7 @@ final class ContentRollbackApply implements WriteOperation {
 		// an envelope, and the audit row's target_key identifies the item.
 		$warnings = [];
 		foreach ( array_merge( ContentTarget::RESTORABLE_CUSTOM_FIELDS, ContentTarget::RESTORABLE_TAXONOMY_FIELDS ) as $field ) {
-			$recorded = is_array( $promised[ $field ] ?? null ) ? $state[ $field ] : [];
+			$recorded = is_array( $state[ $field ] ?? null ) ? $state[ $field ] : [];
 			if ( count( array_intersect_key( $recorded, $promised[ $field ] ?? [] ) ) < count( $recorded ) ) {
 				$warnings[] = sprintf( 'This site can no longer restore every value the snapshot recorded for %s, so this rollback leaves the ones it cannot restore at their current values.', $field );
 			}
