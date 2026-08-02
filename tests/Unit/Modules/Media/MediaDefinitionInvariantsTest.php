@@ -56,6 +56,7 @@ final class MediaDefinitionInvariantsTest extends TestCase {
 		'media-get',
 		'media-list',
 		'image-size-list',
+		'media-meta-update',
 	];
 
 	/**
@@ -66,7 +67,7 @@ final class MediaDefinitionInvariantsTest extends TestCase {
 	/**
 	 * The media module's write count. Bumped by each later write task.
 	 */
-	private const MEDIA_WRITE_COUNT = 0;
+	private const MEDIA_WRITE_COUNT = 1;
 
 	/**
 	 * A registry with the media module registered.
