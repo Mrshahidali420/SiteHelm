@@ -51,7 +51,7 @@ So each operation validates, in `planChange()`, returning `invalid_input`:
 
 Validation is in `planChange()` rather than `resolveTarget()` because it concerns the payload, not the target, and because `planChange()` is the method that runs in both phases.
 
-## Decision 4 — The metadata write consults an allowlist that today only the read path knows about
+## Decision 4 — The metadata write consults an allowlist that, when this was written, only the read path knew about
 
 `ContentFields::allowlist()` exists, defaults to `[]`, rejects non-string keys, empty keys, keys longer than 255, keys not matching `/^[A-Za-z0-9_-]+$/`, and **any key beginning with `_`** — WordPress's protected-meta convention. **As this design was written**, its only caller was `ContentFields::meta()`, on the read path, and no write consulted it.
 

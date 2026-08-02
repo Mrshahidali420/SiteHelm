@@ -671,13 +671,20 @@ final class ContentTrashTest extends TestCase {
 		// contract is frozen and governs; see the class docblock for the nuance
 		// that argued the other way and why it does not win.
 		//
-		// THIS LINE IS THE ONLY OBSERVER OF THE FLAG IN THE REPOSITORY. Nothing
-		// surfaces isDestructive — CatalogBuilder emits risk and the three policies
-		// and not this — so its only other reader is OperationDefinition's own
-		// cross-field invariant, which a value of `true` satisfies here without
-		// changing anything. Delete this assertion and the flag becomes free to
-		// drift silently, which is exactly how it came to disagree with the frozen
-		// contract in the first place.
+		// THIS LINE IS THE ONLY OBSERVER OF A **TRUE** isDestructive IN THE
+		// REPOSITORY, and the only thing pinning THIS operation's flag. Nothing
+		// surfaces the flag at runtime — CatalogBuilder emits risk and the three
+		// policies and not this — so its other readers are OperationDefinition's
+		// own cross-field invariant, which a `true` satisfies here without changing
+		// anything, and three `assertFalse` assertions in CoreModuleTest covering
+		// content-list, taxonomy-list and content-get. None of those can catch a
+		// change to content-trash. Delete this assertion and this flag becomes free
+		// to drift silently, which is exactly how it came to disagree with the
+		// frozen contract in the first place.
+		//
+		// (Corrected 2026-08-02: this comment previously claimed to be the only
+		// observer of the flag anywhere, which the CoreModuleTest assertions have
+		// always falsified.)
 		$this->assertTrue( $definition->isDestructive );
 		$this->assertTrue( $definition->isIdempotent );
 	}

@@ -716,10 +716,14 @@ final class ContentRollbackApply implements WriteOperation {
 	 * rollback writes no terms — and over-refusing is worse here than anywhere
 	 * else, because this operation IS the recovery path.
 	 *
-	 * The promise is not narrower than the write: overlayKnownKeys() returns the
-	 * COMPLETE CURRENT map, so once a snapshot records any terms every taxonomy on
-	 * the item enters the promise, and applyChange() hands exactly that map to
-	 * ContentTarget::restore_terms().
+	 * The promise is not narrower than the write. Whenever a `terms` promise is
+	 * made at all, overlayKnownKeys() has returned the COMPLETE CURRENT map, so it
+	 * names every taxonomy on the item, and applyChange() hands exactly that map to
+	 * ContentTarget::restore_terms(). The refusal set therefore contains the write
+	 * set. When NO recorded key survives the overlay the promise is not made — the
+	 * caller's array_intersect_key() guard skips it — and this check does not run;
+	 * that is safe rather than a gap, because a `terms` value that was never
+	 * promised is never written either.
 	 *
 	 * PAIRED WITH captureSnapshot() OMITTING THE `terms` KEY; neither half is
 	 * correct alone. See the core-writes design's ContentRollbackApply row.

@@ -127,7 +127,7 @@ The gap opens the moment an operation declares `required` **and** records a valu
 
 Two ways out, both V1 decisions:
 
-1. **Weaken the wording** to match the engine — "may not execute unless a snapshot was captured" — and rely on each operation's own plan-time refusals (as `content-terms-assign` and `content-rollback-apply` already do for `sort => true`) to close the specific holes.
+1. **Weaken the wording** to match the engine — "may not execute unless a snapshot was captured" — and rely on each operation's own plan-time refusals to close the specific holes. `content-terms-assign` and `content-rollback-apply` both do this for `sort => true`, **but note what that precedent does and does not establish**: `content-terms-assign` refuses on any such taxonomy the item carries, while `content-rollback-apply` refuses only when the restoration would actually write terms, closing a strictly smaller hole and relying on a matching omission in its own capture to stay safe. So the precedent is "each operation refuses exactly what it would write", not "every operation refuses everything unrecordable about its target". An operation declaring `required` would have to make that judgement for itself, and nothing in the engine checks that it did.
 2. **Strengthen the engine** to make the promise true, by having `captureSnapshot()` prove restorability rather than only recording, or by adding a plan-time dry-run of the restore refusals for `required` operations.
 
 Option 1 is the smaller change and matches what every shipped operation already does. Option 2 is what the sentence currently claims.

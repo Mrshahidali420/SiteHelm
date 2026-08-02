@@ -439,7 +439,17 @@ final class ContentFields {
 	 * answer. The truthiness matches the truthiness core applies to the same
 	 * member.
 	 *
-	 * @param string[] $taxonomies The taxonomy names to test.
+	 * `(string)` on each name, for the reason ContentTermsAssign::planChange()
+	 * already records at its own three call sites: both callers pass
+	 * `array_keys()` of a taxonomy-indexed map, and PHP coerces an integer-like
+	 * array key to an int — so a taxonomy registered as '2024', which
+	 * register_taxonomy() accepts, arrives here as the int 2024. Without the cast
+	 * it reaches get_taxonomy() as an int, which is not the name any registration
+	 * is stored under. Hence `(int|string)[]` below rather than `string[]`: the
+	 * int is not a caller error, it is what array_keys() is required to produce.
+	 *
+	 * @param (int|string)[] $taxonomies The taxonomy names to test, as returned by
+	 *                                   array_keys() and so possibly int-coerced.
 	 *
 	 * @return bool True when at least one is registered `sort => true`.
 	 *
