@@ -55,12 +55,13 @@ final class MediaDefinitionInvariantsTest extends TestCase {
 	private const OPERATION_IDS = [
 		'media-get',
 		'media-list',
+		'image-size-list',
 	];
 
 	/**
 	 * The media module's read count. Bumped by each later read task.
 	 */
-	private const MEDIA_READ_COUNT = 2;
+	private const MEDIA_READ_COUNT = 3;
 
 	/**
 	 * The media module's write count. Bumped by each later write task.

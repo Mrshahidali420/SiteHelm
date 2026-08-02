@@ -1,9 +1,10 @@
 {
     "operationIds": [
         "media-get",
-        "media-list"
+        "media-list",
+        "image-size-list"
     ],
-    "operationCount": 2,
+    "operationCount": 3,
     "definitions": {
         "media-get": {
             "inputSchema": {
@@ -207,6 +208,49 @@
                     "total",
                     "limit",
                     "offset"
+                ],
+                "additionalProperties": false
+            }
+        },
+        "image-size-list": {
+            "inputSchema": {
+                "type": "object",
+                "properties": [],
+                "additionalProperties": false
+            },
+            "outputSchema": {
+                "type": "object",
+                "properties": {
+                    "sizes": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "name": {
+                                    "type": "string"
+                                },
+                                "width": {
+                                    "type": "integer"
+                                },
+                                "height": {
+                                    "type": "integer"
+                                },
+                                "crop": {
+                                    "type": "boolean"
+                                }
+                            },
+                            "required": [
+                                "name",
+                                "width",
+                                "height",
+                                "crop"
+                            ],
+                            "additionalProperties": false
+                        }
+                    }
+                },
+                "required": [
+                    "sizes"
                 ],
                 "additionalProperties": false
             }
