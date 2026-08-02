@@ -80,16 +80,28 @@ final class ContentRollbackApplyTest extends TestCase {
 		$this->thumbnailWrites  = [];
 		$this->thumbnailId      = 0;
 		$this->sortedTaxonomies = [];
+		// ALWAYS AN OBJECT, and UNTYPED — two separate decisions about this double.
+		//
 		// Always an object, unlike ContentTermsAssignTest's equivalent, and that is
 		// a real difference rather than a weaker fake. There the payload names the
 		// taxonomy, so an unregistered name reaches get_taxonomy() and `false` is a
-		// live answer. Here the only names that reach it come from
-		// ContentFields::terms(), which builds the map from get_object_taxonomies()
-		// for the post type — so every key is registered by construction and a fake
-		// answering false would be modelling a state this operation cannot observe.
-		// The `! empty()` in the guard still tolerates it; nothing here proves it.
+		// live answer. Here every name reaching it has already passed
+		// ContentFields::terms(), which takes get_object_taxonomies() for the post
+		// type and additionally skips any non-string entry — so the names are both
+		// registered and string-typed by construction, and a fake answering false
+		// would model a state this operation cannot observe. The `! empty()` in the
+		// guard still tolerates it; nothing here proves it.
+		//
+		// Untyped `$tax`, as core's get_taxonomy( $taxonomy ) is. Declaring
+		// `string` would coerce at the double's own boundary — this file has no
+		// strict_types — and so silently repair an int, hiding whether
+		// ContentFields::anyTaxonomyIsOrdered() casts. A fake narrower than the
+		// function it replaces cannot observe the bug the cast exists to prevent;
+		// see the matching note on the wp_slash double above. That widening is what
+		// let test_an_all_digit_taxonomy_name_is_dropped_by_the_projection show the
+		// cast is unreachable here rather than merely assumed to be needed.
 		Functions\when( 'get_taxonomy' )->alias(
-			fn( string $tax ) => in_array( $tax, $this->sortedTaxonomies, true )
+			fn( $tax ) => in_array( $tax, $this->sortedTaxonomies, true )
 				? (object) [
 					'name' => $tax,
 					'sort' => true,
@@ -1242,6 +1254,52 @@ final class ContentRollbackApplyTest extends TestCase {
 		} catch ( OperationException $e ) {
 			$this->assertSame( ErrorCode::RollbackUnavailable, $e->errorCode );
 			$this->assertSame( 'This content item carries a taxonomy that stores its terms in a curated order, which no snapshot can record, so nothing was restored.', $e->getMessage() );
+		}
+
+		$this->assertSame( [], $this->writes );
+	}
+
+	/**
+	 * AN ALL-DIGIT TAXONOMY NAME NEVER REACHES THE SORT GUARD AT ALL, because the
+	 * read projection drops it first. Written to establish that, after an attempt
+	 * to prove the opposite failed.
+	 *
+	 * register_taxonomy() accepts '2024'. But `$wp_taxonomies` is keyed by name, so
+	 * PHP coerces that key to the int 2024, core's get_object_taxonomies() yields
+	 * the int, and ContentFields::terms() refuses a non-string taxonomy outright
+	 * (`if ( ! is_string( $taxonomy ) ) { continue; }`). The taxonomy is therefore
+	 * absent from `terms`, the overlay finds nothing of the snapshot's to keep, and
+	 * the refusal is the EMPTY-PROMISE one rather than the sort one.
+	 *
+	 * That is why the `(string)` cast in ContentFields::anyTaxonomyIsOrdered() is
+	 * DEFENSIVE at both of its call sites rather than load-bearing: nothing that
+	 * survives terms() can arrive int-keyed today. The cast still belongs — see
+	 * that method — but no test can make it fire through these callers, and the
+	 * honest record is this test rather than one that pretends otherwise.
+	 *
+	 * Distinct from ContentTermsAssign's own casts, which ARE load-bearing: those
+	 * read keys off the request payload, where an all-digit name really does arrive
+	 * as an int and never passes through terms().
+	 */
+	public function test_an_all_digit_taxonomy_name_is_dropped_by_the_projection(): void {
+		$this->stubMetaAndTerms( [], [ '2024' => [ 3 ] ] );
+		$this->sortedTaxonomies = [ '2024' ];
+		$this->queueSnapshot( [ 'restore_state' => '{"post_id":42,"terms":{"2024":[5]}}' ], 2 );
+
+		$current = $this->operation->resolveTarget( [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+
+		$this->assertSame( [], $current->fields['terms'] );
+
+		try {
+			$this->operation->planChange( $current, [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			// The MESSAGE, not just the code. Two refusals here raise
+			// RollbackUnavailable, so a code-only assertion cannot tell which one
+			// fired — and the first draft of this test asserted only the code and
+			// so passed while claiming the opposite of what actually happens.
+			$this->assertSame( ErrorCode::RollbackUnavailable, $e->errorCode );
+			$this->assertSame( 'The recorded snapshot holds no value this rollback could put back, so it cannot be restored.', $e->getMessage() );
 		}
 
 		$this->assertSame( [], $this->writes );
