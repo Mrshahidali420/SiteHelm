@@ -56,21 +56,61 @@ final class ContentRollbackApplyTest extends TestCase {
 
 	private int $thumbnailId = 0;
 
+	/** @var string[] The taxonomies whose `sort` member is true. */
+	private array $sortedTaxonomies = [];
+
 	protected function setUp(): void {
 		parent::setUp();
 		Functions\when( 'wp_json_encode' )->alias( 'json_encode' );
 		Functions\when( 'user_can' )->justReturn( true );
-		Functions\when( 'wp_slash' )->alias( static fn( array $v ): array => $v );
+		// Untyped, as core's own wp_slash( $value ) is. It was declared
+		// `array $v` while the only caller passed the wp_update_post() array;
+		// ContentTarget::restore_custom_fields() now also slashes a single string,
+		// and a fake narrower than the function it replaces would have turned that
+		// into a TypeError that says nothing about the code under test.
+		Functions\when( 'wp_slash' )->alias( static fn( $v ) => $v );
 		Functions\when( 'is_wp_error' )->justReturn( false );
 		Functions\when( 'clean_post_cache' )->justReturn( null );
 		Functions\when( 'get_object_taxonomies' )->justReturn( [] );
 		Functions\when( 'get_option' )->justReturn( [] );
 
-		$this->wpdb            = new FakeWpdb();
-		$GLOBALS['wpdb']       = $this->wpdb;
-		$this->writes          = [];
-		$this->thumbnailWrites = [];
-		$this->thumbnailId     = 0;
+		$this->wpdb             = new FakeWpdb();
+		$GLOBALS['wpdb']        = $this->wpdb;
+		$this->writes           = [];
+		$this->thumbnailWrites  = [];
+		$this->thumbnailId      = 0;
+		$this->sortedTaxonomies = [];
+		// ALWAYS AN OBJECT, and UNTYPED — two separate decisions about this double.
+		//
+		// Always an object, unlike ContentTermsAssignTest's equivalent, and that is
+		// a real difference rather than a weaker fake. There the payload names the
+		// taxonomy, so an unregistered name reaches get_taxonomy() and `false` is a
+		// live answer. Here every name reaching it has already passed
+		// ContentFields::terms(), which takes get_object_taxonomies() for the post
+		// type and additionally skips any non-string entry — so the names are both
+		// registered and string-typed by construction, and a fake answering false
+		// would model a state this operation cannot observe. The `! empty()` in the
+		// guard still tolerates it; nothing here proves it.
+		//
+		// Untyped `$tax`, as core's get_taxonomy( $taxonomy ) is. Declaring
+		// `string` would coerce at the double's own boundary — this file has no
+		// strict_types — and so silently repair an int, hiding whether
+		// ContentFields::anyTaxonomyIsOrdered() casts. A fake narrower than the
+		// function it replaces cannot observe the bug the cast exists to prevent;
+		// see the matching note on the wp_slash double above. That widening is what
+		// let test_an_all_digit_taxonomy_name_is_dropped_by_the_projection show the
+		// cast is unreachable here rather than merely assumed to be needed.
+		Functions\when( 'get_taxonomy' )->alias(
+			fn( $tax ) => in_array( $tax, $this->sortedTaxonomies, true )
+				? (object) [
+					'name' => $tax,
+					'sort' => true,
+				]
+				: (object) [
+					'name' => $tax,
+					'sort' => false,
+				]
+		);
 		// Answers false rather than 0 when there is no thumbnail, exactly as
 		// WordPress does. See the matching note in ContentUpdateTest.
 		Functions\when( 'get_post_thumbnail_id' )->alias(
@@ -700,9 +740,10 @@ final class ContentRollbackApplyTest extends TestCase {
 	 * having silently skipped it.
 	 *
 	 * That is wider than the shared ContentTarget::snapshotOf(). applyChange()
-	 * writes RESTORABLE_MEDIA_FIELDS as well as the five RESTORABLE_FIELDS
-	 * columns, so captureSnapshot() adds the media id on top of snapshotOf()'s
-	 * result rather than delegating to it — see the round-trip test below.
+	 * writes RESTORABLE_MEDIA_FIELDS, RESTORABLE_CUSTOM_FIELDS and
+	 * RESTORABLE_TAXONOMY_FIELDS as well as the five RESTORABLE_FIELDS columns,
+	 * so captureSnapshot() adds those three on top of snapshotOf()'s result
+	 * rather than delegating to it — see the round-trip test below.
 	 *
 	 * The whole array is asserted, not four keys of it. That pins the key SET
 	 * (a dropped key fails on the assertion rather than on an undefined-index
@@ -710,6 +751,13 @@ final class ContentRollbackApplyTest extends TestCase {
 	 * depends on. `featured_media` is 0 here, not absent and not null: a post
 	 * with no featured image records a legal 0, since null would read to
 	 * SnapshotLifecycle as nothing recoverable under a `required` policy.
+	 *
+	 * `meta` and `terms` are recorded as EMPTY maps for the same reason and not
+	 * as absent keys. This fixture allowlists no meta key and registers no
+	 * taxonomy, which is an ordinary post rather than a missing observation; an
+	 * absent key would be read by ContentTarget::restoreFields() as "this
+	 * snapshot predates the list", which is a different fact about a different
+	 * row. The non-empty case is pinned by its own test below.
 	 */
 	public function test_capture_snapshot_records_the_pre_rollback_state(): void {
 		$this->queueSnapshot();
@@ -719,12 +767,14 @@ final class ContentRollbackApplyTest extends TestCase {
 		$this->assertSame(
 			[
 				'featured_media' => 0,
+				'meta'           => [],
 				'post_content'   => '<p>Edited body.</p>',
 				'post_excerpt'   => 'Edited excerpt.',
 				'post_id'        => 42,
 				'post_name'      => 'original-title',
 				'post_status'    => 'draft',
 				'post_title'     => 'Edited title',
+				'terms'          => [],
 			],
 			$snapshot
 		);
@@ -1109,5 +1159,593 @@ final class ContentRollbackApplyTest extends TestCase {
 		$this->assertSame( [], $this->thumbnailWrites );
 		$this->assertSame( 108, $this->thumbnailId );
 		$this->assertSame( 'Original title', $this->writes[0]['post_title'] );
+	}
+
+	/**
+	 * Makes the post carry allowlisted meta and a registered taxonomy, so
+	 * ContentFields::read() projects non-empty `meta` and `terms` maps.
+	 *
+	 * @param array<string, string> $meta  Allowlisted key to stored value.
+	 * @param array<string, int[]>  $terms Taxonomy name to stored term ids.
+	 */
+	private function stubMetaAndTerms( array $meta, array $terms ): void {
+		Functions\when( 'get_option' )->justReturn( array_keys( $meta ) );
+		// Honours $single as get_metadata_raw() does: row 0 alone for a single read,
+		// the whole list otherwise. ContentFields::meta() takes the first and
+		// ContentTarget's restore guard takes the second, so a fake answering one
+		// shape to both would refuse every restore this class exercises.
+		Functions\when( 'get_post_meta' )->alias(
+			static fn( $post_id, $key = '', $single = false ) => $single
+				? ( $meta[ $key ] ?? '' )
+				: ( array_key_exists( $key, $meta ) ? [ $meta[ $key ] ] : [] )
+		);
+		Functions\when( 'get_object_taxonomies' )->justReturn( array_keys( $terms ) );
+		Functions\when( 'wp_get_object_terms' )->alias(
+			static fn( $post_id, $taxonomy, $args = [] ) => $terms[ $taxonomy ] ?? []
+		);
+	}
+
+	/**
+	 * A recorded meta map is promised as the CURRENT complete map with the
+	 * recorded values substituted in, not as the map that was recorded.
+	 *
+	 * `gone` is the allowlist-narrowed case: the administrator removed that key
+	 * between capture and rollback. Promising it would promise a write the read
+	 * projection can no longer see, so the restore would land and then report
+	 * verification_failed. Dropping it is the honest answer. `subtitle` is
+	 * promised as the recorded 'old' rather than the current 'new', which is what
+	 * makes this a restore rather than a no-op.
+	 */
+	public function test_a_recorded_meta_map_is_promised_against_the_current_allowlist(): void {
+		$this->stubMetaAndTerms( [ 'subtitle' => 'new' ], [] );
+		$this->queueSnapshot( [ 'restore_state' => '{"meta":{"gone":"x","subtitle":"old"},"post_id":42}' ], 2 );
+
+		$current = $this->operation->resolveTarget( [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+		$planned = $this->operation->planChange( $current, [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+
+		$this->assertSame( [ 'meta' => [ 'subtitle' => 'old' ] ], $planned->afterFields );
+	}
+
+	/**
+	 * The same shape for terms, with `gone_tax` standing for a taxonomy
+	 * unregistered from the post type since capture. `category` is promised as
+	 * the recorded [3, 5] rather than the currently stored [11].
+	 */
+	public function test_a_recorded_term_map_is_promised_against_the_current_taxonomies(): void {
+		$this->stubMetaAndTerms( [], [ 'category' => [ 11 ] ] );
+		$this->queueSnapshot(
+			[ 'restore_state' => '{"post_id":42,"terms":{"category":[3,5],"gone_tax":[9]}}' ],
+			2
+		);
+
+		$current = $this->operation->resolveTarget( [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+		$planned = $this->operation->planChange( $current, [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+
+		$this->assertSame( [ 'terms' => [ 'category' => [ 3, 5 ] ] ], $planned->afterFields );
+	}
+
+	/**
+	 * The drop the two tests above pin is DISCLOSED. Without a warning the promise
+	 * is the narrowed map, the restore matches it, and the engine reports verified
+	 * while a value the snapshot recorded was never put back.
+	 *
+	 * The warning names the field and nothing else: `gone` is administrator
+	 * configured, so it must not reach the envelope.
+	 */
+	public function test_a_meta_key_the_allowlist_no_longer_holds_is_disclosed_as_a_warning(): void {
+		$this->stubMetaAndTerms( [ 'subtitle' => 'new' ], [] );
+		$this->queueSnapshot( [ 'restore_state' => '{"meta":{"gone":"x","subtitle":"old"},"post_id":42}' ], 2 );
+
+		$current = $this->operation->resolveTarget( [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+		$planned = $this->operation->planChange( $current, [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+
+		$this->assertCount( 1, $planned->warnings );
+		$this->assertStringContainsString( 'meta', $planned->warnings[0] );
+		$this->assertStringNotContainsString( 'gone', $planned->warnings[0] );
+		$this->assertStringNotContainsString( 'x', $planned->warnings[0] );
+	}
+
+	/**
+	 * The same disclosure for the terms overlay, whose drop means a taxonomy was
+	 * unregistered from the post type since capture.
+	 */
+	public function test_a_taxonomy_no_longer_registered_is_disclosed_as_a_warning(): void {
+		$this->stubMetaAndTerms( [], [ 'category' => [ 11 ] ] );
+		$this->queueSnapshot(
+			[ 'restore_state' => '{"post_id":42,"terms":{"category":[3,5],"gone_tax":[9]}}' ],
+			2
+		);
+
+		$current = $this->operation->resolveTarget( [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+		$planned = $this->operation->planChange( $current, [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+
+		$this->assertCount( 1, $planned->warnings );
+		$this->assertStringContainsString( 'terms', $planned->warnings[0] );
+	}
+
+	/**
+	 * The TOTAL drop, which is strictly worse than the partial drop above and was
+	 * the one case the disclosure missed. Every recorded meta key has left the
+	 * allowlist, so the overlay contributes nothing and `meta` is never promised at
+	 * all — while `post_title` survives, so the promise is non-empty and the
+	 * empty-promise refusal never fires. The rollback would run, match its own
+	 * narrowed promise on read-back and report verified with the whole recorded
+	 * meta map silently unrestored.
+	 *
+	 * `subtitle` is allowlisted and `gone` is not, so the drop is the allowlist's
+	 * doing rather than an empty current map.
+	 */
+	public function test_a_meta_map_that_lost_every_recorded_key_is_still_disclosed(): void {
+		$this->stubMetaAndTerms( [ 'subtitle' => 'new' ], [] );
+		$this->queueSnapshot(
+			[ 'restore_state' => '{"meta":{"gone":"x"},"post_id":42,"post_title":"Original title"}' ],
+			2
+		);
+
+		$current = $this->operation->resolveTarget( [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+		$planned = $this->operation->planChange( $current, [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+
+		$this->assertSame( [ 'post_title' => 'Original title' ], $planned->afterFields );
+		$this->assertCount( 1, $planned->warnings );
+		$this->assertStringContainsString( 'meta', $planned->warnings[0] );
+		$this->assertStringNotContainsString( 'gone', $planned->warnings[0] );
+		$this->assertStringNotContainsString( 'x', $planned->warnings[0] );
+	}
+
+	/**
+	 * The same total drop for the other overlay: every recorded taxonomy has been
+	 * unregistered from the post type, `category` is still registered so the drop
+	 * is the registration's doing, and `post_title` keeps the promise non-empty.
+	 *
+	 * The warning names the field and never the taxonomy — the previous round
+	 * treated both overlays identically and that decision stands.
+	 */
+	public function test_a_term_map_that_lost_every_recorded_taxonomy_is_still_disclosed(): void {
+		$this->stubMetaAndTerms( [], [ 'category' => [ 11 ] ] );
+		$this->queueSnapshot(
+			[ 'restore_state' => '{"post_id":42,"post_title":"Original title","terms":{"gone_tax":[9]}}' ],
+			2
+		);
+
+		$current = $this->operation->resolveTarget( [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+		$planned = $this->operation->planChange( $current, [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+
+		$this->assertSame( [ 'post_title' => 'Original title' ], $planned->afterFields );
+		$this->assertCount( 1, $planned->warnings );
+		$this->assertStringContainsString( 'terms', $planned->warnings[0] );
+		$this->assertStringNotContainsString( 'gone_tax', $planned->warnings[0] );
+	}
+
+	/**
+	 * A rollback that CAN put every recorded key back warns about nothing. Without
+	 * this the disclosure above could be unconditional and still pass.
+	 */
+	public function test_an_overlay_that_keeps_every_recorded_key_warns_about_nothing(): void {
+		$this->stubMetaAndTerms( [ 'subtitle' => 'new' ], [] );
+		$this->queueSnapshot( [ 'restore_state' => '{"meta":{"subtitle":"old"},"post_id":42}' ], 2 );
+
+		$current = $this->operation->resolveTarget( [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+		$planned = $this->operation->planChange( $current, [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+
+		$this->assertSame( [ 'meta' => [ 'subtitle' => 'old' ] ], $planned->afterFields );
+		$this->assertSame( [], $planned->warnings );
+	}
+
+	/**
+	 * A snapshot that RECORDED TERMS is refused when the map it would write holds
+	 * an order-sensitive taxonomy.
+	 *
+	 * `category` is unsorted and `post_tag` is the sorted one, and the snapshot
+	 * records only `category` — so the refusal is known to come from the PROMISED
+	 * map rather than from the recorded one. That is the whole reason the promise
+	 * is the correct scope: overlayKnownKeys() returns the complete current map,
+	 * so recording one taxonomy pulls every taxonomy on the item into the promise
+	 * and into ContentTarget::restore_terms().
+	 */
+	public function test_a_recorded_term_map_that_would_write_a_sorted_taxonomy_is_refused(): void {
+		$this->stubMetaAndTerms(
+			[],
+			[
+				'category' => [ 3 ],
+				'post_tag' => [ 8 ],
+			]
+		);
+		$this->sortedTaxonomies = [ 'post_tag' ];
+		$this->queueSnapshot( [ 'restore_state' => '{"post_id":42,"terms":{"category":[5]}}' ], 2 );
+
+		$current = $this->operation->resolveTarget( [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+
+		try {
+			$this->operation->planChange( $current, [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::RollbackUnavailable, $e->errorCode );
+			$this->assertSame( 'This content item carries a taxonomy that stores its terms in a curated order, which no snapshot can record, so nothing was restored.', $e->getMessage() );
+		}
+
+		$this->assertSame( [], $this->writes );
+	}
+
+	/**
+	 * AN ALL-DIGIT TAXONOMY NAME NEVER REACHES THE SORT GUARD AT ALL, because the
+	 * read projection drops it first. Written to establish that, after an attempt
+	 * to prove the opposite failed.
+	 *
+	 * register_taxonomy() accepts '2024'. But `$wp_taxonomies` is keyed by name, so
+	 * PHP coerces that key to the int 2024, core's get_object_taxonomies() yields
+	 * the int, and ContentFields::terms() refuses a non-string taxonomy outright
+	 * (`if ( ! is_string( $taxonomy ) ) { continue; }`). The taxonomy is therefore
+	 * absent from `terms`, the overlay finds nothing of the snapshot's to keep, and
+	 * the refusal is the EMPTY-PROMISE one rather than the sort one.
+	 *
+	 * That is why the `(string)` cast in ContentFields::anyTaxonomyIsOrdered() is
+	 * DEFENSIVE at both of its call sites rather than load-bearing: nothing that
+	 * survives terms() can arrive int-keyed today. The cast still belongs — see
+	 * that method — but no test can make it fire through these callers, and the
+	 * honest record is this test rather than one that pretends otherwise.
+	 *
+	 * Distinct from ContentTermsAssign's own casts, which ARE load-bearing: those
+	 * read keys off the request payload, where an all-digit name really does arrive
+	 * as an int and never passes through terms().
+	 */
+	public function test_an_all_digit_taxonomy_name_is_dropped_by_the_projection(): void {
+		$this->stubMetaAndTerms( [], [ '2024' => [ 3 ] ] );
+		$this->sortedTaxonomies = [ '2024' ];
+		$this->queueSnapshot( [ 'restore_state' => '{"post_id":42,"terms":{"2024":[5]}}' ], 2 );
+
+		$current = $this->operation->resolveTarget( [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+
+		$this->assertSame( [], $current->fields['terms'] );
+
+		try {
+			$this->operation->planChange( $current, [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			// The MESSAGE, not just the code. Two refusals here raise
+			// RollbackUnavailable, so a code-only assertion cannot tell which one
+			// fired — and the first draft of this test asserted only the code and
+			// so passed while claiming the opposite of what actually happens.
+			$this->assertSame( ErrorCode::RollbackUnavailable, $e->errorCode );
+			$this->assertSame( 'The recorded snapshot holds no value this rollback could put back, so it cannot be restored.', $e->getMessage() );
+		}
+
+		$this->assertSame( [], $this->writes );
+	}
+
+	/**
+	 * THE REGRESSION THIS NARROWING EXISTS TO FIX. A column-only rollback — the
+	 * shape a content-status-set or content-update snapshot has — proceeds on a
+	 * post carrying a sorted taxonomy, because it writes no terms at all.
+	 *
+	 * The first version of this guard refused it, which would have left an
+	 * operator unable to undo a status change on any post carrying an
+	 * order-sensitive taxonomy. Over-refusing is worse on this operation than on
+	 * any other, because this operation is the recovery path.
+	 */
+	public function test_a_column_only_rollback_is_not_blocked_by_an_unrelated_sorted_taxonomy(): void {
+		$this->stubMetaAndTerms(
+			[],
+			[
+				'category' => [ 3 ],
+				'post_tag' => [ 8 ],
+			]
+		);
+		$this->sortedTaxonomies = [ 'post_tag' ];
+		$this->queueSnapshot( [ 'restore_state' => '{"post_id":42,"post_status":"publish"}' ], 2 );
+
+		$current = $this->operation->resolveTarget( [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+		$planned = $this->operation->planChange( $current, [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+
+		$this->assertSame( [ 'post_status' => 'publish' ], $planned->afterFields );
+	}
+
+	/**
+	 * The other half of that narrowing: the capture OMITS the `terms` key for such
+	 * an item, so the rollback above can itself be reversed.
+	 *
+	 * Without the omission, the column-only rollback would proceed and then record
+	 * post_tag as a flattened set — and reversing it would be refused by the very
+	 * check that let it through, leaving a rollbackRef that can never run.
+	 * `meta` is asserted present in the same breath so the omission is known to be
+	 * specific to terms rather than the capture having failed wholesale.
+	 */
+	public function test_capture_omits_the_terms_key_for_an_item_carrying_a_sorted_taxonomy(): void {
+		$this->stubMetaAndTerms(
+			[ 'subtitle' => 'kept' ],
+			[
+				'category' => [ 3 ],
+				'post_tag' => [ 8 ],
+			]
+		);
+		$this->sortedTaxonomies = [ 'post_tag' ];
+		$this->queueSnapshot();
+
+		$current  = $this->operation->resolveTarget( [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+		$snapshot = $this->operation->captureSnapshot( $current, $this->makeContext() );
+
+		$this->assertIsArray( $snapshot );
+		$this->assertArrayNotHasKey( 'terms', $snapshot );
+		$this->assertSame( [ 'subtitle' => 'kept' ], $snapshot['meta'] );
+	}
+
+	/**
+	 * The unsorted control for the pair above: same fixture, only
+	 * $sortedTaxonomies differs, and the capture records terms normally. Without
+	 * this, the omission test would pass just as well against a capture that never
+	 * recorded terms at all.
+	 */
+	public function test_capture_records_the_terms_key_when_no_taxonomy_is_sorted(): void {
+		$this->stubMetaAndTerms(
+			[ 'subtitle' => 'kept' ],
+			[
+				'category' => [ 3 ],
+				'post_tag' => [ 8 ],
+			]
+		);
+		$this->queueSnapshot();
+
+		$current  = $this->operation->resolveTarget( [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+		$snapshot = $this->operation->captureSnapshot( $current, $this->makeContext() );
+
+		$this->assertIsArray( $snapshot );
+		$this->assertSame(
+			[
+				'category' => [ 3 ],
+				'post_tag' => [ 8 ],
+			],
+			$snapshot['terms']
+		);
+	}
+
+	/**
+	 * The same shape on the PLAN side, covering the two `: []` arms in
+	 * planChange()'s meta and taxonomy overlay loops.
+	 *
+	 * Those arms are the ones captureSnapshot()'s copied neighbour came from, and
+	 * they were equally unreached: every other test in this class stubs a projected
+	 * `meta` and `terms` map, so the ternaries always took their TRUE arm while the
+	 * file measured 100%. A hand-built state carrying neither is the only way in.
+	 *
+	 * The answer is the honest one and is worth pinning independently: with nothing
+	 * projected, both overlays come back empty, neither intersects what the snapshot
+	 * recorded, so nothing is promised and the refusal is the empty-promise one
+	 * rather than a rollback that silently restores nothing.
+	 */
+	public function test_a_target_state_carrying_neither_map_promises_nothing(): void {
+		$this->queueSnapshot(
+			[ 'restore_state' => '{"post_id":42,"meta":{"subtitle":"old"},"terms":{"category":[3]}}' ]
+		);
+
+		try {
+			$this->operation->planChange(
+				new TargetState( 'post:42', true, [ 'post_type' => 'post' ] ),
+				[ 'rollbackRef' => self::REFERENCE ],
+				$this->makeContext()
+			);
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::RollbackUnavailable, $e->errorCode );
+			$this->assertSame( 'The recorded snapshot holds no value this rollback could put back, so it cannot be restored.', $e->getMessage() );
+		}
+
+		$this->assertSame( [], $this->writes );
+	}
+
+	/**
+	 * A TargetState carrying no `terms` key at all, which is what the `: []` arm
+	 * of captureSnapshot()'s ternary is for.
+	 *
+	 * ContentFields::read() always produces the key, so only a hand-built or
+	 * future TargetState takes this arm — and line coverage CANNOT SEE IT, because
+	 * a ternary's untaken arm shares the line of the taken one. The file measured
+	 * 100% while this arm had never executed. Replacing it with a `throw` left the
+	 * whole suite green; this test is what makes that mutation fail.
+	 *
+	 * The answer the arm produces is the honest one: nothing projected means
+	 * nothing to record, and an empty map recorded rather than the key omitted,
+	 * because "no taxonomies" and "an order-sensitive taxonomy" are different
+	 * facts and only the second may skip the key.
+	 */
+	public function test_a_target_state_carrying_no_terms_records_an_empty_map(): void {
+		$snapshot = $this->operation->captureSnapshot(
+			new TargetState( 'post:42', true, [ 'post_type' => 'post' ] ),
+			$this->makeContext()
+		);
+
+		$this->assertIsArray( $snapshot );
+		$this->assertSame( [], $snapshot['terms'] );
+		$this->assertSame( [], $snapshot['meta'] );
+	}
+
+	/**
+	 * The third shape of the empty promise. Every key the snapshot recorded has
+	 * since left the allowlist, so the overlay comes back empty and there is
+	 * nothing for the restore to put back.
+	 *
+	 * Promising `meta => []` instead would be a promise restoreFields() satisfies
+	 * by doing nothing: the rollback would report VERIFIED having restored none of
+	 * what was recorded — the exact "reference to a rollback that cannot run"
+	 * these two field lists exist to prevent, one layer further in.
+	 *
+	 * The MESSAGE is asserted, not only the code. Four other RollbackUnavailable
+	 * throws sit earlier in planChange(), so a code-only assertion would pass if
+	 * this guard were removed and an earlier gate refused for its own reason.
+	 */
+	public function test_a_snapshot_holding_only_a_meta_map_that_overlays_onto_nothing_is_refused(): void {
+		$this->stubMetaAndTerms( [], [] );
+		$this->queueSnapshot( [ 'restore_state' => '{"meta":{"subtitle":"old"},"post_id":42}' ], 2 );
+
+		$current = $this->operation->resolveTarget( [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+
+		try {
+			$this->operation->planChange( $current, [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::RollbackUnavailable, $e->errorCode );
+			$this->assertSame(
+				'The recorded snapshot holds no value this rollback could put back, so it cannot be restored.',
+				$e->getMessage()
+			);
+		}
+	}
+
+	/**
+	 * The same refusal when the current map is NOT empty, which emptiness of the
+	 * overlay alone does not catch.
+	 *
+	 * The snapshot recorded only `gone`, which has since left the allowlist, while
+	 * the post still carries `subtitle`. The overlay is therefore
+	 * `['subtitle' => 'new']` — non-empty, and entirely the value already stored.
+	 * Promising it would have the rollback verify having restored nothing at all,
+	 * which is the identical outcome to the empty-map case and must be refused the
+	 * same way. The test is whether any RECORDED key survived, not whether the
+	 * result has anything in it.
+	 *
+	 * It matters beyond this operation: all three writes still to come record
+	 * snapshots holding only `meta` or only `terms`, so this is the ordinary shape
+	 * of their rollbacks rather than an edge case of this one.
+	 */
+	public function test_a_recorded_meta_map_whose_every_key_left_the_allowlist_is_refused(): void {
+		$this->stubMetaAndTerms( [ 'subtitle' => 'new' ], [] );
+		$this->queueSnapshot( [ 'restore_state' => '{"meta":{"gone":"x"},"post_id":42}' ], 2 );
+
+		$current = $this->operation->resolveTarget( [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+
+		try {
+			$this->operation->planChange( $current, [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::RollbackUnavailable, $e->errorCode );
+			$this->assertSame(
+				'The recorded snapshot holds no value this rollback could put back, so it cannot be restored.',
+				$e->getMessage()
+			);
+		}
+	}
+
+	/**
+	 * The taxonomy loop carries the same condition and is deliberately a separate
+	 * loop, so it needs its own proof: a mutation to one is invisible to a test
+	 * that only exercises the other.
+	 */
+	public function test_a_recorded_term_map_whose_every_taxonomy_was_unregistered_is_refused(): void {
+		$this->stubMetaAndTerms( [], [ 'category' => [ 11 ] ] );
+		$this->queueSnapshot( [ 'restore_state' => '{"post_id":42,"terms":{"gone_tax":[9]}}' ], 2 );
+
+		$current = $this->operation->resolveTarget( [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+
+		try {
+			$this->operation->planChange( $current, [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::RollbackUnavailable, $e->errorCode );
+			$this->assertSame(
+				'The recorded snapshot holds no value this rollback could put back, so it cannot be restored.',
+				$e->getMessage()
+			);
+		}
+	}
+
+	/**
+	 * The capture must record everything applyChange() can now write, which is
+	 * two values wider than it was. Without this, reversing a rollback that
+	 * changed meta or terms would promise the columns, skip the absent keys in
+	 * restoreFields(), match its own promise on read-back, and report VERIFIED
+	 * while the meta and the terms stayed where the rollback put them.
+	 *
+	 * The expected array is a LITERAL rather than derived from
+	 * ContentTarget::RESTORABLE_*: deriving it would take its answer from the
+	 * same constants the code under test loops over, and the test would agree
+	 * with any widening of them including a wrong one.
+	 *
+	 * One assertSame on the whole array, not one per key, so the key SET and the
+	 * canonical sort order are pinned along with the values.
+	 */
+	public function test_capture_snapshot_records_the_meta_and_term_maps_it_can_now_write(): void {
+		$this->stubMetaAndTerms(
+			[
+				'subtitle' => 'Sub',
+				'byline'   => 'Ada',
+			],
+			[ 'category' => [ 5, 3 ] ]
+		);
+		$this->queueSnapshot();
+
+		$current  = $this->operation->resolveTarget( [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+		$snapshot = $this->operation->captureSnapshot( $current, $this->makeContext() );
+
+		$this->assertSame(
+			[
+				'featured_media' => 0,
+				'meta'           => [
+					'byline'   => 'Ada',
+					'subtitle' => 'Sub',
+				],
+				'post_content'   => '<p>Edited body.</p>',
+				'post_excerpt'   => 'Edited excerpt.',
+				'post_id'        => 42,
+				'post_name'      => 'original-title',
+				'post_status'    => 'draft',
+				'post_title'     => 'Edited title',
+				'terms'          => [ 'category' => [ 3, 5 ] ],
+			],
+			$snapshot
+		);
+	}
+
+	/**
+	 * The promised maps have to survive the plan-token boundary and reach the
+	 * restore state applyChange() hands to restoreFields(). The two phases are
+	 * separated by a stored token, so applyChange() re-derives everything it
+	 * writes rather than trusting planChange() to have left it anywhere.
+	 *
+	 * A promise that reached restoreFields() without these keys would leave the
+	 * meta and the terms exactly as the original write left them while the
+	 * read-back — which compares against the promise — reported the rollback
+	 * verified.
+	 */
+	public function test_a_promised_meta_and_term_map_reach_the_restore_state(): void {
+		$meta_writes = [];
+		$term_writes = [];
+		Functions\when( 'update_post_meta' )->alias(
+			static function ( $post_id, $key, $value, $prev_value = '' ) use ( &$meta_writes ) {
+				$meta_writes[] = [ $key, $value ];
+
+				return 1;
+			}
+		);
+		Functions\when( 'get_post_meta' )->alias(
+			static fn( $post_id, $key = '', $single = false ) => $single
+				? 'Recorded subtitle'
+				: [ 'Recorded subtitle' ]
+		);
+		Functions\when( 'wp_set_object_terms' )->alias(
+			static function ( $post_id, $ids, $taxonomy, $append = false ) use ( &$term_writes ) {
+				$term_writes[] = [ $taxonomy, $ids ];
+
+				// Term TAXONOMY ids, which is what core returns and is a different
+				// id space from the term ids the restore compares.
+				return [ 1003, 1005 ];
+			}
+		);
+		Functions\when( 'wp_get_object_terms' )->justReturn( [ 3, 5 ] );
+
+		$this->queueSnapshot( [], 2 );
+		$current = $this->operation->resolveTarget( [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+		$planned = new PlannedChange(
+			[
+				'rollbackRef' => self::REFERENCE,
+				'restore'     => [ 'meta' => [ 'subtitle' => 'Recorded subtitle' ] ],
+			],
+			[
+				'meta'  => [ 'subtitle' => 'Recorded subtitle' ],
+				'terms' => [ 'category' => [ 3, 5 ] ],
+			],
+			ContentFields::FIELD_ORDER
+		);
+
+		$this->assertSame( 'post:42', $this->operation->applyChange( $current, $planned, $this->makeContext() ) );
+		$this->assertSame( [ [ 'subtitle', 'Recorded subtitle' ] ], $meta_writes );
+		$this->assertSame( [ [ 'category', [ 3, 5 ] ] ], $term_writes );
 	}
 }

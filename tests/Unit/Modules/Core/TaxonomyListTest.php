@@ -288,7 +288,7 @@ final class TaxonomyListTest extends TestCase {
 	/**
 	 * assign_terms is taxonomy-scoped, not post-scoped. PolicyEngine's map treats
 	 * it as post-scoped, which is wrong here, so the capability is read off the
-	 * taxonomy object — the same source REQ-0016 will enforce against.
+	 * taxonomy object — the same source `content-terms-assign` enforces against.
 	 */
 	public function test_may_assign_terms_is_false_for_a_caller_lacking_the_taxonomy_capability(): void {
 		$this->heldCapabilities = [ 'edit_posts' ];

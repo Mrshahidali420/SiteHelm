@@ -193,4 +193,43 @@ final class ContentFieldsTest extends TestCase {
 		// reading as coverage. The docblock above carries the reason instead.
 		$this->assertSame( [ 'draft', 'pending' ], ContentFields::DRAFT_LIKE_STATUSES );
 	}
+
+	/**
+	 * overlayKnownKeys() is tested here, against its contract, rather than only
+	 * through ContentRollbackApply and ContentMetaUpdate.
+	 *
+	 * Every caller today supplies a base that read() has ALREADY sorted — meta()
+	 * and terms() both ksort before returning — and an overlay never adds a key, so
+	 * the ksort inside this method cannot change anything on that path. Deleting it
+	 * leaves the whole suite green if the rollback tests are the only ones looking.
+	 * That is the shape of a construct incapable of failing, and the sort is not
+	 * decoration: both consumers store the result as canonical JSON and compare it
+	 * by fingerprint, so two callers supplying the same pairs in different orders
+	 * must produce the same bytes. The base here is deliberately UNSORTED to hold
+	 * that guarantee for the callers still to come.
+	 *
+	 * One assertSame covers both halves of the contract because array identity in
+	 * PHP compares key ORDER as well as pairs: `unknown` being added fails it, and
+	 * so does `zebra` coming back before `alpha`.
+	 */
+	public function test_overlay_known_keys_replaces_known_keys_drops_unknown_ones_and_sorts(): void {
+		$fields = new ContentFields();
+
+		$this->assertSame(
+			[
+				'alpha' => 'kept',
+				'zebra' => 'replaced',
+			],
+			$fields->overlayKnownKeys(
+				[
+					'zebra' => 'original',
+					'alpha' => 'kept',
+				],
+				[
+					'zebra'   => 'replaced',
+					'unknown' => 'dropped',
+				]
+			)
+		);
+	}
 }

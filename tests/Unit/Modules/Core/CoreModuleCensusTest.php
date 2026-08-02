@@ -92,6 +92,30 @@ final class CoreModuleCensusTest extends TestCase {
 			'snapshot'      => 'required',
 			'rollback'      => 'supported',
 		],
+		'content-meta-update'        => [
+			'dispatcher'    => 'content-write',
+			'schemaVersion' => 1,
+			'capabilities'  => [ 'edit_post' ],
+			'preview'       => 'required',
+			'snapshot'      => 'required',
+			'rollback'      => 'supported',
+		],
+		'content-terms-assign'       => [
+			'dispatcher'    => 'content-write',
+			'schemaVersion' => 1,
+			'capabilities'  => [ 'edit_post' ],
+			'preview'       => 'required',
+			'snapshot'      => 'required',
+			'rollback'      => 'supported',
+		],
+		'content-trash'              => [
+			'dispatcher'    => 'content-write',
+			'schemaVersion' => 1,
+			'capabilities'  => [ 'delete_post' ],
+			'preview'       => 'required',
+			'snapshot'      => 'required',
+			'rollback'      => 'required',
+		],
 		'audit-list'                 => [
 			'dispatcher'    => 'system-read',
 			'schemaVersion' => 1,
@@ -129,7 +153,7 @@ final class CoreModuleCensusTest extends TestCase {
 		$registry = $this->registryWithCoreModule();
 
 		$this->assertCount( 3, $registry->forDispatcher( 'content-read' ) );
-		$this->assertCount( 5, $registry->forDispatcher( 'content-write' ) );
+		$this->assertCount( 8, $registry->forDispatcher( 'content-write' ) );
 		$this->assertCount( 1, $registry->forDispatcher( 'system-read' ) );
 
 		$empty = [ 'media-read', 'media-write', 'menu-read', 'menu-write', 'elementor-read', 'elementor-write', 'fields-read', 'fields-write' ];

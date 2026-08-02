@@ -164,8 +164,11 @@ final class ContentList {
 	 * plugin can put on a site rather than published items alone.
 	 *
 	 * Trash is absent deliberately. A default listing that surfaced trashed
-	 * items would be surprising, and REQ-0019 will make the trash a destination
-	 * a client chooses on purpose, so it is listed only when `status` asks.
+	 * items would be surprising, and `content-trash` makes the trash a
+	 * destination a client chooses on purpose, so it is listed only when
+	 * `status` asks. That operation shipping does not widen this list: a
+	 * trashed item stays out of the default page, which is what keeps a trash
+	 * and the listing that follows it consistent with each other.
 	 */
 	private const DEFAULT_STATUSES = [ 'draft', 'pending', 'private', 'publish' ];
 
