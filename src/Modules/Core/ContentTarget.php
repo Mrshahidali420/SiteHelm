@@ -656,10 +656,22 @@ final class ContentTarget {
 	 * incoming steps unchanged rather than a term step that never happened. A
 	 * step list claiming more than happened is the same defect, one arm over,
 	 * as the empty list this parameter was added to fix. The boundary is
-	 * accepted as an under-claim: a WP_Error core returns MID-insert, from a
-	 * term lookup failing inside its loop, leaves relationships it already
-	 * wrote unnamed — erring toward never claiming an unproven step, the same
-	 * direction as the accumulated list itself.
+	 * accepted as an under-claim, and it is wider than one return: read from
+	 * wp-includes/taxonomy.php on this machine, wp_set_object_terms() has THREE
+	 * WP_Error returns that can fire after it has already written something.
+	 *
+	 * - `return $term_info` mid-loop, when a term lookup fails, leaving the
+	 *   relationships earlier iterations inserted unnamed;
+	 * - `return $remove`, when wp_remove_object_terms() fails, after every
+	 *   insert for this taxonomy has run;
+	 * - `db_insert_error` from the term_order re-write, after the inserts AND
+	 *   the deletes.
+	 *
+	 * All three are counted here as "did not write", so all three under-claim.
+	 * That errs toward never claiming an unproven step, the same direction as
+	 * the accumulated list itself. Only the FIRST refusal in the map can
+	 * under-claim at all: once any taxonomy has been accepted the flag is set
+	 * and stays set.
 	 *
 	 * @param int                  $post_id   The post identifier.
 	 * @param array<string, mixed> $map       The recorded taxonomy-to-term-ids map.
@@ -683,15 +695,25 @@ final class ContentTarget {
 			sort( $wanted, SORT_NUMERIC );
 
 			$written = wp_set_object_terms( $post_id, $wanted, $taxonomy );
+			$refused = is_wp_error( $written );
 
-			// A non-error return means core wrote this taxonomy's relationships,
-			// whatever the read-back below says — so from here on, every refusal
-			// in this restore has a term write behind it and earns the marker.
-			if ( ! is_wp_error( $written ) ) {
+			// A non-error return means core ACCEPTED the call for this taxonomy,
+			// which is NOT the same as "a row changed" and must not be read as it.
+			// Core `continue`s past its $wpdb->insert when the relationship already
+			// exists, and an empty $wanted against an already-empty taxonomy
+			// inserts nothing and deletes nothing while still returning the (empty)
+			// tt_id list. What the flag records is that a term write was ISSUED
+			// here, whatever the read-back below says — which is the property the
+			// marker needs: from here on a refusal cannot claim the restore stopped
+			// before touching this taxonomy's relationships.
+			//
+			// One is_wp_error() call, not two. They read the same value and could
+			// not disagree, but a second call is a second thing to keep in step.
+			if ( ! $refused ) {
 				$terms_written = true;
 			}
 
-			$stored = is_wp_error( $written )
+			$stored = $refused
 				? $written
 				: wp_get_object_terms( $post_id, $taxonomy, [ 'fields' => 'ids' ] );
 

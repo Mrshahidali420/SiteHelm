@@ -28,7 +28,7 @@ use SiteHelm\Contracts\SnapshotPolicy;
  *
  * Each taxonomy reports `mayAssignTerms` from the capability the taxonomy
  * itself declares, `cap->assign_terms`, which is the taxonomy-scoped capability
- * WordPress checks and the one REQ-0016 will enforce. PolicyEngine's
+ * WordPress checks and the one `content-terms-assign` enforces. PolicyEngine's
  * META_CAPABILITY_MAP deliberately carries no `assign_terms` row: it once
  * mapped it to the post-scoped `edit_posts`, which is wrong for a taxonomy, so
  * the taxonomy's own capability read here is the only source for this answer. A

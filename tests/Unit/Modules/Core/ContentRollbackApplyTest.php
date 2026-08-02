@@ -56,6 +56,9 @@ final class ContentRollbackApplyTest extends TestCase {
 
 	private int $thumbnailId = 0;
 
+	/** @var string[] The taxonomies whose `sort` member is true. */
+	private array $sortedTaxonomies = [];
+
 	protected function setUp(): void {
 		parent::setUp();
 		Functions\when( 'wp_json_encode' )->alias( 'json_encode' );
@@ -71,11 +74,31 @@ final class ContentRollbackApplyTest extends TestCase {
 		Functions\when( 'get_object_taxonomies' )->justReturn( [] );
 		Functions\when( 'get_option' )->justReturn( [] );
 
-		$this->wpdb            = new FakeWpdb();
-		$GLOBALS['wpdb']       = $this->wpdb;
-		$this->writes          = [];
-		$this->thumbnailWrites = [];
-		$this->thumbnailId     = 0;
+		$this->wpdb             = new FakeWpdb();
+		$GLOBALS['wpdb']        = $this->wpdb;
+		$this->writes           = [];
+		$this->thumbnailWrites  = [];
+		$this->thumbnailId      = 0;
+		$this->sortedTaxonomies = [];
+		// Always an object, unlike ContentTermsAssignTest's equivalent, and that is
+		// a real difference rather than a weaker fake. There the payload names the
+		// taxonomy, so an unregistered name reaches get_taxonomy() and `false` is a
+		// live answer. Here the only names that reach it come from
+		// ContentFields::terms(), which builds the map from get_object_taxonomies()
+		// for the post type — so every key is registered by construction and a fake
+		// answering false would be modelling a state this operation cannot observe.
+		// The `! empty()` in the guard still tolerates it; nothing here proves it.
+		Functions\when( 'get_taxonomy' )->alias(
+			fn( string $tax ) => in_array( $tax, $this->sortedTaxonomies, true )
+				? (object) [
+					'name' => $tax,
+					'sort' => true,
+				]
+				: (object) [
+					'name' => $tax,
+					'sort' => false,
+				]
+		);
 		// Answers false rather than 0 when there is no thumbnail, exactly as
 		// WordPress does. See the matching note in ContentUpdateTest.
 		Functions\when( 'get_post_thumbnail_id' )->alias(
@@ -1187,6 +1210,68 @@ final class ContentRollbackApplyTest extends TestCase {
 		$planned = $this->operation->planChange( $current, [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
 
 		$this->assertSame( [ 'terms' => [ 'category' => [ 3, 5 ] ] ], $planned->afterFields );
+	}
+
+	/**
+	 * An item carrying a `sort => true` taxonomy is refused while planning, before
+	 * anything is written and before any snapshot is captured.
+	 *
+	 * THE SNAPSHOT THIS OPERATION TAKES IS THE REASON, not the one it restores.
+	 * The stored snapshot here promises `post_status` alone — the shape a
+	 * content-status-set rollback has, naming no taxonomy at all — and the refusal
+	 * still fires, because captureSnapshot() records the item's COMPLETE projected
+	 * terms map whatever the promise holds. Without the refusal that map would
+	 * record post_tag's curated sequence as a numerically sorted set, and reversing
+	 * this rollback would rewrite term_order from it, read the same sorted
+	 * projection back, and report `verified` with the order gone.
+	 *
+	 * `category` is unsorted and `post_tag` is the sorted one, so the assertion
+	 * also pins that the scan does not stop at the first taxonomy it likes.
+	 */
+	public function test_an_order_sensitive_taxonomy_on_this_item_makes_the_rollback_unrecordable(): void {
+		$this->stubMetaAndTerms(
+			[],
+			[
+				'category' => [ 3 ],
+				'post_tag' => [ 8 ],
+			]
+		);
+		$this->sortedTaxonomies = [ 'post_tag' ];
+		$this->queueSnapshot( [ 'restore_state' => '{"post_id":42,"post_status":"publish"}' ], 2 );
+
+		$current = $this->operation->resolveTarget( [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+
+		try {
+			$this->operation->planChange( $current, [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::RollbackUnavailable, $e->errorCode );
+			$this->assertSame( 'This content item carries a taxonomy that stores its terms in a curated order, which no snapshot can record, so nothing was restored.', $e->getMessage() );
+		}
+
+		$this->assertSame( [], $this->writes );
+	}
+
+	/**
+	 * The unsorted case, asserted separately so the refusal above is known to be
+	 * caused by `sort` rather than by the presence of taxonomies at all. Same
+	 * fixture, same snapshot, only $sortedTaxonomies differs, and the plan
+	 * succeeds.
+	 */
+	public function test_an_ordinary_taxonomy_on_this_item_does_not_block_the_rollback(): void {
+		$this->stubMetaAndTerms(
+			[],
+			[
+				'category' => [ 3 ],
+				'post_tag' => [ 8 ],
+			]
+		);
+		$this->queueSnapshot( [ 'restore_state' => '{"post_id":42,"post_status":"publish"}' ], 2 );
+
+		$current = $this->operation->resolveTarget( [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+		$planned = $this->operation->planChange( $current, [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+
+		$this->assertSame( [ 'post_status' => 'publish' ], $planned->afterFields );
 	}
 
 	/**

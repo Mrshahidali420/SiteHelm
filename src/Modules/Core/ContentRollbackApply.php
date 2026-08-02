@@ -45,6 +45,11 @@ use SiteHelm\Storage\SnapshotStore;
  * compatible. The first is about identity and the third is about health; they are
  * not the same check and neither substitutes for the other.
  *
+ * A fourth plan-time refusal sits beside them but is not a re-check of the
+ * snapshot: assert_order_is_recordable() refuses an item carrying a taxonomy
+ * registered `sort => true`, because neither this operation's own capture nor
+ * its term write can preserve a curated term order. See that method.
+ *
  * @package SiteHelm
  */
 final class ContentRollbackApply implements WriteOperation {
@@ -186,6 +191,15 @@ final class ContentRollbackApply implements WriteOperation {
 		$this->assert_same_module( $snapshot );
 		$this->assert_original_capability( $snapshot, $current, $context );
 		$this->assert_module_compatibility( $snapshot, $context );
+
+		// Last of the plan-time refusals, so permission is established before the
+		// site is told which of its own taxonomies this operation cannot handle —
+		// the ordering ContentTermsAssign pins for the same check.
+		foreach ( ContentTarget::RESTORABLE_TAXONOMY_FIELDS as $field ) {
+			$this->assert_order_is_recordable(
+				is_array( $current->fields[ $field ] ?? null ) ? $current->fields[ $field ] : []
+			);
+		}
 
 		// Only the fields the stored snapshot actually recorded are promised.
 		// A snapshot written before a column joined RESTORABLE_FIELDS does not
@@ -339,6 +353,13 @@ final class ContentRollbackApply implements WriteOperation {
 	 * the stored row depend on the order this method appends rather than on the
 	 * state it recorded.
 	 *
+	 * The `terms` map recorded here is a SET, and for a taxonomy registered
+	 * `sort => true` the state it came from was a SEQUENCE. That is why
+	 * planChange() refuses such an item outright through
+	 * assert_order_is_recordable() rather than recording something this method
+	 * cannot record faithfully — the guarantee this loop depends on, and the
+	 * reason it may record the projection as-is.
+	 *
 	 * @param TargetState      $current The resolved current state.
 	 * @param OperationContext $context The request context.
 	 *
@@ -379,6 +400,16 @@ final class ContentRollbackApply implements WriteOperation {
 
 	/**
 	 * Writes the recorded prior state back and stamps the snapshot as restored.
+	 *
+	 * THE RESTORE IS PERFORMED HERE, NOT DISPATCHED TO THE ORIGIN OPERATION, and
+	 * that is a known limitation rather than an oversight. Every origin's
+	 * restore() is bypassed, so any cleanup an origin does beyond writing fields
+	 * back is skipped by a rollback issued through this operation. Today
+	 * `content-trash` is the only origin with such cleanup — untrashing the
+	 * comments and deleting the two trash meta rows — and
+	 * ContentTrash::restore() carries the full triage: the obvious fix, why it
+	 * would introduce an irreversible loss in THIS operation, and what closing it
+	 * properly requires. Read that docblock before changing this method.
 	 *
 	 * @param TargetState      $current The resolved current state.
 	 * @param PlannedChange    $planned The promised restoration.
@@ -669,6 +700,60 @@ final class ContentRollbackApply implements WriteOperation {
 		}
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+
+	/**
+	 * Refuses when any taxonomy on this item stores term ORDER, because no
+	 * snapshot of it can be taken.
+	 *
+	 * THE SAME REFUSAL ContentTermsAssign::assert_order_is_recordable() makes, for
+	 * the same reason, and deliberately the same shape rather than a second
+	 * pattern. That method's docblock carries the full reading of core:
+	 * `WP_Taxonomy::$sort` makes wp_set_object_terms() rewrite term_order from the
+	 * ORDER of the list it is handed, ContentFields::terms() reads with no
+	 * `orderby` and sorts SORT_NUMERIC, so the projection records a SET where the
+	 * state was a SEQUENCE, and a numerically sorted read-back matches the promise
+	 * while the curated order is gone. Only the entrances differ, and this
+	 * operation has TWO where ContentTermsAssign has one:
+	 *
+	 * - captureSnapshot() below records the complete projected `terms` map, so a
+	 *   sorted taxonomy enters this operation's own restore state flattened;
+	 * - applyChange() writes a recorded map back through
+	 *   ContentTarget::restore_terms(), which calls wp_set_object_terms() and so
+	 *   rewrites term_order from whatever set the snapshot held.
+	 *
+	 * The first is the one that forces the refusal to stand even when the stored
+	 * snapshot promises no terms at all. This operation declares
+	 * SnapshotPolicy::Required, so every plan captures; a rollback of a
+	 * `content-status-set` snapshot therefore still records this item's terms as a
+	 * set, and reversing THAT rollback would flatten an order nobody in the chain
+	 * ever asked to change. Scoping to the item rather than to the promised
+	 * taxonomies is what covers it, which is the same trade, forced by the same
+	 * payload-free capture interface, that ContentTermsAssign records.
+	 *
+	 * `! empty()` rather than an isset()/is_object() pair, for the reason given
+	 * there: get_taxonomy() answers `false` for a name it does not know, and
+	 * empty() reads a property of `false` as absent without warning.
+	 *
+	 * @param array<string, mixed> $projected The taxonomies this item projects.
+	 *
+	 * @throws OperationException With ErrorCode::RollbackUnavailable.
+	 *
+	 * phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+	 */
+	private function assert_order_is_recordable( array $projected ): void {
+		foreach ( array_keys( $projected ) as $taxonomy ) {
+			$object = get_taxonomy( (string) $taxonomy );
+
+			if ( ! empty( $object->sort ) ) {
+				throw new OperationException(
+					ErrorCode::RollbackUnavailable,
+					'This content item carries a taxonomy that stores its terms in a curated order, which no snapshot can record, so nothing was restored.',
+					'Ask a site administrator to review how that taxonomy is registered on this site, then request a fresh preview.'
+				);
+			}
+		}
+	}
 	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 
 	/**

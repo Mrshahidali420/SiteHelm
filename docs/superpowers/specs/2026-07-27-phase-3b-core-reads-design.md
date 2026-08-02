@@ -65,7 +65,7 @@ Omitting rather than marking is deliberate: a list that names items the caller c
 
 Scoping to a type is what makes the answer actionable: the client is asking "what may I assign to *this* kind of thing", and an unscoped list would include taxonomies that cannot legally be attached to the target. It also bounds the response naturally.
 
-Each taxonomy reports `name`, `label`, `hierarchical`, and whether the caller may assign its terms — read from `get_taxonomy( $name )->cap->assign_terms`, the same capability REQ-0016 will enforce. Surfacing it here means a client can tell *before* attempting a write that an assignment will be refused.
+Each taxonomy reports `name`, `label`, `hierarchical`, and whether the caller may assign its terms — read from `get_taxonomy( $name )->cap->assign_terms`, the same capability `content-terms-assign` enforces (shipped 2026-08-01). Surfacing it here means a client can tell *before* attempting a write that an assignment will be refused.
 
 Terms report `id`, `name`, `slug`, `parent`, `count`. Terms are paginated with the same `limit` and `offset` bounds as Decision 1, because a site with thousands of tags would otherwise return an unbounded response.
 
