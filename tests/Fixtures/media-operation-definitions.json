@@ -1,0 +1,121 @@
+{
+    "operationIds": [
+        "media-get"
+    ],
+    "operationCount": 1,
+    "definitions": {
+        "media-get": {
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "Identifier of the media library item to read."
+                    }
+                },
+                "required": [
+                    "id"
+                ],
+                "additionalProperties": false
+            },
+            "outputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer"
+                    },
+                    "title": {
+                        "type": "string"
+                    },
+                    "filename": {
+                        "type": "string"
+                    },
+                    "mimeType": {
+                        "type": "string"
+                    },
+                    "url": {
+                        "type": "string"
+                    },
+                    "alt": {
+                        "type": "string"
+                    },
+                    "caption": {
+                        "type": "string"
+                    },
+                    "description": {
+                        "type": "string"
+                    },
+                    "parent": {
+                        "type": "integer"
+                    },
+                    "uploadedGmt": {
+                        "type": "string"
+                    },
+                    "width": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "height": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "filesize": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "sizes": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "name": {
+                                    "type": "string"
+                                },
+                                "width": {
+                                    "type": "integer"
+                                },
+                                "height": {
+                                    "type": "integer"
+                                },
+                                "url": {
+                                    "type": "string"
+                                }
+                            },
+                            "required": [
+                                "name",
+                                "width",
+                                "height",
+                                "url"
+                            ],
+                            "additionalProperties": false
+                        }
+                    }
+                },
+                "required": [
+                    "id",
+                    "title",
+                    "filename",
+                    "mimeType",
+                    "url",
+                    "alt",
+                    "caption",
+                    "description",
+                    "parent",
+                    "uploadedGmt",
+                    "width",
+                    "height",
+                    "filesize",
+                    "sizes"
+                ],
+                "additionalProperties": false
+            }
+        }
+    }
+}
