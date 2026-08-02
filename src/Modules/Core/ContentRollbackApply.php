@@ -199,10 +199,15 @@ final class ContentRollbackApply implements WriteOperation {
 		// that is not cosmetic: wp_update_post() resolves an empty status to
 		// 'draft', so a rollback of an older snapshot would silently
 		// un-publish a live post while reporting success.
+		// is_scalar() too, for the reason the three loops below gate before casting:
+		// $state is decoded JSON, and a value of the wrong shape is not one this
+		// restore may act on — (string) on an array promises 'Array' and writes it to
+		// a post column. Unreachable through any plugin path; it is the gate the one
+		// loop of the four that writes post columns was alone in not having.
 		$state    = $this->decode( (string) $snapshot['restore_state'] );
 		$promised = [];
 		foreach ( ContentTarget::RESTORABLE_FIELDS as $field ) {
-			if ( array_key_exists( $field, $state ) ) {
+			if ( array_key_exists( $field, $state ) && is_scalar( $state[ $field ] ) ) {
 				$promised[ $field ] = (string) $state[ $field ];
 			}
 		}
