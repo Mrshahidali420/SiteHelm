@@ -136,10 +136,12 @@ final class MediaFields {
 	/**
 	 * The full normalized record for one attachment.
 	 *
-	 * `get_post( 0 )` returns `$GLOBALS['post']` rather than null, so the
-	 * identity of the returned row is asserted rather than assumed: without the
-	 * `(int) $media->ID === $attachmentId` comparison a zero identifier reads
-	 * whichever post happens to be in the loop and reports it as the answer.
+	 * The identity of the returned row is asserted rather than assumed. The
+	 * `<= 0` guard above already stops the `get_post( 0 )` case, where core
+	 * returns `$GLOBALS['post']` instead of null; the
+	 * `(int) $media->ID === $attachmentId` comparison covers the remaining
+	 * case, where a filter on `get_post` hands back a row other than the one
+	 * asked for. Without it that row would be reported as the answer.
 	 *
 	 * @param int $attachmentId The attachment identifier.
 	 *

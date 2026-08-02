@@ -974,10 +974,12 @@ final class MediaFields {
 	/**
 	 * The full normalized record for one attachment.
 	 *
-	 * `get_post( 0 )` returns `$GLOBALS['post']` rather than null, so the
-	 * identity of the returned row is asserted rather than assumed: without the
-	 * `(int) $media->ID === $attachmentId` comparison a zero identifier reads
-	 * whichever post happens to be in the loop and reports it as the answer.
+	 * The identity of the returned row is asserted rather than assumed. The
+	 * `<= 0` guard above already stops the `get_post( 0 )` case, where core
+	 * returns `$GLOBALS['post']` instead of null; the
+	 * `(int) $media->ID === $attachmentId` comparison covers the remaining
+	 * case, where a filter on `get_post` hands back a row other than the one
+	 * asked for. Without it that row would be reported as the answer.
 	 *
 	 * @param int $attachmentId The attachment identifier.
 	 *
@@ -1477,9 +1479,9 @@ final class MediaGetTest extends TestCase {
 		$this->assertTrue( $definition->isReadOnly );
 		$this->assertFalse( $definition->isDestructive );
 		$this->assertTrue( $definition->isIdempotent );
-		$this->assertSame( 'not_applicable', $definition->previewPolicy->value );
-		$this->assertSame( 'not_applicable', $definition->snapshotPolicy->value );
-		$this->assertSame( 'not_applicable', $definition->rollbackPolicy->value );
+		$this->assertSame( 'not-applicable', $definition->previewPolicy->value );
+		$this->assertSame( 'not-applicable', $definition->snapshotPolicy->value );
+		$this->assertSame( 'not-applicable', $definition->rollbackPolicy->value );
 		$this->assertSame( [ 'id' ], $definition->inputSchema['required'] );
 		$this->assertFalse( $definition->inputSchema['additionalProperties'] );
 	}
@@ -2198,9 +2200,9 @@ final class MediaDefinitionInvariantsTest extends TestCase {
 		foreach ( $reads as $read ) {
 			$this->assertTrue( $read->isReadOnly, "Read '{$read->id}' must declare isReadOnly true." );
 			$this->assertFalse( $read->isDestructive, "Read '{$read->id}' must declare isDestructive false." );
-			$this->assertSame( 'not_applicable', $read->previewPolicy->value, "Read '{$read->id}' must declare previewPolicy not-applicable." );
-			$this->assertSame( 'not_applicable', $read->snapshotPolicy->value, "Read '{$read->id}' must declare snapshotPolicy not-applicable." );
-			$this->assertSame( 'not_applicable', $read->rollbackPolicy->value, "Read '{$read->id}' must declare rollbackPolicy not-applicable." );
+			$this->assertSame( 'not-applicable', $read->previewPolicy->value, "Read '{$read->id}' must declare previewPolicy not-applicable." );
+			$this->assertSame( 'not-applicable', $read->snapshotPolicy->value, "Read '{$read->id}' must declare snapshotPolicy not-applicable." );
+			$this->assertSame( 'not-applicable', $read->rollbackPolicy->value, "Read '{$read->id}' must declare rollbackPolicy not-applicable." );
 		}
 	}
 
@@ -2835,9 +2837,9 @@ final class MediaListTest extends TestCase {
 		$this->assertTrue( $definition->isReadOnly );
 		$this->assertFalse( $definition->isDestructive );
 		$this->assertTrue( $definition->isIdempotent );
-		$this->assertSame( 'not_applicable', $definition->previewPolicy->value );
-		$this->assertSame( 'not_applicable', $definition->snapshotPolicy->value );
-		$this->assertSame( 'not_applicable', $definition->rollbackPolicy->value );
+		$this->assertSame( 'not-applicable', $definition->previewPolicy->value );
+		$this->assertSame( 'not-applicable', $definition->snapshotPolicy->value );
+		$this->assertSame( 'not-applicable', $definition->rollbackPolicy->value );
 		$this->assertArrayNotHasKey( 'required', $definition->inputSchema );
 		$this->assertFalse( $definition->inputSchema['additionalProperties'] );
 	}
@@ -3515,9 +3517,9 @@ final class ImageSizeListTest extends TestCase {
 		$this->assertTrue( $definition->isReadOnly );
 		$this->assertFalse( $definition->isDestructive );
 		$this->assertTrue( $definition->isIdempotent );
-		$this->assertSame( 'not_applicable', $definition->previewPolicy->value );
-		$this->assertSame( 'not_applicable', $definition->snapshotPolicy->value );
-		$this->assertSame( 'not_applicable', $definition->rollbackPolicy->value );
+		$this->assertSame( 'not-applicable', $definition->previewPolicy->value );
+		$this->assertSame( 'not-applicable', $definition->snapshotPolicy->value );
+		$this->assertSame( 'not-applicable', $definition->rollbackPolicy->value );
 	}
 
 	/**
