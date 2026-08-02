@@ -356,6 +356,12 @@ final class ContentTrashTest extends TestCase {
 	 * post_status is the OLD status; the stored row is trashed. A write judged
 	 * from the returned object would conclude the trash did not happen and refuse
 	 * a change that landed — leaving the engine to compensate a successful write.
+	 *
+	 * The second assertion measures the CALL, not the returned object. Asserting
+	 * that $pre_trash->post_status is still 'draft' would assert nothing: the test
+	 * assigns it, no line in ContentTrash writes to it, and it stays 'draft'
+	 * whatever the production code does. $this->trashed records what applyChange()
+	 * chose to do, so it is red if the write is removed or issued twice.
 	 */
 	public function test_apply_change_does_not_trust_the_returned_posts_status(): void {
 		$current = $this->operation->resolveTarget( [ 'id' => 42 ], $this->makeContext() );
@@ -377,7 +383,7 @@ final class ContentTrashTest extends TestCase {
 		);
 
 		$this->assertSame( 'post:42', $this->operation->applyChange( $current, $planned, $this->makeContext() ) );
-		$this->assertSame( 'draft', $pre_trash->post_status );
+		$this->assertSame( [ 42 ], $this->trashed );
 	}
 
 	/**
