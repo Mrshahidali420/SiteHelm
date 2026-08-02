@@ -1264,6 +1264,59 @@ final class ContentRollbackApplyTest extends TestCase {
 	}
 
 	/**
+	 * The TOTAL drop, which is strictly worse than the partial drop above and was
+	 * the one case the disclosure missed. Every recorded meta key has left the
+	 * allowlist, so the overlay contributes nothing and `meta` is never promised at
+	 * all — while `post_title` survives, so the promise is non-empty and the
+	 * empty-promise refusal never fires. The rollback would run, match its own
+	 * narrowed promise on read-back and report verified with the whole recorded
+	 * meta map silently unrestored.
+	 *
+	 * `subtitle` is allowlisted and `gone` is not, so the drop is the allowlist's
+	 * doing rather than an empty current map.
+	 */
+	public function test_a_meta_map_that_lost_every_recorded_key_is_still_disclosed(): void {
+		$this->stubMetaAndTerms( [ 'subtitle' => 'new' ], [] );
+		$this->queueSnapshot(
+			[ 'restore_state' => '{"meta":{"gone":"x"},"post_id":42,"post_title":"Original title"}' ],
+			2
+		);
+
+		$current = $this->operation->resolveTarget( [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+		$planned = $this->operation->planChange( $current, [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+
+		$this->assertSame( [ 'post_title' => 'Original title' ], $planned->afterFields );
+		$this->assertCount( 1, $planned->warnings );
+		$this->assertStringContainsString( 'meta', $planned->warnings[0] );
+		$this->assertStringNotContainsString( 'gone', $planned->warnings[0] );
+		$this->assertStringNotContainsString( 'x', $planned->warnings[0] );
+	}
+
+	/**
+	 * The same total drop for the other overlay: every recorded taxonomy has been
+	 * unregistered from the post type, `category` is still registered so the drop
+	 * is the registration's doing, and `post_title` keeps the promise non-empty.
+	 *
+	 * The warning names the field and never the taxonomy — the previous round
+	 * treated both overlays identically and that decision stands.
+	 */
+	public function test_a_term_map_that_lost_every_recorded_taxonomy_is_still_disclosed(): void {
+		$this->stubMetaAndTerms( [], [ 'category' => [ 11 ] ] );
+		$this->queueSnapshot(
+			[ 'restore_state' => '{"post_id":42,"post_title":"Original title","terms":{"gone_tax":[9]}}' ],
+			2
+		);
+
+		$current = $this->operation->resolveTarget( [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+		$planned = $this->operation->planChange( $current, [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+
+		$this->assertSame( [ 'post_title' => 'Original title' ], $planned->afterFields );
+		$this->assertCount( 1, $planned->warnings );
+		$this->assertStringContainsString( 'terms', $planned->warnings[0] );
+		$this->assertStringNotContainsString( 'gone_tax', $planned->warnings[0] );
+	}
+
+	/**
 	 * A rollback that CAN put every recorded key back warns about nothing. Without
 	 * this the disclosure above could be unconditional and still pass.
 	 */
