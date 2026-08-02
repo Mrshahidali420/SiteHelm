@@ -1213,22 +1213,17 @@ final class ContentRollbackApplyTest extends TestCase {
 	}
 
 	/**
-	 * An item carrying a `sort => true` taxonomy is refused while planning, before
-	 * anything is written and before any snapshot is captured.
+	 * A snapshot that RECORDED TERMS is refused when the map it would write holds
+	 * an order-sensitive taxonomy.
 	 *
-	 * THE SNAPSHOT THIS OPERATION TAKES IS THE REASON, not the one it restores.
-	 * The stored snapshot here promises `post_status` alone — the shape a
-	 * content-status-set rollback has, naming no taxonomy at all — and the refusal
-	 * still fires, because captureSnapshot() records the item's COMPLETE projected
-	 * terms map whatever the promise holds. Without the refusal that map would
-	 * record post_tag's curated sequence as a numerically sorted set, and reversing
-	 * this rollback would rewrite term_order from it, read the same sorted
-	 * projection back, and report `verified` with the order gone.
-	 *
-	 * `category` is unsorted and `post_tag` is the sorted one, so the assertion
-	 * also pins that the scan does not stop at the first taxonomy it likes.
+	 * `category` is unsorted and `post_tag` is the sorted one, and the snapshot
+	 * records only `category` — so the refusal is known to come from the PROMISED
+	 * map rather than from the recorded one. That is the whole reason the promise
+	 * is the correct scope: overlayKnownKeys() returns the complete current map,
+	 * so recording one taxonomy pulls every taxonomy on the item into the promise
+	 * and into ContentTarget::restore_terms().
 	 */
-	public function test_an_order_sensitive_taxonomy_on_this_item_makes_the_rollback_unrecordable(): void {
+	public function test_a_recorded_term_map_that_would_write_a_sorted_taxonomy_is_refused(): void {
 		$this->stubMetaAndTerms(
 			[],
 			[
@@ -1237,7 +1232,7 @@ final class ContentRollbackApplyTest extends TestCase {
 			]
 		);
 		$this->sortedTaxonomies = [ 'post_tag' ];
-		$this->queueSnapshot( [ 'restore_state' => '{"post_id":42,"post_status":"publish"}' ], 2 );
+		$this->queueSnapshot( [ 'restore_state' => '{"post_id":42,"terms":{"category":[5]}}' ], 2 );
 
 		$current = $this->operation->resolveTarget( [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
 
@@ -1253,12 +1248,16 @@ final class ContentRollbackApplyTest extends TestCase {
 	}
 
 	/**
-	 * The unsorted case, asserted separately so the refusal above is known to be
-	 * caused by `sort` rather than by the presence of taxonomies at all. Same
-	 * fixture, same snapshot, only $sortedTaxonomies differs, and the plan
-	 * succeeds.
+	 * THE REGRESSION THIS NARROWING EXISTS TO FIX. A column-only rollback — the
+	 * shape a content-status-set or content-update snapshot has — proceeds on a
+	 * post carrying a sorted taxonomy, because it writes no terms at all.
+	 *
+	 * The first version of this guard refused it, which would have left an
+	 * operator unable to undo a status change on any post carrying an
+	 * order-sensitive taxonomy. Over-refusing is worse on this operation than on
+	 * any other, because this operation is the recovery path.
 	 */
-	public function test_an_ordinary_taxonomy_on_this_item_does_not_block_the_rollback(): void {
+	public function test_a_column_only_rollback_is_not_blocked_by_an_unrelated_sorted_taxonomy(): void {
 		$this->stubMetaAndTerms(
 			[],
 			[
@@ -1266,12 +1265,131 @@ final class ContentRollbackApplyTest extends TestCase {
 				'post_tag' => [ 8 ],
 			]
 		);
+		$this->sortedTaxonomies = [ 'post_tag' ];
 		$this->queueSnapshot( [ 'restore_state' => '{"post_id":42,"post_status":"publish"}' ], 2 );
 
 		$current = $this->operation->resolveTarget( [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
 		$planned = $this->operation->planChange( $current, [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
 
 		$this->assertSame( [ 'post_status' => 'publish' ], $planned->afterFields );
+	}
+
+	/**
+	 * The other half of that narrowing: the capture OMITS the `terms` key for such
+	 * an item, so the rollback above can itself be reversed.
+	 *
+	 * Without the omission, the column-only rollback would proceed and then record
+	 * post_tag as a flattened set — and reversing it would be refused by the very
+	 * check that let it through, leaving a rollbackRef that can never run.
+	 * `meta` is asserted present in the same breath so the omission is known to be
+	 * specific to terms rather than the capture having failed wholesale.
+	 */
+	public function test_capture_omits_the_terms_key_for_an_item_carrying_a_sorted_taxonomy(): void {
+		$this->stubMetaAndTerms(
+			[ 'subtitle' => 'kept' ],
+			[
+				'category' => [ 3 ],
+				'post_tag' => [ 8 ],
+			]
+		);
+		$this->sortedTaxonomies = [ 'post_tag' ];
+		$this->queueSnapshot();
+
+		$current  = $this->operation->resolveTarget( [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+		$snapshot = $this->operation->captureSnapshot( $current, $this->makeContext() );
+
+		$this->assertIsArray( $snapshot );
+		$this->assertArrayNotHasKey( 'terms', $snapshot );
+		$this->assertSame( [ 'subtitle' => 'kept' ], $snapshot['meta'] );
+	}
+
+	/**
+	 * The unsorted control for the pair above: same fixture, only
+	 * $sortedTaxonomies differs, and the capture records terms normally. Without
+	 * this, the omission test would pass just as well against a capture that never
+	 * recorded terms at all.
+	 */
+	public function test_capture_records_the_terms_key_when_no_taxonomy_is_sorted(): void {
+		$this->stubMetaAndTerms(
+			[ 'subtitle' => 'kept' ],
+			[
+				'category' => [ 3 ],
+				'post_tag' => [ 8 ],
+			]
+		);
+		$this->queueSnapshot();
+
+		$current  = $this->operation->resolveTarget( [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+		$snapshot = $this->operation->captureSnapshot( $current, $this->makeContext() );
+
+		$this->assertIsArray( $snapshot );
+		$this->assertSame(
+			[
+				'category' => [ 3 ],
+				'post_tag' => [ 8 ],
+			],
+			$snapshot['terms']
+		);
+	}
+
+	/**
+	 * The same shape on the PLAN side, covering the two `: []` arms in
+	 * planChange()'s meta and taxonomy overlay loops.
+	 *
+	 * Those arms are the ones captureSnapshot()'s copied neighbour came from, and
+	 * they were equally unreached: every other test in this class stubs a projected
+	 * `meta` and `terms` map, so the ternaries always took their TRUE arm while the
+	 * file measured 100%. A hand-built state carrying neither is the only way in.
+	 *
+	 * The answer is the honest one and is worth pinning independently: with nothing
+	 * projected, both overlays come back empty, neither intersects what the snapshot
+	 * recorded, so nothing is promised and the refusal is the empty-promise one
+	 * rather than a rollback that silently restores nothing.
+	 */
+	public function test_a_target_state_carrying_neither_map_promises_nothing(): void {
+		$this->queueSnapshot(
+			[ 'restore_state' => '{"post_id":42,"meta":{"subtitle":"old"},"terms":{"category":[3]}}' ]
+		);
+
+		try {
+			$this->operation->planChange(
+				new TargetState( 'post:42', true, [ 'post_type' => 'post' ] ),
+				[ 'rollbackRef' => self::REFERENCE ],
+				$this->makeContext()
+			);
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::RollbackUnavailable, $e->errorCode );
+			$this->assertSame( 'The recorded snapshot holds no value this rollback could put back, so it cannot be restored.', $e->getMessage() );
+		}
+
+		$this->assertSame( [], $this->writes );
+	}
+
+	/**
+	 * A TargetState carrying no `terms` key at all, which is what the `: []` arm
+	 * of captureSnapshot()'s ternary is for.
+	 *
+	 * ContentFields::read() always produces the key, so only a hand-built or
+	 * future TargetState takes this arm — and line coverage CANNOT SEE IT, because
+	 * a ternary's untaken arm shares the line of the taken one. The file measured
+	 * 100% while this arm had never executed. Replacing it with a `throw` left the
+	 * whole suite green; this test is what makes that mutation fail.
+	 *
+	 * The answer the arm produces is the honest one: nothing projected means
+	 * nothing to record, and an empty map recorded rather than the key omitted,
+	 * because "no taxonomies" and "an order-sensitive taxonomy" are different
+	 * facts and only the second may skip the key.
+	 */
+	public function test_a_target_state_carrying_no_terms_records_an_empty_map(): void {
+		$snapshot = $this->operation->captureSnapshot(
+			new TargetState( 'post:42', true, [ 'post_type' => 'post' ] ),
+			$this->makeContext()
+		);
+
+		$this->assertIsArray( $snapshot );
+		$this->assertSame( [], $snapshot['terms'] );
+		$this->assertSame( [], $snapshot['meta'] );
 	}
 
 	/**

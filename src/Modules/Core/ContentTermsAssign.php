@@ -720,7 +720,11 @@ final class ContentTermsAssign implements WriteOperation {
 	 * order they are provided to `wp_set_object_terms()`", and
 	 * wp_set_object_terms() honours it: after writing the relationships it runs
 	 * `if ( ! $append && isset( $t->sort ) && $t->sort )` and rewrites term_order
-	 * as an incrementing counter over the ids IN THE ORDER THEY WERE PASSED. So for
+	 * as an incrementing counter over `$tt_ids` — which its resolution loop
+	 * accumulated IN THE ORDER THE CALLER PASSED — filtered by membership in a
+	 * FRESH read of what is now attached (`wp_get_object_terms( …, 'tt_ids' )`).
+	 * So the order is the caller's, not literally the passed array: ids that did
+	 * not resolve, and ids no longer attached, get no term_order at all. So for
 	 * a sorted taxonomy the ORDER of the list is stored state, and:
 	 *
 	 * - ContentFields::terms() reads with no `orderby` and then sorts SORT_NUMERIC,
@@ -745,11 +749,12 @@ final class ContentTermsAssign implements WriteOperation {
 	 * the conservative direction: nothing is destroyed, and the remediation names
 	 * the fix.
 	 *
-	 * `! empty()` rather than an isset()/is_object() pair: get_taxonomy() answers
-	 * `false` for a name it does not know, and empty() reads a property of `false`
-	 * as absent without warning, so a guard in front of it would be a condition
-	 * that could never change the answer. The truthiness matches the truthiness
-	 * core itself applies to the same member.
+	 * The `sort` test itself lives on ContentFields::anyTaxonomyIsOrdered(), beside
+	 * the terms() projection that makes the question matter, and is shared with
+	 * ContentRollbackApply — which asks it at a NARROWER scope, the promised map
+	 * rather than the whole item, because a column-only rollback writes no terms
+	 * and refusing one would block the recovery path. Only the predicate is
+	 * shared; each caller keeps its own scope and its own message.
 	 *
 	 * @param array<string, mixed> $projected The taxonomies this item projects.
 	 *
@@ -758,16 +763,12 @@ final class ContentTermsAssign implements WriteOperation {
 	 * phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 	 */
 	private function assert_order_is_recordable( array $projected ): void {
-		foreach ( array_keys( $projected ) as $taxonomy ) {
-			$object = get_taxonomy( (string) $taxonomy );
-
-			if ( ! empty( $object->sort ) ) {
-				throw new OperationException(
-					ErrorCode::RollbackUnavailable,
-					'This content item carries a taxonomy that stores its terms in a curated order, which no snapshot can record, so no terms were written.',
-					'Ask a site administrator to review how that taxonomy is registered on this site, then request a fresh preview.'
-				);
-			}
+		if ( $this->fields->anyTaxonomyIsOrdered( array_keys( $projected ) ) ) {
+			throw new OperationException(
+				ErrorCode::RollbackUnavailable,
+				'This content item carries a taxonomy that stores its terms in a curated order, which no snapshot can record, so no terms were written.',
+				'Ask a site administrator to review how that taxonomy is registered on this site, then request a fresh preview.'
+			);
 		}
 	}
 	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped

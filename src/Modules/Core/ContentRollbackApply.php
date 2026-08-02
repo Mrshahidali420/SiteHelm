@@ -46,9 +46,9 @@ use SiteHelm\Storage\SnapshotStore;
  * not the same check and neither substitutes for the other.
  *
  * A fourth plan-time refusal sits beside them but is not a re-check of the
- * snapshot: assert_order_is_recordable() refuses an item carrying a taxonomy
- * registered `sort => true`, because neither this operation's own capture nor
- * its term write can preserve a curated term order. See that method.
+ * snapshot: assert_order_is_recordable() refuses a restoration that would WRITE
+ * a taxonomy registered `sort => true`, paired with captureSnapshot() omitting
+ * the `terms` key for such an item. Neither half is correct alone.
  *
  * @package SiteHelm
  */
@@ -192,15 +192,6 @@ final class ContentRollbackApply implements WriteOperation {
 		$this->assert_original_capability( $snapshot, $current, $context );
 		$this->assert_module_compatibility( $snapshot, $context );
 
-		// Last of the plan-time refusals, so permission is established before the
-		// site is told which of its own taxonomies this operation cannot handle —
-		// the ordering ContentTermsAssign pins for the same check.
-		foreach ( ContentTarget::RESTORABLE_TAXONOMY_FIELDS as $field ) {
-			$this->assert_order_is_recordable(
-				is_array( $current->fields[ $field ] ?? null ) ? $current->fields[ $field ] : []
-			);
-		}
-
 		// Only the fields the stored snapshot actually recorded are promised.
 		// A snapshot written before a column joined RESTORABLE_FIELDS does not
 		// carry it, and defaulting the absence to '' would promise — and then
@@ -267,6 +258,9 @@ final class ContentRollbackApply implements WriteOperation {
 			}
 		}
 
+		// Carries one thing the custom-field loop does not: the order-recordability
+		// refusal, sited HERE so it sees the promised map rather than the wider
+		// projection. See assert_order_is_recordable().
 		foreach ( ContentTarget::RESTORABLE_TAXONOMY_FIELDS as $field ) {
 			if ( array_key_exists( $field, $state ) && is_array( $state[ $field ] ) ) {
 				$overlaid = $this->fields->overlayKnownKeys(
@@ -274,6 +268,7 @@ final class ContentRollbackApply implements WriteOperation {
 					$state[ $field ]
 				);
 				if ( [] !== array_intersect_key( $state[ $field ], $overlaid ) ) {
+					$this->assert_order_is_recordable( $overlaid );
 					$promised[ $field ] = $overlaid;
 				}
 			}
@@ -353,12 +348,9 @@ final class ContentRollbackApply implements WriteOperation {
 	 * the stored row depend on the order this method appends rather than on the
 	 * state it recorded.
 	 *
-	 * The `terms` map recorded here is a SET, and for a taxonomy registered
-	 * `sort => true` the state it came from was a SEQUENCE. That is why
-	 * planChange() refuses such an item outright through
-	 * assert_order_is_recordable() rather than recording something this method
-	 * cannot record faithfully — the guarantee this loop depends on, and the
-	 * reason it may record the projection as-is.
+	 * The `terms` map is a SET, and for a `sort => true` taxonomy the state it
+	 * came from was a SEQUENCE — so that key is omitted rather than recorded
+	 * flattened. See the loop below. Every other taxonomy round-trips exactly.
 	 *
 	 * @param TargetState      $current The resolved current state.
 	 * @param OperationContext $context The request context.
@@ -389,8 +381,24 @@ final class ContentRollbackApply implements WriteOperation {
 		// with no permitted meta keys and no taxonomies is an ordinary post, and an
 		// absent key would be read by the restore loops as "this snapshot predates
 		// the list" — a different fact.
-		foreach ( array_merge( ContentTarget::RESTORABLE_CUSTOM_FIELDS, ContentTarget::RESTORABLE_TAXONOMY_FIELDS ) as $field ) {
+		foreach ( ContentTarget::RESTORABLE_CUSTOM_FIELDS as $field ) {
 			$snapshot[ $field ] = is_array( $current->fields[ $field ] ?? null ) ? $current->fields[ $field ] : [];
+		}
+
+		// Separate from the loop above for one case that list does not have: a map
+		// holding an order-sensitive taxonomy is OMITTED, not recorded flattened.
+		// The WHOLE key goes — dropping only the sorted members achieves nothing,
+		// since overlayKnownKeys() returns the complete CURRENT map and so
+		// re-introduces them whatever was recorded. This is the half that makes
+		// planChange()'s narrowed refusal safe. An absent key now means two things
+		// — this, and a snapshot predating the list — and restoreFields() reads
+		// both as "do not restore terms", which is correct for each.
+		foreach ( ContentTarget::RESTORABLE_TAXONOMY_FIELDS as $field ) {
+			$projected = is_array( $current->fields[ $field ] ?? null ) ? $current->fields[ $field ] : [];
+
+			if ( ! $this->fields->anyTaxonomyIsOrdered( array_keys( $projected ) ) ) {
+				$snapshot[ $field ] = $projected;
+			}
 		}
 		ksort( $snapshot, SORT_STRING );
 
@@ -401,15 +409,12 @@ final class ContentRollbackApply implements WriteOperation {
 	/**
 	 * Writes the recorded prior state back and stamps the snapshot as restored.
 	 *
-	 * THE RESTORE IS PERFORMED HERE, NOT DISPATCHED TO THE ORIGIN OPERATION, and
-	 * that is a known limitation rather than an oversight. Every origin's
-	 * restore() is bypassed, so any cleanup an origin does beyond writing fields
-	 * back is skipped by a rollback issued through this operation. Today
-	 * `content-trash` is the only origin with such cleanup — untrashing the
-	 * comments and deleting the two trash meta rows — and
-	 * ContentTrash::restore() carries the full triage: the obvious fix, why it
-	 * would introduce an irreversible loss in THIS operation, and what closing it
-	 * properly requires. Read that docblock before changing this method.
+	 * THE RESTORE IS PERFORMED HERE, NOT DISPATCHED TO THE ORIGIN OPERATION —
+	 * a known limitation, not an oversight. Every origin's restore() is bypassed,
+	 * so cleanup an origin does beyond writing fields back is skipped. Today only
+	 * `content-trash` has such cleanup, and ContentTrash::restore() carries the
+	 * full triage: the obvious fix, why it would introduce an irreversible loss
+	 * here, and what closing it properly requires. Read it before changing this.
 	 *
 	 * @param TargetState      $current The resolved current state.
 	 * @param PlannedChange    $planned The promised restoration.
@@ -703,55 +708,36 @@ final class ContentRollbackApply implements WriteOperation {
 	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 
 	/**
-	 * Refuses when any taxonomy on this item stores term ORDER, because no
-	 * snapshot of it can be taken.
+	 * Refuses a restoration that would write a taxonomy storing term ORDER.
 	 *
-	 * THE SAME REFUSAL ContentTermsAssign::assert_order_is_recordable() makes, for
-	 * the same reason, and deliberately the same shape rather than a second
-	 * pattern. That method's docblock carries the full reading of core:
-	 * `WP_Taxonomy::$sort` makes wp_set_object_terms() rewrite term_order from the
-	 * ORDER of the list it is handed, ContentFields::terms() reads with no
-	 * `orderby` and sorts SORT_NUMERIC, so the projection records a SET where the
-	 * state was a SEQUENCE, and a numerically sorted read-back matches the promise
-	 * while the curated order is gone. Only the entrances differ, and this
-	 * operation has TWO where ContentTermsAssign has one:
+	 * SCOPED TO THE PROMISED MAP, NOT TO EVERY TAXONOMY THE ITEM CARRIES, unlike
+	 * ContentTermsAssign's. The wide scope refused a COLUMN-ONLY rollback merely
+	 * because the post carried an unrelated sorted taxonomy, though such a
+	 * rollback writes no terms — and over-refusing is worse here than anywhere
+	 * else, because this operation IS the recovery path.
 	 *
-	 * - captureSnapshot() below records the complete projected `terms` map, so a
-	 *   sorted taxonomy enters this operation's own restore state flattened;
-	 * - applyChange() writes a recorded map back through
-	 *   ContentTarget::restore_terms(), which calls wp_set_object_terms() and so
-	 *   rewrites term_order from whatever set the snapshot held.
+	 * The promise is not narrower than the write: overlayKnownKeys() returns the
+	 * COMPLETE CURRENT map, so once a snapshot records any terms every taxonomy on
+	 * the item enters the promise, and applyChange() hands exactly that map to
+	 * ContentTarget::restore_terms().
 	 *
-	 * The first is the one that forces the refusal to stand even when the stored
-	 * snapshot promises no terms at all. This operation declares
-	 * SnapshotPolicy::Required, so every plan captures; a rollback of a
-	 * `content-status-set` snapshot therefore still records this item's terms as a
-	 * set, and reversing THAT rollback would flatten an order nobody in the chain
-	 * ever asked to change. Scoping to the item rather than to the promised
-	 * taxonomies is what covers it, which is the same trade, forced by the same
-	 * payload-free capture interface, that ContentTermsAssign records.
+	 * PAIRED WITH captureSnapshot() OMITTING THE `terms` KEY; neither half is
+	 * correct alone. See the core-writes design's ContentRollbackApply row.
 	 *
-	 * `! empty()` rather than an isset()/is_object() pair, for the reason given
-	 * there: get_taxonomy() answers `false` for a name it does not know, and
-	 * empty() reads a property of `false` as absent without warning.
-	 *
-	 * @param array<string, mixed> $projected The taxonomies this item projects.
+	 * @param array<string, mixed> $promised The complete taxonomy map this
+	 *                                       restore would write.
 	 *
 	 * @throws OperationException With ErrorCode::RollbackUnavailable.
 	 *
 	 * phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 	 */
-	private function assert_order_is_recordable( array $projected ): void {
-		foreach ( array_keys( $projected ) as $taxonomy ) {
-			$object = get_taxonomy( (string) $taxonomy );
-
-			if ( ! empty( $object->sort ) ) {
-				throw new OperationException(
-					ErrorCode::RollbackUnavailable,
-					'This content item carries a taxonomy that stores its terms in a curated order, which no snapshot can record, so nothing was restored.',
-					'Ask a site administrator to review how that taxonomy is registered on this site, then request a fresh preview.'
-				);
-			}
+	private function assert_order_is_recordable( array $promised ): void {
+		if ( $this->fields->anyTaxonomyIsOrdered( array_keys( $promised ) ) ) {
+			throw new OperationException(
+				ErrorCode::RollbackUnavailable,
+				'This content item carries a taxonomy that stores its terms in a curated order, which no snapshot can record, so nothing was restored.',
+				'Ask a site administrator to review how that taxonomy is registered on this site, then request a fresh preview.'
+			);
 		}
 	}
 	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
