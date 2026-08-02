@@ -107,5 +107,6 @@ final class MediaModule implements IntegrationModule {
 
 		$registry->register( MediaGet::definition(), [ new MediaGet( $fields ), 'handle' ] );
 		$registry->register( MediaList::definition(), [ new MediaList( $fields ), 'handle' ] );
+		$registry->register( ImageSizeList::definition(), [ new ImageSizeList( $fields ), 'handle' ] );
 	}
 }
