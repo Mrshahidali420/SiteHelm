@@ -1,8 +1,9 @@
 {
     "operationIds": [
-        "menu-list"
+        "menu-list",
+        "menu-get"
     ],
-    "operationCount": 1,
+    "operationCount": 2,
     "definitions": {
         "menu-list": {
             "inputSchema": {
@@ -79,6 +80,117 @@
                     "locations"
                 ],
                 "additionalProperties": false
+            }
+        },
+        "menu-get": {
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "menu": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "The menu to read, named by its identifier, its slug, or its name."
+                    }
+                },
+                "required": [
+                    "menu"
+                ],
+                "additionalProperties": false
+            },
+            "outputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "slug": {
+                        "type": "string"
+                    },
+                    "items": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/$defs/menuItem"
+                        }
+                    }
+                },
+                "required": [
+                    "id",
+                    "name",
+                    "slug",
+                    "items"
+                ],
+                "additionalProperties": false,
+                "$defs": {
+                    "menuItem": {
+                        "type": "object",
+                        "properties": {
+                            "id": {
+                                "type": "integer"
+                            },
+                            "title": {
+                                "type": "string"
+                            },
+                            "url": {
+                                "type": "string"
+                            },
+                            "type": {
+                                "type": "string"
+                            },
+                            "object": {
+                                "type": "string"
+                            },
+                            "objectId": {
+                                "type": "integer"
+                            },
+                            "parent": {
+                                "type": "integer"
+                            },
+                            "position": {
+                                "type": "integer"
+                            },
+                            "target": {
+                                "type": "string"
+                            },
+                            "classes": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                }
+                            },
+                            "description": {
+                                "type": "string"
+                            },
+                            "xfn": {
+                                "type": "string"
+                            },
+                            "children": {
+                                "type": "array",
+                                "items": {
+                                    "$ref": "#/$defs/menuItem"
+                                }
+                            }
+                        },
+                        "required": [
+                            "id",
+                            "title",
+                            "url",
+                            "type",
+                            "object",
+                            "objectId",
+                            "parent",
+                            "position",
+                            "target",
+                            "classes",
+                            "description",
+                            "xfn",
+                            "children"
+                        ],
+                        "additionalProperties": false
+                    }
+                }
             }
         }
     }
