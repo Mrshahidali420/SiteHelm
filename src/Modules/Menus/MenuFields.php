@@ -62,10 +62,11 @@ final class MenuFields {
 	/**
 	 * The menu one caller-supplied key names, or null when it names none.
 	 *
-	 * Ported from EMCP's `resolve_menu()`. The numeric cast is the load-bearing
-	 * part: `wp_get_nav_menu_object()` treats a numeric STRING as a slug, so
-	 * without it the key `'5'` searches for a menu slugged "5" instead of
-	 * finding menu 5.
+	 * Ported from EMCP's `resolve_menu()`. The numeric cast is defensive rather
+	 * than load-bearing: `wp_get_nav_menu_object()` hands the key to `get_term()`,
+	 * which casts a numeric string inside `WP_Term::get_instance()`, so `'5'` and
+	 * `5` already find the same menu. Casting at the call site says which of the
+	 * three lookups core will try first without depending on that internal detail.
 	 *
 	 * An empty key is answered before core is asked. `wp_get_nav_menu_object('')`
 	 * runs a term query for nothing, and what it answers is filterable.
@@ -133,9 +134,16 @@ final class MenuFields {
 	 * is its own ancestor, a state a direct database edit produces. Both are
 	 * silent on a healthy site and fatal on a damaged one.
 	 *
-	 * So parents are rooted first: a parent that names no item in this menu, or
-	 * that leads back to the item itself, becomes 0. Every item then appears
-	 * exactly once, and the recursion is bounded by construction.
+	 * So rows without a usable identifier are dropped and parents are rooted
+	 * afterwards: a parent that names no item in this menu, or that leads back to
+	 * the item itself, becomes 0. Both halves are needed. Rooting alone does not
+	 * bound the recursion, because 0 is also how "top level" is spelled: a row
+	 * carrying no `ID` — which `wp_get_nav_menu_items` filters can append, a
+	 * plugin injecting a synthetic "Login" entry being the common case — takes
+	 * identifier 0, is grouped under parent 0, and makes `branch()` descend into
+	 * the bucket it is already walking. Dropping those rows first is what makes
+	 * every remaining identifier non-zero, so a branch can never be its own child.
+	 * Every surviving item then appears exactly once.
 	 *
 	 * Item order is core's own, which is `menu_order` ascending, and it is
 	 * preserved rather than re-sorted so that the tree reports the order the
@@ -151,6 +159,11 @@ final class MenuFields {
 		if ( ! is_array( $items ) ) {
 			return [];
 		}
+
+		$items = array_filter(
+			$items,
+			fn( mixed $item ): bool => is_object( $item ) && $this->item_id( $item ) > 0
+		);
 
 		$parents = $this->rooted_parents( $items );
 
@@ -170,8 +183,9 @@ final class MenuFields {
 	 * Ported from EMCP's `validate_parent()`, which answers the resolved parent
 	 * id or a WP_Error; this answers a boolean and leaves the refusal message to
 	 * the operation. Zero is how core spells "top level", so it is valid rather
-	 * than missing. A negative identifier is not: `absint()` would silently turn
-	 * -1 into a request to parent the item under item 1.
+	 * than missing. Every other non-positive identifier is refused by
+	 * `menuTermIdForItem()`, which answers null below 1 without running a term
+	 * query, so no separate sign test is needed here.
 	 *
 	 * @param int $parent_id The proposed parent menu item identifier, 0 for top level.
 	 * @param int $menu_id   The menu the item must belong to.
@@ -183,7 +197,7 @@ final class MenuFields {
 			return true;
 		}
 
-		if ( $parent_id < 0 || ! is_nav_menu_item( $parent_id ) ) {
+		if ( ! is_nav_menu_item( $parent_id ) ) {
 			return false;
 		}
 
@@ -265,13 +279,18 @@ final class MenuFields {
 	/**
 	 * Each item's parent, rewritten so that every chain terminates at the root.
 	 *
-	 * A stored parent survives into three states the tree walk cannot: it names
-	 * an item in another menu or no item at all (the child would be dropped), it
-	 * names the item itself, or it takes part in a longer cycle (the walk would
-	 * not terminate). All three become 0, which places the item at top level —
-	 * visible and reported, which is what an operator needs in order to fix it.
+	 * A stored parent survives into two states the tree walk cannot: it names an
+	 * item in another menu or no item at all (the child would be dropped), or the
+	 * chain it starts leads back to where it began (the walk would not
+	 * terminate). Both become 0, which places the item at top level — visible and
+	 * reported, which is what an operator needs in order to fix it. An item that
+	 * names itself is just the shortest such chain and needs no separate test.
 	 *
-	 * @param object[] $items The flat item rows for one menu.
+	 * The first pass must run before the second: it is what guarantees that every
+	 * parent value is either 0 or a key of this map, which is why the chain walk
+	 * can read `$parents[ $cursor ]` without a fallback and know it terminates.
+	 *
+	 * @param object[] $items The flat item rows for one menu, each with a positive id.
 	 *
 	 * @return array<int, int> Each item identifier's effective parent.
 	 */
@@ -283,9 +302,7 @@ final class MenuFields {
 		}
 
 		foreach ( array_keys( $parents ) as $id ) {
-			$parent = $parents[ $id ];
-
-			if ( $parent === $id || ! array_key_exists( $parent, $parents ) ) {
+			if ( ! array_key_exists( $parents[ $id ], $parents ) ) {
 				$parents[ $id ] = 0;
 			}
 		}
@@ -301,7 +318,7 @@ final class MenuFields {
 				}
 
 				$seen[ $cursor ] = true;
-				$cursor          = $parents[ $cursor ] ?? 0;
+				$cursor          = $parents[ $cursor ];
 			}
 		}
 
