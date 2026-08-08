@@ -194,10 +194,24 @@ final class MenuGet {
 			);
 		}
 
+		// Both halves of this line are DEFENCE IN DEPTH and neither can currently
+		// change the answer. Dispatcher::dispatch() validates $arguments against
+		// inputSchema before handle() is reached, and the schema both requires
+		// `menu` and declares it a string, so SchemaValidator refuses a missing
+		// key and a non-string key alike and this method is never entered. The
+		// guard is kept because handle() is a public method on a plain object: a
+		// future caller that reaches it by any route other than the dispatcher
+		// would otherwise hand an array straight to menuFromKey().
+		//
+		// `''` is a different case and IS reachable: SchemaValidator implements no
+		// minLength, so an empty string passes validation and arrives here. It
+		// resolves no menu and is refused below, which is what the empty-key test
+		// covers.
 		$key = $input['menu'] ?? null;
 
-		// A cast would be the wrong defence: `(string) [ 'primary' ]` is a fatal.
-		// A key that is not a string names no menu, which is the truth about it.
+		// A cast would be the wrong shape for that defence anyway:
+		// `(string) [ 'primary' ]` is a fatal. A key that is not a string names no
+		// menu, which is the truth about it.
 		$menu = is_string( $key ) ? $this->fields->menuFromKey( $key ) : null;
 
 		if ( null === $menu ) {
