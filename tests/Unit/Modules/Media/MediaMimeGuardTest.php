@@ -368,6 +368,24 @@ final class MediaMimeGuardTest extends TestCase {
 		$this->assertStringContainsString( 'does not match the file extension', $refusal->getMessage() );
 	}
 
+	/**
+	 * An extension core's map does not carry at all is refused, not accepted.
+	 *
+	 * Core returns `'type' => false` for an extension it cannot name, which is a
+	 * different shape from the disagreement above rather than a different value:
+	 * there is no type to compare the sniffed type against. Treating an absent
+	 * type as agreement — reading it as the sniffed type, or skipping the
+	 * comparison when it is not a string — would let any unknown extension
+	 * through on the strength of its content alone, which is precisely the
+	 * `.png2` and `.phar` shape that the deny list cannot enumerate ahead of
+	 * time. The bytes here are a genuine PNG and pass every other step.
+	 */
+	public function test_an_extension_core_cannot_name_at_all_is_refused(): void {
+		$refusal = $this->assertRefused( 'photo.png2', $this->pngBase64() );
+
+		$this->assertStringContainsString( 'does not match the file extension', $refusal->getMessage() );
+	}
+
 	public function test_an_html_document_named_as_an_image_is_refused(): void {
 		$html = '<!DOCTYPE html><html><body><script>alert(1)</script></body></html>';
 
