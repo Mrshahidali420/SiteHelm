@@ -1,0 +1,85 @@
+{
+    "operationIds": [
+        "menu-list"
+    ],
+    "operationCount": 1,
+    "definitions": {
+        "menu-list": {
+            "inputSchema": {
+                "type": "object",
+                "properties": [],
+                "additionalProperties": false
+            },
+            "outputSchema": {
+                "type": "object",
+                "properties": {
+                    "menus": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {
+                                    "type": "integer"
+                                },
+                                "name": {
+                                    "type": "string"
+                                },
+                                "slug": {
+                                    "type": "string"
+                                },
+                                "itemCount": {
+                                    "type": "integer"
+                                }
+                            },
+                            "required": [
+                                "id",
+                                "name",
+                                "slug",
+                                "itemCount"
+                            ],
+                            "additionalProperties": false
+                        }
+                    },
+                    "locations": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "location": {
+                                    "type": "string"
+                                },
+                                "description": {
+                                    "type": "string"
+                                },
+                                "menuId": {
+                                    "type": [
+                                        "integer",
+                                        "null"
+                                    ]
+                                },
+                                "menuName": {
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ]
+                                }
+                            },
+                            "required": [
+                                "location",
+                                "description",
+                                "menuId",
+                                "menuName"
+                            ],
+                            "additionalProperties": false
+                        }
+                    }
+                },
+                "required": [
+                    "menus",
+                    "locations"
+                ],
+                "additionalProperties": false
+            }
+        }
+    }
+}
