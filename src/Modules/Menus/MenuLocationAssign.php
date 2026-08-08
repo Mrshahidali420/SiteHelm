@@ -52,6 +52,13 @@ use SiteHelm\Contracts\SnapshotPolicy;
  * therefore the ENTIRE map, and the restore writes the ENTIRE map back — the
  * exact reversal of the single value this operation changed.
  *
+ * THAT CHOICE IS PAID FOR AT ROLLBACK, and an operator should know the price
+ * before invoking one: the restore writes back the map as it stood at apply, so
+ * any OTHER location a person or a plugin reassigned in the interval is reverted
+ * along with this operation's. Nothing in a single stored value can distinguish
+ * the two, and reversing this operation's location honestly is the contract
+ * chosen over leaving siblings untouched.
+ *
  * UNASSIGNED IS SPELLED "ABSENT", NOT "ZERO". Core removes the key rather than
  * storing 0, `has_nav_menu()` tests `! empty()`, and a stored 0 is what a
  * half-finished third-party write leaves behind. So clearing unsets the key,
@@ -92,7 +99,7 @@ final class MenuLocationAssign implements WriteOperation {
 			id: 'menu-location-assign',
 			domain: Domain::Menu,
 			mode: Mode::Write,
-			description: 'Assign one navigation menu to one theme location, or clear that location by sending a null menu.',
+			description: 'Assign one navigation menu to one theme location, or clear that location by sending a null menu. WordPress stores every location in one value, so a rollback of this operation restores the whole location map as it stood at apply — any other location reassigned in the interval is reverted with it.',
 			inputSchema: [
 				'type'                 => 'object',
 				'properties'           => [
