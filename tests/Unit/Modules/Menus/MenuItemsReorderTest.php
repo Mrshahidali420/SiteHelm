@@ -619,6 +619,40 @@ final class MenuItemsReorderTest extends TestCase {
 	}
 
 	/**
+	 * A parent value that is not a menu item identifier at all — a string, here
+	 * — is refused by normalized_entry() before MenuFields ever sees it, and it
+	 * refuses the whole batch rather than only the malformed entry.
+	 *
+	 * Mutation that breaks this: dropping the `! is_int( $parent ) || $parent < 0`
+	 * guard in MenuItemsReorder::normalized_entry().
+	 */
+	public function test_it_refuses_a_parent_that_is_not_a_menu_item_identifier(): void {
+		$refusal = $this->assertRefusesWithoutWriting(
+			fn(): array => $this->plan(
+				$this->input(
+					[
+						[
+							'id'       => 11,
+							'parent'   => 'not-an-id',
+							'position' => 1,
+						],
+					]
+				)
+			),
+			ErrorCode::InvalidInput
+		);
+
+		$this->assertSame(
+			'One entry names a parent that is not a menu item identifier, so none of the requested order was written.',
+			$refusal->getMessage()
+		);
+		$this->assertSame(
+			'Send a parent identifier or 0 for top level, then request a fresh preview.',
+			$refusal->remediation
+		);
+	}
+
+	/**
 	 * A batch that would make two items each other's ancestor. WordPress stores
 	 * the relation without complaint and the menu then renders neither item, so
 	 * the refusal has to happen here.
@@ -992,6 +1026,20 @@ final class MenuItemsReorderTest extends TestCase {
 	}
 
 	/**
+	 * A resolved state that names no menu at all — `fields['id']` absent or 0
+	 * — has nothing captureSnapshot() can capture, so it answers null rather
+	 * than a snapshot the matching restore could never apply.
+	 *
+	 * Mutation that breaks this: dropping the `$menu_id <= 0` guard from
+	 * MenuItemsReorder::captureSnapshot().
+	 */
+	public function test_capture_snapshot_answers_null_when_the_state_names_no_menu(): void {
+		$state = new TargetState( 'menu:0', false, [] );
+
+		$this->assertNull( $this->operation->captureSnapshot( $state, $this->makeContext() ) );
+	}
+
+	/**
 	 * The change engine calls captureSnapshot() twice — once at preview for
 	 * eligibility, once at apply for real — so it must be side-effect free and
 	 * must answer identically both times.
@@ -1169,6 +1217,94 @@ final class MenuItemsReorderTest extends TestCase {
 		}
 	}
 
+	/**
+	 * WordPress can accept a write and still not store what was sent — a
+	 * wp_update_nav_menu_item filter can rewrite the arguments — and a restore
+	 * has no WriteVerifier downstream to notice on its own. assert_restored()
+	 * re-reads the menu and refuses when what actually landed disagrees with
+	 * what was recorded, carrying every step that DID complete rather than
+	 * reporting a clean restore that never happened.
+	 *
+	 * Mutation that breaks this: dropping the mismatch check in
+	 * MenuItemsReorder::assert_restored(), or dropping `$completed` from the
+	 * exception it throws there.
+	 */
+	public function test_a_restore_that_lands_differently_than_recorded_is_reported_with_what_completed(): void {
+		Functions\when( 'wp_update_nav_menu_item' )->alias(
+			function ( int $menu_id, int $item_id, array $args ): mixed {
+				$this->written[] = [
+					'menu' => $menu_id,
+					'item' => $item_id,
+					'args' => $args,
+				];
+
+				// Deliberately does NOT mutate $this->items, simulating a filter
+				// that rewrote the arguments before WordPress stored them.
+				return $item_id;
+			}
+		);
+
+		try {
+			$this->operation->restore(
+				[
+					'menu_id' => 5,
+					'items'   => [
+						[
+							'id'       => 13,
+							'parent'   => 0,
+							'position' => 1,
+						],
+						[
+							'id'       => 11,
+							'position' => 4,
+						],
+					],
+				],
+				$this->makeContext()
+			);
+			$this->fail( 'A restore that lands differently than recorded must be reported.' );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::ExecutionFailed, $e->errorCode );
+			$this->assertSame(
+				'WordPress stored a different menu order than the recorded snapshot held.',
+				$e->getMessage()
+			);
+			$this->assertSame(
+				'Reorder the menu on the WordPress menus screen instead.',
+				$e->remediation
+			);
+			$this->assertSame(
+				[ 'menu item 1 of 2 restored', 'menu item 2 of 2 restored' ],
+				$e->completedSteps
+			);
+		}
+	}
+
+	/**
+	 * A menu that holds no items at all — wp_get_nav_menu_items() answering
+	 * false rather than an array — is the same "cannot be put back" refusal as
+	 * a menu missing one recorded item, reached through item_rows()'s own
+	 * defence against a non-array result.
+	 */
+	public function test_a_restore_refuses_when_the_menu_holds_no_items_at_all(): void {
+		$this->assertRefusesWithoutWriting(
+			fn(): string => $this->operation->restore(
+				[
+					'menu_id' => 6,
+					'items'   => [
+						[
+							'id'       => 11,
+							'parent'   => 0,
+							'position' => 1,
+						],
+					],
+				],
+				$this->makeContext()
+			),
+			ErrorCode::RollbackUnavailable
+		);
+	}
+
 	// -------------------------------------------------------------------------
 	// Apply-phase failure reporting.
 	// -------------------------------------------------------------------------
@@ -1332,6 +1468,25 @@ final class MenuItemsReorderTest extends TestCase {
 		$order = $this->operation->readBack( 'menu:5', $this->makeContext() )->fields['order'];
 
 		$this->assertSame( [ 11, 12, 13, 14, 15 ], array_column( $order, 'id' ) );
+	}
+
+	/**
+	 * A target key without the menu prefix names no menu at all, and
+	 * menu_id_from_key() answers null before any lookup is attempted.
+	 *
+	 * Mutation that breaks this: dropping the `str_starts_with()` guard from
+	 * MenuItemsReorder::menu_id_from_key().
+	 */
+	public function test_read_back_refuses_a_key_with_no_menu_prefix(): void {
+		// The tail past index 5 ("5") is a real, resolvable menu id on
+		// purpose: it proves the refusal comes from the missing "menu:"
+		// prefix itself, not merely from the tail failing to parse.
+		try {
+			$this->operation->readBack( 'abcde5', $this->makeContext() );
+			$this->fail( 'A key with no menu prefix must fail verification.' );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::VerificationFailed, $e->errorCode );
+		}
 	}
 
 	// -------------------------------------------------------------------------
