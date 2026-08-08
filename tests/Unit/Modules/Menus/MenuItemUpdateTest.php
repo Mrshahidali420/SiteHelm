@@ -71,7 +71,7 @@ final class MenuItemUpdateTest extends TestCase {
 		// Menu 5 holds a three-deep custom-link chain plus one post-type item.
 		// Menu 6 holds one item, which is the parent no item of menu 5 may take.
 		$this->items = [
-			400 => $this->makeItem( 400, 'Top', 0 ),
+			400 => $this->makeItem( 400, 'Home & Co', 0 ),
 			410 => $this->makeItem( 410, 'Middle', 400 ),
 			420 => $this->makeItem( 420, 'Deep', 410 ),
 			430 => $this->makeItem( 430, 'About us', 0 ),
@@ -143,8 +143,25 @@ final class MenuItemUpdateTest extends TestCase {
 				$id = (int) $item_id;
 
 				// CORE'S CLOBBER, reproduced: the row is rebuilt from $data alone.
-				$item                   = $this->makeItem( $id, '', 0 );
-				$item->title            = stripslashes( (string) ( $data['menu-item-title'] ?? '' ) );
+				//
+				// AND THEN CORE'S DERIVATION, reproduced: the four columns are
+				// stored, and `wp_setup_nav_menu_item()` computes `title`,
+				// `description` and `attr_title` FROM THOSE COLUMNS on the way
+				// back out. The previous double wrote menu-item-description
+				// straight onto `description`, modelling a lossless round trip
+				// WordPress does not perform, which is exactly what hid the
+				// truncating, escaping and re-texturizing merge base.
+				$item = $this->makeItem( $id, '', 0 );
+
+				$item->post_status  = (string) ( $data['menu-item-status'] ?? 'publish' );
+				$item->post_title   = stripslashes( (string) ( $data['menu-item-title'] ?? '' ) );
+				$item->post_content = stripslashes( (string) ( $data['menu-item-description'] ?? '' ) );
+				$item->post_excerpt = stripslashes( (string) ( $data['menu-item-attr-title'] ?? '' ) );
+
+				$item->title       = self::derivedTitle( $item->post_title );
+				$item->description = self::derivedDescription( $item->post_content );
+				$item->attr_title  = self::derivedAttrTitle( $item->post_excerpt );
+
 				$item->url              = stripslashes( (string) ( $data['menu-item-url'] ?? '' ) );
 				$item->type             = (string) ( $data['menu-item-type'] ?? 'custom' );
 				$item->object           = (string) ( $data['menu-item-object'] ?? 'custom' );
@@ -152,8 +169,6 @@ final class MenuItemUpdateTest extends TestCase {
 				$item->menu_item_parent = (int) ( $data['menu-item-parent-id'] ?? 0 );
 				$item->menu_order       = (int) ( $data['menu-item-position'] ?? 0 );
 				$item->target           = (string) ( $data['menu-item-target'] ?? '' );
-				$item->attr_title       = stripslashes( (string) ( $data['menu-item-attr-title'] ?? '' ) );
-				$item->description      = stripslashes( (string) ( $data['menu-item-description'] ?? '' ) );
 				$item->xfn              = stripslashes( (string) ( $data['menu-item-xfn'] ?? '' ) );
 				$item->classes          = array_values(
 					array_filter( explode( ' ', stripslashes( (string) ( $data['menu-item-classes'] ?? '' ) ) ) )
@@ -176,12 +191,82 @@ final class MenuItemUpdateTest extends TestCase {
 		return $menu;
 	}
 
+	/**
+	 * A stored description longer than the 200 words wp_trim_words() keeps.
+	 *
+	 * @return string The stored post_content.
+	 */
+	private static function storedDescription(): string {
+		return implode( ' ', array_map( static fn( int $n ): string => 'word' . $n, range( 1, 250 ) ) );
+	}
+
+	/**
+	 * `wp_setup_nav_menu_item()`'s `description`: wp_trim_words( post_content, 200 ).
+	 *
+	 * @param string $content The stored post_content.
+	 *
+	 * @return string The derived description.
+	 */
+	private static function derivedDescription( string $content ): string {
+		$words = '' === trim( $content ) ? [] : preg_split( '/\s+/', trim( $content ) );
+		$words = is_array( $words ) ? $words : [];
+
+		return count( $words ) > 200 ? implode( ' ', array_slice( $words, 0, 200 ) ) . '…' : $content;
+	}
+
+	/**
+	 * `wp_setup_nav_menu_item()`'s `title`: post_title through the_title filters,
+	 * of which wptexturize is the one that rewrites the stored text.
+	 *
+	 * @param string $post_title The stored post_title.
+	 *
+	 * @return string The derived title.
+	 */
+	private static function derivedTitle( string $post_title ): string {
+		return str_replace( '&', '&#038;', $post_title );
+	}
+
+	/**
+	 * `wp_setup_nav_menu_item()`'s `attr_title`: post_excerpt through the
+	 * nav_menu_attr_title filters, of which esc_html is the rewriting one.
+	 *
+	 * @param string $excerpt The stored post_excerpt.
+	 *
+	 * @return string The derived tooltip.
+	 */
+	private static function derivedAttrTitle( string $excerpt ): string {
+		return str_replace( '&', '&amp;', $excerpt );
+	}
+
+	/**
+	 * One menu item row whose STORED COLUMNS AND DERIVED PROPERTIES DISAGREE.
+	 *
+	 * The disagreement is the fixture's whole job. This class previously set the
+	 * derived properties ALONE — no post_title, no post_content, no post_excerpt —
+	 * so a merge base reading the rendering was indistinguishable from one reading
+	 * the columns, and the truncation, the escaping, and the re-texturizing all
+	 * passed unseen.
+	 *
+	 * @param int    $id     The item identifier.
+	 * @param string $title  The STORED post_title.
+	 * @param int    $parent The stored parent.
+	 *
+	 * @return stdClass The row.
+	 */
 	private function makeItem( int $id, string $title, int $parent ): stdClass {
-		$item                   = new stdClass();
-		$item->ID               = $id;
-		$item->post_type        = MenuFields::ITEM_POST_TYPE;
-		$item->post_status      = 'publish';
-		$item->title            = $title;
+		$item              = new stdClass();
+		$item->ID          = $id;
+		$item->post_type   = MenuFields::ITEM_POST_TYPE;
+		$item->post_status = 'publish';
+
+		$item->post_title   = $title;
+		$item->post_content = self::storedDescription();
+		$item->post_excerpt = 'Tips & tricks';
+
+		$item->title       = self::derivedTitle( $item->post_title );
+		$item->description = self::derivedDescription( $item->post_content );
+		$item->attr_title  = self::derivedAttrTitle( $item->post_excerpt );
+
 		$item->url              = 'https://example.com/original';
 		$item->type             = 'custom';
 		$item->object           = 'custom';
@@ -189,8 +274,6 @@ final class MenuItemUpdateTest extends TestCase {
 		$item->menu_item_parent = $parent;
 		$item->menu_order       = 2;
 		$item->target           = '_blank';
-		$item->attr_title       = 'Original tooltip';
-		$item->description      = 'Original description';
 		$item->xfn              = 'me';
 		$item->classes          = [ 'nav-cta', 'is-loud' ];
 
@@ -300,16 +383,24 @@ final class MenuItemUpdateTest extends TestCase {
 
 		$this->assertSame( 'https://example.com/original', $result['after']['url'] );
 		$this->assertSame( [ 'nav-cta', 'is-loud' ], $result['after']['classes'] );
-		$this->assertSame( 'Original description', $result['after']['description'] );
 		$this->assertSame( 'me', $result['after']['xfn'] );
 		$this->assertSame( '_blank', $result['after']['target'] );
 		$this->assertSame( 2, $result['after']['position'] );
 		$this->assertSame( 0, $result['after']['parent'] );
 		$this->assertSame( 'custom', $result['after']['type'] );
 
+		// THE MERGE BASE MUST CARRY THE STORED COLUMNS, NOT THE RENDERING. The
+		// description is 250 stored words that display as 200; the tooltip is
+		// stored raw and displays escaped. A merge base reading the derived
+		// properties would write the RENDERING back into the columns, so these
+		// two assertions are what catch it.
+		$this->assertSame( self::storedDescription(), $this->written[0]['menu-item-description'] );
+		$this->assertSame( self::storedDescription(), $this->items[400]->post_content );
+
 		// The tooltip is not an updatable field at all, so nothing in the payload
 		// can carry it: only the merge base can keep it.
-		$this->assertSame( 'Original tooltip', $this->items[400]->attr_title );
+		$this->assertSame( 'Tips & tricks', $this->written[0]['menu-item-attr-title'] );
+		$this->assertSame( 'Tips & tricks', $this->items[400]->post_excerpt );
 		$this->assertSame( 'publish', $this->written[0]['menu-item-status'] );
 	}
 
@@ -322,7 +413,13 @@ final class MenuItemUpdateTest extends TestCase {
 		);
 
 		$this->assertSame( 'https://example.com/changed', $result['after']['url'] );
-		$this->assertSame( 'Top', $result['after']['title'] );
+
+		// The stored title survives the write untouched; the projection shows the
+		// texturized rendering of it. Asserting BOTH is what separates "the title
+		// was carried across" from "the title was carried across as its rendering".
+		$this->assertSame( 'Home & Co', $this->items[400]->post_title );
+		$this->assertSame( 'Home & Co', $this->written[0]['menu-item-title'] );
+		$this->assertSame( 'Home &#038; Co', $result['after']['title'] );
 	}
 
 	public function test_it_re_parents_an_item_within_the_same_menu(): void {
@@ -520,17 +617,55 @@ final class MenuItemUpdateTest extends TestCase {
 		$planned = $this->operation->planChange( $current, $input, $context );
 		$this->operation->applyChange( $current, $planned, $context );
 
-		$this->assertSame( 'Renamed', $this->items[400]->title );
-		$this->assertSame( '', $this->items[400]->description );
+		$this->assertSame( 'Renamed', $this->items[400]->post_title );
+		$this->assertSame( '', $this->items[400]->post_content );
 
 		$restored = $this->operation->restore( (array) $snapshot, $context );
 
+		// EVERY ASSERTION HERE READS A STORED COLUMN. Reading the derived
+		// properties instead would let a rollback that restores the RENDERING
+		// pass: 'Home &#038; Co' and the 200-word truncation both satisfy a
+		// derived-side check, and neither is what was there before.
 		$this->assertSame( MenuFields::ITEM_PREFIX . '400', $restored );
-		$this->assertSame( 'Top', $this->items[400]->title );
+		$this->assertSame( 'Home & Co', $this->items[400]->post_title );
 		$this->assertSame( 'https://example.com/original', $this->items[400]->url );
 		$this->assertSame( [ 'nav-cta', 'is-loud' ], $this->items[400]->classes );
-		$this->assertSame( 'Original description', $this->items[400]->description );
-		$this->assertSame( 'Original tooltip', $this->items[400]->attr_title );
+		$this->assertSame( self::storedDescription(), $this->items[400]->post_content );
+		$this->assertSame( 'Tips & tricks', $this->items[400]->post_excerpt );
+	}
+
+	/**
+	 * `isIdempotent` is a DECLARATION; this is the behaviour it declares.
+	 *
+	 * The flag assertion elsewhere in this class reads a boolean off the
+	 * definition and can never fail while the boolean is spelled `true`. This
+	 * one applies the same input twice and requires the second apply to change
+	 * nothing. Before the merge base was corrected it did not converge: the
+	 * carried-across title round-tripped through the_title once per apply, so
+	 * `Home & Co` became `Home &#038; Co`, then `Home &#038;#038; Co`, and the
+	 * stored description lost fifty words on the first apply and its trailing
+	 * ellipsis grew a further truncation on every one after.
+	 */
+	public function test_applying_the_same_change_twice_converges(): void {
+		$context = $this->makeContext();
+		$input   = [
+			'item' => 400,
+			'url'  => 'https://example.com/changed',
+		];
+
+		$first  = $this->planThenApply( $input );
+		$after  = clone $this->items[400];
+		$second = $this->planThenApply( $input );
+
+		$this->assertSame( $first['after'], $second['after'] );
+		$this->assertEquals( $after, $this->items[400] );
+		$this->assertSame( $this->written[0], $this->written[1] );
+
+		// Named individually, because a whole-object comparison that regressed
+		// would not say WHICH field drifted.
+		$this->assertSame( 'Home & Co', $this->items[400]->post_title );
+		$this->assertSame( self::storedDescription(), $this->items[400]->post_content );
+		$this->assertSame( 'Tips & tricks', $this->items[400]->post_excerpt );
 	}
 
 	public function test_restore_leaves_a_field_the_recorded_state_does_not_name_untouched(): void {
