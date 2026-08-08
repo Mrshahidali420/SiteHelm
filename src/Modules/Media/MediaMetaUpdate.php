@@ -345,13 +345,18 @@ final class MediaMetaUpdate implements WriteOperation {
 	 * phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 	 */
 	public function applyChange( TargetState $current, PlannedChange $planned, OperationContext $context ): string {
+		// Accumulated as each step succeeds rather than declared up front, so a
+		// refusal on the alternative text can never claim nothing was written
+		// when the column write for a title-and-alt payload has already landed.
+		$completed = [ 'plan approved', 'snapshot captured' ];
+
 		$attachment_id = $this->fields->attachmentIdFromKey( $current->targetKey );
 		if ( null === $attachment_id ) {
 			throw new OperationException(
 				ErrorCode::ExecutionFailed,
 				'The change engine could not identify the media item this write was planned against.',
 				'Request a fresh preview and retry.',
-				[ 'plan approved', 'snapshot captured' ]
+				$completed
 			);
 		}
 
@@ -373,9 +378,11 @@ final class MediaMetaUpdate implements WriteOperation {
 					ErrorCode::ExecutionFailed,
 					'WordPress refused to update the media item\'s details.',
 					'Request a fresh preview and retry.',
-					[ 'plan approved', 'snapshot captured' ]
+					$completed
 				);
 			}
+
+			$completed[] = 'media details written';
 		}
 
 		if ( array_key_exists( 'alt', $planned->payload ) ) {
@@ -388,7 +395,7 @@ final class MediaMetaUpdate implements WriteOperation {
 					ErrorCode::ExecutionFailed,
 					'The alternative text did not read back as exactly the one value this write stored.',
 					'Request a fresh preview and retry; if it is refused again, ask a site administrator to review the site\'s plugins.',
-					[ 'plan approved', 'snapshot captured' ]
+					$completed
 				);
 			}
 		}

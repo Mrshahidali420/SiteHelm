@@ -393,6 +393,33 @@ final class MediaMetaUpdateTest extends TestCase {
 		}
 	}
 
+	public function test_an_alt_refusal_after_a_column_write_reports_that_the_columns_were_written(): void {
+		$context = $this->makeContext();
+		$current = $this->currentState();
+		$planned = $this->operation->planChange(
+			$current,
+			[
+				'id'    => 108,
+				'title' => 'A better title',
+				'alt'   => 'A tabby cat sitting on a dry stone wall',
+			],
+			$context
+		);
+
+		$this->meta[ MediaFields::ALT_META_KEY ] = [ 'A cat on a wall', 'a shadow row' ];
+
+		try {
+			$this->operation->applyChange( $current, $planned, $context );
+			$this->fail( 'Two rows under the alt key must be refused.' );
+		} catch ( OperationException $error ) {
+			$this->assertSame(
+				[ 'plan approved', 'snapshot captured', 'media details written' ],
+				$error->completedSteps,
+				'The column write already landed, so the refusal must not claim nothing was written.'
+			);
+		}
+	}
+
 	public function test_apply_refuses_when_wordpress_rejects_the_column_write(): void {
 		Functions\when( 'wp_update_post' )->alias(
 			function ( $postarr, $wp_error = false ) {
