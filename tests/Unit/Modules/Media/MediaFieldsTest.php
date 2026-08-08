@@ -525,4 +525,103 @@ final class MediaFieldsTest extends TestCase {
 
 		$this->assertSame( [], $this->fields->mimeAllowlist() );
 	}
+
+	/**
+	 * The site's full upload permission table, as get_allowed_mime_types()
+	 * returns it: extension pattern => MIME type. Written out rather than faked
+	 * loosely, because every allowlist assertion below turns on the exact
+	 * pattern keys.
+	 *
+	 * @param array<string, string> $extra Additional entries to merge in.
+	 *
+	 * @return array<string, string> The permission table.
+	 */
+	private function allowedMimeTypes( array $extra = [] ): array {
+		return array_merge(
+			[
+				'jpg|jpeg|jpe' => 'image/jpeg',
+				'png'          => 'image/png',
+				'gif'          => 'image/gif',
+				'webp'         => 'image/webp',
+			],
+			$extra
+		);
+	}
+
+	public function test_the_allowlist_defaults_to_the_four_inert_raster_types_when_no_option_is_stored(): void {
+		Functions\when( 'get_option' )->justReturn( [] );
+		Functions\when( 'get_allowed_mime_types' )->justReturn( $this->allowedMimeTypes() );
+
+		$this->assertSame(
+			[ 'image/jpeg', 'image/png', 'image/gif', 'image/webp' ],
+			( new MediaFields() )->mimeAllowlist()
+		);
+	}
+
+	public function test_a_non_empty_operator_option_replaces_the_built_in_default(): void {
+		Functions\when( 'get_option' )->justReturn( [ 'image/png' ] );
+		Functions\when( 'get_allowed_mime_types' )->justReturn( $this->allowedMimeTypes() );
+
+		$this->assertSame( [ 'image/png' ], ( new MediaFields() )->mimeAllowlist() );
+	}
+
+	public function test_a_type_the_site_does_not_permit_for_upload_is_dropped_from_the_allowlist(): void {
+		Functions\when( 'get_option' )->justReturn( [] );
+		Functions\when( 'get_allowed_mime_types' )->justReturn( [ 'png' => 'image/png' ] );
+
+		$this->assertSame( [ 'image/png' ], ( new MediaFields() )->mimeAllowlist() );
+	}
+
+	public function test_the_operator_option_cannot_re_permit_a_type_the_deny_list_names(): void {
+		// The site itself permits SVG upload, and the operator explicitly asks
+		// for it. The deny list still wins. This is the whole point of the deny
+		// list being subtracted last and not being configurable.
+		Functions\when( 'get_option' )->justReturn( [ 'image/svg+xml', 'image/png' ] );
+		Functions\when( 'get_allowed_mime_types' )->justReturn(
+			$this->allowedMimeTypes( [ 'svg' => 'image/svg+xml' ] )
+		);
+
+		$this->assertSame( [ 'image/png' ], ( new MediaFields() )->mimeAllowlist() );
+	}
+
+	public function test_a_type_registered_under_a_denied_extension_is_dropped_even_when_the_type_itself_is_not_denied(): void {
+		// text/html is not in DENIED_MIME_TYPES, so only the extension axis can
+		// refuse it. Deleting the extension subtraction makes this test fail.
+		Functions\when( 'get_option' )->justReturn( [ 'text/html', 'image/png' ] );
+		Functions\when( 'get_allowed_mime_types' )->justReturn(
+			$this->allowedMimeTypes( [ 'htm|html' => 'text/html' ] )
+		);
+
+		$this->assertSame( [ 'image/png' ], ( new MediaFields() )->mimeAllowlist() );
+	}
+
+	public function test_a_denied_type_registered_under_an_unrecognised_extension_is_still_dropped(): void {
+		// A plugin registering SVG under its own extension key. The extension
+		// subtraction cannot see it, so only the DENIED_MIME_TYPES check can
+		// refuse it. Deleting that check makes this test — and only this test —
+		// fail. Contrived, and deliberately so: it is what keeps the MIME axis
+		// of the deny list reachable rather than permanently shadowed by the
+		// extension axis.
+		Functions\when( 'get_option' )->justReturn( [ 'image/svg+xml' ] );
+		Functions\when( 'get_allowed_mime_types' )->justReturn( [ 'wpvector' => 'image/svg+xml' ] );
+
+		$this->assertSame( [], ( new MediaFields() )->mimeAllowlist() );
+	}
+
+	public function test_a_malformed_stored_option_falls_back_to_the_default_rather_than_erroring(): void {
+		Functions\when( 'get_option' )->justReturn( 'image/png' );
+		Functions\when( 'get_allowed_mime_types' )->justReturn( $this->allowedMimeTypes() );
+
+		$this->assertSame(
+			[ 'image/jpeg', 'image/png', 'image/gif', 'image/webp' ],
+			( new MediaFields() )->mimeAllowlist()
+		);
+	}
+
+	public function test_duplicate_and_cased_option_entries_normalize_to_one_lowercase_type(): void {
+		Functions\when( 'get_option' )->justReturn( [ 'IMAGE/PNG', ' image/png ', 'image/png' ] );
+		Functions\when( 'get_allowed_mime_types' )->justReturn( $this->allowedMimeTypes() );
+
+		$this->assertSame( [ 'image/png' ], ( new MediaFields() )->mimeAllowlist() );
+	}
 }
