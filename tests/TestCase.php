@@ -51,15 +51,22 @@ abstract class TestCase extends PHPUnitTestCase {
 	private function matchesDeclaredType( mixed $value, array $property ): bool {
 		$type = $property['type'] ?? null;
 
-		$matches = match ( $type ) {
-			'string'  => is_string( $value ),
-			'integer' => is_int( $value ),
-			'number'  => is_int( $value ) || is_float( $value ),
-			'boolean' => is_bool( $value ),
-			'array'   => is_array( $value ) && array_is_list( $value ),
-			'object'  => $value instanceof stdClass || is_array( $value ),
-			default   => true,
-		};
+		// A union such as [ 'integer', 'null' ] matches when the value matches
+		// any one branch. Checked as a list of single types rather than folded
+		// into the match() below, so a member the union does not declare — for
+		// example a string arriving where only integer|null is declared — still
+		// fails rather than falling through to the permissive default.
+		if ( is_array( $type ) ) {
+			foreach ( $type as $branch ) {
+				if ( $this->matchesSingleType( $value, $branch ) ) {
+					return true;
+				}
+			}
+
+			return false;
+		}
+
+		$matches = $this->matchesSingleType( $value, $type );
 
 		if ( ! $matches || 'array' !== $type || ! isset( $property['items']['type'] ) ) {
 			return $matches;
@@ -72,6 +79,32 @@ abstract class TestCase extends PHPUnitTestCase {
 		}
 
 		return true;
+	}
+
+	/**
+	 * Reports whether one value matches a single declared JSON Schema type name.
+	 *
+	 * Extracted from matchesDeclaredType() so a union type such as
+	 * `[ 'integer', 'null' ]` can test the value against each branch in turn
+	 * instead of falling through to a permissive default that would accept any
+	 * value for a member the schema never actually declared.
+	 *
+	 * @param mixed       $value The member's value.
+	 * @param string|null $type  One JSON Schema type name.
+	 *
+	 * @return bool True when the value matches this one type.
+	 */
+	private function matchesSingleType( mixed $value, ?string $type ): bool {
+		return match ( $type ) {
+			'string'  => is_string( $value ),
+			'integer' => is_int( $value ),
+			'number'  => is_int( $value ) || is_float( $value ),
+			'boolean' => is_bool( $value ),
+			'array'   => is_array( $value ) && array_is_list( $value ),
+			'object'  => $value instanceof stdClass || is_array( $value ),
+			'null'    => null === $value,
+			default   => true,
+		};
 	}
 
 	/**
@@ -204,12 +237,14 @@ abstract class TestCase extends PHPUnitTestCase {
 		);
 
 		foreach ( $data as $key => $value ) {
+			$declared_type = $properties[ $key ]['type'] ?? null;
+
 			$this->assertTrue(
 				$this->matchesDeclaredType( $value, $properties[ $key ] ),
 				sprintf(
 					"Member '%s' does not match its declared type '%s'.",
 					$key,
-					(string) ( $properties[ $key ]['type'] ?? null )
+					is_array( $declared_type ) ? implode( '|', $declared_type ) : (string) $declared_type
 				)
 			);
 		}
