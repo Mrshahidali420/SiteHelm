@@ -2,9 +2,12 @@
     "operationIds": [
         "menu-list",
         "menu-get",
-        "menu-item-create"
+        "menu-item-create",
+        "menu-item-update",
+        "menu-items-reorder",
+        "menu-location-assign"
     ],
-    "operationCount": 3,
+    "operationCount": 6,
     "definitions": {
         "menu-list": {
             "inputSchema": {
@@ -263,6 +266,275 @@
                     }
                 },
                 "required": [
+                    "menu"
+                ],
+                "additionalProperties": false
+            },
+            "outputSchema": {
+                "type": "object",
+                "oneOf": [
+                    {
+                        "title": "Plan phase",
+                        "type": "object",
+                        "properties": {
+                            "plan": {
+                                "type": "object",
+                                "description": "The change plan to approve, including its plan token."
+                            }
+                        },
+                        "required": [
+                            "plan"
+                        ],
+                        "additionalProperties": false
+                    },
+                    {
+                        "title": "Apply phase",
+                        "type": "object",
+                        "properties": {
+                            "target": {
+                                "type": "string",
+                                "description": "The concrete target that was written."
+                            },
+                            "changed": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                },
+                                "description": "The fields the approved plan changed."
+                            },
+                            "state": {
+                                "type": "object",
+                                "description": "The verified persisted state of the target."
+                            }
+                        },
+                        "required": [
+                            "target",
+                            "changed",
+                            "state"
+                        ],
+                        "additionalProperties": false
+                    }
+                ]
+            }
+        },
+        "menu-item-update": {
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "item": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "Identifier of the menu item to change."
+                    },
+                    "title": {
+                        "type": "string",
+                        "maxLength": 65535,
+                        "description": "The label shown in the menu."
+                    },
+                    "url": {
+                        "type": "string",
+                        "maxLength": 65535,
+                        "description": "The web address the item points at. Accepted only for a custom link, because every other item type takes its address from the content it names."
+                    },
+                    "parent": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "Identifier of the menu item this one sits beneath. Use 0 for a top-level item."
+                    },
+                    "position": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "Where the item sits among its siblings."
+                    },
+                    "target": {
+                        "type": "string",
+                        "enum": [
+                            "",
+                            "_blank"
+                        ],
+                        "description": "Send \"_blank\" to open the item in a new browser tab, or an empty string to open it in the same tab."
+                    },
+                    "classes": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "description": "CSS class names applied to the item. The supplied list replaces the item's current one."
+                    },
+                    "description": {
+                        "type": "string",
+                        "maxLength": 65535,
+                        "description": "The short description some themes show beneath the item label."
+                    },
+                    "xfn": {
+                        "type": "string",
+                        "maxLength": 65535,
+                        "description": "The XFN relationship value recorded on the link."
+                    }
+                },
+                "required": [
+                    "item"
+                ],
+                "additionalProperties": false
+            },
+            "outputSchema": {
+                "type": "object",
+                "oneOf": [
+                    {
+                        "title": "Plan phase",
+                        "type": "object",
+                        "properties": {
+                            "plan": {
+                                "type": "object",
+                                "description": "The change plan to approve, including its plan token."
+                            }
+                        },
+                        "required": [
+                            "plan"
+                        ],
+                        "additionalProperties": false
+                    },
+                    {
+                        "title": "Apply phase",
+                        "type": "object",
+                        "properties": {
+                            "target": {
+                                "type": "string",
+                                "description": "The concrete target that was written."
+                            },
+                            "changed": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                },
+                                "description": "The fields the approved plan changed."
+                            },
+                            "state": {
+                                "type": "object",
+                                "description": "The verified persisted state of the target."
+                            }
+                        },
+                        "required": [
+                            "target",
+                            "changed",
+                            "state"
+                        ],
+                        "additionalProperties": false
+                    }
+                ]
+            }
+        },
+        "menu-items-reorder": {
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "menu": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "The menu to reorder, named by its identifier, its slug, or its name."
+                    },
+                    "items": {
+                        "type": "array",
+                        "description": "The items to reposition. Every entry must name an item of this menu; one invalid entry refuses the whole request.",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {
+                                    "type": "integer",
+                                    "minimum": 1,
+                                    "description": "Identifier of the menu item to reposition."
+                                },
+                                "parent": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "description": "Identifier of the item this one should sit under, or 0 for top level. Omit it to leave the nesting unchanged."
+                                },
+                                "position": {
+                                    "type": "integer",
+                                    "minimum": 1,
+                                    "description": "The item's position among its siblings, counting from 1."
+                                }
+                            },
+                            "required": [
+                                "id",
+                                "position"
+                            ],
+                            "additionalProperties": false
+                        }
+                    }
+                },
+                "required": [
+                    "menu",
+                    "items"
+                ],
+                "additionalProperties": false
+            },
+            "outputSchema": {
+                "type": "object",
+                "oneOf": [
+                    {
+                        "title": "Plan phase",
+                        "type": "object",
+                        "properties": {
+                            "plan": {
+                                "type": "object",
+                                "description": "The change plan to approve, including its plan token."
+                            }
+                        },
+                        "required": [
+                            "plan"
+                        ],
+                        "additionalProperties": false
+                    },
+                    {
+                        "title": "Apply phase",
+                        "type": "object",
+                        "properties": {
+                            "target": {
+                                "type": "string",
+                                "description": "The concrete target that was written."
+                            },
+                            "changed": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                },
+                                "description": "The fields the approved plan changed."
+                            },
+                            "state": {
+                                "type": "object",
+                                "description": "The verified persisted state of the target."
+                            }
+                        },
+                        "required": [
+                            "target",
+                            "changed",
+                            "state"
+                        ],
+                        "additionalProperties": false
+                    }
+                ]
+            }
+        },
+        "menu-location-assign": {
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "location": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "The theme location slug to assign, as menu-list reports it."
+                    },
+                    "menu": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "The menu to display in that location, named by its identifier, its slug, or its name. Send null to leave the location with no menu."
+                    }
+                },
+                "required": [
+                    "location",
                     "menu"
                 ],
                 "additionalProperties": false
