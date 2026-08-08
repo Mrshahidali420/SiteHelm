@@ -259,61 +259,111 @@ final class MediaFields {
 
 	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 	/**
-	 * The effective upload MIME allowlist.
+	 * The effective upload MIME allowlist for this site.
 	 *
-	 * The operator's stored override replaces the built-in default when it is a
-	 * usable list; the deny list is subtracted afterwards so a configured
-	 * override cannot re-enable a scripting vector; and the result is
-	 * intersected with get_allowed_mime_types() so a site that has narrowed its
-	 * uploads keeps its narrowing.
+	 * Three inputs, applied in this order, and the order is the contract:
 	 *
-	 * @return string[] The permitted MIME types, in declaration order.
+	 * 1. The built-in default — four inert raster types — used when the operator
+	 *    option is absent, empty, or not an array. This deliberately diverges
+	 *    from ContentFields::allowlist(), which defaults to `[]`. A meta
+	 *    allowlist that permits nothing still leaves a working site; an upload
+	 *    operation that permits nothing cannot demonstrate REQ-0023 without
+	 *    configuration first. Four raster types is still fail-closed in the
+	 *    sense that matters: nothing executable, nothing scriptable, nothing
+	 *    that renders attacker markup.
+	 * 2. The operator option, which REPLACES the default when it is non-empty.
+	 * 3. The deny lists and the site's own upload permissions, both SUBTRACTED
+	 *    last so that neither the operator nor a plugin can add its way past
+	 *    them.
+	 *
+	 * The deny list is subtracted on two independent axes because neither alone
+	 * is sufficient. DENIED_MIME_TYPES catches a denied type registered under an
+	 * extension the deny list does not name; DENIED_EXTENSIONS catches a type
+	 * the deny list does not name — text/html — that core registers under an
+	 * extension it does. Each axis has a test that fails when it alone is
+	 * removed.
+	 *
+	 * @return string[] The permitted MIME types, lowercase, in effective order.
 	 */
 	public function mimeAllowlist(): array {
-		$configured = $this->configuredAllowlist();
-		$effective  = [] === $configured ? self::DEFAULT_MIME_ALLOWLIST : $configured;
-		$effective  = array_diff( $effective, self::DENIED_MIME_TYPES );
+		$configured = get_option( self::MIME_ALLOWLIST_OPTION, [] );
+		$requested  = is_array( $configured ) ? $this->normalize_types( $configured ) : [];
+		$effective  = [] === $requested ? self::DEFAULT_MIME_ALLOWLIST : $requested;
 
 		$permitted = get_allowed_mime_types();
-		$permitted = is_array( $permitted ) ? array_values( $permitted ) : [];
+		$permitted = is_array( $permitted ) ? $permitted : [];
+		$types     = array_map( 'strtolower', array_values( $permitted ) );
 
-		return array_values( array_intersect( $effective, $permitted ) );
+		$allowed = [];
+		foreach ( $effective as $type ) {
+			if ( in_array( $type, self::DENIED_MIME_TYPES, true ) ) {
+				continue;
+			}
+			if ( ! in_array( $type, $types, true ) ) {
+				continue;
+			}
+			if ( $this->has_denied_extension( $type, $permitted ) ) {
+				continue;
+			}
+			$allowed[] = $type;
+		}
+
+		return array_values( array_unique( $allowed ) );
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 
-	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 	/**
-	 * The operator's stored override, normalized to a list of non-blank strings.
+	 * Lowercases, trims, and drops empty members of a stored type list.
 	 *
-	 * An option that is not an array, or whose entries are all blank, yields the
-	 * empty list, which mimeAllowlist() reads as "no override stored".
+	 * @param mixed[] $types The stored option value.
 	 *
-	 * @return string[] The configured MIME types.
+	 * @return string[] The normalized types.
 	 */
-	private function configuredAllowlist(): array {
-		$stored = get_option( self::MIME_ALLOWLIST_OPTION, [] );
+	private function normalize_types( array $types ): array {
+		$normalized = [];
 
-		if ( ! is_array( $stored ) ) {
-			return [];
-		}
-
-		$types = [];
-
-		foreach ( $stored as $type ) {
+		foreach ( $types as $type ) {
 			if ( ! is_string( $type ) ) {
 				continue;
 			}
 
-			$trimmed = trim( $type );
+			$type = strtolower( trim( $type ) );
 
-			if ( '' !== $trimmed ) {
-				$types[] = $trimmed;
+			if ( '' !== $type ) {
+				$normalized[] = $type;
 			}
 		}
 
-		return $types;
+		return $normalized;
 	}
-	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+
+	/**
+	 * Whether the site registers this MIME type under any denied extension.
+	 *
+	 * The keys of get_allowed_mime_types() are pipe-separated extension patterns,
+	 * so `htm|html => text/html` must be tested member by member rather than as a
+	 * single string.
+	 *
+	 * @param string                $type      The candidate MIME type, lowercase.
+	 * @param array<string, string> $permitted The site's upload permission table.
+	 *
+	 * @return bool True when any registered extension for the type is denied.
+	 */
+	private function has_denied_extension( string $type, array $permitted ): bool {
+		foreach ( $permitted as $pattern => $mime ) {
+			if ( strtolower( (string) $mime ) !== $type ) {
+				continue;
+			}
+
+			foreach ( explode( '|', strtolower( (string) $pattern ) ) as $extension ) {
+				if ( in_array( $extension, self::DENIED_EXTENSIONS, true ) ) {
+					return true;
+				}
+			}
+		}
+
+		return false;
+	}
 
 	/**
 	 * The attachment's byte count, or null when it cannot be established.
