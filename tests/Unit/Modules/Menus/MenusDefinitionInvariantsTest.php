@@ -54,12 +54,13 @@ final class MenusDefinitionInvariantsTest extends TestCase {
 	 */
 	private const OPERATION_IDS = [
 		'menu-list',
+		'menu-get',
 	];
 
 	/**
 	 * The menus module's read count. Bumped by each later read task.
 	 */
-	private const MENUS_READ_COUNT = 1;
+	private const MENUS_READ_COUNT = 2;
 
 	/**
 	 * The menus module's write count. Bumped by each later write task.
