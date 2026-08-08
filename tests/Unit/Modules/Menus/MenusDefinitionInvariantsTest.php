@@ -56,6 +56,9 @@ final class MenusDefinitionInvariantsTest extends TestCase {
 		'menu-list',
 		'menu-get',
 		'menu-item-create',
+		'menu-item-update',
+		'menu-items-reorder',
+		'menu-location-assign',
 	];
 
 	/**
@@ -66,7 +69,7 @@ final class MenusDefinitionInvariantsTest extends TestCase {
 	/**
 	 * The menus module's write count. Bumped by each later write task.
 	 */
-	private const MENUS_WRITE_COUNT = 1;
+	private const MENUS_WRITE_COUNT = 4;
 
 	/**
 	 * Every menus operation requires the one capability WordPress gates menu
