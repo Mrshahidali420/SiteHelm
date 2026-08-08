@@ -43,13 +43,28 @@ abstract class TestCase extends PHPUnitTestCase {
 	 * well as by an associative array. SchemaValidator itself is not reused,
 	 * because it is an INPUT validator and rejects both of those.
 	 *
+	 * A declaration may be a `$ref` pointer instead of an inline schema, which is
+	 * how a recursive shape — a menu item whose `children` are menu items — is
+	 * declared without an arbitrary depth limit. The pointer is resolved against
+	 * the schema document before anything is read off the declaration, so a
+	 * `$defs`-declared node is type-checked by exactly the rules below rather
+	 * than falling through them for want of a `type` key.
+	 *
 	 * @param mixed                $value    The member's value.
 	 * @param array<string, mixed> $property The member's declared schema.
+	 * @param array<string, mixed> $root     The schema document `$ref` resolves against.
 	 *
 	 * @return bool True when the value matches the declaration.
 	 */
-	private function matchesDeclaredType( mixed $value, array $property ): bool {
-		$type = $property['type'] ?? null;
+	private function matchesDeclaredType( mixed $value, array $property, array $root ): bool {
+		$resolved = $this->resolveRef( $property, $root );
+
+		if ( null === $resolved ) {
+			return false;
+		}
+
+		$property = $resolved;
+		$type     = $property['type'] ?? null;
 
 		// A union such as [ 'integer', 'null' ] matches when the value matches
 		// any one branch. Checked as a list of single types rather than folded
@@ -68,17 +83,74 @@ abstract class TestCase extends PHPUnitTestCase {
 
 		$matches = $this->matchesSingleType( $value, $type );
 
-		if ( ! $matches || 'array' !== $type || ! isset( $property['items']['type'] ) ) {
+		if ( ! $matches || 'array' !== $type ) {
+			return $matches;
+		}
+
+		$items = $this->resolveRef( $property['items'] ?? [], $root );
+
+		if ( null === $items ) {
+			return false;
+		}
+
+		// An array that declares no item schema at all has no per-item contract
+		// to check. An unresolvable `$ref` is a different thing and was already
+		// refused above, so this branch can no longer be reached by one.
+		if ( ! isset( $items['type'] ) ) {
 			return $matches;
 		}
 
 		foreach ( $value as $item ) {
-			if ( ! $this->matchesDeclaredItem( $item, $property['items'] ) ) {
+			if ( ! $this->matchesDeclaredItem( $item, $items, $root ) ) {
 				return false;
 			}
 		}
 
 		return true;
+	}
+
+	/**
+	 * Resolves a local `$ref` declaration against the schema document.
+	 *
+	 * A declaration that carries no `$ref` is returned unchanged, so every
+	 * caller can resolve unconditionally rather than testing first.
+	 *
+	 * Only local pointers of the form `#/a/b` are understood, which is the only
+	 * form any declared schema in this codebase uses. A pointer that is remote,
+	 * malformed, or names nothing in the document resolves to null rather than
+	 * to a permissive default: a `$ref` a client cannot follow is a declaration
+	 * that describes nothing, and the value under it must fail rather than pass
+	 * unchecked. That is the exact defect this resolution exists to remove — a
+	 * `$defs`-declared node the type check silently skipped.
+	 *
+	 * @param array<string, mixed> $property One declaration, `$ref` or inline.
+	 * @param array<string, mixed> $root     The schema document to resolve against.
+	 *
+	 * @return array<string, mixed>|null The resolved schema, or null when the
+	 *                                   pointer cannot be followed.
+	 */
+	private function resolveRef( array $property, array $root ): ?array {
+		$pointer = $property['$ref'] ?? null;
+
+		if ( ! is_string( $pointer ) ) {
+			return $property;
+		}
+
+		if ( ! str_starts_with( $pointer, '#/' ) ) {
+			return null;
+		}
+
+		$target = $root;
+
+		foreach ( explode( '/', substr( $pointer, 2 ) ) as $segment ) {
+			if ( ! is_array( $target ) || ! array_key_exists( $segment, $target ) ) {
+				return null;
+			}
+
+			$target = $target[ $segment ];
+		}
+
+		return is_array( $target ) ? $target : null;
 	}
 
 	/**
@@ -133,20 +205,21 @@ abstract class TestCase extends PHPUnitTestCase {
 	 * exists to remove, one level down.
 	 *
 	 * @param mixed                $item  One member of the declared array.
-	 * @param array<string, mixed> $items The declared item schema.
+	 * @param array<string, mixed> $items The declared item schema, already resolved.
+	 * @param array<string, mixed> $root  The schema document `$ref` resolves against.
 	 *
 	 * @return bool True when the item matches the declaration.
 	 */
-	private function matchesDeclaredItem( mixed $item, array $items ): bool {
+	private function matchesDeclaredItem( mixed $item, array $items, array $root ): bool {
 		if ( 'object' === $items['type'] ) {
 			if ( ! isset( $items['properties'] ) ) {
 				return $item instanceof stdClass || is_array( $item );
 			}
 
-			return is_array( $item ) && $this->conformsToSchema( $item, $items );
+			return is_array( $item ) && $this->conformsToSchema( $item, $items, $root );
 		}
 
-		return $this->matchesDeclaredType( $item, $items );
+		return $this->matchesDeclaredType( $item, $items, $root );
 	}
 
 	/**
@@ -158,10 +231,11 @@ abstract class TestCase extends PHPUnitTestCase {
 	 *
 	 * @param array<string, mixed> $data   The returned data payload.
 	 * @param array<string, mixed> $schema One schema, or one branch of a union.
+	 * @param array<string, mixed> $root   The schema document `$ref` resolves against.
 	 *
 	 * @return bool True when the payload conforms.
 	 */
-	private function conformsToSchema( array $data, array $schema ): bool {
+	private function conformsToSchema( array $data, array $schema, array $root ): bool {
 		$properties = $schema['properties'] ?? [];
 
 		if ( [] !== array_diff( array_keys( $data ), array_keys( $properties ) ) ) {
@@ -173,7 +247,7 @@ abstract class TestCase extends PHPUnitTestCase {
 		}
 
 		foreach ( $data as $key => $value ) {
-			if ( ! $this->matchesDeclaredType( $value, $properties[ $key ] ) ) {
+			if ( ! $this->matchesDeclaredType( $value, $properties[ $key ], $root ) ) {
 				return false;
 			}
 		}
@@ -201,11 +275,15 @@ abstract class TestCase extends PHPUnitTestCase {
 	 * @param array<string, mixed> $schema The operation's declared outputSchema.
 	 */
 	protected function assertConformsToOutputSchema( array $data, array $schema ): void {
+		// The document, not the selected branch, is what a `$ref` resolves
+		// against: `$defs` sits beside `oneOf`, not inside one of its branches.
+		$root = $schema;
+
 		if ( isset( $schema['oneOf'] ) ) {
 			$matched = array_values(
 				array_filter(
 					$schema['oneOf'],
-					fn( array $branch ): bool => $this->conformsToSchema( $data, $branch )
+					fn( array $branch ): bool => $this->conformsToSchema( $data, $branch, $root )
 				)
 			);
 
@@ -237,10 +315,12 @@ abstract class TestCase extends PHPUnitTestCase {
 		);
 
 		foreach ( $data as $key => $value ) {
-			$declared_type = $properties[ $key ]['type'] ?? null;
+			// A member declared by pointer has no `type` of its own; naming the
+			// pointer keeps the failure message from reading as an empty type.
+			$declared_type = $properties[ $key ]['type'] ?? $properties[ $key ]['$ref'] ?? null;
 
 			$this->assertTrue(
-				$this->matchesDeclaredType( $value, $properties[ $key ] ),
+				$this->matchesDeclaredType( $value, $properties[ $key ], $root ),
 				sprintf(
 					"Member '%s' does not match its declared type '%s'.",
 					$key,

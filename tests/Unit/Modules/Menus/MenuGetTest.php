@@ -19,6 +19,7 @@ use SiteHelm\Modules\Menus\MenuFields;
 use SiteHelm\Modules\Menus\MenuGet;
 use SiteHelm\Modules\Menus\MenusModule;
 use SiteHelm\Registry\CapabilityRegistry;
+use SiteHelm\Schema\SchemaValidator;
 use SiteHelm\Storage\Installer;
 use SiteHelm\Tests\TestCase;
 use stdClass;
@@ -288,9 +289,17 @@ final class MenuGetTest extends TestCase {
 	}
 
 	/**
-	 * The schema declares `menu` a string, but nothing revalidates input at the
-	 * handler and a cast is the wrong defence: `(string) [ 'a' ]` is a fatal on a
-	 * live site. A non-string argument names no menu, which is the truth.
+	 * A non-string `menu` cannot reach handle() through the gateway: the
+	 * dispatcher validates arguments against inputSchema first, and the schema
+	 * declares `menu` a string. This test calls handle() directly, so it covers
+	 * the is_string() guard as the defence in depth it is — the behaviour a
+	 * caller that bypasses the dispatcher gets — and claims nothing about the
+	 * branch being reachable in production.
+	 *
+	 * What it pins down is the SHAPE of that defence. A `(string)` cast would be
+	 * the obvious alternative and is the wrong one: `(string) [ 'a' ]` is a fatal
+	 * on a live site, not a refusal. A key that is not a string names no menu,
+	 * which is the truth about it.
 	 *
 	 * Mutation that breaks this: replacing the is_string() guard in
 	 * MenuGet::handle() with a `(string)` cast.
@@ -302,6 +311,49 @@ final class MenuGetTest extends TestCase {
 		} catch ( OperationException $e ) {
 			$this->assertSame( ErrorCode::TargetNotFound, $e->errorCode );
 		}
+	}
+
+	/**
+	 * The claim the comment above rests on, asserted rather than asserted about:
+	 * the declared inputSchema is what makes a non-string `menu` unreachable, so
+	 * the schema must actually declare it, and SchemaValidator must actually
+	 * refuse an array for it.
+	 *
+	 * Without this, "unreachable in production" is a comment nothing checks, and
+	 * a later schema edit could quietly make the guard load bearing again with
+	 * no test noticing.
+	 *
+	 * Mutation that breaks this: widening `menu` to
+	 * `[ 'type' => [ 'string', 'array' ] ]` in MenuGet::definition().
+	 */
+	public function test_the_input_schema_is_what_makes_a_non_string_key_unreachable(): void {
+		$schema = MenuGet::definition()->inputSchema;
+
+		try {
+			( new SchemaValidator() )->validate( [ 'menu' => [ 'primary' ] ], $schema );
+			$this->fail( 'SchemaValidator must refuse a non-string menu argument before handle() runs.' );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::InvalidInput, $e->errorCode );
+		}
+
+		$this->assertSame( 'string', $schema['properties']['menu']['type'] );
+	}
+
+	/**
+	 * `''` is the one argument the schema does NOT stop: SchemaValidator
+	 * implements no minLength, so an empty string reaches handle(). This asserts
+	 * that, so the empty-key refusal below is known to be covering a live path
+	 * rather than a second unreachable one.
+	 *
+	 * Mutation that breaks this: teaching SchemaValidator to enforce minLength.
+	 */
+	public function test_an_empty_key_passes_input_validation_and_reaches_the_handler(): void {
+		$validated = ( new SchemaValidator() )->validate(
+			[ 'menu' => '' ],
+			MenuGet::definition()->inputSchema
+		);
+
+		$this->assertSame( [ 'menu' => '' ], $validated );
 	}
 
 	/**
@@ -429,30 +481,42 @@ final class MenuGetTest extends TestCase {
 
 	/**
 	 * Every node the tree carries must satisfy the one item schema, at every
-	 * depth. assertConformsToOutputSchema() only walks the top level, so the
-	 * per-node check is done here against the declared `$defs` entry rather than
-	 * against a restated list.
+	 * depth. The whole tree is already type-checked by the schema test above,
+	 * which resolves the `$ref` and walks into `children`; this test exists so a
+	 * violation at depth 2 names the node member that broke rather than
+	 * reporting that the top-level `items` member did.
+	 *
+	 * Each node is asserted against the declared `$defs` entry, carrying the
+	 * document's `$defs` along as the root so the `children` pointer inside it
+	 * still resolves. The item schema is read from the definition rather than
+	 * restated, so the test cannot pass against a schema that has drifted.
+	 *
+	 * Mutations that break this: making objectId a string in
+	 * MenuFields::normalizeItem(); dropping a field from the same method;
+	 * repointing the `children` `$ref` at a definition that does not exist.
 	 */
 	public function test_every_node_at_every_depth_matches_the_declared_item_schema(): void {
-		$declared = MenuGet::definition()->outputSchema['$defs']['menuItem'];
+		$schema   = MenuGet::definition()->outputSchema;
+		$declared = $schema['$defs']['menuItem'] + [ '$defs' => $schema['$defs'] ];
 
-		$walk = static function ( array $nodes ) use ( &$walk, $declared ): array {
+		$walk = static function ( array $nodes ) use ( &$walk ): array {
 			$seen = [];
 
 			foreach ( $nodes as $node ) {
-				$seen[] = array_keys( $node );
+				$seen[] = $node;
 				$seen   = array_merge( $seen, $walk( $node['children'] ) );
 			}
 
 			return $seen;
 		};
 
-		$key_sets = $walk( $this->get()['items'] );
+		$nodes = $walk( $this->get()['items'] );
 
-		$this->assertCount( 5, $key_sets );
+		$this->assertCount( 5, $nodes );
 
-		foreach ( $key_sets as $keys ) {
-			$this->assertSame( $declared['required'], $keys );
+		foreach ( $nodes as $node ) {
+			$this->assertSame( $schema['$defs']['menuItem']['required'], array_keys( $node ) );
+			$this->assertConformsToOutputSchema( $node, $declared );
 		}
 	}
 }
