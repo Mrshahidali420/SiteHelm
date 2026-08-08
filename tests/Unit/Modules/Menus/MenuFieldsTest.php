@@ -93,9 +93,11 @@ final class MenuFieldsTest extends TestCase {
 	}
 
 	/**
-	 * A numeric key is a term id, and core's own resolver treats a numeric
-	 * STRING as a slug, so the cast is the difference between finding menu 5 and
-	 * searching for a menu slugged "5".
+	 * Core would reach the same menu either way — `get_term()` casts a numeric
+	 * string inside `WP_Term::get_instance()` — so this pins the call-site
+	 * contract rather than a core requirement: a numeric key is an id, and the
+	 * id path does not lean on that internal cast. Deleting the `(int)` in
+	 * `menuFromKey()` breaks it.
 	 */
 	public function test_a_numeric_key_reaches_core_as_an_integer_id(): void {
 		$this->stubMenuObject( $this->makeMenu( 5 ) );
@@ -257,6 +259,51 @@ final class MenuFieldsTest extends TestCase {
 	}
 
 	/**
+	 * `wp_get_nav_menu_items` is filtered, and appending a synthetic row is a
+	 * common plugin trick — an injected "Login" entry being the usual one. Such a
+	 * row carries no `ID`, which takes identifier 0, which is also the root
+	 * sentinel: grouped under parent 0 it makes the root branch its own child and
+	 * the walk recurses until the process dies. The row cannot be described, so
+	 * it is dropped and the real menu still answers.
+	 *
+	 * A test that hangs is a test that fails, but it fails by taking the suite
+	 * down with it, so the identifier list is asserted rather than the timing.
+	 */
+	public function test_a_row_carrying_no_identifier_is_dropped_rather_than_rooted(): void {
+		$ghost        = new stdClass();
+		$ghost->title = 'Login';
+
+		Functions\when( 'wp_get_nav_menu_items' )->justReturn(
+			[
+				$this->makeItem( 10, 0, 1 ),
+				$ghost,
+				$this->makeItem( 11, 10, 2 ),
+			]
+		);
+
+		$tree = $this->fields->itemTree( 5 );
+
+		$this->assertSame( [ 10 ], array_column( $tree, 'id' ) );
+		$this->assertSame( [ 11 ], array_column( $tree[0]['children'], 'id' ) );
+	}
+
+	/**
+	 * The same filter can put something that is not a row in the list at all.
+	 * `$item->ID` on a string is a TypeError one frame down, so the member is
+	 * dropped on the same test that drops an identifier-less row.
+	 */
+	public function test_a_member_that_is_not_a_row_is_dropped_rather_than_read(): void {
+		Functions\when( 'wp_get_nav_menu_items' )->justReturn(
+			[
+				'not a row',
+				$this->makeItem( 10, 0, 1 ),
+			]
+		);
+
+		$this->assertSame( [ 10 ], array_column( $this->fields->itemTree( 5 ), 'id' ) );
+	}
+
+	/**
 	 * A longer cycle — 10 parents 11 and 11 parents 10 — passes the self-parent
 	 * and absent-parent guards untouched, because each identifier does name a
 	 * live item in the same menu. Only the chain walk can see it, and without
@@ -360,11 +407,25 @@ final class MenuFieldsTest extends TestCase {
 		$this->assertFalse( $this->fields->validateParent( 10, 5 ) );
 	}
 
-	public function test_a_negative_parent_is_invalid(): void {
+	/**
+	 * A negative parent is refused without a term query even when everything core
+	 * is asked says yes. Both assertions flip if the `$item_id <= 0` guard is
+	 * deleted from `menuTermIdForItem()`: the query runs, and the stubbed answer
+	 * makes the parent validate against menu 5.
+	 */
+	public function test_a_negative_parent_is_refused_without_a_term_query(): void {
+		$queried = [];
 		Functions\when( 'is_nav_menu_item' )->justReturn( true );
-		Functions\when( 'wp_get_object_terms' )->justReturn( [ $this->makeMenu( 5 ) ] );
+		Functions\when( 'wp_get_object_terms' )->alias(
+			function ( int $id ) use ( &$queried ): array {
+				$queried[] = $id;
+
+				return [ $this->makeMenu( 5 ) ];
+			}
+		);
 
 		$this->assertFalse( $this->fields->validateParent( -1, 5 ) );
+		$this->assertSame( [], $queried );
 	}
 
 	public function test_a_registered_location_exists_and_an_unregistered_one_does_not(): void {
