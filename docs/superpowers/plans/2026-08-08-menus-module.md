@@ -134,7 +134,9 @@ final class MenuTarget {
 }
 ```
 
-**Port from:** `resolve_item_type()` (line ~391) and `op_add_item()` (line ~757). `resolve_item_type()` ports almost verbatim in logic: custom → `object_id` 0; taxonomy types validated with `taxonomy_exists()` + `get_term()`; post types validated with `post_type_exists()` + `get_post()` + a post_type match check. Custom-link items require a `url`.
+**Port from:** `resolve_item_type()` (line ~391) and `op_add_item()` (line ~757). `resolve_item_type()` ports almost verbatim in logic: custom → object id 0; taxonomy types validated with `taxonomy_exists()` + `get_term()`; post types validated with `post_type_exists()` + `get_post()` + a post_type match check. Custom-link items require a `url`.
+
+**Field naming:** SiteHelm payload fields are camelCase — `objectId`, not `object_id`. The WordPress-side array keys handed to `wp_update_nav_menu_item()` keep core's own `menu-item-*` spelling. Task 1's committed `MenuFields::normalizeItem()` is the reference.
 
 **Snapshot rule:** a menu item's snapshot is the FULL `wp_setup_nav_menu_item()` field set, because `wp_update_nav_menu_item()` overwrites every field it is handed — an unrecorded field is a lost field.
 
