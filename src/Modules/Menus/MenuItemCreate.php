@@ -136,6 +136,19 @@ final class MenuItemCreate implements WriteOperation {
 	private const MAX_VALUE_LENGTH = 65535;
 
 	/**
+	 * The identifier this instance created, once applyChange() has created one.
+	 *
+	 * THE ONLY OWNERSHIP RECORD THIS OPERATION HAS. The restore state is frozen
+	 * before the item exists, so nothing durable can name it; the engine
+	 * compensates a failed write on THIS instance, which is what lets restore()
+	 * delete the item this change created rather than every item the menu has
+	 * gained since. Deliberately not readonly and not part of any recorded state.
+	 *
+	 * @var int|null
+	 */
+	private ?int $created_item_id = null;
+
+	/**
 	 * Constructs the operation.
 	 *
 	 * @param MenuFields $fields  The shared menu projection and validators.
@@ -372,6 +385,12 @@ final class MenuItemCreate implements WriteOperation {
 	 * hands it the raw `$_POST`. An unslashed title carrying an apostrophe would
 	 * otherwise be stored a character short.
 	 *
+	 * `$completed` NAMES THE SNAPSHOT ONLY WHEN THERE IS ONE. The snapshot policy
+	 * is Supported rather than Required, so apply can be reached having captured
+	 * nothing, and declaring the step unconditionally makes the refusal envelope
+	 * assert a recovery position that does not exist. The test is captureSnapshot()
+	 * itself, which the contract guarantees is side-effect free.
+	 *
 	 * @param TargetState      $current The resolved menu.
 	 * @param PlannedChange    $planned The promised change.
 	 * @param OperationContext $context The request context.
@@ -381,9 +400,14 @@ final class MenuItemCreate implements WriteOperation {
 	 * @throws OperationException With ErrorCode::ExecutionFailed.
 	 */
 	public function applyChange( TargetState $current, PlannedChange $planned, OperationContext $context ): string {
-		$completed = [ 'plan approved', 'snapshot captured' ];
-		$payload   = $planned->payload;
-		$menu_id   = (int) ( $payload['menu'] ?? 0 );
+		$completed = [ 'plan approved' ];
+
+		if ( null !== $this->captureSnapshot( $current, $context ) ) {
+			$completed[] = 'snapshot captured';
+		}
+
+		$payload = $planned->payload;
+		$menu_id = (int) ( $payload['menu'] ?? 0 );
 
 		$data = [ 'menu-item-status' => 'publish' ];
 
@@ -411,6 +435,8 @@ final class MenuItemCreate implements WriteOperation {
 		}
 
 		clean_post_cache( (int) $item_id );
+
+		$this->created_item_id = (int) $item_id;
 
 		return MenuTarget::itemTargetKey( (int) $item_id );
 	}
@@ -450,6 +476,13 @@ final class MenuItemCreate implements WriteOperation {
 	 * menu. That is the `?? []` form of the collapse that nearly unpublished a live
 	 * post in the core block, with a far larger blast radius.
 	 *
+	 * THE DIFFERENCE NAMES CANDIDATES, NEVER THE DELETION SET. This operation adds
+	 * exactly ONE item, so at most one identifier in it can be this change's doing.
+	 * Deleting the whole difference force-deletes — no trash, no recovery — items
+	 * another operator created while this change was in flight. owned_addition()
+	 * narrows it to the one item this change is known to have created, and REFUSES
+	 * the rollback when it cannot tell which that is.
+	 *
 	 * The deletion is forced rather than trashed. A trashed `nav_menu_item` keeps
 	 * its term relationship, so the menu would still list an item the rollback
 	 * reported as removed.
@@ -460,7 +493,8 @@ final class MenuItemCreate implements WriteOperation {
 	 * @return string The menu's target key.
 	 *
 	 * @throws OperationException With ErrorCode::RollbackUnavailable when the state
-	 *                           describes no menu or no item list, or
+	 *                           describes no menu or no item list, or names no item
+	 *                           this change can be shown to have added, or
 	 *                           ErrorCode::ExecutionFailed when an item survived.
 	 */
 	public function restore( array $restoreState, OperationContext $context ): string {
@@ -476,16 +510,19 @@ final class MenuItemCreate implements WriteOperation {
 
 		$recorded = array_map( 'intval', array_filter( $restoreState['item_ids'], 'is_numeric' ) );
 		$added    = array_values( array_diff( $this->item_ids( $menu_id ), $recorded ) );
+		$owned    = $this->owned_addition( $added );
 
-		foreach ( $added as $item_id ) {
-			wp_delete_post( $item_id, true );
-			clean_post_cache( $item_id );
+		if ( null === $owned ) {
+			return MenuTarget::menuTargetKey( $menu_id );
 		}
+
+		wp_delete_post( $owned, true );
+		clean_post_cache( $owned );
 
 		// Verified by re-reading rather than by trusting wp_delete_post()'s answer,
 		// because a `before_delete_post` handler can veto a deletion the return
 		// value still reports as attempted.
-		if ( [] !== array_intersect( $this->item_ids( $menu_id ), $added ) ) {
+		if ( in_array( $owned, $this->item_ids( $menu_id ), true ) ) {
 			throw new OperationException(
 				ErrorCode::ExecutionFailed,
 				'The added navigation menu item is still present after the reversal.',
@@ -497,6 +534,48 @@ final class MenuItemCreate implements WriteOperation {
 	}
 	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+
+	// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The message is a literal written for end users.
+	/**
+	 * The one item of the difference this change is known to have added.
+	 *
+	 * Three answers, and the third is the point:
+	 *
+	 * 1. `null` when nothing of ours is there to remove — an empty difference, or
+	 *    one that does not hold our identifier, whose every member is somebody
+	 *    else's item and must be left alone.
+	 * 2. The identifier applyChange() recorded, when this instance created one.
+	 * 3. A REFUSAL when there is no such record and the difference names more than
+	 *    one item. Nothing durable names our item, so a rollback in a later request
+	 *    has only the difference to go on, and force-deleting all of it to be sure
+	 *    of catching ours is the failure this method exists to prevent.
+	 *
+	 * @param int[] $added The identifiers the menu holds and the snapshot does not.
+	 *
+	 * @return int|null The item to delete, or null when there is none.
+	 *
+	 * @throws OperationException With ErrorCode::RollbackUnavailable.
+	 */
+	private function owned_addition( array $added ): ?int {
+		if ( [] === $added ) {
+			return null;
+		}
+
+		if ( null !== $this->created_item_id ) {
+			return in_array( $this->created_item_id, $added, true ) ? $this->created_item_id : null;
+		}
+
+		if ( 1 !== count( $added ) ) {
+			throw new OperationException(
+				ErrorCode::RollbackUnavailable,
+				'The navigation menu has gained more than one item since the snapshot was taken, so the one this change added cannot be told apart from the others and none of them was removed.',
+				'Remove the added item under Appearance then Menus in the WordPress administration screens instead.'
+			);
+		}
+
+		return $added[0];
+	}
+	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 
 	// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The messages are literals written for end users.
 	/**
@@ -606,7 +685,14 @@ final class MenuItemCreate implements WriteOperation {
 			);
 		}
 
-		$post = get_post( $object_id );
+		// THE `> 0` TEST IS WHAT KEEPS get_post() FROM ANSWERING THE GLOBAL POST.
+		// `objectId` is optional with a schema minimum of 0, and core's get_post()
+		// falls back to `$GLOBALS['post']` for any falsy id — a row that can even
+		// satisfy the post-type match below, so without this the operation would
+		// create an item pointing at whatever post happened to be global.
+		// `resolve_taxonomy_item()` needs no equivalent: `get_term( 0, … )` has no
+		// such fallback and answers null.
+		$post = $object_id > 0 ? get_post( $object_id ) : null;
 
 		if ( ! is_object( $post ) || ! isset( $post->ID ) ) {
 			throw new OperationException(

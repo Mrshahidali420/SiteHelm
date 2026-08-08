@@ -136,7 +136,7 @@ final class MenuItemsReorder implements WriteOperation {
 			],
 			outputSchema: WriteOutputSchema::schema(),
 			schemaVersion: 1,
-			requiredCapabilities: [ 'edit_theme_options' ],
+			requiredCapabilities: [ MenuTarget::REQUIRED_CAPABILITY ],
 			risk: Risk::Medium,
 			isReadOnly: false,
 			isDestructive: false,
@@ -167,21 +167,49 @@ final class MenuItemsReorder implements WriteOperation {
 	}
 
 	/**
+	 * The shared menus target resolver.
+	 *
+	 * Built here rather than injected because MenusModule constructs this
+	 * operation with the MenuFields it already holds, and MenuTarget needs
+	 * nothing else. Constructing it internally is what lets the capability
+	 * assertion, the target-key spelling, and the key parser be the module's
+	 * single copy without changing the registered constructor signature.
+	 *
+	 * @var MenuTarget
+	 */
+	private readonly MenuTarget $target;
+
+	/**
+	 * The arrangement projection this operation promises, writes, and verifies.
+	 *
+	 * @var MenuArrangement
+	 */
+	private readonly MenuArrangement $arrangement;
+
+	/**
 	 * Constructs the operation.
 	 *
 	 * @param MenuFields $fields The shared menu projection and validators.
 	 */
 	public function __construct( private readonly MenuFields $fields ) {
+		$this->target      = new MenuTarget( $fields );
+		$this->arrangement = new MenuArrangement();
 	}
 
-	// phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase -- $context->userId is a contract property name.
-	// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Envelope text, never echoed.
+	// phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase -- $resolved->targetKey is a TargetState contract property name.
 	/**
 	 * Resolves the menu the input names, with its current arrangement.
 	 *
-	 * The capability is asked BEFORE the menu is resolved, for the reason
-	 * MenuGet gives: otherwise the difference between the two refusals tells a
-	 * caller who may not manage menus which menu keys exist on the site.
+	 * THE CAPABILITY AND THE LOOKUP BOTH GO THROUGH MenuTarget::resolveMenu(),
+	 * which asks the capability BEFORE resolving the menu for the reason MenuGet
+	 * gives: otherwise the difference between the two refusals tells a caller who
+	 * may not manage menus which menu keys exist on the site. Asking it here
+	 * instead would be a second copy of that ordering, and the copy that drifts is
+	 * the one that turns an operation into a probe.
+	 *
+	 * A non-string key is passed through as the empty key, which names no menu —
+	 * the truth about it — rather than cast, for the reason MenuGet documents:
+	 * `(string) [ 'primary' ]` is a fatal.
 	 *
 	 * @param array<string, mixed> $input   The validated arguments.
 	 * @param OperationContext     $context The request context.
@@ -192,33 +220,12 @@ final class MenuItemsReorder implements WriteOperation {
 	 *                            ErrorCode::TargetNotFound.
 	 */
 	public function resolveTarget( array $input, OperationContext $context ): TargetState {
-		if ( ! user_can( $context->userId, 'edit_theme_options' ) ) {
-			throw new OperationException(
-				ErrorCode::Forbidden,
-				'Your WordPress user may not change this site\'s navigation menus.',
-				'Ask a site administrator to grant your WordPress user the edit_theme_options capability.'
-			);
-		}
+		$key      = $input['menu'] ?? null;
+		$resolved = $this->target->resolveMenu( is_string( $key ) ? $key : '', $context );
+		$menu_id  = MenuTarget::menuIdFromKey( $resolved->targetKey ) ?? 0;
 
-		// is_string() rather than a cast for the reason MenuGet documents:
-		// `(string) [ 'primary' ]` is a fatal, and a key that is not a string
-		// names no menu, which is the truth about it.
-		$key  = $input['menu'] ?? null;
-		$menu = is_string( $key ) ? $this->fields->menuFromKey( $key ) : null;
-
-		if ( null === $menu ) {
-			throw new OperationException(
-				ErrorCode::TargetNotFound,
-				'No navigation menu on this site matches the requested identifier.',
-				'Call menu-list to see this site\'s menus with their identifiers, slugs, and names.'
-			);
-		}
-
-		$menu_id = (int) ( $menu->term_id ?? 0 );
-
-		return new TargetState( MenuFields::MENU_PREFIX . $menu_id, true, $this->menu_state( $menu ) );
+		return new TargetState( $resolved->targetKey, true, $this->menu_state( $menu_id ) );
 	}
-	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 
 	// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Envelope text, never echoed.
@@ -302,8 +309,8 @@ final class MenuItemsReorder implements WriteOperation {
 			}
 		}
 
-		$after = $this->projected_order( $before, $requested );
-		$this->assert_no_cycle( $after, array_keys( $requested ) );
+		$after = $this->arrangement->projectedOrder( $before, $requested );
+		$this->arrangement->assertNoCycle( $after, array_keys( $requested ) );
 
 		// The payload keeps the CALLER'S ORDER, deliberately unsorted. applyChange()
 		// writes in payload order and reports its progress positionally — "menu
@@ -407,7 +414,7 @@ final class MenuItemsReorder implements WriteOperation {
 
 		$menu_id = (int) ( $current->fields['id'] ?? 0 );
 		$entries = is_array( $planned->payload['items'] ?? null ) ? $planned->payload['items'] : [];
-		$rows    = $this->item_rows( $menu_id );
+		$rows    = $this->arrangement->itemRows( $menu_id );
 		$total   = count( $entries );
 		$step    = 0;
 
@@ -432,7 +439,7 @@ final class MenuItemsReorder implements WriteOperation {
 			$written = wp_update_nav_menu_item(
 				$menu_id,
 				$id,
-				wp_slash( $this->item_args( $row, $parent, (int) $entry['position'] ) )
+				wp_slash( $this->arrangement->itemArgs( $row, $parent, (int) $entry['position'] ) )
 			);
 
 			if ( is_wp_error( $written ) || 0 === (int) $written ) {
@@ -447,7 +454,7 @@ final class MenuItemsReorder implements WriteOperation {
 			$completed[] = sprintf( 'menu item %d of %d repositioned', $step, $total );
 		}
 
-		return MenuFields::MENU_PREFIX . $menu_id;
+		return MenuTarget::menuTargetKey( $menu_id );
 	}
 	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 
@@ -462,6 +469,13 @@ final class MenuItemsReorder implements WriteOperation {
 	 * `clean_post_cache()` for every row it touches, so a second invalidation
 	 * would be a call that can only ever be a no-op.
 	 *
+	 * THE MENU IS RE-RESOLVED BY TERM ID, never by the id/slug/name key resolver.
+	 * `wp_get_nav_menu_object()` falls back to a slug and then a name lookup when
+	 * the term lookup finds nothing, so on a site where some OTHER menu carries
+	 * the bare-number slug "5", a request that wrote menu 5 and then lost it
+	 * would verify against that other menu and report it as the written state.
+	 * menu_by_id() answers only a term whose own identifier is the one asked for.
+	 *
 	 * @param string           $targetKey The written target key.
 	 * @param OperationContext $context   The request context.
 	 *
@@ -470,10 +484,9 @@ final class MenuItemsReorder implements WriteOperation {
 	 * @throws OperationException With ErrorCode::VerificationFailed.
 	 */
 	public function readBack( string $targetKey, OperationContext $context ): TargetState {
-		$menu_id = $this->menu_id_from_key( $targetKey );
-		$menu    = null === $menu_id ? null : $this->fields->menuFromKey( (string) $menu_id );
+		$menu_id = MenuTarget::menuIdFromKey( $targetKey );
 
-		if ( null === $menu ) {
+		if ( null === $menu_id || null === $this->menu_by_id( $menu_id ) ) {
 			throw new OperationException(
 				ErrorCode::VerificationFailed,
 				'The navigation menu could not be re-read after the write, so the result cannot be verified.',
@@ -484,7 +497,7 @@ final class MenuItemsReorder implements WriteOperation {
 			);
 		}
 
-		return new TargetState( $targetKey, true, $this->menu_state( $menu ) );
+		return new TargetState( $targetKey, true, $this->menu_state( $menu_id ) );
 	}
 	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
@@ -531,7 +544,7 @@ final class MenuItemsReorder implements WriteOperation {
 			);
 		}
 
-		$rows     = $this->item_rows( $menu_id );
+		$rows     = $this->arrangement->itemRows( $menu_id );
 		$intended = $this->intended_restore( $recorded, $rows );
 
 		$completed = [];
@@ -544,7 +557,7 @@ final class MenuItemsReorder implements WriteOperation {
 			$written = wp_update_nav_menu_item(
 				$menu_id,
 				$id,
-				wp_slash( $this->item_args( $rows[ $id ], $target['parent'], $target['position'] ) )
+				wp_slash( $this->arrangement->itemArgs( $rows[ $id ], $target['parent'], $target['position'] ) )
 			);
 
 			if ( is_wp_error( $written ) || 0 === (int) $written ) {
@@ -561,7 +574,7 @@ final class MenuItemsReorder implements WriteOperation {
 
 		$this->assert_restored( $menu_id, $intended, $completed );
 
-		return MenuFields::MENU_PREFIX . $menu_id;
+		return MenuTarget::menuTargetKey( $menu_id );
 	}
 	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
@@ -569,89 +582,48 @@ final class MenuItemsReorder implements WriteOperation {
 	/**
 	 * One menu's identity beside its current arrangement.
 	 *
-	 * @param object $menu The resolved menu term.
+	 * @param int $menu_id The menu's term identifier.
 	 *
 	 * @return array<string, mixed> The normalized field map.
 	 */
-	private function menu_state( object $menu ): array {
-		$menu_id = (int) ( $menu->term_id ?? 0 );
+	private function menu_state( int $menu_id ): array {
+		$menu = $this->menu_by_id( $menu_id );
 
 		return [
 			'id'              => $menu_id,
 			'name'            => (string) ( $menu->name ?? '' ),
 			'slug'            => (string) ( $menu->slug ?? '' ),
-			self::ORDER_FIELD => $this->current_order( $menu_id ),
+			self::ORDER_FIELD => $this->arrangement->currentOrder( $menu_id ),
 		];
 	}
 
 	/**
-	 * One menu's arrangement: each item's identifier, parent, and position.
+	 * The menu one term identifier names, and only that menu.
 	 *
-	 * A LIST sorted by identifier rather than a map keyed by it, because the
-	 * change engine's canonicalizer keeps a list's order and key-sorts a map;
-	 * sorting here once means the promise, the snapshot, and the read-back are
-	 * comparable byte for byte without depending on which of the two rules a
-	 * particular identifier set happens to fall under.
-	 *
-	 * @param int $menu_id The menu's term identifier.
-	 *
-	 * @return array<int, array<string, int>> The arrangement.
-	 */
-	private function current_order( int $menu_id ): array {
-		$order = [];
-
-		foreach ( $this->item_rows( $menu_id ) as $id => $row ) {
-			$order[] = [
-				'id'       => $id,
-				'parent'   => (int) ( $row->menu_item_parent ?? 0 ),
-				'position' => (int) ( $row->menu_order ?? 0 ),
-			];
-		}
-
-		usort( $order, static fn( array $a, array $b ): int => $a['id'] <=> $b['id'] );
-
-		return $order;
-	}
-
-	/**
-	 * One menu's item rows, keyed by identifier.
-	 *
-	 * Rows without a usable `ID` are dropped, applying the same filter
-	 * `MenuFields::itemTree()` applies and for the same reason: a row a
-	 * `wp_get_nav_menu_items` filter appended — a plugin's synthetic "Log in"
-	 * entry is the common case — carries no `ID` and takes identifier 0, and 0 is
-	 * also how "top level" is spelled. Conflating "absent" with the root sentinel
-	 * already produced an unbounded recursion in this module.
+	 * `wp_get_nav_menu_object()` — which `MenuFields::menuFromKey()` wraps —
+	 * tries the term lookup, then a SLUG lookup, then a NAME lookup. That chain
+	 * is right for a caller-supplied key and wrong for an identifier the plugin
+	 * itself just wrote: if the term is gone, a menu whose slug happens to be the
+	 * bare number "5" answers instead, and the operation would verify a write
+	 * against a menu it never touched. Comparing the resolved term's own
+	 * identifier is what closes that, without reaching past MenuFields into
+	 * `get_term()`.
 	 *
 	 * @param int $menu_id The menu's term identifier.
 	 *
-	 * @return array<int, object> The rows, keyed by identifier.
+	 * @return object|null The menu term, or null when no term carries that id.
 	 */
-	private function item_rows( int $menu_id ): array {
-		$items = wp_get_nav_menu_items( $menu_id );
-
-		if ( ! is_array( $items ) ) {
-			return [];
+	private function menu_by_id( int $menu_id ): ?object {
+		if ( $menu_id <= 0 ) {
+			return null;
 		}
 
-		$rows = [];
+		$menu = $this->fields->menuFromKey( (string) $menu_id );
 
-		foreach ( $items as $item ) {
-			if ( ! is_object( $item ) ) {
-				continue;
-			}
-
-			$id = (int) ( $item->ID ?? 0 );
-
-			if ( $id > 0 ) {
-				$rows[ $id ] = $item;
-			}
-		}
-
-		return $rows;
+		return null !== $menu && (int) ( $menu->term_id ?? 0 ) === $menu_id ? $menu : null;
 	}
 
-	// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+	// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Envelope text, never echoed.
 	/**
 	 * One caller-supplied entry, normalized, or a refusal.
 	 *
@@ -672,8 +644,12 @@ final class MenuItemsReorder implements WriteOperation {
 	 * @throws OperationException With ErrorCode::InvalidInput.
 	 */
 	private function normalized_entry( mixed $entry ): array {
-		$id       = is_array( $entry ) ? $entry['id'] ?? null : null;
-		$position = is_array( $entry ) ? $entry['position'] ?? null : null;
+		// Narrowed ONCE, here. An entry that is not an array carries no `id`, so
+		// the guard below refuses it; re-testing the shape at the `parent` branch
+		// would be a conjunct no fixture could ever make false.
+		$fields   = is_array( $entry ) ? $entry : [];
+		$id       = $fields['id'] ?? null;
+		$position = $fields['position'] ?? null;
 
 		if ( ! is_int( $id ) || $id < 1 || ! is_int( $position ) || $position < 1 ) {
 			throw new OperationException(
@@ -688,8 +664,8 @@ final class MenuItemsReorder implements WriteOperation {
 			'position' => $position,
 		];
 
-		if ( is_array( $entry ) && array_key_exists( 'parent', $entry ) ) {
-			$parent = $entry['parent'];
+		if ( array_key_exists( 'parent', $fields ) ) {
+			$parent = $fields['parent'];
 
 			if ( ! is_int( $parent ) || $parent < 0 ) {
 				throw new OperationException(
@@ -705,140 +681,6 @@ final class MenuItemsReorder implements WriteOperation {
 		return $normalized;
 	}
 	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
-
-	/**
-	 * The arrangement the batch as a whole produces.
-	 *
-	 * Every item of the menu appears, whether the batch named it or not, because
-	 * that is what makes the promise the operator approves the WHOLE arrangement
-	 * rather than a list of deltas.
-	 *
-	 * @param array<int, array<string, mixed>> $before    The current arrangement.
-	 * @param array<int, array<string, int>>   $requested The normalized entries, keyed by identifier.
-	 *
-	 * @return array<int, array<string, int>> The projected arrangement.
-	 */
-	private function projected_order( array $before, array $requested ): array {
-		$after = [];
-
-		foreach ( $before as $row ) {
-			$id    = (int) ( $row['id'] ?? 0 );
-			$entry = $requested[ $id ] ?? null;
-
-			$after[] = [
-				'id'       => $id,
-				'parent'   => is_array( $entry ) && array_key_exists( 'parent', $entry )
-					? $entry['parent']
-					: (int) ( $row['parent'] ?? 0 ),
-				'position' => is_array( $entry ) ? $entry['position'] : (int) ( $row['position'] ?? 0 ),
-			];
-		}
-
-		return $after;
-	}
-
-	// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped
-	/**
-	 * Refuses a batch whose resulting arrangement contains a cycle.
-	 *
-	 * The walk starts from the items the batch MOVED, not from every item, so a
-	 * cycle that was already stored — one a direct database edit produced, which
-	 * `MenuFields::itemTree()` roots rather than refuses — is not blamed on a
-	 * batch that did not touch it. A batch that nests an item INTO such a cycle
-	 * is refused, and correctly: the item would never reach the root, so the menu
-	 * would not render it.
-	 *
-	 * The walk terminates on any input. It stops at 0, at an identifier the
-	 * arrangement does not name, and — the case this exists for — on the second
-	 * visit to any identifier. An item that names itself is just the shortest
-	 * such chain and needs no separate branch.
-	 *
-	 * @param array<int, array<string, int>> $after     The projected arrangement.
-	 * @param int[]                          $moved_ids The identifiers the batch repositions.
-	 *
-	 * @throws OperationException With ErrorCode::InvalidInput.
-	 */
-	private function assert_no_cycle( array $after, array $moved_ids ): void {
-		$parents = [];
-
-		foreach ( $after as $row ) {
-			$parents[ (int) $row['id'] ] = (int) $row['parent'];
-		}
-
-		foreach ( $moved_ids as $moved_id ) {
-			$seen   = [];
-			$cursor = (int) $moved_id;
-
-			while ( 0 !== $cursor && array_key_exists( $cursor, $parents ) ) {
-				if ( isset( $seen[ $cursor ] ) ) {
-					throw new OperationException(
-						ErrorCode::InvalidInput,
-						'The requested nesting would place a menu item inside itself, so none of the requested order was written.',
-						'Choose a parent that is not the item itself or one of its own descendants, then request a fresh preview.'
-					);
-				}
-
-				$seen[ $cursor ] = true;
-				$cursor          = $parents[ $cursor ];
-			}
-		}
-	}
-	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
-
-	/**
-	 * The full argument set `wp_update_nav_menu_item()` needs to reposition one
-	 * item WITHOUT losing anything else about it.
-	 *
-	 * Ported from EMCP's `merge_existing_item()`, with the source of four values
-	 * changed. `wp_update_nav_menu_item()` overwrites every field it is handed
-	 * and defaults every field it is not, so a partial argument set silently
-	 * blanks the item's title, url, and classes — which is why the whole record
-	 * has to travel. But the record has to be merged from the STORED columns:
-	 * `wp_setup_nav_menu_item()` derives `title` through the_title filters,
-	 * `description` through `wp_trim_words( post_content, 200 )`, and
-	 * `attr_title` through a filter, so merging from those rewrites the item's
-	 * own text a little more on every reorder.
-	 *
-	 * `menu-item-status` carries the row's own status rather than a hardcoded
-	 * 'publish', which the porting source uses: `wp_update_nav_menu_item()`
-	 * resolves anything other than 'publish' to 'draft', so passing the stored
-	 * value preserves a draft item instead of publishing it as a side effect of
-	 * a reorder.
-	 *
-	 * `menu-item-url` is the one derived value that has to stay derived, because
-	 * there is no column for it. For a custom link the derived value IS the
-	 * stored meta, so it round-trips exactly; for a post_type or taxonomy item
-	 * WordPress recomputes the url on every read and never consults the stored
-	 * meta, so what lands there is unobservable through any read path.
-	 *
-	 * @param object $row       The stored menu item row.
-	 * @param int    $parent_id The parent identifier to write.
-	 * @param int    $position  The position to write.
-	 *
-	 * @return array<string, mixed> The argument set.
-	 */
-	private function item_args( object $row, int $parent_id, int $position ): array {
-		$classes = $row->classes ?? [];
-
-		return [
-			'menu-item-db-id'       => (int) ( $row->ID ?? 0 ),
-			'menu-item-object-id'   => (int) ( $row->object_id ?? 0 ),
-			'menu-item-object'      => (string) ( $row->object ?? '' ),
-			'menu-item-type'        => (string) ( $row->type ?? '' ),
-			'menu-item-status'      => (string) ( $row->post_status ?? 'publish' ),
-			'menu-item-title'       => (string) ( $row->post_title ?? '' ),
-			'menu-item-attr-title'  => (string) ( $row->post_excerpt ?? '' ),
-			'menu-item-description' => (string) ( $row->post_content ?? '' ),
-			'menu-item-url'         => (string) ( $row->url ?? '' ),
-			'menu-item-target'      => (string) ( $row->target ?? '' ),
-			'menu-item-xfn'         => (string) ( $row->xfn ?? '' ),
-			'menu-item-classes'     => is_array( $classes )
-				? implode( ' ', array_filter( array_map( 'strval', $classes ), static fn( string $c ): bool => '' !== $c ) )
-				: '',
-			'menu-item-parent-id'   => $parent_id,
-			'menu-item-position'    => $position,
-		];
-	}
 
 	// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Envelope text, never echoed.
 	/**
@@ -894,9 +736,24 @@ final class MenuItemsReorder implements WriteOperation {
 	 *
 	 * `wp_update_nav_menu_item()` returning an identifier proves the row was
 	 * saved, not that `menu_order` holds what was sent — a `wp_update_nav_menu_item`
-	 * filter can rewrite the arguments, and a recorded position of 0 is replaced
-	 * by WordPress with the menu's item count plus one. On a restore path there
-	 * is no WriteVerifier downstream to notice either.
+	 * filter can rewrite the arguments. On a restore path there is no
+	 * WriteVerifier downstream to notice either.
+	 *
+	 * A RECORDED POSITION OF 0 IS EXEMPT FROM THE POSITION COMPARISON, and that
+	 * exemption is the difference between reporting a real failure and libelling
+	 * a restore that worked. `wp_update_nav_menu_item()` treats 0 as "unset" and
+	 * substitutes the menu's item count plus one, so a snapshot holding a 0 —
+	 * which a menu item genuinely can hold, WordPress writes it whenever the
+	 * position was never set — can never read back as 0. Comparing it anyway
+	 * throws ExecutionFailed AFTER every row has already been written, telling
+	 * the operator their rollback failed when in fact it landed. There is nothing
+	 * for this method to verify in that case: the recorded value delegates the
+	 * choice of position to WordPress, so whatever WordPress chose IS the
+	 * restored state. The PARENT is still compared for every item, including
+	 * those, because a recorded parent of 0 is honoured literally.
+	 *
+	 * The message names plainly that the rows were written, because they were:
+	 * this refusal is only ever reached after the whole loop completed.
 	 *
 	 * @param int                            $menu_id   The menu's term identifier.
 	 * @param array<int, array<string, int>> $intended  The intended parent and position per identifier.
@@ -907,19 +764,24 @@ final class MenuItemsReorder implements WriteOperation {
 	private function assert_restored( int $menu_id, array $intended, array $completed ): void {
 		$stored = [];
 
-		foreach ( $this->current_order( $menu_id ) as $row ) {
+		foreach ( $this->arrangement->currentOrder( $menu_id ) as $row ) {
 			$stored[ (int) $row['id'] ] = $row;
 		}
 
 		foreach ( $intended as $id => $target ) {
 			$row = $stored[ $id ] ?? null;
 
-			if ( ! is_array( $row )
-				|| (int) $row['parent'] !== $target['parent']
-				|| (int) $row['position'] !== $target['position'] ) {
+			// null rather than 0 for a missing row: 0 is a legitimate stored
+			// parent, so a row the menu no longer holds must not compare equal to
+			// one recorded at top level.
+			$parent   = is_array( $row ) ? (int) $row['parent'] : null;
+			$position = is_array( $row ) ? (int) $row['position'] : null;
+
+			if ( $parent !== $target['parent']
+				|| ( 0 !== $target['position'] && $position !== $target['position'] ) ) {
 				throw new OperationException(
 					ErrorCode::ExecutionFailed,
-					'WordPress stored a different menu order than the recorded snapshot held.',
+					'Every recorded menu item was written, but WordPress stored a different order than the recorded snapshot held.',
 					'Reorder the menu on the WordPress menus screen instead.',
 					$completed
 				);
@@ -927,21 +789,4 @@ final class MenuItemsReorder implements WriteOperation {
 		}
 	}
 	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
-
-	/**
-	 * The menu identifier one concrete target key names.
-	 *
-	 * @param string $key The target key, e.g. 'menu:5'.
-	 *
-	 * @return int|null The menu's term identifier, or null when the key names none.
-	 */
-	private function menu_id_from_key( string $key ): ?int {
-		if ( ! str_starts_with( $key, MenuFields::MENU_PREFIX ) ) {
-			return null;
-		}
-
-		$id = substr( $key, strlen( MenuFields::MENU_PREFIX ) );
-
-		return ctype_digit( $id ) && (int) $id > 0 ? (int) $id : null;
-	}
 }

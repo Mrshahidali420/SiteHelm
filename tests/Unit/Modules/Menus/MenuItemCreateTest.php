@@ -633,6 +633,214 @@ final class MenuItemCreateTest extends TestCase {
 		$this->fail( 'A restore that left the created item in place must not report success.' );
 	}
 
+	/**
+	 * Core's `get_post()` answers `$GLOBALS['post']` for a falsy identifier.
+	 *
+	 * The double below is what makes that answerable in a unit test: the setUp
+	 * double returns null for an unknown key, so an unguarded `get_post( 0 )`
+	 * looked indistinguishable from a guarded one. Here id 0 hands back a REAL
+	 * page — the global one — which satisfies both the object check and the
+	 * post-type match, so an operation that omits the `> 0` test creates an item
+	 * pointing at whatever page happened to be global instead of refusing.
+	 */
+	public function test_it_refuses_a_post_type_item_that_names_no_identifier(): void {
+		$global             = new stdClass();
+		$global->ID         = 77;
+		$global->post_type  = 'page';
+		$global->post_title = 'Whatever was global';
+
+		Functions\when( 'get_post' )->alias(
+			function ( $id = null ) use ( $global ) {
+				if ( (int) $id <= 0 ) {
+					return $global;
+				}
+
+				return $this->posts[ (int) $id ] ?? ( $this->items[ (int) $id ] ?? null );
+			}
+		);
+
+		$refusal = $this->refusalFrom(
+			[
+				'menu'   => 'primary',
+				'title'  => 'About',
+				'type'   => 'post_type',
+				'object' => 'page',
+			]
+		);
+
+		$this->assertSame( ErrorCode::InvalidInput, $refusal->errorCode );
+		$this->assertSame( [], $this->callOrder, 'The global post must not become a menu item.' );
+	}
+
+	public function test_it_refuses_a_post_type_item_whose_identifier_is_zero(): void {
+		$global             = new stdClass();
+		$global->ID         = 77;
+		$global->post_type  = 'page';
+		$global->post_title = 'Whatever was global';
+
+		Functions\when( 'get_post' )->alias(
+			function ( $id = null ) use ( $global ) {
+				if ( (int) $id <= 0 ) {
+					return $global;
+				}
+
+				return $this->posts[ (int) $id ] ?? ( $this->items[ (int) $id ] ?? null );
+			}
+		);
+
+		$refusal = $this->refusalFrom(
+			[
+				'menu'     => 'primary',
+				'title'    => 'About',
+				'type'     => 'post_type',
+				'object'   => 'page',
+				'objectId' => 0,
+			]
+		);
+
+		$this->assertSame( ErrorCode::InvalidInput, $refusal->errorCode );
+		$this->assertSame( [], $this->callOrder );
+	}
+
+	/**
+	 * Rollback deletes THE ITEM THIS OPERATION CREATED, not every item that was
+	 * not there when the snapshot was taken.
+	 *
+	 * The difference is invisible on a quiet site and destructive on a busy one:
+	 * a second operator adding an item between the snapshot and the rollback puts
+	 * their item into the difference too, and a delete-the-difference reversal
+	 * force-deletes it.
+	 */
+	public function test_restore_deletes_only_the_created_item_when_another_appeared_alongside_it(): void {
+		$context = $this->makeContext();
+		$input   = [
+			'menu'  => 'primary',
+			'title' => 'Contact',
+			'url'   => 'https://example.com/contact',
+		];
+		$current  = $this->operation->resolveTarget( $input, $context );
+		$snapshot = $this->operation->captureSnapshot( $current, $context );
+
+		// A concurrent operator adds an item of their own, after our snapshot.
+		// ITS IDENTIFIER IS LOWER THAN THE ONE OUR WRITE WILL TAKE, deliberately:
+		// the difference is sorted numerically, so a lower id puts THEIR item
+		// first. With ours first, "delete the first item the difference names"
+		// would delete the right one by luck and this test would pass against
+		// the very defect it exists to catch.
+		$this->items[450] = $this->makeItem( 450, 'Someone else\'s link', 0 );
+
+		$planned = $this->operation->planChange( $current, $input, $context );
+		$this->operation->applyChange( $current, $planned, $context );
+
+		$this->operation->restore( (array) $snapshot, $context );
+
+		$this->assertArrayNotHasKey( 501, $this->items, 'restore() must delete the item it created.' );
+		$this->assertArrayHasKey( 450, $this->items, 'restore() must not delete another operator\'s item.' );
+		$this->assertSame( [ 'wp_update_nav_menu_item', 'wp_delete_post' ], $this->callOrder );
+	}
+
+	/**
+	 * A rollback arriving on a FRESH INSTANCE has no ownership record.
+	 *
+	 * SnapshotLifecycle::compensate() reverses on the same instance that applied,
+	 * so the created id is in hand there. A rollback requested later is a new
+	 * request and a new object, and all it has is the difference. One added item
+	 * is ours by elimination; more than one is not attributable, and this asserts
+	 * that the operation REFUSES rather than deleting all of them.
+	 */
+	public function test_restore_refuses_rather_than_guess_when_more_than_one_item_was_added(): void {
+		$context = $this->makeContext();
+
+		$this->items[600] = $this->makeItem( 600, 'First addition', 0 );
+		$this->items[610] = $this->makeItem( 610, 'Second addition', 0 );
+
+		$fields = new MenuFields();
+		$fresh  = new MenuItemCreate( $fields, new MenuTarget( $fields ) );
+
+		try {
+			$fresh->restore(
+				[
+					'item_ids' => [ 400 ],
+					'menu_id'  => 5,
+				],
+				$context
+			);
+		} catch ( OperationException $refusal ) {
+			$this->assertSame( ErrorCode::RollbackUnavailable, $refusal->errorCode );
+			$this->assertSame( [], $this->callOrder, 'An unattributable rollback must delete nothing at all.' );
+			$this->assertArrayHasKey( 600, $this->items );
+			$this->assertArrayHasKey( 610, $this->items );
+
+			return;
+		}
+
+		$this->fail( 'A rollback that cannot tell which item it added must be refused, not guessed at.' );
+	}
+
+	public function test_restore_on_a_fresh_instance_deletes_the_single_added_item(): void {
+		$context = $this->makeContext();
+
+		$this->items[600] = $this->makeItem( 600, 'The only addition', 0 );
+
+		$fields = new MenuFields();
+		$fresh  = new MenuItemCreate( $fields, new MenuTarget( $fields ) );
+
+		$restored = $fresh->restore(
+			[
+				'item_ids' => [ 400 ],
+				'menu_id'  => 5,
+			],
+			$context
+		);
+
+		$this->assertSame( MenuFields::MENU_PREFIX . '5', $restored );
+		$this->assertArrayNotHasKey( 600, $this->items );
+		$this->assertArrayHasKey( 400, $this->items );
+	}
+
+	/**
+	 * The refusal envelope may not claim a snapshot the engine never took.
+	 *
+	 * This operation's snapshot policy is Supported, so apply can be reached with
+	 * nothing captured. The target key below names no menu, which is the same
+	 * condition captureSnapshot() answers null for, and the completed steps must
+	 * then name the plan alone.
+	 */
+	public function test_the_refusal_names_no_snapshot_when_none_could_be_captured(): void {
+		Functions\when( 'wp_update_nav_menu_item' )->alias(
+			function ( $menu_id, $item_id, $data = [] ) {
+				$this->callOrder[] = 'wp_update_nav_menu_item';
+
+				$error         = new stdClass();
+				$error->errors = [ 'nope' => [ 'refused' ] ];
+
+				return $error;
+			}
+		);
+
+		$context = $this->makeContext();
+		$input   = [
+			'menu'  => 'primary',
+			'title' => 'Contact',
+			'url'   => 'https://example.com/contact',
+		];
+		$current = $this->operation->resolveTarget( $input, $context );
+		$planned = $this->operation->planChange( $current, $input, $context );
+
+		$unsnapshottable = new TargetState( MenuFields::ITEM_PREFIX . '9999', true, $current->fields );
+
+		try {
+			$this->operation->applyChange( $unsnapshottable, $planned, $context );
+		} catch ( OperationException $refusal ) {
+			$this->assertSame( ErrorCode::ExecutionFailed, $refusal->errorCode );
+			$this->assertSame( [ 'plan approved' ], $refusal->completedSteps );
+
+			return;
+		}
+
+		$this->fail( 'The write was expected to be refused and was not.' );
+	}
+
 	public function test_it_reports_execution_failed_when_wordpress_refuses_the_write(): void {
 		Functions\when( 'wp_update_nav_menu_item' )->alias(
 			function ( $menu_id, $item_id, $data = [] ) {

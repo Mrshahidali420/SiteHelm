@@ -96,8 +96,20 @@ final class MenuTargetTest extends TestCase {
 				$this->callOrder[] = 'wp_update_nav_menu_item';
 				$this->written[]   = $data;
 
+				// CORE'S CLOBBER-THEN-DERIVE, reproduced: the field array is stored
+				// into the COLUMNS, and the display properties are then computed FROM
+				// those columns rather than copied from the request. A double that
+				// echoed menu-item-description straight back into `description` would
+				// model a lossless round trip WordPress does not perform, and would
+				// report a snapshot reading the derived values as a pass.
 				$item                   = $this->makeItem( (int) $item_id );
-				$item->title            = stripslashes( (string) ( $data['menu-item-title'] ?? '' ) );
+				$item->post_status      = (string) ( $data['menu-item-status'] ?? '' );
+				$item->post_title       = stripslashes( (string) ( $data['menu-item-title'] ?? '' ) );
+				$item->post_content     = stripslashes( (string) ( $data['menu-item-description'] ?? '' ) );
+				$item->post_excerpt     = stripslashes( (string) ( $data['menu-item-attr-title'] ?? '' ) );
+				$item->title            = self::derivedTitle( $item->post_title );
+				$item->description      = self::derivedDescription( $item->post_content );
+				$item->attr_title       = self::derivedAttrTitle( $item->post_excerpt );
 				$item->url              = stripslashes( (string) ( $data['menu-item-url'] ?? '' ) );
 				$item->type             = (string) ( $data['menu-item-type'] ?? '' );
 				$item->object           = (string) ( $data['menu-item-object'] ?? '' );
@@ -105,8 +117,6 @@ final class MenuTargetTest extends TestCase {
 				$item->menu_item_parent = (int) ( $data['menu-item-parent-id'] ?? 0 );
 				$item->menu_order       = (int) ( $data['menu-item-position'] ?? 0 );
 				$item->target           = (string) ( $data['menu-item-target'] ?? '' );
-				$item->attr_title       = (string) ( $data['menu-item-attr-title'] ?? '' );
-				$item->description      = stripslashes( (string) ( $data['menu-item-description'] ?? '' ) );
 				$item->xfn              = (string) ( $data['menu-item-xfn'] ?? '' );
 				$item->classes          = array_values(
 					array_filter( explode( ' ', (string) ( $data['menu-item-classes'] ?? '' ) ) )
@@ -119,12 +129,81 @@ final class MenuTargetTest extends TestCase {
 		);
 	}
 
+	/**
+	 * A stored description longer than the 200 words wp_trim_words() keeps.
+	 *
+	 * @return string The stored post_content.
+	 */
+	private static function storedDescription(): string {
+		return implode( ' ', array_map( static fn( int $n ): string => 'word' . $n, range( 1, 250 ) ) );
+	}
+
+	/**
+	 * `wp_setup_nav_menu_item()`'s `description`: wp_trim_words( post_content, 200 ).
+	 *
+	 * @param string $content The stored post_content.
+	 *
+	 * @return string The derived description.
+	 */
+	private static function derivedDescription( string $content ): string {
+		$words = '' === trim( $content ) ? [] : preg_split( '/\s+/', trim( $content ) );
+		$words = is_array( $words ) ? $words : [];
+
+		return count( $words ) > 200 ? implode( ' ', array_slice( $words, 0, 200 ) ) . '…' : $content;
+	}
+
+	/**
+	 * `wp_setup_nav_menu_item()`'s `title`: post_title through the_title filters,
+	 * of which wptexturize is the one that rewrites the stored text.
+	 *
+	 * @param string $post_title The stored post_title.
+	 *
+	 * @return string The derived title.
+	 */
+	private static function derivedTitle( string $post_title ): string {
+		return str_replace( '&', '&#038;', $post_title );
+	}
+
+	/**
+	 * `wp_setup_nav_menu_item()`'s `attr_title`: post_excerpt through the
+	 * nav_menu_attr_title filters, of which esc_html is the rewriting one.
+	 *
+	 * @param string $excerpt The stored post_excerpt.
+	 *
+	 * @return string The derived tooltip.
+	 */
+	private static function derivedAttrTitle( string $excerpt ): string {
+		return str_replace( '&', '&amp;', $excerpt );
+	}
+
+	/**
+	 * One menu item row whose STORED COLUMNS AND DERIVED PROPERTIES DISAGREE.
+	 *
+	 * That disagreement is the whole fixture. `wp_setup_nav_menu_item()` decorates
+	 * the post with `title`, `description`, and `attr_title` computed FROM the
+	 * columns rather than equal to them, and a fixture where the two happen to
+	 * match cannot tell a snapshot that reads the columns apart from one that reads
+	 * the rendering — which is exactly the shape that let a 250-word description
+	 * come back as 201 words and `Home & Co` come back as `Home &#038; Co`.
+	 *
+	 * @param int $id The item identifier.
+	 *
+	 * @return stdClass The row.
+	 */
 	private function makeItem( int $id ): stdClass {
-		$item                   = new stdClass();
-		$item->ID               = $id;
-		$item->post_type        = MenuFields::ITEM_POST_TYPE;
-		$item->post_status      = 'publish';
-		$item->title            = 'Products';
+		$item              = new stdClass();
+		$item->ID          = $id;
+		$item->post_type   = MenuFields::ITEM_POST_TYPE;
+		$item->post_status = 'publish';
+
+		$item->post_title   = 'Products & More';
+		$item->post_content = self::storedDescription();
+		$item->post_excerpt = 'Tips & tricks';
+
+		$item->title       = self::derivedTitle( $item->post_title );
+		$item->description = self::derivedDescription( $item->post_content );
+		$item->attr_title  = self::derivedAttrTitle( $item->post_excerpt );
+
 		$item->url              = 'https://example.com/products';
 		$item->type             = 'post_type';
 		$item->object           = 'page';
@@ -132,8 +211,6 @@ final class MenuTargetTest extends TestCase {
 		$item->menu_item_parent = 7;
 		$item->menu_order       = 3;
 		$item->target           = '_blank';
-		$item->attr_title       = 'Our products';
-		$item->description      = 'Everything we sell';
 		$item->xfn              = 'me';
 		$item->classes          = [ 'nav-cta', 'is--loud' ];
 
@@ -237,7 +314,7 @@ final class MenuTargetTest extends TestCase {
 		$this->assertSame( 'menu-item:400', $state->targetKey );
 		$this->assertTrue( $state->exists );
 		$this->assertSame( 400, $state->fields['id'] );
-		$this->assertSame( 'Products', $state->fields['title'] );
+		$this->assertSame( 'Products &#038; More', $state->fields['title'] );
 		$this->assertSame( [ 'nav-cta', 'is--loud' ], $state->fields['classes'] );
 	}
 
@@ -306,7 +383,7 @@ final class MenuTargetTest extends TestCase {
 		$state = $this->targets->verifyRead( 'menu-item:400', 'corr-target-1' );
 
 		$this->assertSame( 'menu-item:400', $state->targetKey );
-		$this->assertSame( 'Products', $state->fields['title'] );
+		$this->assertSame( 'Products &#038; More', $state->fields['title'] );
 	}
 
 	public function test_the_verification_read_refuses_a_key_that_is_not_an_item_key(): void {
@@ -334,8 +411,55 @@ final class MenuTargetTest extends TestCase {
 		$this->assertSame( 'publish', $snapshot['menu-item-status'] );
 		$this->assertSame( 7, $snapshot['menu-item-parent-id'] );
 		$this->assertSame( '_blank', $snapshot['menu-item-target'] );
-		$this->assertSame( 'Our products', $snapshot['menu-item-attr-title'] );
 		$this->assertSame( [], $this->callOrder, 'The snapshot must write nothing.' );
+	}
+
+	/**
+	 * THE LOAD-BEARING TEST of the snapshot's SOURCE.
+	 *
+	 * `wp_setup_nav_menu_item()` hands over a row whose `title`, `description`,
+	 * and `attr_title` are DERIVED from the stored columns, not equal to them.
+	 * Anything this snapshot records is replayed into `wp_update_nav_menu_item()`
+	 * by restoreItem() and is the merge base MenuItemUpdate writes from, so
+	 * recording the derived values writes the rendering back over the source:
+	 * a 250-word description stored back as 200, a tooltip stored back as its
+	 * escaped form, and a title texturized once more on every write.
+	 *
+	 * Each of the three is asserted separately, because sourcing two of the
+	 * three correctly is still a data-loss bug.
+	 */
+	public function test_the_snapshot_records_the_stored_columns_not_the_derived_display_values(): void {
+		$snapshot = (array) $this->targets->snapshotItem( 400 );
+
+		$this->assertSame( 'Products & More', $snapshot['menu-item-title'] );
+		$this->assertSame( self::storedDescription(), $snapshot['menu-item-description'] );
+		$this->assertSame( 'Tips & tricks', $snapshot['menu-item-attr-title'] );
+
+		$this->assertNotSame( $this->items[400]->title, $snapshot['menu-item-title'] );
+		$this->assertNotSame( $this->items[400]->description, $snapshot['menu-item-description'] );
+		$this->assertNotSame( $this->items[400]->attr_title, $snapshot['menu-item-attr-title'] );
+	}
+
+	/**
+	 * A draft menu item must snapshot as a draft.
+	 *
+	 * The recorded status is replayed verbatim, and `wp_update_nav_menu_item()`
+	 * resolves anything other than 'publish' to 'draft'. A hardcoded 'publish'
+	 * therefore does not merely mis-record the field: it PUBLISHES an unfinished
+	 * item to the live site as a side effect of an update, or of a rollback that
+	 * was asked to put the site back the way it was.
+	 */
+	public function test_the_snapshot_records_a_draft_item_as_a_draft(): void {
+		$this->items[400]->post_status = 'draft';
+
+		$snapshot = (array) $this->targets->snapshotItem( 400 );
+
+		$this->assertSame( 'draft', $snapshot['menu-item-status'] );
+
+		$this->targets->restoreItem( $snapshot );
+
+		$this->assertSame( 'draft', $this->written[0]['menu-item-status'] );
+		$this->assertSame( 'draft', $this->items[400]->post_status );
 	}
 
 	public function test_the_snapshot_is_identical_on_a_second_call(): void {
@@ -357,17 +481,25 @@ final class MenuTargetTest extends TestCase {
 
 		// The item drifts: every recorded field is now wrong, including the two
 		// that a `?? ''` gate would silently reset rather than restore.
-		$this->items[400]->title      = 'Renamed';
-		$this->items[400]->attr_title = '';
-		$this->items[400]->classes    = [];
+		$this->items[400]->post_title   = 'Renamed';
+		$this->items[400]->post_excerpt = '';
+		$this->items[400]->post_content = '';
+		$this->items[400]->classes      = [];
 
 		$restored = $this->targets->restoreItem( $snapshot );
 
 		$this->assertSame( 'menu-item:400', $restored );
-		$this->assertSame( 'Products', $this->items[400]->title );
-		$this->assertSame( 'Our products', $this->items[400]->attr_title );
+		$this->assertSame( 'Products & More', $this->items[400]->post_title );
+		$this->assertSame( 'Tips & tricks', $this->items[400]->post_excerpt );
+		$this->assertSame( self::storedDescription(), $this->items[400]->post_content );
 		$this->assertSame( [ 'nav-cta', 'is--loud' ], $this->items[400]->classes );
 		$this->assertSame( 'publish', $this->written[0]['menu-item-status'] );
+
+		// A RESTORE IS A FIXED POINT, and this is where a snapshot sourced from
+		// the derived properties gives itself away: re-snapshotting the restored
+		// item would answer the RENDERING, so a second round trip would truncate
+		// the description again and texturize the title again.
+		$this->assertSame( $snapshot, (array) $this->targets->snapshotItem( 400 ) );
 	}
 
 	/**

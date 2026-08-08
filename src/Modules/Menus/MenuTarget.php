@@ -52,10 +52,12 @@ final class MenuTarget {
 	 * the write mechanism is wp_update_post() and an omitted column is genuinely
 	 * left alone.
 	 *
-	 * `menu-item-status` is present and is always 'publish'. A nav menu item is
-	 * a post, and restoring one without a status would leave
+	 * `menu-item-status` is present and carries the item's OWN stored status. A
+	 * nav menu item is a post, and restoring one without a status would leave
 	 * wp_update_nav_menu_item() to resolve '' — the same collapse that nearly
-	 * unpublished a live post in the core block.
+	 * unpublished a live post in the core block. Recording a hardcoded 'publish'
+	 * is the opposite failure: it publishes a draft item as a side effect of an
+	 * update or a rollback that never claimed to touch its visibility.
 	 *
 	 * @var string[]
 	 */
@@ -306,6 +308,25 @@ final class MenuTarget {
 	 * restoreItem() replays, so a field missing here is a field a rollback
 	 * silently resets rather than restores.
 	 *
+	 * FOUR VALUES COME FROM THE STORED COLUMNS, NOT FROM THE ROW AS
+	 * `wp_setup_nav_menu_item()` HANDS IT OVER, which is the same correction
+	 * MenuItemsReorder::item_args() makes and for the same reason. That call
+	 * DECORATES the post with display properties that are not the columns:
+	 * `description` is `wp_trim_words( post_content, 200 )`, `attr_title` is a
+	 * filtered `post_excerpt`, and `title` is the LINKED POST's title for a
+	 * post_type item, run through the_title filters that turn `&` into `&#038;`.
+	 * This snapshot is replayed into `wp_update_nav_menu_item()` by
+	 * restoreItem() and is the merge base MenuItemUpdate writes from, so
+	 * recording the derived values would write the RENDERING back over the
+	 * source: a long description truncated to 200 words, a tooltip replaced by
+	 * its filtered form, and a title texturized a little further on every write
+	 * — which also means the same request applied twice never converges.
+	 *
+	 * `menu-item-url` is the one value that stays derived, because no column
+	 * holds it. For a custom link the derived value IS the stored meta, so it
+	 * round-trips exactly; for a post_type or taxonomy item WordPress recomputes
+	 * the address on every read and never consults the stored meta.
+	 *
 	 * SIDE-EFFECT FREE AND SAFE TO CALL TWICE: it reads the item and the term
 	 * relationship and writes nothing. The change engine calls captureSnapshot()
 	 * once for preview eligibility and again at apply.
@@ -337,17 +358,17 @@ final class MenuTarget {
 		$snapshot = [
 			'item_id'               => $item_id,
 			'menu_id'               => $menu_id,
-			'menu-item-attr-title'  => (string) ( $item->attr_title ?? '' ),
+			'menu-item-attr-title'  => (string) ( $item->post_excerpt ?? '' ),
 			'menu-item-classes'     => is_array( $classes ) ? implode( ' ', array_map( 'strval', $classes ) ) : '',
 			'menu-item-db-id'       => $item_id,
-			'menu-item-description' => (string) ( $item->description ?? '' ),
+			'menu-item-description' => (string) ( $item->post_content ?? '' ),
 			'menu-item-object'      => (string) ( $item->object ?? '' ),
 			'menu-item-object-id'   => (int) ( $item->object_id ?? 0 ),
 			'menu-item-parent-id'   => (int) ( $item->menu_item_parent ?? 0 ),
 			'menu-item-position'    => (int) ( $item->menu_order ?? 0 ),
-			'menu-item-status'      => 'publish',
+			'menu-item-status'      => (string) ( $item->post_status ?? 'publish' ),
 			'menu-item-target'      => (string) ( $item->target ?? '' ),
-			'menu-item-title'       => (string) ( $item->title ?? '' ),
+			'menu-item-title'       => (string) ( $item->post_title ?? '' ),
 			'menu-item-type'        => (string) ( $item->type ?? '' ),
 			'menu-item-url'         => (string) ( $item->url ?? '' ),
 			'menu-item-xfn'         => (string) ( $item->xfn ?? '' ),

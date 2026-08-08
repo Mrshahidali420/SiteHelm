@@ -348,7 +348,7 @@ final class MenuItemsReorderTest extends TestCase {
 	 * one call.
 	 *
 	 * Mutation that breaks this: dropping `menu-item-position` from the argument
-	 * set MenuItemsReorder::item_args() builds.
+	 * set MenuArrangement::itemArgs() builds.
 	 */
 	public function test_it_writes_the_new_position_for_every_named_sibling(): void {
 		$fields = $this->apply(
@@ -1266,7 +1266,7 @@ final class MenuItemsReorderTest extends TestCase {
 		} catch ( OperationException $e ) {
 			$this->assertSame( ErrorCode::ExecutionFailed, $e->errorCode );
 			$this->assertSame(
-				'WordPress stored a different menu order than the recorded snapshot held.',
+				'Every recorded menu item was written, but WordPress stored a different order than the recorded snapshot held.',
 				$e->getMessage()
 			);
 			$this->assertSame(
@@ -1281,9 +1281,115 @@ final class MenuItemsReorderTest extends TestCase {
 	}
 
 	/**
+	 * A RECORDED POSITION OF 0 IS RESTORABLE, and reporting it as a failed
+	 * rollback is worse than useless: the refusal is thrown AFTER every row has
+	 * been written, so the operator is told their rollback did not land when in
+	 * fact it did.
+	 *
+	 * `wp_update_nav_menu_item()` treats 0 as "unset" and substitutes the menu's
+	 * item count plus one, so a recorded 0 can never read back as 0. The recorded
+	 * value delegates the choice of position to WordPress, so whatever WordPress
+	 * chose IS the restored state and there is nothing for the verification to
+	 * compare. The stub below reproduces core's substitution, which the module's
+	 * other stub deliberately does not.
+	 *
+	 * Mutation that breaks this: dropping the `0 !== $target['position']`
+	 * exemption from MenuItemsReorder::assert_restored().
+	 */
+	public function test_a_recorded_zero_position_restores_rather_than_reporting_a_failed_rollback(): void {
+		Functions\when( 'wp_update_nav_menu_item' )->alias(
+			function ( int $menu_id, int $item_id, array $args ): mixed {
+				$this->written[] = [
+					'menu' => $menu_id,
+					'item' => $item_id,
+					'args' => $args,
+				];
+
+				$rows     = is_array( $this->items ) ? $this->items : [];
+				$position = (int) $args['menu-item-position'];
+
+				// Core's documented substitution for an unset position.
+				if ( 0 === $position ) {
+					$position = count( $rows ) + 1;
+				}
+
+				foreach ( $rows as $row ) {
+					if ( (int) $row->ID === $item_id ) {
+						$row->menu_item_parent = (int) $args['menu-item-parent-id'];
+						$row->menu_order       = $position;
+					}
+				}
+
+				return $item_id;
+			}
+		);
+
+		$key = $this->operation->restore(
+			[
+				'menu_id' => 5,
+				'items'   => [
+					[
+						'id'       => 13,
+						'parent'   => 0,
+						'position' => 0,
+					],
+				],
+			],
+			$this->makeContext()
+		);
+
+		$this->assertSame( 'menu:5', $key );
+		$this->assertSame( 0, (int) $this->items[2]->menu_item_parent );
+		$this->assertSame( 6, (int) $this->items[2]->menu_order );
+	}
+
+	/**
+	 * The parent is still compared for an item whose recorded position is 0 — the
+	 * exemption above covers the position only, because a recorded parent of 0 is
+	 * honoured literally as "top level" rather than substituted.
+	 *
+	 * Mutation that breaks this: widening the exemption to skip the whole row
+	 * when the recorded position is 0.
+	 */
+	public function test_a_recorded_zero_position_still_verifies_the_parent(): void {
+		Functions\when( 'wp_update_nav_menu_item' )->alias(
+			function ( int $menu_id, int $item_id, array $args ): mixed {
+				$this->written[] = [
+					'menu' => $menu_id,
+					'item' => $item_id,
+					'args' => $args,
+				];
+
+				// A filter that swallowed the parent but stored the row.
+				return $item_id;
+			}
+		);
+
+		try {
+			$this->operation->restore(
+				[
+					'menu_id' => 5,
+					'items'   => [
+						[
+							'id'       => 13,
+							'parent'   => 0,
+							'position' => 0,
+						],
+					],
+				],
+				$this->makeContext()
+			);
+			$this->fail( 'A parent that did not land must still be reported.' );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::ExecutionFailed, $e->errorCode );
+			$this->assertSame( [ 'menu item 1 of 1 restored' ], $e->completedSteps );
+		}
+	}
+
+	/**
 	 * A menu that holds no items at all — wp_get_nav_menu_items() answering
 	 * false rather than an array — is the same "cannot be put back" refusal as
-	 * a menu missing one recorded item, reached through item_rows()'s own
+	 * a menu missing one recorded item, reached through MenuArrangement::itemRows()'s own
 	 * defence against a non-array result.
 	 */
 	public function test_a_restore_refuses_when_the_menu_holds_no_items_at_all(): void {
@@ -1457,7 +1563,7 @@ final class MenuItemsReorderTest extends TestCase {
 	 * are dropped rather than projected.
 	 *
 	 * Mutation that breaks this: dropping the `> 0` filter from
-	 * MenuItemsReorder::item_rows().
+	 * MenuArrangement::itemRows().
 	 */
 	public function test_a_row_without_an_identifier_is_dropped_from_the_projection(): void {
 		$ghost               = new stdClass();
@@ -1472,10 +1578,10 @@ final class MenuItemsReorderTest extends TestCase {
 
 	/**
 	 * A target key without the menu prefix names no menu at all, and
-	 * menu_id_from_key() answers null before any lookup is attempted.
+	 * MenuTarget::menuIdFromKey() answers null before any lookup is attempted.
 	 *
 	 * Mutation that breaks this: dropping the `str_starts_with()` guard from
-	 * MenuItemsReorder::menu_id_from_key().
+	 * MenuTarget::id_from_key().
 	 */
 	public function test_read_back_refuses_a_key_with_no_menu_prefix(): void {
 		// The tail past index 5 ("5") is a real, resolvable menu id on
@@ -1484,6 +1590,33 @@ final class MenuItemsReorderTest extends TestCase {
 		try {
 			$this->operation->readBack( 'abcde5', $this->makeContext() );
 			$this->fail( 'A key with no menu prefix must fail verification.' );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::VerificationFailed, $e->errorCode );
+		}
+	}
+
+	/**
+	 * THE READ-BACK MUST RESOLVE BY TERM ID, never through the id/slug/name key
+	 * resolver. `wp_get_nav_menu_object()` tries the term lookup, then a SLUG
+	 * lookup, then a NAME lookup — so on a site where some other menu carries the
+	 * bare-number slug "5", a write to menu 5 whose term has since gone would
+	 * verify against that other menu and report ITS order as the written state.
+	 *
+	 * Mutation that breaks this: dropping the `term_id` comparison from
+	 * MenuItemsReorder::menu_by_id().
+	 */
+	public function test_read_back_refuses_a_menu_that_only_a_slug_lookup_answers(): void {
+		$shadow = $this->makeMenu( 6, 'Footer', '5' );
+
+		// Core's own fallback chain: the term lookup for 5 finds nothing, and the
+		// slug lookup for "5" finds a DIFFERENT menu.
+		Functions\when( 'wp_get_nav_menu_object' )->alias(
+			static fn( mixed $key ): mixed => '5' === (string) $key ? $shadow : false
+		);
+
+		try {
+			$this->operation->readBack( 'menu:5', $this->makeContext() );
+			$this->fail( 'A menu found only by its slug must not be accepted as the written one.' );
 		} catch ( OperationException $e ) {
 			$this->assertSame( ErrorCode::VerificationFailed, $e->errorCode );
 		}
