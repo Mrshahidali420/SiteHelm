@@ -516,6 +516,26 @@ final class MediaFieldsTest extends TestCase {
 	}
 
 	/**
+	 * A stored option holding no string at all is not a configuration.
+	 *
+	 * Coercing its members instead of dropping them would produce a non-empty
+	 * list of nonsense, which then counts as an operator override and replaces
+	 * the built-in default — and because nonsense intersects nothing the site
+	 * permits, the allowlist collapses to empty and every upload is refused.
+	 * Dropping the members leaves the option effectively unset, which is what a
+	 * garbage value means.
+	 */
+	public function test_an_override_of_only_non_string_entries_falls_back_to_the_built_in_default(): void {
+		$this->stubWordPress();
+		$this->options[ MediaFields::MIME_ALLOWLIST_OPTION ] = [ 123, true ];
+
+		$this->assertSame(
+			[ 'image/jpeg', 'image/png', 'image/gif', 'image/webp' ],
+			$this->fields->mimeAllowlist()
+		);
+	}
+
+	/**
 	 * A site whose get_allowed_mime_types() returns nothing usable permits no
 	 * upload at all. Failing closed here is the point.
 	 */
