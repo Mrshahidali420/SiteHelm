@@ -102,9 +102,11 @@ final class MenusModule implements IntegrationModule {
 	 * @param CapabilityRegistry $registry The capability registry.
 	 */
 	public function register( CapabilityRegistry $registry ): void {
-		$fields = new MenuFields();
+		$fields  = new MenuFields();
+		$targets = new MenuTarget( $fields );
 
 		$registry->register( MenuList::definition(), [ new MenuList(), 'handle' ] );
 		$registry->register( MenuGet::definition(), [ new MenuGet( $fields ), 'handle' ] );
+		$registry->registerWrite( MenuItemCreate::definition(), new MenuItemCreate( $fields, $targets ) );
 	}
 }

@@ -55,6 +55,7 @@ final class MenusDefinitionInvariantsTest extends TestCase {
 	private const OPERATION_IDS = [
 		'menu-list',
 		'menu-get',
+		'menu-item-create',
 	];
 
 	/**
@@ -65,7 +66,7 @@ final class MenusDefinitionInvariantsTest extends TestCase {
 	/**
 	 * The menus module's write count. Bumped by each later write task.
 	 */
-	private const MENUS_WRITE_COUNT = 0;
+	private const MENUS_WRITE_COUNT = 1;
 
 	/**
 	 * Every menus operation requires the one capability WordPress gates menu

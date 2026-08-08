@@ -1,9 +1,10 @@
 {
     "operationIds": [
         "menu-list",
-        "menu-get"
+        "menu-get",
+        "menu-item-create"
     ],
-    "operationCount": 2,
+    "operationCount": 3,
     "definitions": {
         "menu-list": {
             "inputSchema": {
@@ -191,6 +192,126 @@
                         "additionalProperties": false
                     }
                 }
+            }
+        },
+        "menu-item-create": {
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "menu": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "Identifier, slug, or name of the menu the item is added to."
+                    },
+                    "type": {
+                        "type": "string",
+                        "description": "What the item points at: \"custom\" for a link typed by hand, a post type such as \"page\" or \"post\", or \"category\", \"tag\", or \"taxonomy\" for an archive. Defaults to \"custom\"."
+                    },
+                    "object": {
+                        "type": "string",
+                        "description": "The concrete post type or taxonomy name, required only when \"type\" is the generic \"post_type\", \"taxonomy\", or \"term\"."
+                    },
+                    "objectId": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "Identifier of the post or term the item points at. Not used by custom links."
+                    },
+                    "title": {
+                        "type": "string",
+                        "maxLength": 65535,
+                        "description": "The label shown in the menu. Required for a custom link; defaults to the content's own title otherwise."
+                    },
+                    "url": {
+                        "type": "string",
+                        "maxLength": 65535,
+                        "description": "The web address a custom link points at. Ignored for every other item type, which use the content's own address."
+                    },
+                    "parent": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "Identifier of the menu item this one sits beneath. Use 0, the default, for a top-level item."
+                    },
+                    "position": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "Where the item sits among its siblings. Defaults to the end of the menu."
+                    },
+                    "target": {
+                        "type": "string",
+                        "enum": [
+                            "",
+                            "_blank"
+                        ],
+                        "description": "Send \"_blank\" to open the item in a new browser tab, or an empty string, the default, to open it in the same tab."
+                    },
+                    "classes": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "description": "CSS class names applied to the item."
+                    },
+                    "description": {
+                        "type": "string",
+                        "maxLength": 65535,
+                        "description": "The short description some themes show beneath the item label."
+                    },
+                    "xfn": {
+                        "type": "string",
+                        "maxLength": 65535,
+                        "description": "The XFN relationship value recorded on the link."
+                    }
+                },
+                "required": [
+                    "menu"
+                ],
+                "additionalProperties": false
+            },
+            "outputSchema": {
+                "type": "object",
+                "oneOf": [
+                    {
+                        "title": "Plan phase",
+                        "type": "object",
+                        "properties": {
+                            "plan": {
+                                "type": "object",
+                                "description": "The change plan to approve, including its plan token."
+                            }
+                        },
+                        "required": [
+                            "plan"
+                        ],
+                        "additionalProperties": false
+                    },
+                    {
+                        "title": "Apply phase",
+                        "type": "object",
+                        "properties": {
+                            "target": {
+                                "type": "string",
+                                "description": "The concrete target that was written."
+                            },
+                            "changed": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                },
+                                "description": "The fields the approved plan changed."
+                            },
+                            "state": {
+                                "type": "object",
+                                "description": "The verified persisted state of the target."
+                            }
+                        },
+                        "required": [
+                            "target",
+                            "changed",
+                            "state"
+                        ],
+                        "additionalProperties": false
+                    }
+                ]
             }
         }
     }

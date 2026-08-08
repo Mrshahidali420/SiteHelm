@@ -1,0 +1,519 @@
+<?php
+/**
+ * Shared target resolution for the menus write operations.
+ *
+ * @package SiteHelm
+ */
+
+declare(strict_types=1);
+
+namespace SiteHelm\Modules\Menus;
+
+use SiteHelm\Change\TargetState;
+use SiteHelm\Contracts\ErrorCode;
+use SiteHelm\Contracts\OperationContext;
+use SiteHelm\Contracts\OperationException;
+
+/**
+ * The things every menus write does identically: name a target, resolve one,
+ * re-read it for verification, and record or replay a whole menu item.
+ *
+ * Extracted for the reason MediaTarget was: four writes land in this module and
+ * each would otherwise carry its own copy of the target-key spelling and the
+ * restore field list, and the copy that drifts is the one deciding which values
+ * a rollback silently fails to restore.
+ *
+ * WordPress is not loaded in unit tests, so every core answer is guarded on its
+ * SHAPE rather than on `instanceof WP_Term` / `instanceof WP_Post`, exactly as
+ * MenuFields does. `(int)` on a WP_Error is a fatal, and a filter can substitute
+ * one on a site that is otherwise healthy.
+ *
+ * @package SiteHelm
+ */
+final class MenuTarget {
+
+	/**
+	 * The one capability WordPress gates menu administration on.
+	 *
+	 * Checked here as well as declared on every menus definition, because a
+	 * definition's requiredCapabilities is the gateway's gate and this is the
+	 * module's own: a write reached through any other path must still refuse.
+	 */
+	public const REQUIRED_CAPABILITY = 'edit_theme_options';
+
+	/**
+	 * Every `wp_update_nav_menu_item()` field a menu item snapshot records.
+	 *
+	 * THE WHOLE SET, not the subset a given write touches, because
+	 * `wp_update_nav_menu_item()` OVERWRITES every field it is handed and
+	 * DEFAULTS every field it is not. An unrecorded field is therefore not an
+	 * untouched field; it is a field the restore resets to core's default. That
+	 * is the exact difference between this list and MediaTarget's three, where
+	 * the write mechanism is wp_update_post() and an omitted column is genuinely
+	 * left alone.
+	 *
+	 * `menu-item-status` is present and is always 'publish'. A nav menu item is
+	 * a post, and restoring one without a status would leave
+	 * wp_update_nav_menu_item() to resolve '' — the same collapse that nearly
+	 * unpublished a live post in the core block.
+	 *
+	 * @var string[]
+	 */
+	public const RESTORABLE_ITEM_FIELDS = [
+		'menu-item-attr-title',
+		'menu-item-classes',
+		'menu-item-db-id',
+		'menu-item-description',
+		'menu-item-object',
+		'menu-item-object-id',
+		'menu-item-parent-id',
+		'menu-item-position',
+		'menu-item-status',
+		'menu-item-target',
+		'menu-item-title',
+		'menu-item-type',
+		'menu-item-url',
+		'menu-item-xfn',
+	];
+
+	/**
+	 * The recorded fields that are integers rather than strings.
+	 *
+	 * A separate list rather than a flag on each entry above, for the reason
+	 * MediaTarget keeps its parent field apart from its text fields: the CAST is
+	 * what decides whether a restore is correct. `(int) null` is 0, and 0 is the
+	 * recorded value that MEANS "top level" for a parent and "not an object" for
+	 * an object id, so these are gated on is_numeric() as well as on presence.
+	 *
+	 * @var string[]
+	 */
+	public const INTEGER_ITEM_FIELDS = [
+		'menu-item-db-id',
+		'menu-item-object-id',
+		'menu-item-parent-id',
+		'menu-item-position',
+	];
+
+	/**
+	 * Constructs the resolver.
+	 *
+	 * @param MenuFields $fields The normalized menu projection and validators.
+	 */
+	public function __construct( private readonly MenuFields $fields ) {
+	}
+
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- The target-key vocabulary is camelCase across every module.
+	/**
+	 * The stable target key naming one menu.
+	 *
+	 * @param int $menu_id The menu's term identifier.
+	 *
+	 * @return string The target key.
+	 */
+	public static function menuTargetKey( int $menu_id ): string {
+		return MenuFields::MENU_PREFIX . $menu_id;
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- The target-key vocabulary is camelCase across every module.
+	/**
+	 * The stable target key naming one menu item.
+	 *
+	 * @param int $item_id The menu item's post identifier.
+	 *
+	 * @return string The target key.
+	 */
+	public static function itemTargetKey( int $item_id ): string {
+		return MenuFields::ITEM_PREFIX . $item_id;
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- The target-key vocabulary is camelCase across every module.
+	// phpcs:disable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase -- $targetKey matches the WriteOperation contract.
+	/**
+	 * The menu identifier one target key names, or null when it names none.
+	 *
+	 * The digit test is what keeps this from answering 0 for a malformed key.
+	 * Zero is not a menu; handing it to wp_update_nav_menu_item() as one asks
+	 * WordPress to CREATE a menu, so a key that cannot be parsed must answer
+	 * null and be refused rather than cast.
+	 *
+	 * @param string $targetKey The target key.
+	 *
+	 * @return int|null The menu identifier, or null.
+	 */
+	public static function menuIdFromKey( string $targetKey ): ?int {
+		return self::id_from_key( $targetKey, MenuFields::MENU_PREFIX );
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- The target-key vocabulary is camelCase across every module.
+	// phpcs:disable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase -- $targetKey matches the WriteOperation contract.
+	/**
+	 * The menu item identifier one target key names, or null when it names none.
+	 *
+	 * @param string $targetKey The target key.
+	 *
+	 * @return int|null The item identifier, or null.
+	 */
+	public static function itemIdFromKey( string $targetKey ): ?int {
+		return self::id_from_key( $targetKey, MenuFields::ITEM_PREFIX );
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+
+	// phpcs:disable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase -- $targetKey matches the WriteOperation contract.
+	/**
+	 * The positive identifier one prefixed target key carries.
+	 *
+	 * @param string $targetKey The target key.
+	 * @param string $prefix    The expected prefix.
+	 *
+	 * @return int|null The identifier, or null.
+	 */
+	private static function id_from_key( string $targetKey, string $prefix ): ?int {
+		if ( ! str_starts_with( $targetKey, $prefix ) ) {
+			return null;
+		}
+
+		$suffix = substr( $targetKey, strlen( $prefix ) );
+
+		return ctype_digit( $suffix ) && (int) $suffix > 0 ? (int) $suffix : null;
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- The contract's own camelCase name.
+	// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The messages are literals written for end users.
+	/**
+	 * Resolves the menu one caller-supplied key names.
+	 *
+	 * THE CAPABILITY IS CHECKED FIRST, and that order is the disclosure control.
+	 * `edit_theme_options` is a site-wide capability rather than a per-object
+	 * one, so testing it before the lookup means a caller who does not hold it
+	 * learns nothing about which menus exist — every key answers the same
+	 * refusal. Testing it second would turn the operation into a probe.
+	 *
+	 * @param string           $key     The menu id, slug, or name.
+	 * @param OperationContext $context The request context.
+	 *
+	 * @return TargetState The resolved state, with no fields.
+	 *
+	 * @throws OperationException With ErrorCode::Forbidden or
+	 *                           ErrorCode::TargetNotFound.
+	 */
+	public function resolveMenu( string $key, OperationContext $context ): TargetState {
+		$this->assert_may_administer( $context );
+
+		$menu = $this->fields->menuFromKey( $key );
+
+		if ( null === $menu ) {
+			throw new OperationException(
+				ErrorCode::TargetNotFound,
+				'No navigation menu on this site matches the supplied menu identifier.',
+				'List the site\'s menus and retry with an identifier, slug, or name that one of them carries.'
+			);
+		}
+
+		// NO FIELDS, deliberately. What a create is about to produce is a menu
+		// ITEM that does not exist yet, so there is no prior field map for a
+		// preview to diff against; the key exists to bind the approved plan to
+		// this menu, which is what stops a plan approved for the primary menu
+		// from applying to the footer one.
+		return new TargetState( self::menuTargetKey( (int) $menu->term_id ), true, [] );
+	}
+	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- The contract's own camelCase name.
+	// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The message is a literal written for end users.
+	/**
+	 * Resolves one existing menu item.
+	 *
+	 * @param int              $item_id The menu item post identifier.
+	 * @param OperationContext $context The request context.
+	 *
+	 * @return TargetState The resolved state.
+	 *
+	 * @throws OperationException With ErrorCode::Forbidden or
+	 *                           ErrorCode::TargetNotFound.
+	 */
+	public function resolveItem( int $item_id, OperationContext $context ): TargetState {
+		$this->assert_may_administer( $context );
+
+		$item = $this->item_object( $item_id );
+
+		if ( null === $item ) {
+			throw new OperationException(
+				ErrorCode::TargetNotFound,
+				'No navigation menu item on this site matches the supplied item identifier.',
+				'Read the menu that should contain the item and retry with an identifier it lists.'
+			);
+		}
+
+		return new TargetState(
+			self::itemTargetKey( $item_id ),
+			true,
+			$this->fields->normalizeItem( $item )
+		);
+	}
+	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- The contract's own camelCase name.
+	// phpcs:disable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase -- $targetKey and $correlationId match the WriteOperation and OperationContext contracts.
+	// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The message is a literal written for end users.
+	/**
+	 * Re-reads a menu item after a write so the engine can verify it.
+	 *
+	 * The post cache is invalidated first, which is both correct for
+	 * verification and the module's declared cache-cleanup obligation.
+	 *
+	 * @param string $targetKey     The concrete item target key.
+	 * @param string $correlationId The request correlation identifier.
+	 *
+	 * @return TargetState The persisted state.
+	 *
+	 * @throws OperationException With ErrorCode::VerificationFailed.
+	 */
+	public function verifyRead( string $targetKey, string $correlationId ): TargetState {
+		$item_id = self::itemIdFromKey( $targetKey );
+		$item    = null === $item_id ? null : $this->item_object( $item_id, true );
+
+		if ( null === $item ) {
+			throw new OperationException(
+				ErrorCode::VerificationFailed,
+				'The menu item could not be re-read after the write, so the result cannot be verified.',
+				sprintf(
+					'Ask a site administrator to review the audit entry for correlation %s.',
+					$correlationId
+				)
+			);
+		}
+
+		return new TargetState( $targetKey, true, $this->fields->normalizeItem( $item ) );
+	}
+	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- The contract's own camelCase name.
+	/**
+	 * Records one menu item's WHOLE `wp_update_nav_menu_item()` field set.
+	 *
+	 * Every field, because that call overwrites what it is handed and defaults
+	 * what it is not — see RESTORABLE_ITEM_FIELDS. The recorded set is what
+	 * restoreItem() replays, so a field missing here is a field a rollback
+	 * silently resets rather than restores.
+	 *
+	 * SIDE-EFFECT FREE AND SAFE TO CALL TWICE: it reads the item and the term
+	 * relationship and writes nothing. The change engine calls captureSnapshot()
+	 * once for preview eligibility and again at apply.
+	 *
+	 * The key order is sorted, matching every other snapshot in the codebase:
+	 * the restore state is stored as canonical JSON, so a stable order keeps the
+	 * stored row identical for identical state.
+	 *
+	 * @param int $item_id The menu item post identifier.
+	 *
+	 * @return array<string, mixed>|null The restore state, or null when the id
+	 *                                   names no menu item in any menu.
+	 */
+	public function snapshotItem( int $item_id ): ?array {
+		$item = $this->item_object( $item_id );
+
+		if ( null === $item ) {
+			return null;
+		}
+
+		$menu_id = $this->fields->menuTermIdForItem( $item_id );
+
+		if ( null === $menu_id ) {
+			return null;
+		}
+
+		$classes = $item->classes ?? [];
+
+		$snapshot = [
+			'item_id'               => $item_id,
+			'menu_id'               => $menu_id,
+			'menu-item-attr-title'  => (string) ( $item->attr_title ?? '' ),
+			'menu-item-classes'     => is_array( $classes ) ? implode( ' ', array_map( 'strval', $classes ) ) : '',
+			'menu-item-db-id'       => $item_id,
+			'menu-item-description' => (string) ( $item->description ?? '' ),
+			'menu-item-object'      => (string) ( $item->object ?? '' ),
+			'menu-item-object-id'   => (int) ( $item->object_id ?? 0 ),
+			'menu-item-parent-id'   => (int) ( $item->menu_item_parent ?? 0 ),
+			'menu-item-position'    => (int) ( $item->menu_order ?? 0 ),
+			'menu-item-status'      => 'publish',
+			'menu-item-target'      => (string) ( $item->target ?? '' ),
+			'menu-item-title'       => (string) ( $item->title ?? '' ),
+			'menu-item-type'        => (string) ( $item->type ?? '' ),
+			'menu-item-url'         => (string) ( $item->url ?? '' ),
+			'menu-item-xfn'         => (string) ( $item->xfn ?? '' ),
+		];
+		ksort( $snapshot, SORT_STRING );
+
+		return $snapshot;
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- The contract's own camelCase name.
+	// phpcs:disable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase -- $restoreState matches the WriteOperation contract.
+	// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The messages are literals written for end users.
+	/**
+	 * Replays a recorded menu item field set back onto its item.
+	 *
+	 * EVERY FIELD IS GATED ON array_key_exists(), never on `??`. A recorded ''
+	 * means "set this back to empty" and an ABSENT key means "this state does
+	 * not describe that field"; `??` collapses those two into one and hands
+	 * wp_update_nav_menu_item() a value it will happily store. That collapse is
+	 * what nearly shipped in the core block, where an absent post_status became
+	 * '' and unpublished a live post while reporting the rollback verified.
+	 *
+	 * The data is slashed on the way in, because wp_update_nav_menu_item()
+	 * forwards to wp_insert_post(), which unslashes before storing — core's own
+	 * caller hands it the raw slashed request. An unslashed title holding a
+	 * quote is otherwise stored a character short.
+	 *
+	 * @param array<string, mixed> $restoreState The recorded restore state.
+	 *
+	 * @return string The restored item's target key.
+	 *
+	 * @throws OperationException With ErrorCode::RollbackUnavailable when the
+	 *                           state names no item, or
+	 *                           ErrorCode::ExecutionFailed when WordPress
+	 *                           refuses the replay.
+	 */
+	public function restoreItem( array $restoreState ): string {
+		$item_id = is_numeric( $restoreState['item_id'] ?? null ) ? (int) $restoreState['item_id'] : 0;
+		$menu_id = is_numeric( $restoreState['menu_id'] ?? null ) ? (int) $restoreState['menu_id'] : 0;
+
+		if ( $item_id <= 0 || $menu_id <= 0 ) {
+			throw new OperationException(
+				ErrorCode::RollbackUnavailable,
+				'The recorded snapshot does not identify a menu item and its menu, so it cannot be restored.',
+				'Restore the menu item under Appearance then Menus in the WordPress administration screens instead.'
+			);
+		}
+
+		$data = $this->restorable_fields( $restoreState );
+
+		if ( [] === $data ) {
+			throw new OperationException(
+				ErrorCode::RollbackUnavailable,
+				'The recorded snapshot describes none of the menu item\'s fields, so there is nothing to restore.',
+				'Restore the menu item under Appearance then Menus in the WordPress administration screens instead.'
+			);
+		}
+
+		$written = wp_update_nav_menu_item( $menu_id, $item_id, wp_slash( $data ) );
+
+		if ( is_wp_error( $written ) || 0 === (int) $written ) {
+			throw new OperationException(
+				ErrorCode::ExecutionFailed,
+				'WordPress refused to restore the recorded menu item.',
+				'Restore the menu item under Appearance then Menus in the WordPress administration screens instead.'
+			);
+		}
+
+		clean_post_cache( $item_id );
+
+		return self::itemTargetKey( $item_id );
+	}
+	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+
+	// phpcs:disable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase -- $restoreState matches the WriteOperation contract.
+	/**
+	 * The `wp_update_nav_menu_item()` fields one recorded state actually holds.
+	 *
+	 * @param array<string, mixed> $restoreState The recorded restore state.
+	 *
+	 * @return array<string, mixed> The fields to replay, cast to their column type.
+	 */
+	private function restorable_fields( array $restoreState ): array {
+		$data = [];
+
+		foreach ( self::RESTORABLE_ITEM_FIELDS as $field ) {
+			if ( ! array_key_exists( $field, $restoreState ) ) {
+				continue;
+			}
+
+			$value = $restoreState[ $field ];
+
+			if ( in_array( $field, self::INTEGER_ITEM_FIELDS, true ) ) {
+				if ( is_numeric( $value ) ) {
+					$data[ $field ] = (int) $value;
+				}
+
+				continue;
+			}
+
+			if ( is_scalar( $value ) ) {
+				$data[ $field ] = (string) $value;
+			}
+		}
+
+		return $data;
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+
+	// phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase -- $context->userId is the OperationContext contract's own property name.
+	// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The message is a literal written for end users.
+	/**
+	 * Refuses a caller who may not administer this site's navigation menus.
+	 *
+	 * @param OperationContext $context The request context.
+	 *
+	 * @throws OperationException With ErrorCode::Forbidden.
+	 */
+	private function assert_may_administer( OperationContext $context ): void {
+		if ( ! user_can( $context->userId, self::REQUIRED_CAPABILITY ) ) {
+			throw new OperationException(
+				ErrorCode::Forbidden,
+				'Your WordPress user may not administer this site\'s navigation menus.',
+				'Ask a site administrator to grant the ability to edit theme options, then retry.'
+			);
+		}
+	}
+	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+
+	/**
+	 * One menu item row, set up the way WordPress serves it, or null.
+	 *
+	 * THE `> 0` IDENTIFIER TEST IS NOT REDUNDANT with the is_nav_menu_item()
+	 * call above it. A `wp_setup_nav_menu_item` filter can substitute a row
+	 * carrying no `ID` — a plugin injecting a synthetic "Login" entry is the
+	 * common case — and 0 is simultaneously "absent" and the root-parent
+	 * sentinel, a conflation that produced an unbounded recursion in this module
+	 * already. Any code walking nav menu item rows outside
+	 * MenuFields::itemTree() has to apply the same filter, and this is it.
+	 *
+	 * @param int  $item_id The menu item post identifier.
+	 * @param bool $refresh Whether to invalidate the post cache first.
+	 *
+	 * @return object|null The set-up item row, or null.
+	 */
+	private function item_object( int $item_id, bool $refresh = false ): ?object {
+		if ( $item_id <= 0 || ! is_nav_menu_item( $item_id ) ) {
+			return null;
+		}
+
+		if ( $refresh ) {
+			clean_post_cache( $item_id );
+		}
+
+		$post = get_post( $item_id );
+
+		if ( ! is_object( $post ) ) {
+			return null;
+		}
+
+		$item = wp_setup_nav_menu_item( $post );
+
+		return is_object( $item ) && (int) ( $item->ID ?? 0 ) > 0 ? $item : null;
+	}
+}
