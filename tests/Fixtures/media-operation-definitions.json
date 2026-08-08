@@ -3,9 +3,10 @@
         "media-get",
         "media-list",
         "image-size-list",
-        "media-meta-update"
+        "media-meta-update",
+        "media-attach"
     ],
-    "operationCount": 4,
+    "operationCount": 5,
     "definitions": {
         "media-get": {
             "inputSchema": {
@@ -288,6 +289,74 @@
                 },
                 "required": [
                     "id"
+                ],
+                "additionalProperties": false
+            },
+            "outputSchema": {
+                "type": "object",
+                "oneOf": [
+                    {
+                        "title": "Plan phase",
+                        "type": "object",
+                        "properties": {
+                            "plan": {
+                                "type": "object",
+                                "description": "The change plan to approve, including its plan token."
+                            }
+                        },
+                        "required": [
+                            "plan"
+                        ],
+                        "additionalProperties": false
+                    },
+                    {
+                        "title": "Apply phase",
+                        "type": "object",
+                        "properties": {
+                            "target": {
+                                "type": "string",
+                                "description": "The concrete target that was written."
+                            },
+                            "changed": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                },
+                                "description": "The fields the approved plan changed."
+                            },
+                            "state": {
+                                "type": "object",
+                                "description": "The verified persisted state of the target."
+                            }
+                        },
+                        "required": [
+                            "target",
+                            "changed",
+                            "state"
+                        ],
+                        "additionalProperties": false
+                    }
+                ]
+            }
+        },
+        "media-attach": {
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "Identifier of the media library item being attached or detached."
+                    },
+                    "parent": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "Identifier of the content item to attach this media item to. Send 0 to detach it."
+                    }
+                },
+                "required": [
+                    "id",
+                    "parent"
                 ],
                 "additionalProperties": false
             },
