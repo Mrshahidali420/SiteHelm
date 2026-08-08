@@ -115,5 +115,10 @@ final class MediaModule implements IntegrationModule {
 			MediaMetaUpdate::definition(),
 			new MediaMetaUpdate( $fields, $targets )
 		);
+
+		$registry->registerWrite(
+			MediaAttach::definition(),
+			new MediaAttach( $fields, $targets )
+		);
 	}
 }
