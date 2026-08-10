@@ -18,6 +18,7 @@ use SiteHelm\Contracts\PreviewPolicy;
 use SiteHelm\Contracts\RollbackPolicy;
 use SiteHelm\Contracts\SnapshotPolicy;
 use SiteHelm\Modules\Elementor\ElementorElementAdd;
+use SiteHelm\Modules\Elementor\ElementorElementAddInput;
 use SiteHelm\Modules\Elementor\ElementorPropCoercion;
 use SiteHelm\Modules\Elementor\ElementorTreeDiff;
 use SiteHelm\Modules\Elementor\ElementorWriteFields;
@@ -129,7 +130,7 @@ final class ElementorElementAddTest extends TestCase {
 		);
 		$this->assertSame( [ 'document', 'elType' ], $schema['required'] );
 		$this->assertSame( 0, $schema['properties']['index']['minimum'] );
-		$this->assertSame( ElementorElementAdd::ALLOWED_EL_TYPES, $schema['properties']['elType']['enum'] );
+		$this->assertSame( ElementorElementAddInput::ALLOWED_EL_TYPES, $schema['properties']['elType']['enum'] );
 		$this->assertSame( [ 'string', 'null' ], $schema['properties']['parentElementId']['type'] );
 	}
 
@@ -326,15 +327,32 @@ final class ElementorElementAddTest extends TestCase {
 	 * Promising the slashed form the writer hands `update_post_meta()` would
 	 * promise a value no read can ever produce, and every correct write would
 	 * then verify as adjusted rather than as matching.
+	 *
+	 * THE SETTING VALUE CARRIES A QUOTE AND A BACKSLASH ON PURPOSE. `wp_slash()`
+	 * is the identity function on a string holding neither, so a fixture of plain
+	 * words would make the slashed and unslashed encodings the same byte string
+	 * and this assertion would hold whichever of the two `promise()` digested —
+	 * a test that cannot fail. With these two characters in the tree the encodings
+	 * genuinely differ, and digesting the slashed form fails here.
 	 */
 	public function test_the_promised_digest_is_taken_over_the_bytes_a_read_produces(): void {
 		$this->withElementor();
 		$this->storeRaw( (string) json_encode( $this->fixtureTree() ) );
 
-		$planned = $this->plan( $this->arguments( [ 'elType' => 'container' ] ) );
+		$planned = $this->plan(
+			$this->arguments(
+				[
+					'elType'   => 'container',
+					'settings' => [ 'title' => 'Our "best" services \\ everywhere' ],
+				]
+			)
+		);
 
+		$encoded = (string) json_encode( $planned->payload[ ElementorElementAdd::PAYLOAD_TREE ] );
+
+		$this->assertNotSame( $encoded, addslashes( $encoded ), 'The fixture must hold a character wp_slash() escapes, or this test cannot fail.' );
 		$this->assertSame(
-			hash( 'sha256', (string) json_encode( $planned->payload[ ElementorElementAdd::PAYLOAD_TREE ] ) ),
+			hash( 'sha256', $encoded ),
 			$planned->afterFields[ ElementorWriteFields::FIELD_DIGEST ]
 		);
 	}
@@ -538,9 +556,13 @@ final class ElementorElementAddTest extends TestCase {
 	}
 
 	/**
-	 * Settings sent as a list rather than as a map are refused: a list has no
+	 * Settings sent as a JSON list rather than as a map are refused: a list has no
 	 * setting names, and storing one would give the element settings keyed 0, 1,
 	 * 2 that Elementor reads as nothing at all.
+	 *
+	 * `container` IS THE CASE THAT MATTERS, because the widget-registry key check
+	 * is correctly skipped for a layout element — so if the list were not refused
+	 * here nothing further down would object to storing it.
 	 */
 	public function test_settings_sent_as_a_list_are_refused(): void {
 		$this->withElementor();
@@ -548,8 +570,36 @@ final class ElementorElementAddTest extends TestCase {
 
 		$this->assertRefusal(
 			ErrorCode::InvalidInput,
+			$this->arguments( [ 'elType' => 'container', 'settings' => [ 'a', 'b' ] ] )
+		);
+	}
+
+	/**
+	 * Settings sent as something that is not a set of values at all — a bare
+	 * string — are refused by the same guard's other arm.
+	 */
+	public function test_settings_sent_as_a_non_array_value_are_refused(): void {
+		$this->withElementor();
+		$this->storeRaw( (string) json_encode( $this->fixtureTree() ) );
+
+		$this->assertRefusal(
+			ErrorCode::InvalidInput,
 			$this->arguments( [ 'elType' => 'container', 'settings' => 'not-a-map' ] )
 		);
+	}
+
+	/**
+	 * The empty array stays accepted. It is how an empty settings map arrives once
+	 * the shared validator has decoded `{}`, and refusing it would refuse every
+	 * element that simply carries no settings of its own.
+	 */
+	public function test_an_empty_settings_map_is_accepted(): void {
+		$this->withElementor();
+		$this->storeRaw( (string) json_encode( $this->fixtureTree() ) );
+
+		$planned = $this->plan( $this->arguments( [ 'elType' => 'container', 'settings' => [] ] ) );
+
+		$this->assertSame( [], $planned->payload[ ElementorElementAddInput::INPUT_SETTINGS ] );
 	}
 
 	/**

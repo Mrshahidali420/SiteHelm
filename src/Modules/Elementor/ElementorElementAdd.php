@@ -45,9 +45,13 @@ use SiteHelm\Contracts\SnapshotPolicy;
  * that are all the same on both calls, and none of which is a counter this class
  * owns. The attempt tail and the collision walk belong to the mint.
  *
- * EVERY VALIDATION LIVES IN `planChange()` for the reason MenuItemCreate records:
- * a check moved into `applyChange()` would pass preview and refuse at apply,
- * which is the one outcome the preview contract exists to prevent.
+ * EVERY VALIDATION RUNS FROM `planChange()` for the reason MenuItemCreate
+ * records: a check moved into `applyChange()` would pass preview and refuse at
+ * apply, which is the one outcome the preview contract exists to prevent. The
+ * checks themselves live in `ElementorElementAddInput`, because `elType`,
+ * `widgetType`, `settings`, `index` and `parentElementId` are the element
+ * vocabulary the whole Elementor write block shares rather than this one
+ * operation's private arguments.
  *
  * THE GUARD ORDER IS capability, presence, target, input, and it is asserted by
  * one test per boundary. The first three belong to `ElementorWriteTarget` and
@@ -70,31 +74,6 @@ final class ElementorElementAdd implements WriteOperation {
 	public const OPERATION_ID = 'elementor-element-add';
 
 	/**
-	 * The input property naming the element the new one is placed inside.
-	 */
-	public const INPUT_PARENT_ELEMENT_ID = 'parentElementId';
-
-	/**
-	 * The input property naming the position among the destination's children.
-	 */
-	public const INPUT_INDEX = 'index';
-
-	/**
-	 * The input property naming the kind of element to add.
-	 */
-	public const INPUT_EL_TYPE = 'elType';
-
-	/**
-	 * The input property naming which widget to add.
-	 */
-	public const INPUT_WIDGET_TYPE = 'widgetType';
-
-	/**
-	 * The input property carrying the new element's settings.
-	 */
-	public const INPUT_SETTINGS = 'settings';
-
-	/**
 	 * The payload member carrying the identifier this plan minted.
 	 */
 	public const PAYLOAD_ELEMENT_ID = 'elementId';
@@ -108,39 +87,6 @@ final class ElementorElementAdd implements WriteOperation {
 	 * from the input a second time, through a second copy of the same logic.
 	 */
 	public const PAYLOAD_TREE = 'tree';
-
-	/**
-	 * The element kinds an Elementor document is built from.
-	 *
-	 * CLOSED, and closed deliberately. Elementor renders nothing at all for an
-	 * `elType` it does not know, so an unconstrained string would let an
-	 * unattended caller store an element that is present in the document, counted
-	 * by every total this operation promises, and invisible on the page — a write
-	 * that verifies and does nothing. `container` is the modern layout element and
-	 * the three older ones are what documents built before it still hold.
-	 *
-	 * @var string[]
-	 */
-	public const ALLOWED_EL_TYPES = [ 'container', 'section', 'column', 'widget' ];
-
-	/**
-	 * The `elType` that requires a widget type, and the only one that admits one.
-	 */
-	public const EL_TYPE_WIDGET = 'widget';
-
-	/**
-	 * The form a widget type name may take.
-	 *
-	 * The same character set `ElementorWriteFields::ELEMENT_ID_PATTERN` admits,
-	 * because a widget type name reaches Elementor's registry as a lookup key and
-	 * whitespace or a separator in one names nothing that could be registered.
-	 */
-	private const WIDGET_TYPE_PATTERN = '/^[A-Za-z0-9_-]{1,64}$/';
-
-	/**
-	 * The greatest number of characters a widget type name may have.
-	 */
-	private const WIDGET_TYPE_MAX_LENGTH = 64;
 
 	/**
 	 * The raw key holding a node's identifier.
@@ -164,14 +110,15 @@ final class ElementorElementAdd implements WriteOperation {
 	/**
 	 * Constructs the operation.
 	 *
-	 * @param ElementorWriteTarget    $targets    The shared Elementor write target.
-	 * @param ElementorDocument       $document   The stored-meta reader.
-	 * @param ElementorTreeEdit       $edit       The raw-tree surgery primitives.
-	 * @param ElementorIdMint         $mint       The deterministic id derivation.
-	 * @param ElementorPropCoercion   $coercion   The prop normalizer and key guard.
-	 * @param ElementorDocumentWriter $writer     The verified three-layer save.
-	 * @param ElementorTreeDiff       $diff       The structural preview detail.
-	 * @param PayloadNormalizer       $normalizer The canonical form the seed quotes.
+	 * @param ElementorWriteTarget     $targets    The shared Elementor write target.
+	 * @param ElementorDocument        $document   The stored-meta reader.
+	 * @param ElementorTreeEdit        $edit       The raw-tree surgery primitives.
+	 * @param ElementorIdMint          $mint       The deterministic id derivation.
+	 * @param ElementorPropCoercion    $coercion   The prop normalizer and key guard.
+	 * @param ElementorDocumentWriter  $writer     The verified three-layer save.
+	 * @param ElementorTreeDiff        $diff       The structural preview detail.
+	 * @param PayloadNormalizer        $normalizer The canonical form the seed quotes.
+	 * @param ElementorElementAddInput $inputs     The shared element-input reader.
 	 */
 	public function __construct(
 		private readonly ElementorWriteTarget $targets,
@@ -182,6 +129,7 @@ final class ElementorElementAdd implements WriteOperation {
 		private readonly ElementorDocumentWriter $writer,
 		private readonly ElementorTreeDiff $diff,
 		private readonly PayloadNormalizer $normalizer,
+		private readonly ElementorElementAddInput $inputs,
 	) {
 	}
 
@@ -189,9 +137,9 @@ final class ElementorElementAdd implements WriteOperation {
 	 * The operation's registered definition.
 	 *
 	 * `settings` IS DECLARED AN OBJECT and is optional rather than defaulted in
-	 * the schema, because the shared validator reads an explicitly supplied empty
-	 * JSON object as a list. Omitting the property is the documented way to add an
-	 * element carrying no settings, and `planChange()` accepts either form.
+	 * the schema. Omitting the property and sending an empty object are both ways
+	 * to add an element carrying no settings, and
+	 * `ElementorElementAddInput::requestedSettings()` accepts either form.
 	 *
 	 * `parentElementId` reuses the shared element-id declaration rather than
 	 * restating its bounds, so the length and character set an element id may take
@@ -216,29 +164,29 @@ final class ElementorElementAdd implements WriteOperation {
 			inputSchema: [
 				'type'                 => 'object',
 				'properties'           => [
-					ElementorWriteFields::INPUT_DOCUMENT => $shared[ ElementorWriteFields::INPUT_DOCUMENT ],
-					self::INPUT_PARENT_ELEMENT_ID        => $parent,
-					self::INPUT_INDEX                    => [
+					ElementorWriteFields::INPUT_DOCUMENT  => $shared[ ElementorWriteFields::INPUT_DOCUMENT ],
+					ElementorElementAddInput::INPUT_PARENT_ELEMENT_ID => $parent,
+					ElementorElementAddInput::INPUT_INDEX => [
 						'type'        => 'integer',
 						'minimum'     => 0,
 						'description' => 'Zero-based position among the destination\'s existing children. Send 0, the default, for first; a position past the last child places the element at the end.',
 					],
-					self::INPUT_EL_TYPE                  => [
+					ElementorElementAddInput::INPUT_EL_TYPE => [
 						'type'        => 'string',
-						'enum'        => self::ALLOWED_EL_TYPES,
+						'enum'        => ElementorElementAddInput::ALLOWED_EL_TYPES,
 						'description' => 'The kind of element to add. Use "container" for a layout box and "widget" for a piece of content.',
 					],
-					self::INPUT_WIDGET_TYPE              => [
+					ElementorElementAddInput::INPUT_WIDGET_TYPE => [
 						'type'        => [ 'string', 'null' ],
-						'maxLength'   => self::WIDGET_TYPE_MAX_LENGTH,
+						'maxLength'   => ElementorElementAddInput::WIDGET_TYPE_MAX_LENGTH,
 						'description' => 'Which widget to add, as elementor-widget-availability reports it. Required when elType is "widget", and not accepted for any other kind.',
 					],
-					self::INPUT_SETTINGS                 => [
+					ElementorElementAddInput::INPUT_SETTINGS => [
 						'type'        => 'object',
 						'description' => 'The new element\'s settings, keyed by setting name. Omit it entirely for an element with no settings of its own. A widget accepts only the settings it declares.',
 					],
 				],
-				'required'             => [ ElementorWriteFields::INPUT_DOCUMENT, self::INPUT_EL_TYPE ],
+				'required'             => [ ElementorWriteFields::INPUT_DOCUMENT, ElementorElementAddInput::INPUT_EL_TYPE ],
 				'additionalProperties' => false,
 			],
 			outputSchema: ElementorWriteFields::outputSchema(),
@@ -330,13 +278,13 @@ final class ElementorElementAdd implements WriteOperation {
 			throw $this->document_not_found();
 		}
 
-		$el_type     = $this->requested_el_type( $input );
-		$widget_type = $this->requested_widget_type( $el_type, $input );
-		$settings    = $this->requested_settings( $widget_type, $input );
-		$index       = $this->requested_index( $input );
+		$el_type     = $this->inputs->requestedElType( $input );
+		$widget_type = $this->inputs->requestedWidgetType( $el_type, $input );
+		$settings    = $this->inputs->requestedSettings( $widget_type, $input );
+		$index       = $this->inputs->requestedIndex( $input );
 
 		$tree      = $this->document->elements( $post_id );
-		$parent_id = $this->requested_parent( $tree, $input );
+		$parent_id = $this->inputs->requestedParent( $tree, $input );
 
 		$element_id = $this->mint->mint(
 			$this->seed( $post_id, $current, $el_type, $widget_type, $settings, $parent_id, $index ),
@@ -359,14 +307,14 @@ final class ElementorElementAdd implements WriteOperation {
 		$coerced = $this->coercion->coerceTree( $edited );
 
 		$payload = [
-			ElementorWriteFields::INPUT_DOCUMENT => $post_id,
-			self::INPUT_EL_TYPE                  => $el_type,
-			self::PAYLOAD_ELEMENT_ID             => $element_id,
-			self::INPUT_INDEX                    => $index,
-			self::INPUT_PARENT_ELEMENT_ID        => $parent_id,
-			self::INPUT_SETTINGS                 => $settings,
-			self::PAYLOAD_TREE                   => $coerced,
-			self::INPUT_WIDGET_TYPE              => $widget_type,
+			ElementorWriteFields::INPUT_DOCUMENT        => $post_id,
+			ElementorElementAddInput::INPUT_EL_TYPE     => $el_type,
+			self::PAYLOAD_ELEMENT_ID                    => $element_id,
+			ElementorElementAddInput::INPUT_INDEX       => $index,
+			ElementorElementAddInput::INPUT_PARENT_ELEMENT_ID => $parent_id,
+			ElementorElementAddInput::INPUT_SETTINGS    => $settings,
+			self::PAYLOAD_TREE                          => $coerced,
+			ElementorElementAddInput::INPUT_WIDGET_TYPE => $widget_type,
 		];
 		ksort( $payload, SORT_STRING );
 
@@ -454,7 +402,9 @@ final class ElementorElementAdd implements WriteOperation {
 		$this->assert_settings_landed(
 			$post_id,
 			(string) ( $payload[ self::PAYLOAD_ELEMENT_ID ] ?? '' ),
-			is_array( $payload[ self::INPUT_SETTINGS ] ?? null ) ? $payload[ self::INPUT_SETTINGS ] : []
+			is_array( $payload[ ElementorElementAddInput::INPUT_SETTINGS ] ?? null )
+				? $payload[ ElementorElementAddInput::INPUT_SETTINGS ]
+				: []
 		);
 
 		return ElementorWriteTarget::targetKey( $post_id );
@@ -522,7 +472,6 @@ final class ElementorElementAdd implements WriteOperation {
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
 
-	// phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase -- $current->targetKey is the TargetState contract's own property name.
 	/**
 	 * The digest of the stored document as it was BEFORE this write.
 	 *
@@ -551,7 +500,6 @@ final class ElementorElementAdd implements WriteOperation {
 
 		return is_string( $recorded ) ? $recorded : ElementorDocumentWriter::storedDigest( $post_id );
 	}
-	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 
 	// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The messages are literals written for end users and name a setting key that the schema has already bounded; no stored value reaches them.
 	/**
@@ -634,184 +582,6 @@ final class ElementorElementAdd implements WriteOperation {
 			: 'one of the requested';
 	}
 
-	// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The message is a literal written for end users.
-	/**
-	 * The requested element kind.
-	 *
-	 * @param array<string, mixed> $input The validated arguments.
-	 *
-	 * @return string The element kind.
-	 *
-	 * @throws OperationException With ErrorCode::InvalidInput.
-	 */
-	private function requested_el_type( array $input ): string {
-		$el_type = $input[ self::INPUT_EL_TYPE ] ?? null;
-
-		if ( ! is_string( $el_type ) || ! in_array( $el_type, self::ALLOWED_EL_TYPES, true ) ) {
-			throw new OperationException(
-				ErrorCode::InvalidInput,
-				'The kind of element to add must be one of: ' . implode( ', ', self::ALLOWED_EL_TYPES ) . '.',
-				'Retry naming one of those kinds. Use "container" for a layout box and "widget" for a piece of content.'
-			);
-		}
-
-		return $el_type;
-	}
-	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
-
-	// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The messages are literals written for end users and quote no caller value.
-	/**
-	 * The requested widget type, or null for an element that is not a widget.
-	 *
-	 * BOTH DIRECTIONS ARE REFUSED. A `widget` with no widget type names nothing
-	 * Elementor can render, and a container carrying one would store a member the
-	 * editor ignores while the request read as though it had been honoured.
-	 *
-	 * @param string               $el_type The requested element kind.
-	 * @param array<string, mixed> $input   The validated arguments.
-	 *
-	 * @return string|null The widget type.
-	 *
-	 * @throws OperationException With ErrorCode::InvalidInput.
-	 */
-	private function requested_widget_type( string $el_type, array $input ): ?string {
-		$widget_type = $input[ self::INPUT_WIDGET_TYPE ] ?? null;
-
-		if ( self::EL_TYPE_WIDGET !== $el_type ) {
-			if ( null !== $widget_type ) {
-				throw new OperationException(
-					ErrorCode::InvalidInput,
-					'Only an element of kind "widget" carries a widget type.',
-					'Retry with elType "widget" to add that widget, or without a widget type to add the layout element you named.'
-				);
-			}
-
-			return null;
-		}
-
-		if ( ! is_string( $widget_type ) || 1 !== preg_match( self::WIDGET_TYPE_PATTERN, $widget_type ) ) {
-			throw new OperationException(
-				ErrorCode::InvalidInput,
-				'An element of kind "widget" needs the name of the widget to add.',
-				'Call elementor-widget-availability to see the widgets this site has, then retry naming one of them.'
-			);
-		}
-
-		return $widget_type;
-	}
-	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
-
-	// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The message is a literal written for end users and quotes no caller value.
-	/**
-	 * The requested settings, checked against the widget's own declaration.
-	 *
-	 * `assertKnownKeys()` runs for a WIDGET AND FOR NOTHING ELSE, because it asks
-	 * Elementor's widget registry what a widget type declares and there is no such
-	 * declaration for a container, a section, or a column. Running it on those
-	 * would refuse every layout element on this site, since the registry has no
-	 * entry to answer with — a guard whose failure mode is refusing correct
-	 * requests rather than catching wrong ones.
-	 *
-	 * @param string|null          $widget_type The requested widget type.
-	 * @param array<string, mixed> $input       The validated arguments.
-	 *
-	 * @return array<string, mixed> The settings.
-	 *
-	 * @throws OperationException With ErrorCode::InvalidInput when the settings are
-	 *                           not a map or hold a key the widget does not declare,
-	 *                           or ErrorCode::ExecutionFailed when the widget's
-	 *                           schema cannot be read.
-	 */
-	private function requested_settings( ?string $widget_type, array $input ): array {
-		$settings = $input[ self::INPUT_SETTINGS ] ?? [];
-
-		if ( ! is_array( $settings ) ) {
-			throw new OperationException(
-				ErrorCode::InvalidInput,
-				'The settings for the new element must be given as a set of named values.',
-				'Retry sending settings as an object keyed by setting name, or omit them entirely.'
-			);
-		}
-
-		if ( null !== $widget_type ) {
-			$this->coercion->assertKnownKeys( $widget_type, $settings );
-		}
-
-		return $settings;
-	}
-	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
-
-	// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The message is a literal written for end users and quotes no caller value.
-	/**
-	 * The requested position, bounded at the boundary.
-	 *
-	 * @param array<string, mixed> $input The validated arguments.
-	 *
-	 * @return int The zero-based position.
-	 *
-	 * @throws OperationException With ErrorCode::InvalidInput.
-	 */
-	private function requested_index( array $input ): int {
-		$index = $input[ self::INPUT_INDEX ] ?? 0;
-
-		if ( ! is_int( $index ) || $index < 0 ) {
-			throw new OperationException(
-				ErrorCode::InvalidInput,
-				'The position for the new element must be a whole number, counting from 0 for first.',
-				'Retry with 0 to place the element first, or the number of elements already there to place it last.'
-			);
-		}
-
-		return $index;
-	}
-	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
-
-	// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The messages are literals written for end users and quote no caller value.
-	/**
-	 * The element the new one goes inside, or null for the document root.
-	 *
-	 * The named parent is looked up HERE rather than left to
-	 * `ElementorTreeEdit::insert()`, so that a parent the document does not hold
-	 * is refused while the plan is being built rather than at apply, when the
-	 * refusal would arrive after an operator had already approved the change.
-	 *
-	 * @param array[]              $tree  The raw stored tree.
-	 * @param array<string, mixed> $input The validated arguments.
-	 *
-	 * @return string|null The parent's stored id.
-	 *
-	 * @throws OperationException With ErrorCode::InvalidInput when the identifier
-	 *                           is not one a stored element can carry, or
-	 *                           ErrorCode::TargetNotFound when the document does
-	 *                           not hold it.
-	 */
-	private function requested_parent( array $tree, array $input ): ?string {
-		$parent_id = $input[ self::INPUT_PARENT_ELEMENT_ID ] ?? null;
-
-		if ( null === $parent_id ) {
-			return null;
-		}
-
-		if ( ! is_string( $parent_id ) || 1 !== preg_match( '/' . ElementorWriteFields::ELEMENT_ID_PATTERN . '/', $parent_id ) ) {
-			throw new OperationException(
-				ErrorCode::InvalidInput,
-				'The identifier of the element to add inside is not one a stored element can carry.',
-				'Read the page with elementor-document-get and retry with an identifier it reports, or send no parent to add the element at the top level.'
-			);
-		}
-
-		if ( null === $this->edit->find( $tree, $parent_id ) ) {
-			throw new OperationException(
-				ErrorCode::TargetNotFound,
-				'This page holds no element with the identifier the request names, so there is nowhere to add the new element.',
-				'Read the page with elementor-document-get and retry with an identifier it reports.'
-			);
-		}
-
-		return $parent_id;
-	}
-	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
-
 	// phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase -- $current->fields is the TargetState contract's own property name.
 	/**
 	 * The seed the new element's identifier is derived from.
@@ -861,11 +631,11 @@ final class ElementorElementAdd implements WriteOperation {
 				is_string( $state ) ? $state : '',
 				$this->normalizer->canonicalJson(
 					[
-						self::INPUT_EL_TYPE           => $el_type,
-						self::INPUT_INDEX             => $index,
-						self::INPUT_PARENT_ELEMENT_ID => $parent_id,
-						self::INPUT_SETTINGS          => $settings,
-						self::INPUT_WIDGET_TYPE       => $widget_type,
+						ElementorElementAddInput::INPUT_EL_TYPE           => $el_type,
+						ElementorElementAddInput::INPUT_INDEX             => $index,
+						ElementorElementAddInput::INPUT_PARENT_ELEMENT_ID => $parent_id,
+						ElementorElementAddInput::INPUT_SETTINGS          => $settings,
+						ElementorElementAddInput::INPUT_WIDGET_TYPE       => $widget_type,
 					]
 				),
 			]
