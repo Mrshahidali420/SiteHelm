@@ -446,10 +446,17 @@ final class MenuLocationAssign implements WriteOperation {
 	 * reader, so if this method does not measure what it stored, nothing does.
 	 *
 	 * The measurement is on PRESENCE FIRST and value second, and the presence
-	 * half is the point: a recorded absence that reads back as an assignment —
-	 * 0 included — is a rollback that did not reverse the write, and a
-	 * value-only comparison built on `??` would read the absent key as null,
-	 * compare it against a stored 0, and pass.
+	 * half earns its place on exactly one pair of states: a recorded NULL entry
+	 * and an absent key. Every other disagreement the two spellings can produce
+	 * is already caught by value — `sameAssignment( 0, null )` is false, so a
+	 * recorded absence reading back as a stored 0 fails without any presence
+	 * test. Null is the case value comparison cannot see, because
+	 * `sameAssignment( null, null )` is true: a value-only comparison built on
+	 * `??` would call a recorded null entry that came back MISSING, or a
+	 * recorded absence that came back HOLDING NULL, a faithful restore. Both are
+	 * maps this operation did not reproduce, and a
+	 * `pre_set_theme_mod_nav_menu_locations` filter that strips or adds empty
+	 * members is all it takes to reach either.
 	 *
 	 * Only the operation's OWN location is measured, not every recorded key. The
 	 * rest of the map is written and left to the platform: a
@@ -485,10 +492,11 @@ final class MenuLocationAssign implements WriteOperation {
 
 		$stored = $this->currentMap();
 
-		// array_key_exists() on BOTH sides, never `??`: a recorded absence and a
-		// recorded 0 are different instructions, and reading either through `??`
-		// would collapse them into the same null and report an unreversed write
-		// as restored.
+		// array_key_exists() on BOTH sides, never `??`: `??` spells an absent key
+		// and a stored null the same way, and sameAssignment( null, null ) is
+		// true, so a value-only comparison would report a recorded null entry
+		// that came back missing as restored. See the note above for why the
+		// 0-versus-absent pair needs no help from this test.
 		$recorded_holds = array_key_exists( $location, $locations );
 		$stored_holds   = array_key_exists( $location, $stored );
 

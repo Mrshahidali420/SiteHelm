@@ -36,6 +36,12 @@ use Throwable;
  * merge as a pass, which is the "test that cannot fail" defect this codebase has
  * shipped six times.
  *
+ * AND THE DOUBLE SUBSTITUTES FOR A 0 POSITION, exactly as core does; see
+ * storedPosition(). It did not, and that single unfaithful rule is why a merge
+ * base handing core a 0 — which moves the menu's FIRST item to LAST — sat under
+ * a passing suite: the load-bearing merge test happens to use a fixture at
+ * menu_order 2, so nothing ever exercised the substitution.
+ *
  * THE STORED COLUMNS AND THE DERIVED PROPERTIES DISAGREE ON PURPOSE. makeItem()
  * stores 250 words of post_content against a 200-word derived `description`, and
  * a post_title of "Home & Co" against a derived `title` of "Home &#038; Co". A
@@ -167,7 +173,16 @@ abstract class MenuItemUpdateTestCase extends TestCase {
 				$item->object           = (string) ( $data['menu-item-object'] ?? 'custom' );
 				$item->object_id        = (int) ( $data['menu-item-object-id'] ?? 0 );
 				$item->menu_item_parent = (int) ( $data['menu-item-parent-id'] ?? 0 );
-				$item->menu_order       = (int) ( $data['menu-item-position'] ?? 0 );
+
+				// AND THEN CORE'S POSITION SUBSTITUTION, reproduced. This double
+				// wrote menu-item-position straight onto menu_order, which is the
+				// one rule it was unfaithful on — and the rule REQ-0029's own merge
+				// test depends on, so that test passed only because its fixture
+				// happens to sit at menu_order 2.
+				$item->menu_order = $this->storedPosition(
+					(int) $menu_id,
+					(int) ( $data['menu-item-position'] ?? 0 )
+				);
 				$item->target           = (string) ( $data['menu-item-target'] ?? '' );
 				$item->xfn              = stripslashes( (string) ( $data['menu-item-xfn'] ?? '' ) );
 				$item->classes          = array_values(
@@ -179,6 +194,62 @@ abstract class MenuItemUpdateTestCase extends TestCase {
 				return $id;
 			}
 		);
+
+		// The only route to a stored menu_order of 0, because
+		// wp_update_nav_menu_item() substitutes for a 0 and offers no way to opt
+		// out. Recorded in $callOrder so a test can prove the correction ran
+		// AFTER the write it corrects rather than instead of it.
+		Functions\when( 'wp_update_post' )->alias(
+			function ( $postarr = [] ) {
+				$this->callOrder[] = 'wp_update_post';
+
+				$id  = (int) ( $postarr['ID'] ?? 0 );
+				$row = $this->items[ $id ] ?? null;
+
+				if ( ! is_object( $row ) || ! array_key_exists( 'menu_order', $postarr ) ) {
+					return 0;
+				}
+
+				$row->menu_order = (int) $postarr['menu_order'];
+
+				return $id;
+			}
+		);
+	}
+
+	/**
+	 * What core actually stores for a requested `menu-item-position`.
+	 *
+	 * VERBATIM FROM wp-includes/nav-menu.php, because a double that is faithful
+	 * everywhere except the one rule under test is how this class of bug survives
+	 * a suite: a 0 is not "position zero", it is "append", and the empty-menu arm
+	 * answers `count( $menu_items )` against a list `array_pop()` has already
+	 * emptied — which is why 0 is a REACHABLE stored value and not a theory.
+	 *
+	 * The list is read the way core reads it, sorted by the stored order and
+	 * INCLUDING the row being written, because core substitutes before it saves.
+	 *
+	 * @param int $menu_id   The menu being written to.
+	 * @param int $requested The requested position.
+	 *
+	 * @return int The position core would store.
+	 */
+	protected function storedPosition( int $menu_id, int $requested ): int {
+		if ( 0 !== $requested ) {
+			return $requested;
+		}
+
+		$menu_items = array_values(
+			array_filter(
+				$this->items,
+				fn( object $item ): bool => ( $this->itemMenus[ (int) $item->ID ] ?? 0 ) === $menu_id
+			)
+		);
+		usort( $menu_items, static fn( object $a, object $b ): int => $a->menu_order <=> $b->menu_order );
+
+		$last_item = array_pop( $menu_items );
+
+		return null !== $last_item ? 1 + (int) $last_item->menu_order : count( $menu_items );
 	}
 
 	protected function makeMenu( int $id, string $slug, string $name ): stdClass {

@@ -257,7 +257,7 @@ final class MenuItemsReorderRefusalTest extends MenuItemsReorderTestCase {
 	 * directly.
 	 */
 	public function test_it_refuses_a_position_below_one(): void {
-		$this->assertRefusesWithoutWriting(
+		$refusal = $this->assertRefusesWithoutWriting(
 			fn(): array => $this->plan(
 				$this->input(
 					[
@@ -269,6 +269,48 @@ final class MenuItemsReorderRefusalTest extends MenuItemsReorderTestCase {
 				)
 			),
 			ErrorCode::InvalidInput
+		);
+
+		// The MESSAGE, not just the code: every refusal in planChange() is
+		// invalid_input, so a code-only assertion passes against any of the four
+		// other refusals this one could collapse into.
+		$this->assertSame(
+			'Every entry must name a menu item identifier and a position of 1 or more, so none of the requested order was written.',
+			$refusal->getMessage()
+		);
+	}
+
+	/**
+	 * THE SAME GUARD'S IDENTIFIER BOUND, which had no test and so looked dead.
+	 *
+	 * The membership check further down planChange() would reject a 0 identifier a
+	 * moment later, which is why removing the bound leaves the suite green — but it
+	 * would reject it as "does not name an item of this menu", sending the operator
+	 * to look up a menu that never had an item 0. 0 is also the root-parent
+	 * sentinel, the conflation that has already produced one unbounded recursion in
+	 * this module, and it does not travel past normalized_entry().
+	 *
+	 * Mutation that breaks this: removing `$id < 1` from the guard in
+	 * MenuItemsReorder::normalized_entry().
+	 */
+	public function test_it_refuses_an_identifier_below_one_as_a_malformed_entry(): void {
+		$refusal = $this->assertRefusesWithoutWriting(
+			fn(): array => $this->plan(
+				$this->input(
+					[
+						[
+							'id'       => 0,
+							'position' => 1,
+						],
+					]
+				)
+			),
+			ErrorCode::InvalidInput
+		);
+
+		$this->assertSame(
+			'Every entry must name a menu item identifier and a position of 1 or more, so none of the requested order was written.',
+			$refusal->getMessage()
 		);
 	}
 

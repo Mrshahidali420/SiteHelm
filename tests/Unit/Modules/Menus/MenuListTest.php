@@ -185,6 +185,48 @@ final class MenuListTest extends TestCase {
 	}
 
 	/**
+	 * `nav_menu_locations` passes through a filter on the way out, so a plugin can
+	 * put anything in it. `(int) [ 'x' ]` is 1, so a bare cast would turn a
+	 * malformed member into an assignment to menu 1 — an identifier plausible
+	 * enough that a client would act on it. The listing must agree with
+	 * MenuLocationAssign::project(), which guards the same map on `is_numeric`
+	 * and `> 0`.
+	 */
+	public function test_a_location_holding_a_non_numeric_value_reports_as_unassigned(): void {
+		$this->menus[]            = $this->makeMenu( 1, 'First Menu', 'first-menu', 1 );
+		$this->assigned['social'] = [ 'x' ];
+
+		$social = $this->location( 'social' );
+
+		$this->assertNull( $social['menuId'] );
+		$this->assertNull( $social['menuName'] );
+	}
+
+	/**
+	 * A stored 0 is what a half-finished third-party write leaves behind, and core
+	 * itself treats it as empty.
+	 */
+	public function test_a_location_holding_zero_reports_as_unassigned(): void {
+		$this->assigned['footer'] = 0;
+
+		$this->assertNull( $this->location( 'footer' )['menuId'] );
+	}
+
+	/**
+	 * The guard must not become stricter than the data: the theme mod is an option
+	 * value, and an option round-tripped through the database can carry its
+	 * identifiers as numeric strings.
+	 */
+	public function test_a_location_holding_a_numeric_string_still_resolves_its_menu(): void {
+		$this->assigned['footer'] = '9';
+
+		$footer = $this->location( 'footer' );
+
+		$this->assertSame( 9, $footer['menuId'] );
+		$this->assertSame( 'Footer Links', $footer['menuName'] );
+	}
+
+	/**
 	 * The theme registers its locations in whatever order its `register_nav_menus()`
 	 * call happened to list them, so the rows are sorted for the same reason
 	 * MediaFields::registeredSizes() sorts: identical site state must produce an

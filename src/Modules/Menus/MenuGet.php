@@ -48,6 +48,24 @@ use SiteHelm\Contracts\SnapshotPolicy;
 final class MenuGet {
 
 	/**
+	 * The base URI that makes this operation's output schema an embedded schema
+	 * resource, so its own references resolve against it wherever it is nested.
+	 *
+	 * A `urn:` rather than an `https:` URI, because nothing is served at it. An
+	 * `$id` is an identity, not an address, and spelling it as one a client might
+	 * try to fetch would invite a request that can only 404. It carries the
+	 * schema version so a later `schemaVersion` bump identifies a different
+	 * resource rather than redefining this one.
+	 */
+	public const OUTPUT_SCHEMA_ID = 'urn:sitehelm:schema:menu-get:output:1';
+
+	/**
+	 * The `$defs` key the recursive item definition is declared under, and the
+	 * last segment of the pointer both references follow.
+	 */
+	public const ITEM_DEF = 'menuItem';
+
+	/**
 	 * The operation's registered definition, beside the code that produces
 	 * the payload. Static because a definition is a constant declaration: it
 	 * takes no dependencies, and the registry reads it without constructing
@@ -59,6 +77,26 @@ final class MenuGet {
 	 * would have to stop at some arbitrary level and then either lie about what
 	 * is below it or refuse to describe it. One named recursive definition
 	 * describes every depth exactly once.
+	 *
+	 * THE `$id` IS WHAT MAKES THAT REFERENCE RESOLVE, and it is not decoration.
+	 * `#/$defs/menuItem` is a JSON Pointer fragment, and a pointer fragment
+	 * resolves against the BASE URI in force where it appears — which, with no
+	 * `$id` anywhere, is the root of whatever document the client is holding.
+	 * That is this array only when an operation's schema is fetched on its own.
+	 * The catalog is the context clients actually read schemas in, and there this
+	 * array is nested at `operations[n].outputSchema` inside a much larger
+	 * response whose root has no `$defs` member at all, so the reference resolved
+	 * against nothing and dangled.
+	 *
+	 * `$id` declares this array an embedded SCHEMA RESOURCE with a base URI of
+	 * its own. Reference resolution restarts here however deeply the catalog
+	 * nests it, so `#/$defs/menuItem` means "the menuItem definition in THIS
+	 * schema" in both contexts and means the same node in both. The definition
+	 * therefore stays in exactly one place: the catalog copies the schema
+	 * verbatim, with nothing to hoist and no reference to rewrite. Inlining the
+	 * definition at each use site would have been the alternative, and it is not
+	 * available anyway — the shape is recursive, so there is no finite inline
+	 * expansion of it to write.
 	 *
 	 * @return OperationDefinition The definition registered for menu-get.
 	 */
@@ -83,7 +121,7 @@ final class MenuGet {
 				'xfn'         => [ 'type' => 'string' ],
 				'children'    => [
 					'type'  => 'array',
-					'items' => [ '$ref' => '#/$defs/menuItem' ],
+					'items' => [ '$ref' => '#/$defs/' . self::ITEM_DEF ],
 				],
 			],
 			'required'             => [
@@ -122,6 +160,7 @@ final class MenuGet {
 				'additionalProperties' => false,
 			],
 			outputSchema: [
+				'$id'                  => self::OUTPUT_SCHEMA_ID,
 				'type'                 => 'object',
 				'properties'           => [
 					'id'    => [ 'type' => 'integer' ],
@@ -129,12 +168,12 @@ final class MenuGet {
 					'slug'  => [ 'type' => 'string' ],
 					'items' => [
 						'type'  => 'array',
-						'items' => [ '$ref' => '#/$defs/menuItem' ],
+						'items' => [ '$ref' => '#/$defs/' . self::ITEM_DEF ],
 					],
 				],
 				'required'             => [ 'id', 'name', 'slug', 'items' ],
 				'additionalProperties' => false,
-				'$defs'                => [ 'menuItem' => $item ],
+				'$defs'                => [ self::ITEM_DEF => $item ],
 			],
 			schemaVersion: 1,
 			requiredCapabilities: [ 'edit_theme_options' ],

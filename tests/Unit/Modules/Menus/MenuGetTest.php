@@ -19,6 +19,7 @@ use SiteHelm\Modules\Menus\MenuFields;
 use SiteHelm\Modules\Menus\MenuGet;
 use SiteHelm\Modules\Menus\MenusModule;
 use SiteHelm\Registry\CapabilityRegistry;
+use SiteHelm\Registry\CatalogBuilder;
 use SiteHelm\Schema\SchemaValidator;
 use SiteHelm\Storage\Installer;
 use SiteHelm\Tests\TestCase;
@@ -454,6 +455,109 @@ final class MenuGetTest extends TestCase {
 			$schema['$defs']['menuItem']['properties']['children']['items']
 		);
 		$this->assertFalse( $schema['$defs']['menuItem']['additionalProperties'] );
+	}
+
+	/**
+	 * The reference must resolve where clients ACTUALLY READ SCHEMAS, which is
+	 * the catalog listing rather than one operation's schema on its own. In the
+	 * catalog this schema is nested at `operations[n].outputSchema` inside a much
+	 * larger response, and a pointer fragment resolves against the base URI in
+	 * force where it appears — the response root, unless an `$id` moved it.
+	 *
+	 * So the resolver below is the test, not scaffolding. It is handed the WHOLE
+	 * catalog response as its starting document and implements the one rule that
+	 * decides the outcome: descending into a node that carries `$id` rebases
+	 * every reference beneath it on that node. Without the `$id`, every
+	 * `#/$defs/menuItem` in the response is resolved against a catalog root that
+	 * has no `$defs` member, and the reference a client is supposed to follow
+	 * leads nowhere.
+	 *
+	 * Mutation that breaks this: deleting `'$id' => self::OUTPUT_SCHEMA_ID` from
+	 * MenuGet's outputSchema.
+	 */
+	public function test_every_schema_reference_resolves_from_the_catalog_response(): void {
+		Functions\when( 'get_bloginfo' )->justReturn( '6.8.1' );
+
+		$registry = new CapabilityRegistry();
+		( new MenusModule() )->register( $registry );
+
+		$catalog = ( new CatalogBuilder( $registry ) )->build( 'menu-read', $this->makeContext() );
+
+		$found    = [];
+		$dangling = [];
+		$this->collectRefs( $catalog, $catalog, '', $found, $dangling );
+
+		$this->assertNotSame(
+			[],
+			$found,
+			'The menu-read catalog must carry the menu item reference; a test that finds none proves nothing.'
+		);
+
+		$this->assertSame(
+			[],
+			$dangling,
+			'A client resolving these references against the catalog response finds nothing at the far end of them.'
+		);
+	}
+
+	/**
+	 * Walks one JSON document, resolving every `$ref` against the innermost
+	 * enclosing schema resource.
+	 *
+	 * @param mixed                $node     The node being walked.
+	 * @param array<string, mixed> $base     The schema resource references resolve against.
+	 * @param string               $path     The node's location, for the failure message.
+	 * @param string[]             $found    Collects every reference seen.
+	 * @param string[]             $dangling Collects every reference that resolves to nothing.
+	 */
+	private function collectRefs( mixed $node, array $base, string $path, array &$found, array &$dangling ): void {
+		if ( ! is_array( $node ) ) {
+			return;
+		}
+
+		if ( array_key_exists( '$id', $node ) ) {
+			$base = $node;
+		}
+
+		$pointer = $node['$ref'] ?? null;
+
+		if ( is_string( $pointer ) ) {
+			$found[] = $path;
+
+			if ( null === $this->followPointer( $pointer, $base ) ) {
+				$dangling[] = $path . ' -> ' . $pointer;
+			}
+		}
+
+		foreach ( $node as $key => $child ) {
+			$this->collectRefs( $child, $base, $path . '/' . $key, $found, $dangling );
+		}
+	}
+
+	/**
+	 * Follows one local JSON Pointer fragment against one schema resource.
+	 *
+	 * @param string               $pointer The `$ref` value.
+	 * @param array<string, mixed> $base    The resource to resolve against.
+	 *
+	 * @return array<string, mixed>|null The referenced node, or null.
+	 */
+	private function followPointer( string $pointer, array $base ): ?array {
+		if ( ! str_starts_with( $pointer, '#/' ) ) {
+			return null;
+		}
+
+		$target = $base;
+
+		foreach ( explode( '/', substr( $pointer, 2 ) ) as $segment ) {
+			if ( ! is_array( $target ) || ! array_key_exists( $segment, $target ) ) {
+				return null;
+			}
+
+			$target = $target[ $segment ];
+		}
+
+		return is_array( $target ) ? $target : null;
 	}
 
 	/**

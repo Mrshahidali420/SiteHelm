@@ -310,22 +310,26 @@ final class MenuItemsReorderRestoreTest extends MenuItemsReorderTestCase {
 	}
 
 	/**
-	 * A RECORDED POSITION OF 0 IS RESTORABLE, and reporting it as a failed
-	 * rollback is worse than useless: the refusal is thrown AFTER every row has
-	 * been written, so the operator is told their rollback did not land when in
-	 * fact it did.
+	 * A RECORDED POSITION OF 0 IS PUT BACK AT 0, not delegated to WordPress.
 	 *
-	 * `wp_update_nav_menu_item()` treats 0 as "unset" and substitutes the menu's
-	 * item count plus one, so a recorded 0 can never read back as 0. The recorded
-	 * value delegates the choice of position to WordPress, so whatever WordPress
-	 * chose IS the restored state and there is nothing for the verification to
-	 * compare. The stub below reproduces core's substitution, which the module's
-	 * other stub deliberately does not.
+	 * This test used to assert the opposite, and the reasoning it carried was the
+	 * bug written down: `wp_update_nav_menu_item()` substitutes "the end of the
+	 * menu" for a 0, so — the argument ran — a recorded 0 can never read back as 0
+	 * and "whatever WordPress chose IS the restored state". It is not. A recorded 0
+	 * means the item was stored FIRST; appending it lands it LAST; and exempting
+	 * that from the comparison made assert_restored() certify the one rollback most
+	 * likely to have gone wrong. restore() now writes the position again through
+	 * MenuTarget::correctAppendedPosition(), so the recorded value is honoured
+	 * literally and the verification measures it.
 	 *
-	 * Mutation that breaks this: dropping the `0 !== $target['position']`
-	 * exemption from MenuItemsReorder::assert_restored().
+	 * The stub below reproduces core's substitution, which the shared double
+	 * deliberately does not — so the correction has something real to correct.
+	 *
+	 * Mutation that breaks this: dropping the correctAppendedPosition() call from
+	 * MenuItemsReorder::restore(), or restoring the `0 !== $target['position']`
+	 * exemption in assert_restored().
 	 */
-	public function test_a_recorded_zero_position_restores_rather_than_reporting_a_failed_rollback(): void {
+	public function test_a_recorded_zero_position_is_restored_to_zero_rather_than_appended(): void {
 		Functions\when( 'wp_update_nav_menu_item' )->alias(
 			function ( int $menu_id, int $item_id, array $args ): mixed {
 				$this->written[] = [
@@ -369,16 +373,18 @@ final class MenuItemsReorderRestoreTest extends MenuItemsReorderTestCase {
 
 		$this->assertSame( 'menu:5', $key );
 		$this->assertSame( 0, (int) $this->items[2]->menu_item_parent );
-		$this->assertSame( 6, (int) $this->items[2]->menu_order );
+
+		// 6 is what core's substitution stored and 0 is what the snapshot recorded.
+		// Asserting 0 is the whole point: the item was first, and it is first again.
+		$this->assertSame( 0, (int) $this->items[2]->menu_order );
 	}
 
 	/**
-	 * The parent is still compared for an item whose recorded position is 0 — the
-	 * exemption above covers the position only, because a recorded parent of 0 is
-	 * honoured literally as "top level" rather than substituted.
+	 * The parent is compared independently of the position, so a filter that
+	 * swallows the nesting is still reported even when the position landed.
 	 *
-	 * Mutation that breaks this: widening the exemption to skip the whole row
-	 * when the recorded position is 0.
+	 * Mutation that breaks this: dropping the parent from the assert_restored()
+	 * comparison, or skipping the whole row when the recorded position is 0.
 	 */
 	public function test_a_recorded_zero_position_still_verifies_the_parent(): void {
 		Functions\when( 'wp_update_nav_menu_item' )->alias(

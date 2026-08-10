@@ -102,6 +102,7 @@
                 "additionalProperties": false
             },
             "outputSchema": {
+                "$id": "urn:sitehelm:schema:menu-get:output:1",
                 "type": "object",
                 "properties": {
                     "id": {
@@ -237,7 +238,7 @@
                     "position": {
                         "type": "integer",
                         "minimum": 0,
-                        "description": "Where the item sits among its siblings. Defaults to the end of the menu."
+                        "description": "The item's position among its siblings, counting from 1. Send 0, the default, to add the item at the end of the menu."
                     },
                     "target": {
                         "type": "string",
@@ -343,8 +344,8 @@
                     },
                     "position": {
                         "type": "integer",
-                        "minimum": 0,
-                        "description": "Where the item sits among its siblings."
+                        "minimum": 1,
+                        "description": "The item's position among its siblings, counting from 1."
                     },
                     "target": {
                         "type": "string",

@@ -557,4 +557,176 @@ final class MenuItemUpdateTest extends MenuItemUpdateTestCase {
 		$this->assertSame( ErrorCode::TargetNotFound, $refusal->errorCode );
 		$this->assertSame( [], $this->callOrder );
 	}
+
+	/**
+	 * THE MERGE BASE MUST NOT HAND CORE A 0 AND CALL IT THE ITEM'S POSITION.
+	 *
+	 * `menu_order` 0 is where WordPress leaves the FIRST item of an empty menu —
+	 * core's own `count( $menu_items )` arm answers 0 against a list `array_pop()`
+	 * has emptied — so every menu this plugin creates has one. Handing that 0 back
+	 * to `wp_update_nav_menu_item()` does not mean "position zero", it means
+	 * "append", so a request that only renamed the item moved it from first to
+	 * last. Nothing downstream noticed: a partial update does not promise
+	 * `position`, so WriteVerifier had nothing to compare.
+	 *
+	 * Mutation that breaks this: dropping the correctAppendedPosition() call from
+	 * MenuItemUpdate::applyChange().
+	 */
+	public function test_an_item_stored_first_is_not_moved_to_the_end_by_an_unrelated_edit(): void {
+		$this->items[400]->menu_order = 0;
+		$this->items[410]->menu_order = 1;
+		$this->items[420]->menu_order = 2;
+		$this->items[430]->menu_order = 3;
+
+		$result = $this->planThenApply(
+			[
+				'item'  => 400,
+				'title' => 'Renamed',
+			]
+		);
+
+		$this->assertSame( 'Renamed', $result['after']['title'] );
+
+		// 4 is where core's substitution put it. 0 is where it belongs.
+		$this->assertSame( 0, $this->items[400]->menu_order );
+		$this->assertSame( 0, $result['after']['position'] );
+
+		// The correction runs AFTER the write it corrects, never instead of it:
+		// a first write that never happened would leave the title unchanged.
+		$this->assertSame( [ 'wp_update_nav_menu_item', 'wp_update_post' ], $this->callOrder );
+	}
+
+	/**
+	 * The rollback has the identical hazard and needs the identical correction.
+	 * Replaying a snapshot that recorded 0 would append the item a SECOND time,
+	 * which is what made the prior arrangement unrecoverable through the engine
+	 * rather than merely wrong once.
+	 *
+	 * Mutation that breaks this: dropping the correctAppendedPosition() call from
+	 * MenuTarget::restoreItem().
+	 */
+	public function test_a_restore_puts_an_item_recorded_first_back_at_the_front(): void {
+		$this->items[400]->menu_order = 0;
+		$this->items[410]->menu_order = 1;
+
+		$result = $this->planThenApply(
+			[
+				'item'  => 400,
+				'title' => 'Renamed',
+			]
+		);
+
+		// The snapshot records the truth about the item rather than a position
+		// core would find convenient.
+		$this->assertSame( 0, $result['snapshot']['menu-item-position'] );
+
+		$key = $this->operation->restore( $result['snapshot'], $this->makeContext() );
+
+		$this->assertSame( MenuFields::ITEM_PREFIX . '400', $key );
+		$this->assertSame( 0, $this->items[400]->menu_order );
+		$this->assertSame( 'Home & Co', $this->items[400]->post_title );
+	}
+
+	/**
+	 * AN EMPTY TITLE IS AN INSTRUCTION, NOT AN ABSENT ONE. For a post_type item it
+	 * is core's own "stay synced with the linked post": the item stops carrying its
+	 * own label and shows the page's. `! empty()` in place of array_key_exists()
+	 * drops it, and the request then names no field to change at all.
+	 *
+	 * Mutation that breaks this: `! empty( $input['title'] )` at the title gate in
+	 * MenuItemUpdate::changed_fields().
+	 */
+	public function test_an_empty_title_is_written_rather_than_dropped(): void {
+		$result = $this->planThenApply(
+			[
+				'item'  => 430,
+				'title' => '',
+			]
+		);
+
+		$this->assertSame( [ 'title' => '' ], $result['planned']->afterFields );
+		$this->assertSame( '', $this->written[0]['menu-item-title'] );
+		$this->assertSame( '', $this->items[430]->post_title );
+		$this->assertSame( [ 'wp_update_nav_menu_item' ], $this->callOrder );
+	}
+
+	/**
+	 * The same rule for the one field an operator is most likely to want CLEARED
+	 * rather than set: there is no other way to remove an XFN relationship.
+	 *
+	 * Mutation that breaks this: `! empty( $input['xfn'] )` at the xfn gate in
+	 * MenuItemUpdate::presentation_fields().
+	 */
+	public function test_an_empty_xfn_clears_the_stored_relationship(): void {
+		$this->assertSame( 'me', $this->items[400]->xfn );
+
+		$result = $this->planThenApply(
+			[
+				'item' => 400,
+				'xfn'  => '',
+			]
+		);
+
+		$this->assertSame( [ 'xfn' => '' ], $result['planned']->afterFields );
+		$this->assertSame( '', $this->written[0]['menu-item-xfn'] );
+		$this->assertSame( '', $result['after']['xfn'] );
+	}
+
+	/**
+	 * A 0 POSITION IS REFUSED, AND REFUSED FOR WHAT IT IS. The sibling reorder has
+	 * carried `minimum: 1` from the start and documents the bound as load bearing;
+	 * this operation declared `minimum: 0` and forwarded the value unchanged, so an
+	 * operator sending a zero-based "first" got "last".
+	 *
+	 * The MESSAGE is asserted, not just the code. `! empty()` at the position gate
+	 * would drop the 0 and reach "the request names no field to change" — a
+	 * refusal, so an error-code assertion alone would still pass, while telling the
+	 * operator they sent nothing rather than that positions count from 1.
+	 *
+	 * Mutation that breaks this: `! empty( $input['position'] )` at the position
+	 * gate in MenuItemUpdate::presentation_fields(), or removing the bound test.
+	 */
+	public function test_it_refuses_a_zero_position_rather_than_appending_the_item(): void {
+		$refusal = $this->refusalFrom(
+			[
+				'item'     => 400,
+				'position' => 0,
+			]
+		);
+
+		$this->assertSame( ErrorCode::InvalidInput, $refusal->errorCode );
+		$this->assertStringContainsString( 'counts from 1', $refusal->getMessage() );
+		$this->assertStringContainsString( 'end of the menu', $refusal->getMessage() );
+		$this->assertSame( [], $this->callOrder );
+	}
+
+	/**
+	 * The schema carries the same bound, so the dispatcher refuses a 0 before the
+	 * operation is reached at all. Both layers are asserted because either one
+	 * alone leaves a route to the substitution.
+	 */
+	public function test_the_schema_declares_the_position_bound_the_sibling_reorder_declares(): void {
+		$position = MenuItemUpdate::definition()->inputSchema['properties']['position'];
+
+		$this->assertSame( 'integer', $position['type'] );
+		$this->assertSame( 1, $position['minimum'] );
+	}
+
+	/**
+	 * A supplied position of 1 or more is forwarded verbatim and needs no
+	 * correction, which is what keeps correctAppendedPosition() from being a write
+	 * on every update.
+	 */
+	public function test_a_supplied_position_is_written_without_a_second_write(): void {
+		$result = $this->planThenApply(
+			[
+				'item'     => 400,
+				'position' => 3,
+			]
+		);
+
+		$this->assertSame( 3, $result['after']['position'] );
+		$this->assertSame( 3, $this->written[0]['menu-item-position'] );
+		$this->assertSame( [ 'wp_update_nav_menu_item' ], $this->callOrder );
+	}
 }

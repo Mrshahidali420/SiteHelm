@@ -216,6 +216,14 @@ final class MenuList {
 	 * call happened to list, and identical site state must produce an identical
 	 * response.
 	 *
+	 * The assignment is read through the SAME `is_numeric` and `> 0` guard
+	 * MenuLocationAssign::project() applies, because the two read one piece of
+	 * third-party-filterable data — the `nav_menu_locations` theme mod — and must
+	 * not disagree about what it says. A bare `(int)` cast is the wrong shape for
+	 * that data: `(int) [ 'x' ]` is 1, so a plugin filtering the map into a
+	 * malformed shape would surface as an assignment to menu 1, an identifier
+	 * plausible enough for a client to act on.
+	 *
 	 * @param array<int, array<string, mixed>> $menus The menu rows, keyed by identifier.
 	 *
 	 * @return array<int, array<string, mixed>> The location rows, sorted by slug.
@@ -235,8 +243,11 @@ final class MenuList {
 		$rows = [];
 
 		foreach ( $registered as $location => $label ) {
-			$menu_id = (int) ( $assigned[ $location ] ?? 0 );
-			$menu    = $menus[ $menu_id ] ?? null;
+			$menu = null;
+
+			if ( array_key_exists( $location, $assigned ) && is_numeric( $assigned[ $location ] ) && (int) $assigned[ $location ] > 0 ) {
+				$menu = $menus[ (int) $assigned[ $location ] ] ?? null;
+			}
 
 			$rows[] = [
 				'location'    => (string) $location,

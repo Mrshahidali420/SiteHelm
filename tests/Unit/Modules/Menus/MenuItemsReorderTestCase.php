@@ -225,6 +225,24 @@ abstract class MenuItemsReorderTestCase extends TestCase {
 				return $item_id;
 			}
 		);
+		// The only route to a stored menu_order of 0. `wp_update_nav_menu_item()`
+		// reads a 0 as "append" and offers no way to opt out, so the restore path
+		// writes the position again through wp_update_post() whenever the recorded
+		// value was 0. The double mutates the row, so assert_restored() measures
+		// the corrected state rather than the substituted one.
+		Functions\when( 'wp_update_post' )->alias(
+			function ( array $postarr = [] ): int {
+				$id = (int) ( $postarr['ID'] ?? 0 );
+
+				foreach ( is_array( $this->items ) ? $this->items : [] as $row ) {
+					if ( (int) $row->ID === $id && array_key_exists( 'menu_order', $postarr ) ) {
+						$row->menu_order = (int) $postarr['menu_order'];
+					}
+				}
+
+				return $id;
+			}
+		);
 	}
 
 	/**
