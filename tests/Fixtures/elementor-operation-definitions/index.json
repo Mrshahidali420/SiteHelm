@@ -1,0 +1,13 @@
+{
+    "operationIds": [
+        "elementor-document-list",
+        "elementor-document-get",
+        "elementor-widget-availability",
+        "elementor-element-add",
+        "elementor-element-update",
+        "elementor-widget-settings-update",
+        "elementor-element-move",
+        "elementor-element-duplicate"
+    ],
+    "operationCount": 8
+}
