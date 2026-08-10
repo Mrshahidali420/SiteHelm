@@ -78,6 +78,7 @@ final class ElementorDefinitionInvariantsTest extends TestCase {
 		'elementor-widget-settings-update',
 		'elementor-element-move',
 		'elementor-element-duplicate',
+		'elementor-element-remove',
 	];
 
 	/**
@@ -94,7 +95,7 @@ final class ElementorDefinitionInvariantsTest extends TestCase {
 	/**
 	 * The Elementor module's write count, bumped by every task registering a write.
 	 */
-	private const ELEMENTOR_WRITE_COUNT = 5;
+	private const ELEMENTOR_WRITE_COUNT = 6;
 
 	/**
 	 * The capabilities an Elementor operation may declare.
@@ -426,7 +427,18 @@ final class ElementorDefinitionInvariantsTest extends TestCase {
 			$this->assertSame( 'write', $write->mode->value, "Write '{$write->id}' must declare Mode::Write." );
 			$this->assertSame( 'required', $write->previewPolicy->value, "Write '{$write->id}' must require a preview." );
 			$this->assertSame( 'required', $write->snapshotPolicy->value, "Write '{$write->id}' must require a snapshot." );
-			$this->assertSame( 'supported', $write->rollbackPolicy->value, "Write '{$write->id}' must support rollback." );
+			// Tied to the destructive flag rather than stated as a literal, because
+			// the OperationDefinition constructor forces `required` on a destructive
+			// write and would refuse anything else. Hardcoding `supported` here
+			// would make the first destructive Elementor write fail this assertion
+			// for declaring the only policy it is allowed to declare.
+			$expected_rollback = $write->isDestructive ? 'required' : 'supported';
+
+			$this->assertSame(
+				$expected_rollback,
+				$write->rollbackPolicy->value,
+				"Write '{$write->id}' must declare rollbackPolicy '{$expected_rollback}' for its isDestructive flag."
+			);
 			$this->assertSame( 'elementor-write', $write->dispatcherName(), "Write '{$write->id}' must route to elementor-write." );
 		}
 
