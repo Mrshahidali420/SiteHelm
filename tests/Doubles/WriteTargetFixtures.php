@@ -24,6 +24,13 @@ use SiteHelm\Modules\Elementor\ElementorWriteTarget;
  * The target/context/Elementor-double/fixture helpers `ElementorWriteTargetTest`
  * and `ElementorWriteTargetRestoreTest` both need. Split out so the two halves
  * of the original file build the identical subject and fixture document.
+ *
+ * CONTRACT: the using class must declare `const DOCUMENT_ID` (int) and
+ * `array $meta`, keyed `"<post id>|<meta key>"`. PHP 8.1 has no trait
+ * constants and a trait property would collide with the one the using classes
+ * already declare, so the requirement is stated here rather than enforced by
+ * the language — a third class adopting this trait without both members fails
+ * at run time, not at parse time.
  */
 trait WriteTargetFixtures {
 
