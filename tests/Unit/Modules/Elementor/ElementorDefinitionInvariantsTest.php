@@ -11,15 +11,12 @@ declare(strict_types=1);
 namespace SiteHelm\Tests\Unit\Modules\Elementor;
 
 use Brain\Monkey\Functions;
+use SiteHelm\Bootstrap\Plugin;
 use SiteHelm\Contracts\ModuleHealth;
 use SiteHelm\Contracts\ModuleId;
 use SiteHelm\Contracts\OperationDefinition;
-use SiteHelm\Modules\Core\CoreModule;
-use SiteHelm\Modules\Diagnostics\DiagnosticsModule;
 use SiteHelm\Modules\Elementor\ElementorModule;
 use SiteHelm\Modules\Elementor\ElementorPresence;
-use SiteHelm\Modules\Media\MediaModule;
-use SiteHelm\Modules\Menus\MenusModule;
 use SiteHelm\Registry\CapabilityRegistry;
 use SiteHelm\Storage\Installer;
 use SiteHelm\Tests\TestCase;
@@ -419,6 +416,15 @@ final class ElementorDefinitionInvariantsTest extends TestCase {
 	 * smuggled in through any module. The whole definition is searched — id,
 	 * description, both schemas and the example — because a builder named only
 	 * in a property description is still a builder the catalog advertises.
+	 *
+	 * THE MODULE LIST IS READ FROM `Plugin::MODULE_CLASSES`, WHICH IS THE TABLE
+	 * `Plugin::register()` ITSELF BOOTS, and never copied into this file. A
+	 * hand-written copy is how this test used to be written, and it made the
+	 * test blind to the one drift it exists to catch: adding a `BricksModule` to
+	 * the boot table without touching this file would ship a foreign builder
+	 * into the live catalog while this test kept searching the five modules it
+	 * always searched. There is exactly one list now, so a module the plugin
+	 * boots is a module this test checks, by construction.
 	 */
 	public function test_no_operation_in_any_dispatcher_catalog_names_a_foreign_page_builder(): void {
 		Functions\when( 'get_bloginfo' )->justReturn( '6.8.1' );
@@ -426,8 +432,14 @@ final class ElementorDefinitionInvariantsTest extends TestCase {
 
 		$registry = new CapabilityRegistry();
 
-		foreach ( [ new DiagnosticsModule(), new CoreModule(), new MediaModule(), new MenusModule(), new ElementorModule() ] as $module ) {
-			$module->register( $registry );
+		$this->assertNotSame(
+			[],
+			Plugin::MODULE_CLASSES,
+			'An emptied boot table would make the absence assertions below pass without checking any module.'
+		);
+
+		foreach ( Plugin::MODULE_CLASSES as $module_class ) {
+			( new $module_class() )->register( $registry );
 		}
 
 		foreach ( CapabilityRegistry::DISPATCHERS as $dispatcher ) {

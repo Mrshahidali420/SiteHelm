@@ -81,11 +81,14 @@ Malformed JSON, or JSON that decodes to something other than a list of nodes, re
 Two candidate normalizers existed upstream. This takes `Page_Snapshot::normalize_tree()`'s richer shape, because it already tracks depth and distinguishes containers from widgets, which is what a diff needs.
 
 ```
-node   := { id, elType, widgetType|null, kind, label, depth, childCount, children[] }
+node   := { id|null, elType, widgetType|null, kind, label, depth, childCount, children[] }
 totals := { nodeCount, maxDepth, widgetTypeCounts{ <type>: <count> } }
 ```
 
 - `id` is Elementor's own element id, carried through unchanged — the acceptance criterion for REQ-0033 is *stable* ids, so they are never re-minted on read.
+- **`id` is nullable — `['string','null']`** *(amended after the Phase 6a whole-branch review; the controller owns this decision and authorized the change to the frozen node shape, so Phase 6b inherits it rather than rediscovering it)*. A stored element that declares no usable identifier reports `null`, never `''`. Null means the stored element carries no identifier, and **such a node cannot be addressed by a write.**
+
+  The reasoning, recorded so 6b does not relitigate it. The first draft emitted `''`, which is neither stable nor unique: every unidentified node in a document reports the same value, and the branch's own old-template regression fixture produces two siblings both reporting it. REQ-0035 diffs and addresses nodes by `id`, so an approved preview would not have described the change actually applied — the Phase 5 defect class in a new place. Refusing the whole document was rejected because it would make legitimately old templates unreadable, and reading them is the point. Synthesizing a positional identifier was rejected because it puts a derived value in the field a write keys on, dressed as a stored one — the exact defect class this project has already shipped twice. Null is the honest answer: there genuinely is no stable way to address that node, and a nullable type forces every consumer to confront the absence instead of string-comparing against `''`, which is what makes it stronger than a description fix alone.
 - `kind` is `container` or `widget`, derived from `elType`.
 - `label` is a short human string for display only. **It is derived, and the response marks it as such.** A Phase 6b snapshot must never record `label` as if it were stored — this is the exact defect class the menus module hit when it recorded `wp_setup_nav_menu_item()`'s computed `description` as a stored column, and naming it here is what keeps 6b from repeating it.
 - `settings` are **not** returned by the tree read. They are large, may contain arbitrary third-party data, and REQ-0033's acceptance asks for structure, not content. Phase 6b's element read will need them and can add a scoped, opt-in projection then. YAGNI applies.

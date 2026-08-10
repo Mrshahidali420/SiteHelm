@@ -293,10 +293,70 @@ final class ElementorTreeTest extends TestCase {
 		$this->assertSame( 2, $result['totals']['nodeCount'] );
 	}
 
-	public function test_a_node_with_no_usable_identifier_reports_an_empty_one(): void {
-		$result = $this->tree->normalize( [ [ 'elType' => 'container', 'id' => [ 'nested' ] ] ] );
+	/**
+	 * A stored element declaring no usable identifier reports NULL, never ''.
+	 *
+	 * assertSame is what makes this test do its job: assertEquals would accept
+	 * '' back, since '' == null in PHP. If the `is_scalar( $id ) ? … : ''`
+	 * coercion returned, both assertions below fail on the type.
+	 */
+	public function test_a_node_with_no_usable_identifier_reports_null_rather_than_an_empty_string(): void {
+		$result = $this->tree->normalize(
+			[
+				[ 'elType' => 'container' ],
+				[
+					'elType' => 'container',
+					'id'     => [ 'nested' ],
+				],
+			]
+		);
 
-		$this->assertSame( '', $result['nodes'][0]['id'] );
+		// Absent key and non-scalar value are the two ways an identifier can be
+		// unusable, and both must answer the same way.
+		$this->assertNull( $result['nodes'][0]['id'] );
+		$this->assertNull( $result['nodes'][1]['id'] );
+
+		$this->assertNotSame( '', $result['nodes'][0]['id'] );
+		$this->assertNotSame( '', $result['nodes'][1]['id'] );
+	}
+
+	/**
+	 * The reason null rather than '' — stated as an assertion so the reasoning
+	 * cannot be dropped by a later "simplify the fallback" change.
+	 *
+	 * Two siblings with no stored identifier are indistinguishable from each
+	 * other if both report ''. A Phase 6b diff keys nodes by `id`; asked to
+	 * address the second of these by its identifier it would match the first,
+	 * match both, or report a phantom no-op — an approved preview that does not
+	 * describe the change applied. Null is not a value any write can plausibly
+	 * key on, which makes such a node unaddressable by construction rather than
+	 * by documentation.
+	 */
+	public function test_two_unidentified_siblings_are_both_null_and_neither_is_an_empty_string(): void {
+		$result = $this->tree->normalize(
+			[
+				[
+					'id'       => 'root123',
+					'elType'   => 'container',
+					'elements' => [
+						[ 'widgetType' => 'heading' ],
+						[ 'widgetType' => 'image' ],
+					],
+				],
+			]
+		);
+
+		$children = $result['nodes'][0]['children'];
+
+		$this->assertCount( 2, $children );
+		$this->assertNull( $children[0]['id'] );
+		$this->assertNull( $children[1]['id'] );
+
+		// The empty string would have made these two nodes equal on the one
+		// member a write addresses them by. Null does not: it is the absence of
+		// an address, not a shared one.
+		$this->assertNotSame( '', $children[0]['id'] );
+		$this->assertNotSame( '', $children[1]['id'] );
 	}
 
 	public function test_a_widget_with_no_widget_type_is_still_a_widget(): void {
