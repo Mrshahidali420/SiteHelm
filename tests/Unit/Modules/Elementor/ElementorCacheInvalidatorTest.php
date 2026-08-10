@@ -56,6 +56,21 @@ final class ElementorCacheInvalidatorTest extends TestCase {
 	private bool $deletesTake = true;
 
 	/**
+	 * Whether `wp_delete_file()` really removes the generated stylesheet.
+	 *
+	 * False reproduces the site this class exists to be honest about: the delete
+	 * ran, and the bytes are still on disk.
+	 */
+	private bool $fileDeletesTake = true;
+
+	/**
+	 * What happened, in the order it happened.
+	 *
+	 * @var string[]
+	 */
+	private array $events = [];
+
+	/**
 	 * The uploads base directory wp_upload_dir() reports, or [] for a failure.
 	 *
 	 * @var array<string, mixed>
@@ -70,11 +85,13 @@ final class ElementorCacheInvalidatorTest extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();
 
-		$this->meta        = [];
-		$this->deletes     = [];
-		$this->deletesTake = true;
-		$this->uploads     = sys_get_temp_dir() . '/sitehelm-elementor-cache-' . uniqid();
-		$this->uploadDir   = [ 'basedir' => $this->uploads ];
+		$this->meta            = [];
+		$this->deletes         = [];
+		$this->events          = [];
+		$this->deletesTake     = true;
+		$this->fileDeletesTake = true;
+		$this->uploads         = sys_get_temp_dir() . '/sitehelm-elementor-cache-' . uniqid();
+		$this->uploadDir       = [ 'basedir' => $this->uploads ];
 
 		Functions\when( 'get_post_meta' )->alias(
 			fn( int $post_id, string $key, bool $single = false ): mixed => $this->meta[ $post_id . '|' . $key ] ?? ''
@@ -83,6 +100,7 @@ final class ElementorCacheInvalidatorTest extends TestCase {
 		Functions\when( 'delete_post_meta' )->alias(
 			function ( int $post_id, string $key ): bool {
 				$this->deletes[] = [ $post_id, $key ];
+				$this->events[]  = 'meta-delete';
 
 				if ( ! $this->deletesTake ) {
 					return false;
@@ -98,7 +116,9 @@ final class ElementorCacheInvalidatorTest extends TestCase {
 
 		Functions\when( 'wp_delete_file' )->alias(
 			function ( string $path ): void {
-				if ( file_exists( $path ) ) {
+				$this->events[] = 'file-delete';
+
+				if ( $this->fileDeletesTake && file_exists( $path ) ) {
 					unlink( $path );
 				}
 			}
@@ -237,6 +257,13 @@ final class ElementorCacheInvalidatorTest extends TestCase {
 	 * is the only thing that also clears whatever Elementor caches internally.
 	 * The manual deletes below it are the belt to that pair of braces.
 	 *
+	 * THE ORDER IS THE CLAIM, so the order is what is asserted: a recorded event
+	 * log, compared as a sequence. Asserting only that both things happened would
+	 * be a test that cannot fail for the reason it is named after — reversing the
+	 * two calls in the implementation would leave it green, and a flush that ran
+	 * AFTER the manual deletes could regenerate from what it found and leave the
+	 * meta row rewritten.
+	 *
 	 * @runInSeparateProcess
 	 * @preserveGlobalState disabled
 	 */
@@ -253,10 +280,20 @@ final class ElementorCacheInvalidatorTest extends TestCase {
 			define( 'ELEMENTOR_VERSION', '3.25.0' );
 		}
 
-		CacheFakeCssFile::$deleted = [];
+		CacheFakeCssFile::$deleted  = [];
+		CacheFakeCssFile::$onDelete = function (): void {
+			$this->events[] = 'elementor-flush';
+		};
+
+		$this->writeCssFile( 7 );
 
 		$confirmed = $this->invalidator()->invalidate( 7 );
 
+		$this->assertSame(
+			[ 'elementor-flush', 'meta-delete', 'file-delete' ],
+			$this->events,
+			'Elementor\'s own flush must run before either manual delete, not merely alongside them.'
+		);
 		$this->assertSame( [ 7 ], CacheFakeCssFile::$deleted, 'Elementor\'s own flush must be attempted for the post.' );
 		$this->assertSame( [ 'meta' => true, 'file' => true ], $confirmed );
 		$this->assertContains(
@@ -264,6 +301,63 @@ final class ElementorCacheInvalidatorTest extends TestCase {
 			$this->deletes,
 			'Elementor having flushed is not evidence the meta row is gone; the manual delete runs anyway.'
 		);
+	}
+
+	/**
+	 * `Post::create()` answers `Post|false`, and false — Elementor could not make
+	 * a file handle for this post — must not fatal and must not stop the manual
+	 * deletes, which are the half that does the real work on a site in this
+	 * state. A double declaring `create(): object` cannot express it.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_a_css_file_handle_elementor_would_not_create_is_not_a_failure(): void {
+		if ( ! class_exists( 'Elementor\Plugin', false ) ) {
+			class_alias( CacheFakePlugin::class, 'Elementor\Plugin' );
+		}
+
+		if ( ! class_exists( 'Elementor\Core\Files\CSS\Post', false ) ) {
+			class_alias( CacheFakeCssFile::class, 'Elementor\Core\Files\CSS\Post' );
+		}
+
+		if ( ! defined( 'ELEMENTOR_VERSION' ) ) {
+			define( 'ELEMENTOR_VERSION', '3.25.0' );
+		}
+
+		CacheFakeCssFile::$deleted    = [];
+		CacheFakeCssFile::$answerFalse = true;
+		$path                          = $this->writeCssFile( 7 );
+
+		$confirmed = $this->invalidator()->invalidate( 7 );
+
+		$this->assertSame( [], CacheFakeCssFile::$deleted, 'There was no handle, so Elementor deleted nothing.' );
+		$this->assertSame(
+			[ 'meta' => true, 'file' => true ],
+			$confirmed,
+			'The manual deletes are exactly what a site Elementor cannot serve needs, so they must still run and still be confirmed.'
+		);
+		$this->assertFileDoesNotExist( $path );
+	}
+
+	/**
+	 * THE DELETE RAN AND THE FILE IS STILL THERE. An immutable mount, an open
+	 * handle on Windows, a hardened `wp_delete_file` filter — the call returns
+	 * and the bytes stay. Reporting `file => true` there would be this class
+	 * telling its caller the one thing it exists to be unable to get wrong.
+	 */
+	public function test_a_file_delete_that_did_not_take_is_reported_false(): void {
+		$this->fileDeletesTake = false;
+		$path                  = $this->writeCssFile( 7 );
+
+		$confirmed = $this->invalidator()->invalidate( 7 );
+
+		$this->assertSame(
+			[ 'meta' => true, 'file' => false ],
+			$confirmed,
+			'A file still on disk after the delete is not a confirmed invalidation.'
+		);
+		$this->assertFileExists( $path, 'The double must really have left the file, or this proves nothing.' );
 	}
 
 	public function test_the_meta_key_is_frozen(): void {
@@ -274,8 +368,6 @@ final class ElementorCacheInvalidatorTest extends TestCase {
 /**
  * Stands in for `\Elementor\Plugin`, enough for ElementorPresence to report the
  * plugin loaded.
- *
- * phpcs:disable
  */
 final class CacheFakePlugin {
 
@@ -285,11 +377,29 @@ final class CacheFakePlugin {
 
 /**
  * Stands in for `\Elementor\Core\Files\CSS\Post`.
+ *
+ * `create()` DECLARES NO RETURN TYPE, because the real one answers `Post|false`
+ * and false must stay representable: `ElementorApi` guards for it, and a double
+ * narrowed to `: object` would leave that guard permanently unexercised while
+ * looking covered.
  */
 final class CacheFakeCssFile {
 
 	/** @var int[] */
 	public static array $deleted = [];
+
+	/**
+	 * Whether `create()` answers false, as it does when Elementor cannot make a
+	 * handle for the post.
+	 */
+	public static bool $answerFalse = false;
+
+	/**
+	 * Called when the flush runs, so ordering can be asserted as a sequence.
+	 *
+	 * @var callable|null
+	 */
+	public static $onDelete = null;
 
 	public function __construct( private int $post_id = 0 ) {
 	}
@@ -297,10 +407,10 @@ final class CacheFakeCssFile {
 	/**
 	 * @param int $post_id The post identifier.
 	 *
-	 * @return object The file handle.
+	 * @return mixed The file handle, or false.
 	 */
-	public static function create( int $post_id ): object {
-		return new self( $post_id );
+	public static function create( int $post_id ) {
+		return self::$answerFalse ? false : new self( $post_id );
 	}
 
 	/**
@@ -308,5 +418,9 @@ final class CacheFakeCssFile {
 	 */
 	public function delete(): void {
 		self::$deleted[] = $this->post_id;
+
+		if ( is_callable( self::$onDelete ) ) {
+			( self::$onDelete )();
+		}
 	}
 }

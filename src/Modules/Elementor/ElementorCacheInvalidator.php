@@ -99,8 +99,8 @@ final class ElementorCacheInvalidator {
 	 *
 	 * @param int $post_id The post identifier.
 	 *
-	 * @return array<string, bool> `meta` and `file`, each true only when a
-	 *                             re-read confirmed that half gone.
+	 * @return array{meta:bool,file:bool} Each true only when a re-read confirmed
+	 *                                    that half gone.
 	 */
 	public function invalidate( int $post_id ): array {
 		if ( $post_id <= 0 ) {
@@ -123,12 +123,15 @@ final class ElementorCacheInvalidator {
 			wp_delete_file( $path );
 		}
 
+		$meta = get_post_meta( $post_id, self::META_CSS, true );
+
 		// PHP caches stat results per request, so a file deleted a microsecond ago
 		// can still answer file_exists() true. Verifying against a stale cache
-		// would report the one state this class exists to disprove.
+		// would report the one state this class exists to disprove. The clear sits
+		// IMMEDIATELY BEFORE the confirming re-read, with nothing between them that
+		// could stat the path again and re-populate what was just cleared — a clear
+		// followed by other work is a clear that proves nothing.
 		clearstatcache( true, $path ?? '' );
-
-		$meta = get_post_meta( $post_id, self::META_CSS, true );
 
 		return [
 			'meta' => '' === $meta || [] === $meta || null === $meta || false === $meta,
