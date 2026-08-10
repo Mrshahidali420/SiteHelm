@@ -143,6 +143,17 @@ final class ChangeEngine {
 		$eligibility = $this->lifecycle->eligibility( $definition, $operation, $current, $context );
 		$rendering   = $this->preview->render( $definition->id, $current, $planned );
 
+		// The machine-only REQ-0035 channel, copied verbatim. It is added HERE
+		// rather than inside PreviewRenderer because the renderer's job is a
+		// before/after field diff and a structural detail is not one; and it is
+		// added to $rendering rather than to the response alone because the same
+		// value must reach plan_body below, which is what binds the operator's
+		// approval to the structure they were shown. An empty detail adds no key
+		// at all, so every other module's wire shape is unchanged.
+		if ( [] !== $planned->previewDetail ) {
+			$rendering['machine']['detail'] = $planned->previewDetail;
+		}
+
 		$token        = PlanStore::issueToken();
 		$expires_at   = $context->requestTime + $this->plans->ttl();
 		$payload_hash = $this->normalizer->fingerprint( $planned->payload );
