@@ -170,6 +170,46 @@ final class ElementorApiTest extends TestCase {
 	}
 
 	/**
+	 * A document that reports nothing has not reported failure.
+	 *
+	 * `Document::save()` has no upstream return type and is an extension point,
+	 * so null, 0 and '' are all shapes a third-party document really can answer.
+	 * Casting any of them to false would tell the writer above "Elementor ran the
+	 * save and refused it" when in truth nothing was reported at all — and the
+	 * writer branches on exactly that distinction.
+	 *
+	 * @dataProvider provideNonBooleanSaveAnswers
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 *
+	 * @param mixed $answer What the document reports.
+	 */
+	public function test_a_save_answer_that_is_not_a_boolean_is_no_answer_at_all( mixed $answer ): void {
+		$this->installElementor( $this->pluginWith( new ApiFakeDocuments( new ApiFakeDocument( $answer ) ) ) );
+
+		$result = $this->api->saveDocument( 7, [] );
+
+		$this->assertNull( $result );
+		$this->assertNotSame( false, $result, 'false would claim Elementor ran the save and refused it.' );
+	}
+
+	/**
+	 * Every non-boolean a real Document::save() override has been seen to return.
+	 *
+	 * @return array<string, array{mixed}>
+	 */
+	public static function provideNonBooleanSaveAnswers(): array {
+		return [
+			'no return statement at all' => [ null ],
+			'a falsy integer'            => [ 0 ],
+			'the saved post id'          => [ 7 ],
+			'an empty string'            => [ '' ],
+			'the document itself'        => [ [ 'id' => 7 ] ],
+		];
+	}
+
+	/**
 	 * @runInSeparateProcess
 	 * @preserveGlobalState disabled
 	 */
@@ -386,7 +426,12 @@ final class ElementorApiTest extends TestCase {
  * Stands in for `\Elementor\Plugin`. See the test class docblock for exactly
  * which upstream behaviours the doubles in this file reproduce.
  *
- * phpcs:disable
+ * The doubles below share this file because `autoload-dev` maps PSR-4 onto
+ * `tests/`, so a class in a file of another name cannot be autoloaded from a
+ * sibling test. This carried a blanket `phpcs:disable` copied from
+ * `ElementorPresenceTest`; it has been removed rather than scoped, because
+ * `phpcs.xml.dist` lists only `src` and `sitehelm.php` as the files it scans,
+ * so no sniff ever ran on this file and every annotation in it was dead.
  */
 final class ApiFakePlugin {
 
@@ -461,19 +506,24 @@ final class ApiFakeDocument {
 	/**
 	 * Constructs the double.
 	 *
-	 * @param bool $result What save() answers.
+	 * @param mixed $result What save() answers.
 	 */
-	public function __construct( private bool $result ) {
+	public function __construct( private mixed $result ) {
 	}
 
 	/**
 	 * Persists a document.
 	 *
+	 * Deliberately untyped, exactly as upstream is. `Document::save()` carries no
+	 * return type declaration and is an extension point third parties override,
+	 * so a double that promises `bool` is faithful everywhere EXCEPT the rule
+	 * under test — it makes the one shape the class must reject unproduceable.
+	 *
 	 * @param array $data The document data.
 	 *
-	 * @return bool Whether Elementor reports the save successful.
+	 * @return mixed Whatever this document reports.
 	 */
-	public function save( array $data ): bool {
+	public function save( array $data ): mixed {
 		$this->saved[] = $data;
 
 		return $this->result;
