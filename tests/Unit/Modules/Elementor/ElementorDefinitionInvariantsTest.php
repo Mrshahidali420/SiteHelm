@@ -67,12 +67,13 @@ final class ElementorDefinitionInvariantsTest extends TestCase {
 	 */
 	private const OPERATION_IDS = [
 		'elementor-document-list',
+		'elementor-document-get',
 	];
 
 	/**
 	 * The Elementor module's read count. Bumped by Tasks 3 and 4.
 	 */
-	private const ELEMENTOR_READ_COUNT = 1;
+	private const ELEMENTOR_READ_COUNT = 2;
 
 	/**
 	 * The capabilities an Elementor operation may declare.
