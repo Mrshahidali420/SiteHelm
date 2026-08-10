@@ -9,6 +9,8 @@ declare(strict_types=1);
 
 namespace SiteHelm\Tests\Unit\Modules\Elementor;
 
+use SiteHelm\Contracts\ErrorCode;
+use SiteHelm\Contracts\OperationException;
 use SiteHelm\Modules\Elementor\ElementorIdMint;
 use SiteHelm\Modules\Elementor\ElementorStyleRemap;
 use SiteHelm\Tests\TestCase;
@@ -209,13 +211,76 @@ final class ElementorStyleRemapTest extends TestCase {
 		$this->assertSame( 17, $result['settings']['classes']['value'] );
 	}
 
-	public function test_a_local_class_name_with_no_owner_segment_is_left_alone(): void {
+	public function test_a_local_class_with_no_hash_segment_and_an_unmapped_owner_is_left_alone(): void {
 		$subtree                                 = $this->styled( 'root111' );
 		$subtree['settings']['classes']['value'] = [ 'e-nohash' ];
 
 		$result = $this->remap->remap( $subtree, [ 'root111' => 'new1111' ] );
 
 		$this->assertSame( [ 'e-nohash' ], $result['settings']['classes']['value'] );
+	}
+
+	public function test_a_local_class_with_no_hash_segment_is_still_rebound_to_its_new_owner(): void {
+		// `e-<id>` with nothing after it names its owner just as plainly as the
+		// hashed form does. Leaving it bound to the source is issue #97 exactly:
+		// the copy would go on styling the element it was copied from.
+		$subtree                                 = $this->styled( 'root111' );
+		$subtree['styles']['e-root111']          = [
+			'id'   => 'e-root111',
+			'type' => 'class',
+		];
+		$subtree['settings']['classes']['value'] = [ 'e-root111', 'g-shared-brand' ];
+
+		$result = $this->remap->remap( $subtree, [ 'root111' => 'new1111' ] );
+
+		$this->assertSame( [ 'e-new1111', 'g-shared-brand' ], $result['settings']['classes']['value'] );
+		$this->assertArrayHasKey( 'e-new1111', $result['styles'] );
+		$this->assertSame( 'e-new1111', $result['styles']['e-new1111']['id'] );
+		$this->assertArrayNotHasKey( 'e-root111', $result['styles'] );
+	}
+
+	public function test_a_longer_id_that_merely_starts_with_a_mapped_id_is_left_alone(): void {
+		// Whole-token matching, not a substring search: `root1119999` is a
+		// different owner and a substring rewrite would corrupt its class.
+		$subtree                                 = $this->styled( 'root111' );
+		$subtree['settings']['classes']['value'] = [ 'e-root1119999', 'e-root1119999-9f3a10' ];
+
+		$result = $this->remap->remap( $subtree, [ 'root111' => 'new1111' ] );
+
+		$this->assertSame( [ 'e-root1119999', 'e-root1119999-9f3a10' ], $result['settings']['classes']['value'] );
+	}
+
+	public function test_two_style_definitions_that_would_share_one_name_refuse_rather_than_dropping_one(): void {
+		// A damaged document can hold a repeated element id, which collapses two
+		// map entries onto one new id. Keeping either definition would discard
+		// the other's declarations from the page without a word, so this refuses
+		// and the operator keeps the document they already have.
+		$subtree           = $this->styled( 'root111' );
+		$subtree['styles'] = [
+			'e-aaa1111-9f3a10' => [
+				'id'   => 'e-aaa1111-9f3a10',
+				'type' => 'class',
+			],
+			'e-bbb2222-9f3a10' => [
+				'id'   => 'e-bbb2222-9f3a10',
+				'type' => 'class',
+			],
+		];
+
+		try {
+			$this->remap->remap(
+				$subtree,
+				[
+					'aaa1111' => 'new1111',
+					'bbb2222' => 'new1111',
+				]
+			);
+			$this->fail( 'Two definitions resolving to one name must refuse rather than dropping one.' );
+		} catch ( OperationException $exception ) {
+			$this->assertSame( ErrorCode::InvalidInput, $exception->errorCode );
+			$this->assertStringNotContainsString( 'aaa1111', $exception->getMessage() );
+			$this->assertStringNotContainsString( 'e-bbb2222-9f3a10', $exception->getMessage() );
+		}
 	}
 
 	public function test_a_non_array_child_list_member_is_left_alone(): void {

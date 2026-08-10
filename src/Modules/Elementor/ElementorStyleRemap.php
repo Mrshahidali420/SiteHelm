@@ -9,6 +9,9 @@ declare(strict_types=1);
 
 namespace SiteHelm\Modules\Elementor;
 
+use SiteHelm\Contracts\ErrorCode;
+use SiteHelm\Contracts\OperationException;
+
 /**
  * Rebinds an element's local CSS classes to its new id (issue #97).
  *
@@ -31,6 +34,12 @@ namespace SiteHelm\Modules\Elementor;
  * document snapshot as a complete style backup — no snapshot of `_elementor_data`
  * captures one either. A restore therefore restores local classes and leaves
  * global ones exactly as the site currently holds them.
+ *
+ * IT REFUSES RATHER THAN DROPPING A DEFINITION. Where a rename would collapse
+ * two of one element's style definitions into a single key, this raises
+ * `InvalidInput` instead of letting the second overwrite the first. Losing a
+ * style silently is the same failure as the bleed this class exists to stop,
+ * one direction over.
  *
  * PURE, like the mint it follows: no WordPress function, no `\Elementor\`
  * symbol, no state.
@@ -97,6 +106,10 @@ final class ElementorStyleRemap {
 	 * @param array<string, string> $id_map  Old element id => new element id.
 	 *
 	 * @return array<string, mixed> The rebound subtree.
+	 *
+	 * @throws OperationException With ErrorCode::InvalidInput when two of one
+	 *                           element's style definitions would end up sharing
+	 *                           a name.
 	 */
 	public function remap( array $subtree, array $id_map ): array {
 		$styles = $subtree[ self::STYLES_KEY ] ?? null;
@@ -126,6 +139,7 @@ final class ElementorStyleRemap {
 		return $subtree;
 	}
 
+	// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The message is a fixed literal naming no stored value; the sniff registers on T_THROW and cannot tell.
 	/**
 	 * Renames one element's style definitions.
 	 *
@@ -137,16 +151,34 @@ final class ElementorStyleRemap {
 	 * Insertion order is preserved: the definitions are rebuilt in the order
 	 * read, so a re-ided document is byte-comparable against a second run.
 	 *
+	 * A COLLISION REFUSES RATHER THAN OVERWRITING. Two definitions whose names
+	 * resolve to one — reachable on a damaged document holding a repeated
+	 * element id, or on a map two old ids share — cannot both survive as keys of
+	 * one array, and keeping either would drop the other's declarations from the
+	 * page without a word. Silent loss is not a thing a write path may do, so
+	 * this refuses and the operator keeps the document they have.
+	 *
 	 * @param array<array-key, mixed> $styles One node's style definitions.
 	 * @param array<string, string>   $id_map Old element id => new element id.
 	 *
 	 * @return array<array-key, mixed> The renamed definitions.
+	 *
+	 * @throws OperationException With ErrorCode::InvalidInput when two
+	 *                           definitions resolve to the same name.
 	 */
 	private function definitions( array $styles, array $id_map ): array {
 		$renamed = [];
 
 		foreach ( $styles as $key => $definition ) {
 			$name = is_string( $key ) ? $this->rename( $key, $id_map ) : $key;
+
+			if ( array_key_exists( $name, $renamed ) ) {
+				throw new OperationException(
+					ErrorCode::InvalidInput,
+					'Two of this element\'s local style definitions would end up sharing one name, and copying it would silently discard one of them.',
+					'Open the page in Elementor, remove the duplicated local style, save, and retry.'
+				);
+			}
 
 			if ( is_array( $definition ) && ( $definition[ self::ID_KEY ] ?? null ) === $key ) {
 				$definition[ self::ID_KEY ] = $name;
@@ -157,6 +189,7 @@ final class ElementorStyleRemap {
 
 		return $renamed;
 	}
+	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 
 	/**
 	 * Rewrites the class names one node references.
@@ -217,16 +250,20 @@ final class ElementorStyleRemap {
 		$remainder = substr( $name, strlen( self::LOCAL_PREFIX ) );
 		$boundary  = strpos( $remainder, self::CLASS_SEPARATOR );
 
-		if ( false === $boundary ) {
-			return $name;
-		}
+		// A hash segment is Elementor's own format, not a precondition. `e-<id>`
+		// with nothing after it still names its owner, and leaving it bound to
+		// the source is issue #97 in miniature, so the whole remainder is the
+		// owner when no separator follows.
+		$owner = false === $boundary ? $remainder : substr( $remainder, 0, $boundary );
+		$rest  = false === $boundary ? '' : substr( $remainder, $boundary );
 
-		$owner = substr( $remainder, 0, $boundary );
-
+		// WHOLE-TOKEN MATCHING, never a substring search: the owner is looked up
+		// as a complete map key, so `e-abc1234deadbeef-9f3a10` is untouched by a
+		// map entry for `abc1234`.
 		if ( ! isset( $id_map[ $owner ] ) ) {
 			return $name;
 		}
 
-		return self::LOCAL_PREFIX . $id_map[ $owner ] . substr( $remainder, $boundary );
+		return self::LOCAL_PREFIX . $id_map[ $owner ] . $rest;
 	}
 }

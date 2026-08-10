@@ -36,7 +36,14 @@ use SiteHelm\Tests\TestCase;
  *  2. AN IDLESS NODE IS UNMATCHABLE. `find()` matches on the STORED id. Old
  *     exported templates are full of elements that declare none, and matching
  *     the first of them would let a write edit an element the operator never
- *     named.
+ *     named. Its children are still reachable, but `find()` hands back no parent
+ *     id for them at all — `destinationParent()` refuses instead, so a copy
+ *     cannot be silently promoted out of an idless container to the top level.
+ *  3. ONE INDEX SPACE. `find()`'s `index` and the `$index` `insert()` and
+ *     `move()` take both count ELEMENTS, skipping non-array junk without
+ *     counting it. The tests that pin this put the junk in the SAME list the
+ *     write edits and assert the resulting ORDER, because the two spaces only
+ *     disagree when a damaged member sits in front of the target.
  */
 final class ElementorTreeEditTest extends TestCase {
 
@@ -93,14 +100,21 @@ final class ElementorTreeEditTest extends TestCase {
 		$found = $this->edit->find( $this->tree(), 'root222' );
 
 		$this->assertSame( 'root222', $found['node']['id'] );
-		$this->assertNull( $found['parentId'] );
+		$this->assertNull( $this->edit->destinationParent( $found ) );
 		$this->assertSame( 1, $found['index'] );
+	}
+
+	public function test_find_hands_back_no_parent_id_key_at_all(): void {
+		// The key does not exist, so `insert( $tree, $found['parentId'], ... )`
+		// — the call that silently promotes a copy to the document root when the
+		// parent cannot be named — is not a call anybody can write.
+		$this->assertArrayNotHasKey( 'parentId', $this->edit->find( $this->tree(), 'kidbbbb' ) );
 	}
 
 	public function test_find_returns_the_parent_and_index_for_a_nested_element(): void {
 		$found = $this->edit->find( $this->tree(), 'kidbbbb' );
 
-		$this->assertSame( 'root111', $found['parentId'] );
+		$this->assertSame( 'root111', $this->edit->destinationParent( $found ) );
 		$this->assertSame( 1, $found['index'] );
 		$this->assertSame( 'kidbbbb', $found['node']['id'] );
 	}
@@ -129,8 +143,8 @@ final class ElementorTreeEditTest extends TestCase {
 	public function test_find_reports_the_document_root_as_an_addressable_destination(): void {
 		$found = $this->edit->find( $this->tree(), 'root222' );
 
-		$this->assertNull( $found['parentId'] );
 		$this->assertTrue( $found['parentAddressable'] );
+		$this->assertNull( $this->edit->destinationParent( $found ) );
 	}
 
 	public function test_find_reports_a_child_of_an_idless_container_as_having_no_nameable_parent(): void {
@@ -141,8 +155,33 @@ final class ElementorTreeEditTest extends TestCase {
 
 		$found = $this->edit->find( $tree, 'kidaaaa' );
 
-		$this->assertNull( $found['parentId'] );
 		$this->assertFalse( $found['parentAddressable'] );
+	}
+
+	public function test_destination_parent_refuses_a_child_of_an_idless_container(): void {
+		// The refusal is the whole safeguard: answering null here would mean the
+		// document root, and the copy would leave its container without a word.
+		$tree  = [ [ 'elType' => 'container', 'elements' => [ $this->node( 'kidaaaa' ) ] ] ];
+		$found = $this->edit->find( $tree, 'kidaaaa' );
+
+		try {
+			$this->edit->destinationParent( $found );
+			$this->fail( 'An unnameable parent must refuse rather than answering the document root.' );
+		} catch ( OperationException $exception ) {
+			$this->assertSame( ErrorCode::InvalidInput, $exception->errorCode );
+			$this->assertStringNotContainsString( 'kidaaaa', $exception->getMessage() );
+		}
+	}
+
+	public function test_destination_parent_answers_null_at_the_true_document_root(): void {
+		$this->assertNull( $this->edit->destinationParent( $this->edit->find( $this->tree(), 'root111' ) ) );
+	}
+
+	public function test_destination_parent_answers_the_parent_id_in_the_ordinary_case(): void {
+		$this->assertSame(
+			'root111',
+			$this->edit->destinationParent( $this->edit->find( $this->tree(), 'kidcccc' ) )
+		);
 	}
 
 	public function test_find_never_matches_a_node_whose_stored_id_is_not_scalar(): void {
@@ -381,7 +420,7 @@ final class ElementorTreeEditTest extends TestCase {
 		$source     = $this->edit->find( $tree, 'root111' );
 		$reassigned = $mint->reassign( $source['node'], "op\0" . "7\0" . "fp\0" . 'payload', $this->edit->collectIds( $tree ) );
 		$copy       = $remap->remap( $reassigned['tree'], $reassigned['map'] );
-		$result     = $this->edit->insert( $tree, $source['parentId'], $source['index'] + 1, $copy );
+		$result     = $this->edit->insert( $tree, $this->edit->destinationParent( $source ), $source['index'] + 1, $copy );
 
 		$duplicate = $this->edit->find( $result, $copy['id'] );
 		$this->assertSame( [ 'written by' => 'some third-party plugin' ], $duplicate['node']['zzz_unknown_vendor_key'] );
@@ -425,5 +464,84 @@ final class ElementorTreeEditTest extends TestCase {
 
 		$this->assertSame( [ 'root111', 'newaaaa' ], $this->ids( $result ) );
 		$this->assertSame( 'not-an-element', $result[0] );
+	}
+
+	/**
+	 * One container whose own child list carries junk AHEAD of the elements.
+	 *
+	 * The junk must sit in the SAME list the operation edits. A scalar in the
+	 * outer list while the write happens in a clean inner one proves nothing:
+	 * the two index spaces only disagree when the damaged member precedes the
+	 * target inside the list being spliced.
+	 *
+	 * @return array[] The raw tree.
+	 */
+	private function tree_with_junk_before_its_children(): array {
+		return [
+			$this->node(
+				'root111',
+				[ 'not-an-element', $this->node( 'kidaaaa' ), $this->node( 'kidbbbb' ), $this->node( 'kidcccc' ) ]
+			),
+		];
+	}
+
+	public function test_a_duplicate_lands_after_its_source_when_junk_precedes_them(): void {
+		// The documented pipeline, run against the list that used to break it:
+		// find() counted elements, spliced() counted raw members, and the copy
+		// arrived one seat early — in front of the element it was copied from.
+		$tree  = $this->tree_with_junk_before_its_children();
+		$found = $this->edit->find( $tree, 'kidbbbb' );
+
+		$this->assertSame( 1, $found['index'] );
+
+		$result   = $this->edit->insert(
+			$tree,
+			$this->edit->destinationParent( $found ),
+			$found['index'] + 1,
+			$this->node( 'newaaaa' )
+		);
+		$children = $result[0]['elements'];
+
+		$this->assertSame( 'not-an-element', $children[0] );
+		$this->assertSame( 'kidaaaa', $children[1]['id'] );
+		$this->assertSame( 'kidbbbb', $children[2]['id'] );
+		$this->assertSame( 'newaaaa', $children[3]['id'] );
+		$this->assertSame( 'kidcccc', $children[4]['id'] );
+	}
+
+	public function test_insert_counts_element_positions_not_raw_members(): void {
+		$result   = $this->edit->insert( $this->tree_with_junk_before_its_children(), 'root111', 0, $this->node( 'newaaaa' ) );
+		$children = $result[0]['elements'];
+
+		// Position 0 is the first ELEMENT, so the junk keeps the seat the
+		// document gave it and the new node is still the first child element.
+		$this->assertSame( 'not-an-element', $children[0] );
+		$this->assertSame( 'newaaaa', $children[1]['id'] );
+		$this->assertSame( 'kidaaaa', $children[2]['id'] );
+		$this->assertSame( 0, $this->edit->find( $result, 'newaaaa' )['index'] );
+	}
+
+	public function test_move_counts_element_positions_not_raw_members(): void {
+		$result   = $this->edit->move( $this->tree_with_junk_before_its_children(), 'kidaaaa', 'root111', 1 );
+		$children = $result[0]['elements'];
+
+		$this->assertSame( 'not-an-element', $children[0] );
+		$this->assertSame( 'kidbbbb', $children[1]['id'] );
+		$this->assertSame( 'kidaaaa', $children[2]['id'] );
+		$this->assertSame( 'kidcccc', $children[3]['id'] );
+		$this->assertSame( 'root111/1', $this->edit->path( $result, 'kidaaaa' ) );
+	}
+
+	public function test_move_past_the_last_element_lands_after_it_not_before_trailing_junk(): void {
+		$tree = [
+			$this->node( 'root111', [ $this->node( 'kidaaaa' ), $this->node( 'kidbbbb' ), 'not-an-element' ] ),
+		];
+
+		$result   = $this->edit->move( $tree, 'kidaaaa', 'root111', 99 );
+		$children = $result[0]['elements'];
+
+		$this->assertSame( 'kidbbbb', $children[0]['id'] );
+		$this->assertSame( 'not-an-element', $children[1] );
+		$this->assertSame( 'kidaaaa', $children[2]['id'] );
 	}
 }
