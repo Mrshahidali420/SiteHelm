@@ -224,5 +224,26 @@ final class ElementorModule implements IntegrationModule {
 			ElementorWidgetSettingsUpdate::definition(),
 			new ElementorWidgetSettingsUpdate( $targets, $document, $merge, $edit, $coercion, $writer, $diff, $inputs )
 		);
+
+		$registry->registerWrite(
+			ElementorElementMove::definition(),
+			new ElementorElementMove( $targets, $document, $merge, $edit, $coercion, $writer, $diff, $inputs )
+		);
+
+		$registry->registerWrite(
+			ElementorElementDuplicate::definition(),
+			new ElementorElementDuplicate(
+				$targets,
+				$document,
+				$merge,
+				$edit,
+				new ElementorIdMint(),
+				new ElementorStyleRemap(),
+				$coercion,
+				$writer,
+				$diff,
+				new PayloadNormalizer()
+			)
+		);
 	}
 }
