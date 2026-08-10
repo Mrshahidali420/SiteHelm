@@ -122,7 +122,13 @@ final class ElementorApi {
 			return null;
 		}
 
-		return (bool) $document->save( [ self::SAVE_ELEMENTS_KEY => $tree ] );
+		$result = $document->save( [ self::SAVE_ELEMENTS_KEY => $tree ] );
+
+		// `Document::save()` is an extension point with no upstream return type, so
+		// a document that answers null, 0 or '' has reported nothing at all. Casting
+		// would turn that silence into `false` — "Elementor ran the save and refused
+		// it" — which is the exact collapse this class exists to prevent.
+		return is_bool( $result ) ? $result : null;
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 

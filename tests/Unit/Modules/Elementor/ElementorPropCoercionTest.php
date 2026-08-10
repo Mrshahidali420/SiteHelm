@@ -162,6 +162,76 @@ final class ElementorPropCoercionTest extends TestCase {
 	}
 
 	/**
+	 * The same rule on the other refusal, where the caller controls the text.
+	 *
+	 * The InvalidInput refusal has to name the rejected field for the operator to
+	 * act on it, so it reflects the key — and the key comes from the caller. A
+	 * caller sending a path, a SQL fragment or a stack trace as a settings key
+	 * would otherwise get it reflected straight back into the envelope.
+	 *
+	 * @dataProvider provideKeysThatAreNotSettingNames
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 *
+	 * @param string $key The hostile key.
+	 */
+	public function test_an_invalid_input_refusal_reflects_nothing_that_is_not_a_setting_name( string $key ): void {
+		$this->installElementor();
+
+		try {
+			$this->coercion->assertKnownKeys( 'e-heading', [ $key => 'value' ] );
+			$this->fail( 'The refusal under test did not happen.' );
+		} catch ( OperationException $exception ) {
+			$text = $exception->getMessage() . ' ' . (string) $exception->remediation;
+
+			$this->assertSame( ErrorCode::InvalidInput, $exception->errorCode );
+			$this->assertStringNotContainsString( $key, $text, 'A key that is not a setting name may not be reflected.' );
+			$this->assertStringNotContainsString( '/', $text, 'No filesystem path may appear in an envelope.' );
+			$this->assertStringNotContainsString( '\\', $text, 'No filesystem path may appear in an envelope.' );
+			$this->assertStringNotContainsStringIgnoringCase( 'select ', $text, 'No SQL may appear in an envelope.' );
+			$this->assertStringNotContainsStringIgnoringCase( '#0 ', $text, 'No stack trace may appear in an envelope.' );
+		}
+	}
+
+	/**
+	 * Settings keys no widget could declare, in the shapes that carry a payload.
+	 *
+	 * @return array<string, array{string}>
+	 */
+	public static function provideKeysThatAreNotSettingNames(): array {
+		return [
+			'a filesystem path'    => [ '/var/www/html/wp-config.php' ],
+			'a windows path'       => [ 'C:\\inetpub\\wwwroot\\secrets.txt' ],
+			'a SQL fragment'       => [ 'SELECT user_pass FROM wp_users' ],
+			'a stack trace'        => [ "#0 /srv/plugin.php(11): save()\n#1 {main}" ],
+			'an html payload'      => [ '<script>alert(1)</script>' ],
+			'a key past any limit' => [ str_repeat( 'a', 65 ) ],
+		];
+	}
+
+	/**
+	 * The other half of the rule: a real key must still be named.
+	 *
+	 * A refusal an operator cannot act on is not a useful refusal, so bounding
+	 * what may be reflected must not cost the field name in the ordinary case.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_an_invalid_input_refusal_still_names_a_legitimate_key(): void {
+		$this->installElementor();
+
+		try {
+			$this->coercion->assertKnownKeys( 'e-heading', [ 'title_mobile' => 'Hello' ] );
+			$this->fail( 'The refusal under test did not happen.' );
+		} catch ( OperationException $exception ) {
+			$this->assertStringContainsString( 'title_mobile', $exception->getMessage() );
+			$this->assertStringNotContainsString( 'Hello', $exception->getMessage(), 'The value is still never reflected.' );
+		}
+	}
+
+	/**
 	 * THE SWEEP IS WHOLE-TREE, and this is the test that says so.
 	 *
 	 * The second widget is nested two levels down inside containers and is not
@@ -445,7 +515,12 @@ final class ElementorPropCoercionTest extends TestCase {
  * Stands in for `\Elementor\Plugin`. See the test class docblock for exactly
  * which upstream behaviours the doubles in this file reproduce.
  *
- * phpcs:disable
+ * The doubles below share this file because `autoload-dev` maps PSR-4 onto
+ * `tests/`, so a class in a file of another name cannot be autoloaded from a
+ * sibling test. This carried a blanket `phpcs:disable` copied from
+ * `ElementorPresenceTest`; it has been removed rather than scoped, because
+ * `phpcs.xml.dist` lists only `src` and `sitehelm.php` as the files it scans,
+ * so no sniff ever ran on this file and every annotation in it was dead.
  */
 final class CoercionFakePlugin {
 

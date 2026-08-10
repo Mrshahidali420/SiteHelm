@@ -112,6 +112,17 @@ final class ElementorPropCoercion {
 	public const NODE_WIDGET_TYPE = 'widgetType';
 
 	/**
+	 * What a settings key is allowed to look like before it may be quoted back.
+	 *
+	 * Elementor's own control and prop names are word characters and dashes.
+	 * Anything else is caller-controlled text that a refusal must describe
+	 * rather than echo.
+	 *
+	 * @var string
+	 */
+	public const KEY_PATTERN = '/^[A-Za-z0-9_-]{1,64}$/';
+
+	/**
 	 * Prop schemas already fetched during this object's life, keyed by widget
 	 * type.
 	 *
@@ -163,7 +174,7 @@ final class ElementorPropCoercion {
 	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 
 	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- The module vocabulary is camelCase across every class.
-	// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The message is a fixed string plus a setting KEY; no value and no stored content reach it.
+	// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The message is a fixed string plus a setting key that describe_key() has already bounded; no value and no stored content reach it.
 	/**
 	 * Refuses an input key the widget's schema does not declare.
 	 *
@@ -186,8 +197,8 @@ final class ElementorPropCoercion {
 				throw new OperationException(
 					ErrorCode::InvalidInput,
 					sprintf(
-						'This widget does not accept a setting named "%s", and Elementor discards a setting it does not recognise instead of reporting it.',
-						(string) $key
+						'This widget does not accept %s, and Elementor discards a setting it does not recognise instead of reporting it.',
+						$this->describe_key( $key )
 					),
 					'Send only the settings this widget declares, then retry.'
 				);
@@ -196,6 +207,30 @@ final class ElementorPropCoercion {
 	}
 	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+
+	/**
+	 * Names a rejected setting key, or describes it when it cannot be named.
+	 *
+	 * An operator still has to learn WHICH field was rejected, so a key that
+	 * looks like a setting key is quoted back verbatim. A key that does not is
+	 * caller-controlled text of arbitrary shape — a path, a SQL fragment, a
+	 * stack trace — and reflecting it would put it in front of whoever reads the
+	 * error. Those are described by length instead, which is enough for the
+	 * caller to find the offending entry in the payload it sent.
+	 *
+	 * @param int|string $key The rejected key.
+	 *
+	 * @return string A phrase safe to place in an operator-facing message.
+	 */
+	private function describe_key( int|string $key ): string {
+		$key = (string) $key;
+
+		if ( 1 === preg_match( self::KEY_PATTERN, $key ) ) {
+			return sprintf( 'a setting named "%s"', $key );
+		}
+
+		return sprintf( 'a setting whose name is not in a valid form (%d characters)', strlen( $key ) );
+	}
 
 	/**
 	 * Coerces one node and, recursively, its children.
