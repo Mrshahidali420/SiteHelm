@@ -109,7 +109,6 @@ final class ElementorSettingsMerge {
 	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 
-	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- The module vocabulary is camelCase across every class.
 	// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The messages are literals written for end users and quote no stored content.
 	/**
 	 * The widget the request names, with its stored settings.
@@ -170,7 +169,6 @@ final class ElementorSettingsMerge {
 		];
 	}
 	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
-	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 
 	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- The module vocabulary is camelCase across every class.
 	/**
