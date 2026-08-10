@@ -96,8 +96,13 @@ final class ElementorElementAddInput {
 	 * The same character set `ElementorWriteFields::ELEMENT_ID_PATTERN` admits,
 	 * because a widget type name reaches Elementor's registry as a lookup key and
 	 * whitespace or a separator in one names nothing that could be registered.
+	 *
+	 * The length bound is CONCATENATED FROM `WIDGET_TYPE_MAX_LENGTH` rather than
+	 * spelled a second time inside the pattern. Two spellings of one number is a
+	 * pair that drifts the first time one of them is raised, and this file is
+	 * shared by the whole Elementor write block.
 	 */
-	private const WIDGET_TYPE_PATTERN = '/^[A-Za-z0-9_-]{1,64}$/';
+	private const WIDGET_TYPE_PATTERN = '/^[A-Za-z0-9_-]{1,' . self::WIDGET_TYPE_MAX_LENGTH . '}$/';
 
 	/**
 	 * Constructs the reader.
