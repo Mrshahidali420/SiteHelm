@@ -18,6 +18,7 @@ use SiteHelm\Modules\Elementor\ElementorCacheInvalidator;
 use SiteHelm\Modules\Elementor\ElementorDocument;
 use SiteHelm\Modules\Elementor\ElementorDocumentWriter;
 use SiteHelm\Modules\Elementor\ElementorElementAdd;
+use SiteHelm\Modules\Elementor\ElementorElementAddInput;
 use SiteHelm\Modules\Elementor\ElementorIdMint;
 use SiteHelm\Modules\Elementor\ElementorPresence;
 use SiteHelm\Modules\Elementor\ElementorPropCoercion;
@@ -119,16 +120,18 @@ trait ElementAddFixtures {
 		$tree     = new ElementorTree();
 		$coercion = new ElementorPropCoercion( $api );
 		$writer   = new ElementorDocumentWriter( $api, $document, new ElementorCacheInvalidator( $api ) );
+		$edit     = new ElementorTreeEdit();
 
 		return new ElementorElementAdd(
 			new ElementorWriteTarget( $document, $tree, $presence, $coercion, $writer ),
 			$document,
-			new ElementorTreeEdit(),
+			$edit,
 			new ElementorIdMint(),
 			$coercion,
 			$writer,
 			new ElementorTreeDiff( $tree ),
-			new PayloadNormalizer()
+			new PayloadNormalizer(),
+			new ElementorElementAddInput( $coercion, $edit )
 		);
 	}
 

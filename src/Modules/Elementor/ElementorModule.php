@@ -206,7 +206,8 @@ final class ElementorModule implements IntegrationModule {
 				$coercion,
 				$writer,
 				new ElementorTreeDiff( $tree ),
-				new PayloadNormalizer()
+				new PayloadNormalizer(),
+				new ElementorElementAddInput( $coercion, new ElementorTreeEdit() )
 			)
 		);
 	}
