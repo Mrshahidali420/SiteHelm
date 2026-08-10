@@ -201,17 +201,54 @@ final class ElementorElementRemoveTest extends TestCase {
 	}
 
 	/**
-	 * The payload is closed and sorted, and carries the whole tree the apply
-	 * writes.
+	 * The payload is closed, names the element the request asked to remove, and
+	 * carries the whole tree the apply writes.
+	 *
+	 * THIS CASE PINS MEMBERSHIP AND CONTENT, NOT SORTING, and its name and
+	 * assertions now say only that. `planChange()` builds the payload from three
+	 * literal members — `document`, `elementId`, `tree` — and `SORT_STRING` order
+	 * for those three (`d` < `e` < `t`) IS their insertion order, so the
+	 * `ksort( $payload, SORT_STRING )` in `ElementorElementRemove::planChange()`
+	 * is a no-op. No input can make it observable: the key set is fixed by the
+	 * source rather than derived from the request, so there is no reachable call
+	 * that produces the members out of order. Deleting that `ksort` leaves this
+	 * case green, and MEASURED IT DOES — verified by mutation, not reasoned. A
+	 * fixture built only to make the sort observable would have to fabricate a
+	 * payload shape `planChange()` cannot produce.
+	 *
+	 * What would make the sort observable, and what should bring a real assertion
+	 * with it: a fourth payload member whose key sorts before an existing one
+	 * (anything below `document`), or a member added to the literal out of order.
+	 * The sort stays in the source regardless — the payload is fingerprinted at
+	 * preview and digest-compared at apply, and cheap insurance against a future
+	 * member landing out of order is worth more than the line costs. Determinism
+	 * itself is independently pinned by
+	 * `test_planning_the_same_removal_twice_produces_a_byte_identical_payload`.
 	 */
-	public function test_the_payload_carries_the_remaining_tree_in_sorted_keys(): void {
+	public function test_the_payload_carries_the_remaining_tree_and_names_the_removed_element(): void {
 		$this->withElementor();
 		$this->storeMoveFixture();
 
 		$planned = $this->plan( $this->elementRemove(), $this->removeArguments() );
 
-		$this->assertSame( [ 'document', 'elementId', 'tree' ], array_keys( $planned->payload ) );
+		$this->assertSame(
+			[ 'document', 'elementId', 'tree' ],
+			array_keys( $planned->payload ),
+			'The payload must carry exactly these three members and nothing else.'
+		);
 		$this->assertSame( 'c222222', $planned->payload['elementId'] );
+
+		// The `tree` member is what the apply writes, so this case asserts it
+		// really is the remaining tree rather than leaving the name unbacked:
+		// the removed container and its two children are gone, the rest is there.
+		$this->assertSame(
+			[ 'c111111' ],
+			array_column( $planned->payload['tree'], 'id' )
+		);
+		$this->assertSame(
+			[ 'w111111', 'w222222', 'w333333', 'w444444' ],
+			array_column( $planned->payload['tree'][0]['elements'], 'id' )
+		);
 	}
 
 	/**

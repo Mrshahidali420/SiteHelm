@@ -315,19 +315,19 @@ final class ElementorElementMoveTest extends TestCase {
 	}
 
 	/**
-	 * NO PARTIAL STATE IS PRODUCIBLE.
+	 * A destination that is not in the document is refused AT PLAN.
 	 *
-	 * `ElementorTreeEdit::move()` finds and validates before it removes, so a
-	 * refused move returns the caller's tree untouched. The claim is asserted on
-	 * the STORED BYTES rather than on a decoded tree, because a byte comparison
-	 * cannot be satisfied by a document that was rewritten into an equivalent
-	 * shape.
+	 * This case deliberately makes NO claim about the stored bytes. It only ever
+	 * calls `resolveTarget()` and `planChange()`, neither of which can reach
+	 * `writer->write()` under any mutation of the operation, so a byte-identity
+	 * assertion here would be true by construction — coverage-shaped, but unable
+	 * to fail. The byte-identity claim lives where a write could actually land,
+	 * in `test_a_destination_that_vanished_between_preview_and_apply_is_a_conflict`
+	 * below, which reaches `store()` and is refused inside it.
 	 */
-	public function test_a_move_into_a_destination_that_is_not_there_leaves_the_document_byte_identical(): void {
+	public function test_a_move_into_a_destination_that_is_not_there_is_refused(): void {
 		$this->withElementor();
 		$this->storeMoveFixture();
-
-		$before = $this->storedRaw();
 
 		try {
 			$this->plan( $this->elementMove(), $this->moveArguments( [ 'parentElementId' => 'c999999' ] ) );
@@ -335,9 +335,6 @@ final class ElementorElementMoveTest extends TestCase {
 		} catch ( OperationException $exception ) {
 			$this->assertSame( ErrorCode::TargetNotFound, $exception->errorCode );
 		}
-
-		$this->assertSame( $before, $this->storedRaw(), 'A refused move must leave the stored document untouched.' );
-		$this->assertSame( [], $this->writes, 'A refused move must write nothing.' );
 	}
 
 	/**
@@ -359,8 +356,6 @@ final class ElementorElementMoveTest extends TestCase {
 		$this->withElementor();
 		$this->storeMoveFixture();
 
-		$before = $this->storedRaw();
-
 		try {
 			$this->plan(
 				$this->elementMove(),
@@ -371,8 +366,6 @@ final class ElementorElementMoveTest extends TestCase {
 			$this->assertSame( ErrorCode::InvalidInput, $exception->errorCode );
 			$this->assertStringContainsString( 'inside itself', $exception->getMessage() );
 		}
-
-		$this->assertSame( $before, $this->storedRaw(), 'A refused move must leave the stored document untouched.' );
 	}
 
 	/**
@@ -440,6 +433,20 @@ final class ElementorElementMoveTest extends TestCase {
 	 * same code: an operator has to know WHICH end of the move went away, and a
 	 * test that checked only the code would stay green if this refusal were
 	 * deleted and the other one caught the case.
+	 *
+	 * NO PARTIAL STATE IS PRODUCIBLE, and this is the case that proves it.
+	 * `applyChange()` is the ONLY path that reaches `writer->write()`, so it is
+	 * the only place where a refusal could leave half a move behind. `store()`
+	 * validates both endpoints against the document as it reads NOW, before it
+	 * asks `ElementorTreeEdit::move()` for anything, so the row is untouched when
+	 * this refusal is raised. The claim is asserted on the STORED BYTES rather
+	 * than on a decoded tree, because a byte comparison cannot be satisfied by a
+	 * document that was rewritten into an equivalent shape.
+	 *
+	 * Mutation-proved: writing the tree in `ElementorElementMove::store()` before
+	 * the endpoint guards run — which is what a "remove first, validate second"
+	 * ordering would amount to — keeps the refusal and its code intact but turns
+	 * both assertions below red.
 	 */
 	public function test_a_destination_that_vanished_between_preview_and_apply_is_a_conflict(): void {
 		$this->withElementor();
@@ -453,6 +460,13 @@ final class ElementorElementMoveTest extends TestCase {
 		$operation->captureSnapshot( $target, $this->context() );
 		$this->storeWithout( 'c222222' );
 
+		// Taken AFTER the third-party edit, so the comparison is against the
+		// document the apply actually met, and reset for the same reason: the
+		// fixture helpers store verbatim and record nothing, so anything in
+		// `$this->writes` from here on was written by the operation.
+		$before       = $this->storedRaw();
+		$this->writes = [];
+
 		try {
 			$operation->applyChange( $target, $planned, $this->context() );
 			$this->fail( 'A destination that is no longer on the page must be refused.' );
@@ -460,6 +474,9 @@ final class ElementorElementMoveTest extends TestCase {
 			$this->assertSame( ErrorCode::Conflict, $exception->errorCode );
 			$this->assertStringContainsString( 'approved to move into', $exception->getMessage() );
 		}
+
+		$this->assertSame( $before, $this->storedRaw(), 'A refused apply must leave the stored document untouched.' );
+		$this->assertSame( [], $this->writes, 'A refused apply must write nothing.' );
 	}
 
 	/**

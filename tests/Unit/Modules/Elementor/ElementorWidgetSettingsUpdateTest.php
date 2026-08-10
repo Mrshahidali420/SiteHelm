@@ -51,6 +51,25 @@ final class ElementorWidgetSettingsUpdateTest extends TestCase {
 	private const DOCUMENT_ID = 7;
 
 	/**
+	 * Every settings key `title` can be stored under, one per device mode.
+	 *
+	 * WRITTEN OUT RATHER THAN BUILT FROM `DEVICE_SUFFIXES`. These are the strings
+	 * a real stored Elementor widget holds, stated here so the per-device cases
+	 * can measure the code against them instead of against the code's own
+	 * concatenation. See `otherDeviceKeys()` for why that distinction is the whole
+	 * point of the helper.
+	 *
+	 * @var string[]
+	 */
+	private const TITLE_DEVICE_KEYS = [
+		'title',
+		'title_laptop',
+		'title_tablet',
+		'title_mobile',
+		'title_widescreen',
+	];
+
+	/**
 	 * The faked post meta table, keyed `<post id>|<meta key>`.
 	 *
 	 * @var array<string, mixed>
@@ -131,6 +150,15 @@ final class ElementorWidgetSettingsUpdateTest extends TestCase {
 	public function test_the_declared_device_enum_is_exactly_the_set_the_suffix_map_can_spell(): void {
 		$schema = ElementorWidgetSettingsUpdate::definition()->inputSchema;
 
+		// STATED LITERALLY, so a sixth breakpoint cannot be added to the map
+		// without somebody noticing that `TITLE_DEVICE_KEYS` below — which the
+		// per-device cases measure "no other device was written" against — has
+		// not been told about it.
+		$this->assertSame(
+			[ 'desktop', 'laptop', 'tablet', 'mobile', 'widescreen' ],
+			array_keys( ElementorWidgetSettingsUpdate::DEVICE_SUFFIXES ),
+			'The suffix map declares exactly these five device modes.'
+		);
 		$this->assertSame(
 			array_keys( ElementorWidgetSettingsUpdate::DEVICE_SUFFIXES ),
 			$schema['properties']['device']['enum']
@@ -628,21 +656,29 @@ final class ElementorWidgetSettingsUpdateTest extends TestCase {
 	/**
 	 * The device keys `title` is NOT written to for a given device.
 	 *
+	 * THE KEYS ARE STATED, NOT DERIVED. This helper used to build them by
+	 * iterating `ElementorWidgetSettingsUpdate::DEVICE_SUFFIXES` and concatenating
+	 * — which is `suffixed()`'s own logic, so a drifted suffix map drifted the
+	 * expectation along with it and the negative half of the claim could not
+	 * detect the drift it exists to catch. A test that re-computes its answer with
+	 * the code's own rules is not checking the code, it is agreeing with it.
+	 *
+	 * `TITLE_DEVICE_KEYS` therefore restates the five keys literally, in the same
+	 * spirit as the hard-coded expectations in `deviceCases()`. Keeping the two in
+	 * step when a device mode is added is deliberate work, not a maintenance
+	 * accident: adding a breakpoint to the map should require someone to write
+	 * down what its key is called.
+	 *
 	 * @param string $written The key the device under test writes to.
 	 *
 	 * @return string[] The other four device keys.
 	 */
 	private function otherDeviceKeys( string $written ): array {
-		$keys = [];
-
-		foreach ( ElementorWidgetSettingsUpdate::DEVICE_SUFFIXES as $suffix ) {
-			$key = 'title' . $suffix;
-
-			if ( $key !== $written ) {
-				$keys[] = $key;
-			}
-		}
-
-		return $keys;
+		return array_values(
+			array_filter(
+				self::TITLE_DEVICE_KEYS,
+				static fn( string $key ): bool => $key !== $written
+			)
+		);
 	}
 }

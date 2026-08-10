@@ -266,6 +266,26 @@ final class ElementorElementUpdateTest extends TestCase {
 	 * This is what makes the merge base a read at apply rather than a snapshot
 	 * taken at preview. A payload carrying the finished settings map would
 	 * silently revert whatever somebody else changed in between.
+	 *
+	 * THE KEY ASSERTION PINS THE PAYLOAD'S MEMBERSHIP, NOT ITS SORTING, and the
+	 * message below says only what it can prove. `planChange()` builds the payload
+	 * from three literal members — `document`, `elementId`, `settings` — and
+	 * `SORT_STRING` order for those three IS their insertion order, so the
+	 * `ksort( $payload, SORT_STRING )` at `ElementorElementUpdate::planChange()`
+	 * is a no-op that no input can make observable: the key set is fixed by the
+	 * source, not derived from the request, so there is no reachable call that
+	 * produces them out of order. Deleting that `ksort` leaves this case green,
+	 * and MEASURED IT DOES — verified by mutation, not reasoned. A fixture built
+	 * only to make the sort observable would have to fabricate a payload shape
+	 * `planChange()` cannot produce, which is a different way of writing a test
+	 * that proves nothing about the code.
+	 *
+	 * What would make the sort observable, and what should bring a real assertion
+	 * with it: a fourth payload member whose key sorts before an existing one
+	 * (anything below `document`), or a member added to the literal out of order.
+	 * Determinism itself is independently pinned by
+	 * `test_planning_the_same_change_twice_produces_a_byte_identical_payload`,
+	 * which fails on any non-reproducible payload however it is ordered.
 	 */
 	public function test_the_payload_carries_only_the_settings_the_request_asked_for(): void {
 		$this->withElementor();
@@ -279,7 +299,7 @@ final class ElementorElementUpdateTest extends TestCase {
 		$this->assertSame(
 			[ 'document', 'elementId', 'settings' ],
 			array_keys( $planned->payload ),
-			'The payload keys must be sorted and closed.'
+			'The payload must carry exactly these three members and nothing else.'
 		);
 		$this->assertSame( [ 'title' => 'Our services' ], $planned->payload['settings'] );
 	}
