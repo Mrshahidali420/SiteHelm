@@ -45,11 +45,20 @@ use SiteHelm\Tests\TestCase;
  *
  * TEST DOUBLE FIDELITY (Global Constraints): the doubles reproduce only what
  * this class reads through `ElementorApi` — a public static `$instance`, a
- * `documents` manager answering `get( $post_id )`, and a document whose
- * `save( array $data )` either answers a bool or throws. The atomic-widget
- * throw is reproduced as a plain `RuntimeException`, because the guard under
- * test is `\Throwable` and naming Elementor's own exception class here would
- * put an `\Elementor\` symbol in a third file.
+ * `documents` manager answering `get( $post_id )`, and a document answering
+ * `save( array $data )`. NEITHER DOUBLE NARROWS ITS RETURN TYPE, because the
+ * real collaborators do not: `Elementor\Core\Base\Document::save()` is an
+ * extension point declaring NO return type, and `Documents_Manager::get()`
+ * answers `Document|false`. `ElementorApi::saveDocument()` exists precisely to
+ * tell "Elementor answered a bool" from "Elementor answered nothing", and a
+ * double declaring `: bool` would make the second of those literally
+ * unrepresentable — the unreachable path would be untestable through these
+ * doubles while looking covered. That is the defect class this project keeps
+ * re-finding: a double faithful everywhere except the one rule under test.
+ *
+ * The atomic-widget throw is reproduced as a plain `RuntimeException`, because
+ * the guard under test is `\Throwable` and naming Elementor's own exception
+ * class here would put an `\Elementor\` symbol in a third file.
  *
  * The post meta store is a plain array behind faked core functions, and
  * `wp_slash`/`wp_unslash` are faked to the real `addslashes`/`stripslashes`
@@ -162,6 +171,19 @@ final class ElementorDocumentWriterTest extends TestCase {
 	}
 
 	/**
+	 * The digest of post 7's raw stored document AS IT IS NOW.
+	 *
+	 * This is what a write operation computes for its snapshot and hands to
+	 * `write()`, so every call below takes it immediately before writing —
+	 * exactly the ordering production uses.
+	 *
+	 * @return string The prior digest.
+	 */
+	private function priorDigest(): string {
+		return ElementorDocumentWriter::storedDigest( 7 );
+	}
+
+	/**
 	 * The tree currently stored for post 7, decoded.
 	 *
 	 * @return mixed The decoded tree.
@@ -192,9 +214,11 @@ final class ElementorDocumentWriterTest extends TestCase {
 	 * either in the shared process would make every later test in the suite run
 	 * against a site that has Elementor.
 	 *
-	 * @param object $document The document `Documents_Manager::get()` answers.
+	 * @param mixed $document The document `Documents_Manager::get()` answers —
+	 *                        `mixed`, not `object`, because the real manager
+	 *                        answers `Document|false`.
 	 */
-	private function installElementor( object $document ): void {
+	private function installElementor( mixed $document ): void {
 		if ( ! class_exists( 'Elementor\Plugin', false ) ) {
 			class_alias( WriterFakePlugin::class, 'Elementor\Plugin' );
 		}
@@ -219,7 +243,7 @@ final class ElementorDocumentWriterTest extends TestCase {
 		$this->storeDocument( [ [ 'elType' => 'section', 'id' => 'old000' ] ] );
 		$this->installElementor( new WriterFakeDocument( 7, true, true ) );
 
-		$path = $this->writer()->write( 7, $new );
+		$path = $this->writer()->write( 7, $new, $this->priorDigest() );
 
 		$this->assertSame( ElementorDocumentWriter::PATH_API, $path );
 		$this->assertSame( $new, $this->storedDocument() );
@@ -234,9 +258,13 @@ final class ElementorDocumentWriterTest extends TestCase {
 	 * THE REGRESSION TEST FOR ELEMENTOR ISSUE #98 — the silent drop.
 	 *
 	 * `Document::save()` answers truthy and persists nothing. Layer 3 re-reads
-	 * `_elementor_data`, sees the OLD document, and forces the fallback. Delete
-	 * the re-read from ElementorDocumentWriter and this test must fail: without
-	 * it the writer reports `api` and the page still holds the old tree.
+	 * `_elementor_data`, finds the digest UNCHANGED from the one the caller
+	 * snapshotted before the write, and forces the fallback. Delete the re-read
+	 * from ElementorDocumentWriter and this test must fail: without it the writer
+	 * reports `api` and the page still holds the old tree.
+	 *
+	 * This is also the negative half of the API path's oracle — an unchanged
+	 * stored digest is never a verified API write, whatever Elementor reported.
 	 *
 	 * @runInSeparateProcess
 	 * @preserveGlobalState disabled
@@ -246,7 +274,7 @@ final class ElementorDocumentWriterTest extends TestCase {
 		$this->storeDocument( [ [ 'elType' => 'section', 'id' => 'old000' ] ] );
 		$this->installElementor( new WriterFakeDocument( 7, true, false ) );
 
-		$path = $this->writer()->write( 7, $new );
+		$path = $this->writer()->write( 7, $new, $this->priorDigest() );
 
 		$this->assertSame(
 			ElementorDocumentWriter::PATH_FALLBACK,
@@ -254,6 +282,90 @@ final class ElementorDocumentWriterTest extends TestCase {
 			'A truthy save that persisted nothing must be caught by the re-read and recovered by the fallback.'
 		);
 		$this->assertSame( $new, $this->storedDocument(), 'The document must really hold the new tree afterwards.' );
+	}
+
+	/**
+	 * THE API PATH MUST BE REACHABLE ON A REAL SITE.
+	 *
+	 * Elementor's own `Document::save()` NORMALISES what it is handed — it mints
+	 * ids for elements that lack them and fills in defaults — so the stored tree
+	 * is legitimately NOT the caller's tree afterwards. An oracle that demanded
+	 * equality with `$tree` would send every correct API write to the fallback,
+	 * and no test whose double persists byte-identically could ever show it. This
+	 * double normalises, exactly as Elementor does, and the write must still be
+	 * reported as the API path.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_a_save_that_normalises_the_tree_still_reports_the_api_path(): void {
+		$new = [ [ 'elType' => 'container' ] ];
+		$this->storeDocument( [ [ 'elType' => 'section', 'id' => 'old000' ] ] );
+		$this->installElementor( new WriterFakeNormalisingDocument( 7 ) );
+
+		$path = $this->writer()->write( 7, $new, $this->priorDigest() );
+
+		$this->assertSame(
+			ElementorDocumentWriter::PATH_API,
+			$path,
+			'Elementor is entitled to normalise the tree it stores; a normalised re-read is still a persisted write.'
+		);
+		$this->assertNotSame( $new, $this->storedDocument(), 'The double must really have normalised, or this proves nothing.' );
+		$this->assertSame(
+			[ [ 'elType' => 'container', 'id' => 'minted1' ] ],
+			$this->storedDocument()
+		);
+		$this->assertFalse(
+			$this->wasWritten( ElementorDocument::META_EDIT_MODE ),
+			'A verified API write must not run the fallback.'
+		);
+	}
+
+	/**
+	 * `save()` ANSWERING NOTHING IS NOT A REFUSAL. `Document::save()` is an
+	 * extension point with no upstream return type, so a document that answers
+	 * null has reported nothing at all — `ElementorApi` maps that to null, the
+	 * unreachable answer, and it must NOT read to an operator as "Elementor
+	 * rejected this". A double declaring `save(): bool` cannot express this case
+	 * at all, which is why neither double declares one.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_a_save_that_answers_nothing_is_unreachable_and_not_a_refusal(): void {
+		$this->writesTake = false;
+		$this->storeDocument( [] );
+		$this->installElementor( new WriterFakeDocument( 7, null, false ) );
+
+		try {
+			$this->writer()->write( 7, [ [ 'elType' => 'container' ] ], $this->priorDigest() );
+			$this->fail( 'A write neither path could verify must refuse.' );
+		} catch ( OperationException $refusal ) {
+			$this->assertStringContainsString( 'could not be reached', $refusal->getMessage() );
+			$this->assertStringNotContainsString( 'unsuccessful', $refusal->getMessage(), 'Silence is not a refusal.' );
+		}
+	}
+
+	/**
+	 * `Documents_Manager::get()` answers `Document|false`, and false is the
+	 * "there is no document here" answer — unreachable, not refused. A double
+	 * declaring `get(): object` cannot express it.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_a_document_manager_that_answers_false_is_unreachable_and_not_a_refusal(): void {
+		$this->writesTake = false;
+		$this->storeDocument( [] );
+		$this->installElementor( false );
+
+		try {
+			$this->writer()->write( 7, [ [ 'elType' => 'container' ] ], $this->priorDigest() );
+			$this->fail( 'A write neither path could verify must refuse.' );
+		} catch ( OperationException $refusal ) {
+			$this->assertStringContainsString( 'could not be reached', $refusal->getMessage() );
+			$this->assertStringNotContainsString( 'unsuccessful', $refusal->getMessage(), 'An absent document is not a refusal.' );
+		}
 	}
 
 	/**
@@ -268,7 +380,7 @@ final class ElementorDocumentWriterTest extends TestCase {
 		$this->storeDocument( [] );
 		$this->installElementor( new WriterFakeThrowingDocument() );
 
-		$path = $this->writer()->write( 7, $new );
+		$path = $this->writer()->write( 7, $new, $this->priorDigest() );
 
 		$this->assertSame( ElementorDocumentWriter::PATH_FALLBACK, $path );
 		$this->assertSame( $new, $this->storedDocument() );
@@ -286,7 +398,7 @@ final class ElementorDocumentWriterTest extends TestCase {
 		$this->storeDocument( [] );
 		$this->installElementor( new WriterFakeDocument( 7, false, false ) );
 
-		$this->assertSame( ElementorDocumentWriter::PATH_FALLBACK, $this->writer()->write( 7, $new ) );
+		$this->assertSame( ElementorDocumentWriter::PATH_FALLBACK, $this->writer()->write( 7, $new, $this->priorDigest() ) );
 		$this->assertSame( $new, $this->storedDocument() );
 	}
 
@@ -298,7 +410,7 @@ final class ElementorDocumentWriterTest extends TestCase {
 		$new = [ [ 'elType' => 'container', 'id' => 'abc123' ] ];
 		$this->storeDocument( [ [ 'elType' => 'section' ] ] );
 
-		$this->assertSame( ElementorDocumentWriter::PATH_FALLBACK, $this->writer()->write( 7, $new ) );
+		$this->assertSame( ElementorDocumentWriter::PATH_FALLBACK, $this->writer()->write( 7, $new, $this->priorDigest() ) );
 		$this->assertSame( $new, $this->storedDocument() );
 	}
 
@@ -307,7 +419,7 @@ final class ElementorDocumentWriterTest extends TestCase {
 	 * the CSS cache Elementor would otherwise have invalidated itself.
 	 */
 	public function test_the_fallback_marks_the_document_and_invalidates_the_css_cache(): void {
-		$this->writer()->write( 7, [ [ 'elType' => 'container' ] ] );
+		$this->writer()->write( 7, [ [ 'elType' => 'container' ] ], $this->priorDigest() );
 
 		$this->assertTrue( $this->wasWritten( ElementorDocument::META_DATA ) );
 		$this->assertTrue( $this->wasWritten( ElementorDocument::META_EDIT_MODE ) );
@@ -332,7 +444,7 @@ final class ElementorDocumentWriterTest extends TestCase {
 		$this->storeDocument( [ [ 'elType' => 'section' ] ] );
 
 		try {
-			$this->writer()->write( 7, [ [ 'elType' => 'container' ] ] );
+			$this->writer()->write( 7, [ [ 'elType' => 'container' ] ], $this->priorDigest() );
 			$this->fail( 'A write neither path could verify must refuse.' );
 		} catch ( OperationException $refusal ) {
 			$this->assertSame( ErrorCode::ExecutionFailed, $refusal->errorCode );
@@ -347,7 +459,7 @@ final class ElementorDocumentWriterTest extends TestCase {
 		$this->storeDocument( [] );
 
 		try {
-			$this->writer()->write( 7, [ [ 'elType' => 'widget', 'settings' => [ 'title' => 'SECRET-CONTENT-MARKER' ] ] ] );
+			$this->writer()->write( 7, [ [ 'elType' => 'widget', 'settings' => [ 'title' => 'SECRET-CONTENT-MARKER' ] ] ], $this->priorDigest() );
 			$this->fail( 'A write neither path could verify must refuse.' );
 		} catch ( OperationException $refusal ) {
 			$text = $refusal->getMessage() . ' ' . $refusal->remediation;
@@ -370,7 +482,7 @@ final class ElementorDocumentWriterTest extends TestCase {
 		$this->storeDocument( [] );
 
 		try {
-			$this->writer()->write( 7, [ [ 'elType' => 'container' ] ] );
+			$this->writer()->write( 7, [ [ 'elType' => 'container' ] ], $this->priorDigest() );
 			$this->fail( 'A write neither path could verify must refuse.' );
 		} catch ( OperationException $refusal ) {
 			$this->assertStringContainsString( 'could not be reached', $refusal->getMessage() );
@@ -387,7 +499,7 @@ final class ElementorDocumentWriterTest extends TestCase {
 		$this->installElementor( new WriterFakeDocument( 7, false, false ) );
 
 		try {
-			$this->writer()->write( 7, [ [ 'elType' => 'container' ] ] );
+			$this->writer()->write( 7, [ [ 'elType' => 'container' ] ], $this->priorDigest() );
 			$this->fail( 'A write neither path could verify must refuse.' );
 		} catch ( OperationException $refusal ) {
 			$this->assertStringContainsString( 'reported the save unsuccessful', $refusal->getMessage() );
@@ -404,7 +516,7 @@ final class ElementorDocumentWriterTest extends TestCase {
 		$this->installElementor( new WriterFakeThrowingDocument() );
 
 		try {
-			$this->writer()->write( 7, [ [ 'elType' => 'container' ] ] );
+			$this->writer()->write( 7, [ [ 'elType' => 'container' ] ], $this->priorDigest() );
 			$this->fail( 'A write neither path could verify must refuse.' );
 		} catch ( OperationException $refusal ) {
 			$this->assertStringContainsString( 'rejected', $refusal->getMessage() );
@@ -424,7 +536,7 @@ final class ElementorDocumentWriterTest extends TestCase {
 		$this->installElementor( new WriterFakeDocument( 7, true, false ) );
 
 		try {
-			$this->writer()->write( 7, [ [ 'elType' => 'container' ] ] );
+			$this->writer()->write( 7, [ [ 'elType' => 'container' ] ], $this->priorDigest() );
 			$this->fail( 'A write neither path could verify must refuse.' );
 		} catch ( OperationException $refusal ) {
 			$this->assertStringContainsString( 'reported the save successful', $refusal->getMessage() );
@@ -439,7 +551,7 @@ final class ElementorDocumentWriterTest extends TestCase {
 	public function test_a_non_positive_post_id_is_never_written_to(): void {
 		foreach ( [ 0, -1 ] as $post_id ) {
 			try {
-				$this->writer()->write( $post_id, [ [ 'elType' => 'container' ] ] );
+				$this->writer()->write( $post_id, [ [ 'elType' => 'container' ] ], $this->priorDigest() );
 				$this->fail( 'A post id that names no post must refuse.' );
 			} catch ( OperationException $refusal ) {
 				$this->assertSame( ErrorCode::ExecutionFailed, $refusal->errorCode );
@@ -456,7 +568,7 @@ final class ElementorDocumentWriterTest extends TestCase {
 	 */
 	public function test_a_tree_that_cannot_be_encoded_is_refused_before_anything_is_written(): void {
 		try {
-			$this->writer()->write( 7, [ [ 'elType' => "\xB1\x31" ] ] );
+			$this->writer()->write( 7, [ [ 'elType' => "\xB1\x31" ] ], $this->priorDigest() );
 			$this->fail( 'A tree that cannot be encoded must refuse.' );
 		} catch ( OperationException $refusal ) {
 			$this->assertSame( ErrorCode::ExecutionFailed, $refusal->errorCode );
@@ -477,7 +589,7 @@ final class ElementorDocumentWriterTest extends TestCase {
 		$this->meta[ '7|' . ElementorDocument::META_DATA ] = '{not json at all';
 
 		try {
-			$this->writer()->write( 7, [ [ 'elType' => 'container' ] ] );
+			$this->writer()->write( 7, [ [ 'elType' => 'container' ] ], $this->priorDigest() );
 			$this->fail( 'A write neither path could verify must refuse.' );
 		} catch ( OperationException $refusal ) {
 			$this->assertSame( ErrorCode::ExecutionFailed, $refusal->errorCode );
@@ -489,6 +601,30 @@ final class ElementorDocumentWriterTest extends TestCase {
 	 * The two path names are the operation's `data.state` vocabulary, and the
 	 * document DB version is what Elementor's own save stamps.
 	 */
+	/**
+	 * The digest the caller snapshots with is the digest the writer verifies
+	 * with, so it must survive a stored value that is not a string at all —
+	 * a filter on `get_post_meta` returning the decoded array, or a value
+	 * nothing can encode. Neither may fatal, and neither may be mistaken for a
+	 * document that is really there.
+	 */
+	public function test_the_prior_digest_survives_a_stored_value_that_is_not_a_string(): void {
+		$empty = ElementorDocumentWriter::storedDigest( 7 );
+
+		$this->meta[ '7|' . ElementorDocument::META_DATA ] = [ [ 'elType' => 'container' ] ];
+		$decoded = ElementorDocumentWriter::storedDigest( 7 );
+
+		$this->assertNotSame( $empty, $decoded, 'A document stored as an array is not an absent document.' );
+
+		$this->meta[ '7|' . ElementorDocument::META_DATA ] = [ "\xB1\x31" ];
+
+		$this->assertSame(
+			$empty,
+			ElementorDocumentWriter::storedDigest( 7 ),
+			'A stored value nothing can encode is indistinguishable from no document, and must not fatal.'
+		);
+	}
+
 	public function test_the_returned_vocabulary_is_frozen(): void {
 		$this->assertSame( 'api', ElementorDocumentWriter::PATH_API );
 		$this->assertSame( 'fallback', ElementorDocumentWriter::PATH_FALLBACK );
@@ -501,8 +637,6 @@ final class ElementorDocumentWriterTest extends TestCase {
 /**
  * Stands in for `\Elementor\Plugin`. See the test class docblock for exactly
  * which upstream behaviours the doubles in this file reproduce.
- *
- * phpcs:disable
  */
 final class WriterFakePlugin {
 
@@ -511,40 +645,55 @@ final class WriterFakePlugin {
 
 	/** @var mixed */
 	public mixed $documents = null;
-
-	/** @var mixed */
-	public mixed $widgets_manager = null;
 }
 
 /**
  * Stands in for `\Elementor\Core\Documents_Manager`.
+ *
+ * `get()` DECLARES NO RETURN TYPE, because the real one answers
+ * `Document|false` and false — no document for this post — must stay
+ * representable here.
  */
 final class WriterFakeDocuments {
 
-	public function __construct( private object $document ) {
+	/**
+	 * @param mixed $document The document, or false.
+	 */
+	public function __construct( private mixed $document ) {
 	}
 
 	/**
 	 * @param int $post_id The post identifier.
 	 *
-	 * @return object The document.
+	 * @return mixed The document, or false.
 	 */
-	public function get( int $post_id ): object {
+	public function get( int $post_id ) {
 		return $this->document;
 	}
 }
 
 /**
- * A document whose save() answers a bool and optionally persists.
+ * A document whose save() answers whatever it was given, and optionally
+ * persists.
+ *
+ * `save()` DECLARES NO RETURN TYPE, matching `Elementor\Core\Base\Document`,
+ * which declares none either. That is what lets `$result` be null — a save that
+ * answered NOTHING, which `ElementorApi` reads as unreachable rather than as a
+ * refusal. A double narrowed to `: bool` would make that case unrepresentable.
  *
  * The `$persists` flag is the whole of issue #98: false reproduces the upstream
  * bug where a truthy save writes nothing.
  */
 final class WriterFakeDocument {
 
+	/**
+	 * @param int   $post_id  The post identifier.
+	 * @param mixed $result   What Elementor reports — a bool, or null for silence.
+	 * @param bool  $persists Whether the save really writes.
+	 */
 	public function __construct(
 		private int $post_id,
-		private bool $result,
+		private mixed $result,
 		private bool $persists
 	) {
 	}
@@ -552,9 +701,9 @@ final class WriterFakeDocument {
 	/**
 	 * @param array $data The document data.
 	 *
-	 * @return bool What Elementor reports.
+	 * @return mixed What Elementor reports.
 	 */
-	public function save( array $data ): bool {
+	public function save( array $data ) {
 		if ( $this->persists ) {
 			update_post_meta(
 				$this->post_id,
@@ -564,6 +713,41 @@ final class WriterFakeDocument {
 		}
 
 		return $this->result;
+	}
+}
+
+/**
+ * A document that saves, reports true, and stores something that is NOT what it
+ * was handed — which is what the real `Document::save()` does. It mints an id
+ * for the element that lacks one, exactly as Elementor's own normalisation
+ * does, so the stored tree is legitimately not the caller's tree.
+ */
+final class WriterFakeNormalisingDocument {
+
+	public function __construct( private int $post_id ) {
+	}
+
+	/**
+	 * @param array $data The document data.
+	 *
+	 * @return mixed What Elementor reports.
+	 */
+	public function save( array $data ) {
+		$normalised = [];
+
+		foreach ( (array) $data['elements'] as $element ) {
+			$element       = (array) $element;
+			$element['id'] = $element['id'] ?? 'minted1';
+			$normalised[]  = $element;
+		}
+
+		update_post_meta(
+			$this->post_id,
+			'_elementor_data',
+			wp_slash( (string) wp_json_encode( $normalised ) )
+		);
+
+		return true;
 	}
 }
 
@@ -578,9 +762,9 @@ final class WriterFakeThrowingDocument {
 	/**
 	 * @param array $data The document data.
 	 *
-	 * @return bool Never returns.
+	 * @return mixed Never returns.
 	 */
-	public function save( array $data ): bool {
+	public function save( array $data ) {
 		throw new RuntimeException( 'Prop `title` is not valid for widget `e-heading`.' );
 	}
 }

@@ -22,9 +22,9 @@ use Throwable;
  * the CLI and REST contexts this dispatcher always runs in. A writer that
  * trusted the truthy return would report a successful write on a page that never
  * changed, and the operator would learn about it from a client. So layer 3
- * re-reads `_elementor_data` and compares digests EVEN AFTER a truthy,
- * exception-free result, and a mismatch forces the fallback. Deleting that
- * re-read is the mutation the tests exist to catch.
+ * re-reads `_elementor_data` EVEN AFTER a truthy, exception-free result, and a
+ * re-read that shows nothing happened forces the fallback. Deleting that re-read
+ * is the mutation the tests exist to catch.
  *
  * The three layers, in order:
  *
@@ -37,7 +37,43 @@ use Throwable;
  *      difference between "Elementor rejected this tree" and "Elementor is not
  *      here". Converting it into a clean refusal is this class's job, and
  *      nothing escapes as a fatal.
- *   3. RE-READ AND COMPARE DIGESTS. See above.
+ *   3. RE-READ. See above, and see the two oracles below.
+ *
+ * THE TWO PATHS USE DIFFERENT ORACLES, DELIBERATELY.
+ *
+ *   - THE API PATH ASKS "DID THE STORED DOCUMENT CHANGE?" — it compares the
+ *     digest of the raw stored `_elementor_data` against `$prior_digest`, the
+ *     digest of that same raw value as it was BEFORE the write. It does NOT
+ *     compare against the caller's `$tree`, and demanding that would break every
+ *     API write on a real site: Elementor's own `Document::save()` NORMALISES
+ *     what it is given — it mints ids for elements that lack them and fills in
+ *     defaults — so a byte-equal re-read is not something a correct Elementor
+ *     would ever produce. Normalisation is legitimate and expected. What issue
+ *     #98 actually describes is a save that persists NOTHING, and the honest,
+ *     achievable detection for that is "the stored document is byte-for-byte the
+ *     one that was there before". So this path proves PERSISTENCE HAPPENED, and
+ *     claims nothing about the content.
+ *   - THE FALLBACK PATH ASKS "IS THE STORED DOCUMENT THE TREE I WROTE?" — the
+ *     fallback wrote the exact bytes itself, past every normaliser, so it is
+ *     entitled to demand them back, and a mismatch there is `ExecutionFailed`.
+ *
+ * THE WEAKER API ORACLE IS SUFFICIENT BECAUSE OF WHAT SITS ABOVE IT, not as a
+ * concession. This class's promise is "the document was persisted, by this
+ * path". The promise about the CONTENT of the write — that the stored state
+ * really is the state the plan promised — is verified one layer up, by the
+ * operation's own `readBack()` and by `WriteVerifier`, against the planned
+ * fields rather than against raw bytes. Duplicating that check here in a form
+ * that cannot tolerate normalisation would not add a guarantee; it would only
+ * make every correct API write look like a failure.
+ *
+ * PRECONDITION: THE CALLER MUST NOT ASK FOR A WRITE THAT CHANGES NOTHING. A
+ * `$tree` identical to what is already stored persists identically, the stored
+ * digest does not move, and this class reports that as the silent drop and falls
+ * back. That is not a defect it can fix: from inside a writer, "Elementor stored
+ * nothing" and "Elementor stored exactly what was already there" are the same
+ * observation. Deciding that a change is a no-op belongs to the operation that
+ * planned it, which knows the before state and the promise; a writer that
+ * special-cased it would have to trust the very save it exists to distrust.
  *
  * Then the fallback: the tree is written straight to `_elementor_data` in the
  * shape Elementor itself stores — `wp_slash( wp_json_encode( $tree ) )` — the
@@ -126,6 +162,11 @@ final class ElementorDocumentWriter {
 	private const OUTCOME_SILENT = 'silent';
 
 	/**
+	 * The digest algorithm the before/after comparison is frozen on.
+	 */
+	private const DIGEST_ALGORITHM = 'sha256';
+
+	/**
 	 * Constructs the writer.
 	 *
 	 * @param ElementorApi              $api      The accessor for Elementor's own write API.
@@ -149,8 +190,15 @@ final class ElementorDocumentWriter {
 	 * cannot be stored at all, and finding that out after Elementor has already
 	 * half-saved it is how a page ends up in a state neither side describes.
 	 *
-	 * @param int     $post_id The post identifier.
-	 * @param array[] $tree    The element tree to persist.
+	 * `$prior_digest` is `storedDigest( $post_id )` as it was BEFORE this write —
+	 * the value a write operation has already computed for its own snapshot, which
+	 * is why it is passed in rather than read here: reading it at the top of this
+	 * method would digest a state the caller never saw, and any work between the
+	 * snapshot and the write would go undetected.
+	 *
+	 * @param int     $post_id      The post identifier.
+	 * @param array[] $tree         The element tree to persist.
+	 * @param string  $prior_digest The digest of the raw stored document before this write.
 	 *
 	 * @return string PATH_API or PATH_FALLBACK.
 	 *
@@ -161,7 +209,7 @@ final class ElementorDocumentWriter {
 	 *
 	 * phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 	 */
-	public function write( int $post_id, array $tree ): string {
+	public function write( int $post_id, array $tree, string $prior_digest ): string {
 		if ( $post_id <= 0 ) {
 			throw new OperationException(
 				ErrorCode::ExecutionFailed,
@@ -185,14 +233,46 @@ final class ElementorDocumentWriter {
 		// LAYER 3. The re-read runs even when Elementor reported success, and this
 		// is the whole of REQ-0042: issue #98 is a truthy save that persisted
 		// nothing, and without this comparison it is reported as a successful
-		// write on an unchanged page.
-		if ( null === $outcome && $this->stored_matches( $post_id, $json ) ) {
+		// write on an unchanged page. The comparison is against the state BEFORE
+		// the write, not against $tree — see the class docblock on the two oracles.
+		if ( null === $outcome && self::storedDigest( $post_id ) !== $prior_digest ) {
 			return self::PATH_API;
 		}
 
 		return $this->fall_back( $post_id, $json, $outcome ?? self::OUTCOME_SILENT );
 	}
 	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- The module vocabulary is camelCase across every class.
+	/**
+	 * The fingerprint of one document's RAW stored value, as stored.
+	 *
+	 * ONE FORMULA, IN ONE PLACE, because the caller computes the before value and
+	 * this class computes the after value: two formulas that disagreed by a cast
+	 * would make every write look silent, or no write ever look silent, and both
+	 * failures are silent themselves.
+	 *
+	 * The RAW value is digested rather than the decoded tree. What this answers is
+	 * "did the stored bytes move", which is the only question the API path's
+	 * verification asks; decoding first would make a stored value that is present
+	 * and malformed indistinguishable from one that is absent, and both of those
+	 * are states a write is supposed to move away from.
+	 *
+	 * @param int $post_id The post identifier.
+	 *
+	 * @return string The fingerprint.
+	 */
+	public static function storedDigest( int $post_id ): string {
+		$raw = get_post_meta( $post_id, ElementorDocument::META_DATA, true );
+
+		if ( ! is_string( $raw ) ) {
+			$encoded = wp_json_encode( $raw );
+			$raw     = is_string( $encoded ) ? $encoded : '';
+		}
+
+		return hash( self::DIGEST_ALGORITHM, $raw );
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 
 	/**
 	 * Runs layers 1 and 2, and names how Elementor answered.
@@ -269,6 +349,13 @@ final class ElementorDocumentWriter {
 	/**
 	 * Whether the stored document now IS the tree that was written.
 	 *
+	 * THE FALLBACK'S ORACLE, AND ONLY THE FALLBACK'S. The fallback wrote these
+	 * exact bytes itself, past Elementor and past every normaliser, so demanding
+	 * them back is a question it is entitled to ask. The API path may not ask it —
+	 * Elementor is entitled to mint ids and fill defaults into what it is handed —
+	 * and asks the weaker "did the stored document change at all" instead. The
+	 * class docblock explains why that is sufficient there.
+	 *
 	 * The stored value is read back through `ElementorDocument`, decoded, and
 	 * re-encoded before the comparison, so that both sides are compared as trees
 	 * rather than as bytes. Comparing the raw stored string against the encoded
@@ -293,7 +380,8 @@ final class ElementorDocumentWriter {
 			return false;
 		}
 
-		return is_string( $stored ) && hash( 'sha256', $stored ) === hash( 'sha256', $json );
+		return is_string( $stored )
+			&& hash( self::DIGEST_ALGORITHM, $stored ) === hash( self::DIGEST_ALGORITHM, $json );
 	}
 
 	/**
