@@ -17,6 +17,7 @@ use SiteHelm\Gateway\McpServer;
 use SiteHelm\Gateway\RestTransport;
 use SiteHelm\Modules\Core\CoreModule;
 use SiteHelm\Modules\Diagnostics\DiagnosticsModule;
+use SiteHelm\Modules\Elementor\ElementorModule;
 use SiteHelm\Modules\Media\MediaModule;
 use SiteHelm\Modules\Menus\MenusModule;
 use SiteHelm\Policy\PolicyEngine;
@@ -69,7 +70,13 @@ final class Plugin {
 		// Later phases append module class names here. Class names rather than
 		// instances so that each construction sits inside the isolation boundary:
 		// a throwing constructor must not be able to take down the gateway.
-		$module_classes = [ DiagnosticsModule::class, CoreModule::class, MediaModule::class, MenusModule::class ];
+		$module_classes = [
+			DiagnosticsModule::class,
+			CoreModule::class,
+			MediaModule::class,
+			MenusModule::class,
+			ElementorModule::class,
+		];
 		$module_health  = ( new ModuleLoader() )->load( $this->constructModules( $module_classes ), $registry );
 
 		$server = new McpServer(
