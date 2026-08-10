@@ -167,11 +167,18 @@ final class ElementorModule implements IntegrationModule {
 	 * @param CapabilityRegistry $registry The capability registry.
 	 */
 	public function register( CapabilityRegistry $registry ): void {
-		$fields = new ElementorFields();
+		$fields   = new ElementorFields();
+		$document = new ElementorDocument();
+		$tree     = new ElementorTree();
 
 		$registry->register(
 			ElementorDocumentList::definition(),
 			[ new ElementorDocumentList( $fields, $this->presence ), 'handle' ]
+		);
+
+		$registry->register(
+			ElementorDocumentGet::definition(),
+			[ new ElementorDocumentGet( $fields, $document, $tree, $this->presence ), 'handle' ]
 		);
 	}
 }
