@@ -466,6 +466,53 @@ final class MenuLocationAssignTest extends TestCase {
 		}
 	}
 
+	/**
+	 * The one pair of states a value comparison cannot separate, and therefore the
+	 * only reason restore() tests presence at all: sameAssignment( null, null ) is
+	 * true, so a value-only `??` compare would call this restored. It is not — the
+	 * map the snapshot recorded held the key, and the map that came back does not.
+	 */
+	public function test_restore_refuses_when_a_recorded_null_entry_reads_back_absent(): void {
+		$this->themeModPersists = false;
+		$this->locations        = [];
+
+		try {
+			$this->operation->restore(
+				[
+					'location'  => 'footer',
+					'locations' => [ 'footer' => null ],
+				],
+				$this->makeContext()
+			);
+			$this->fail( 'A recorded null entry that reads back absent must be refused.' );
+		} catch ( OperationException $error ) {
+			$this->assertSame( ErrorCode::ExecutionFailed, $error->errorCode );
+		}
+	}
+
+	/**
+	 * The same pair the other way round. A recorded absence means the key must not
+	 * exist afterwards, and a map that came back carrying it — even holding null —
+	 * is not the map that was recorded.
+	 */
+	public function test_restore_refuses_when_a_recorded_absence_reads_back_holding_null(): void {
+		$this->themeModPersists = false;
+		$this->locations        = [ 'footer' => null ];
+
+		try {
+			$this->operation->restore(
+				[
+					'location'  => 'footer',
+					'locations' => [],
+				],
+				$this->makeContext()
+			);
+			$this->fail( 'A recorded absence that reads back holding null must be refused.' );
+		} catch ( OperationException $error ) {
+			$this->assertSame( ErrorCode::ExecutionFailed, $error->errorCode );
+		}
+	}
+
 	public function test_read_back_projects_the_persisted_assignment(): void {
 		$context = $this->makeContext();
 		$input   = [

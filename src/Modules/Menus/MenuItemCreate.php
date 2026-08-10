@@ -203,7 +203,7 @@ final class MenuItemCreate implements WriteOperation {
 					'position'    => [
 						'type'        => 'integer',
 						'minimum'     => 0,
-						'description' => 'Where the item sits among its siblings. Defaults to the end of the menu.',
+						'description' => 'The item\'s position among its siblings, counting from 1. Send 0, the default, to add the item at the end of the menu.',
 					],
 					'target'      => [
 						'type'        => 'string',
@@ -629,6 +629,15 @@ final class MenuItemCreate implements WriteOperation {
 	 * description is recorded as one and an absent description is left to core's
 	 * default. `position` 0 and `target` '' are both meaningful values that a
 	 * truthiness test would drop.
+	 *
+	 * `position` KEEPS ITS `minimum: 0` HERE, unlike the sibling MenuItemUpdate,
+	 * and the two are not inconsistent. `wp_update_nav_menu_item()` reads a 0 as
+	 * "add this at the end", which is exactly what this operation documents 0 to
+	 * mean and what a creation with no position in mind wants. The update refuses
+	 * a 0 because there the same substitution MOVES an item that already has a
+	 * place, and an operator sending a zero-based "first" would get "last".
+	 * Recording the supplied 0 is still meaningful: it is what makes the plan
+	 * promise "at the end" rather than promising nothing about the position.
 	 *
 	 * @param array<string, mixed> $input The validated arguments.
 	 *

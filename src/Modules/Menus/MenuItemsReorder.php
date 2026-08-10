@@ -554,11 +554,8 @@ final class MenuItemsReorder implements WriteOperation {
 		foreach ( $intended as $id => $target ) {
 			++$step;
 
-			$written = wp_update_nav_menu_item(
-				$menu_id,
-				$id,
-				wp_slash( $this->arrangement->itemArgs( $rows[ $id ], $target['parent'], $target['position'] ) )
-			);
+			$args    = $this->arrangement->itemArgs( $rows[ $id ], $target['parent'], $target['position'] );
+			$written = wp_update_nav_menu_item( $menu_id, $id, wp_slash( $args ) );
 
 			if ( is_wp_error( $written ) || 0 === (int) $written ) {
 				throw new OperationException(
@@ -568,6 +565,13 @@ final class MenuItemsReorder implements WriteOperation {
 					$completed
 				);
 			}
+
+			// A RECORDED 0 IS A REAL POSITION and core cannot be asked for it: it
+			// reads 0 as "append" and lands the item last. Correcting it here is
+			// what makes assert_restored() able to compare every recorded position
+			// literally, instead of exempting the one value the restore was most
+			// likely to get wrong.
+			MenuTarget::correctAppendedPosition( $id, $args );
 
 			$completed[] = sprintf( 'menu item %d of %d restored', $step, $total );
 		}
@@ -628,10 +632,19 @@ final class MenuItemsReorder implements WriteOperation {
 	 * One caller-supplied entry, normalized, or a refusal.
 	 *
 	 * The shape checks look like defence in depth against the input schema, and
-	 * for the `id` and `position` TYPES they are — but the LOWER BOUND on
-	 * position is not decorative even where the schema also carries it. A 0
-	 * position is not "first": `wp_update_nav_menu_item()` replaces it with the
+	 * for the `id` and `position` TYPES they are — but BOTH LOWER BOUNDS earn
+	 * their place, and each has a test that reaches it by calling planChange()
+	 * directly, the way any caller that skips the dispatcher would.
+	 *
+	 * A 0 position is not "first": `wp_update_nav_menu_item()` replaces it with the
 	 * menu's item count plus one, so the item silently lands last.
+	 *
+	 * A 0 identifier is refused HERE so that it is refused for what it is. The
+	 * membership check in planChange() would reject it a moment later, but with
+	 * "does not name an item of this menu" — which sends the operator looking up
+	 * a menu that never had an item 0 to find. 0 is also the root-parent sentinel,
+	 * the conflation that has already produced one unbounded recursion in this
+	 * module, so it does not travel further into the entry set than this.
 	 *
 	 * An absent `parent` is preserved as absent rather than defaulted to 0,
 	 * because "leave the nesting alone" and "move this to top level" are
@@ -739,18 +752,11 @@ final class MenuItemsReorder implements WriteOperation {
 	 * filter can rewrite the arguments. On a restore path there is no
 	 * WriteVerifier downstream to notice either.
 	 *
-	 * A RECORDED POSITION OF 0 IS EXEMPT FROM THE POSITION COMPARISON, and that
-	 * exemption is the difference between reporting a real failure and libelling
-	 * a restore that worked. `wp_update_nav_menu_item()` treats 0 as "unset" and
-	 * substitutes the menu's item count plus one, so a snapshot holding a 0 —
-	 * which a menu item genuinely can hold, WordPress writes it whenever the
-	 * position was never set — can never read back as 0. Comparing it anyway
-	 * throws ExecutionFailed AFTER every row has already been written, telling
-	 * the operator their rollback failed when in fact it landed. There is nothing
-	 * for this method to verify in that case: the recorded value delegates the
-	 * choice of position to WordPress, so whatever WordPress chose IS the
-	 * restored state. The PARENT is still compared for every item, including
-	 * those, because a recorded parent of 0 is honoured literally.
+	 * The comparison itself lives on MenuArrangement, which owns every other
+	 * question about where a menu's items sit; this method owns only the decision
+	 * to refuse and the wording that carries it. Positions are compared literally,
+	 * including a recorded 0 — see MenuArrangement::firstMisplaced() for why that
+	 * value once carried an exemption and why it no longer needs one.
 	 *
 	 * The message names plainly that the rows were written, because they were:
 	 * this refusal is only ever reached after the whole loop completed.
@@ -762,31 +768,16 @@ final class MenuItemsReorder implements WriteOperation {
 	 * @throws OperationException With ErrorCode::ExecutionFailed.
 	 */
 	private function assert_restored( int $menu_id, array $intended, array $completed ): void {
-		$stored = [];
-
-		foreach ( $this->arrangement->currentOrder( $menu_id ) as $row ) {
-			$stored[ (int) $row['id'] ] = $row;
+		if ( null === $this->arrangement->firstMisplaced( $menu_id, $intended ) ) {
+			return;
 		}
 
-		foreach ( $intended as $id => $target ) {
-			$row = $stored[ $id ] ?? null;
-
-			// null rather than 0 for a missing row: 0 is a legitimate stored
-			// parent, so a row the menu no longer holds must not compare equal to
-			// one recorded at top level.
-			$parent   = is_array( $row ) ? (int) $row['parent'] : null;
-			$position = is_array( $row ) ? (int) $row['position'] : null;
-
-			if ( $parent !== $target['parent']
-				|| ( 0 !== $target['position'] && $position !== $target['position'] ) ) {
-				throw new OperationException(
-					ErrorCode::ExecutionFailed,
-					'Every recorded menu item was written, but WordPress stored a different order than the recorded snapshot held.',
-					'Reorder the menu on the WordPress menus screen instead.',
-					$completed
-				);
-			}
-		}
+		throw new OperationException(
+			ErrorCode::ExecutionFailed,
+			'Every recorded menu item was written, but WordPress stored a different order than the recorded snapshot held.',
+			'Reorder the menu on the WordPress menus screen instead.',
+			$completed
+		);
 	}
 	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 }

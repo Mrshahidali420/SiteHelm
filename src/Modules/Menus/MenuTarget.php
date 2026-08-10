@@ -365,6 +365,9 @@ final class MenuTarget {
 			'menu-item-object'      => (string) ( $item->object ?? '' ),
 			'menu-item-object-id'   => (int) ( $item->object_id ?? 0 ),
 			'menu-item-parent-id'   => (int) ( $item->menu_item_parent ?? 0 ),
+			// A stored 0 is recorded as 0, because that is what the item holds —
+			// see correctAppendedPosition() for why replaying it needs a second
+			// write, and why rewriting it to 1 here would record a lie.
 			'menu-item-position'    => (int) ( $item->menu_order ?? 0 ),
 			'menu-item-status'      => (string) ( $item->post_status ?? 'publish' ),
 			'menu-item-target'      => (string) ( $item->target ?? '' ),
@@ -438,12 +441,72 @@ final class MenuTarget {
 			);
 		}
 
+		self::correctAppendedPosition( $item_id, $data );
+
 		clean_post_cache( $item_id );
 
 		return self::itemTargetKey( $item_id );
 	}
 	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- The menus module's shared vocabulary is camelCase across every class.
+	/**
+	 * Puts `menu_order` back to 0 after a write that asked for position 0.
+	 *
+	 * THERE IS NO WAY TO REQUEST POSITION 0 THROUGH `wp_update_nav_menu_item()`.
+	 * Core reads the argument set and substitutes before it stores
+	 * (wp-includes/nav-menu.php):
+	 *
+	 *     } elseif ( 0 === (int) $args['menu-item-position'] ) {
+	 *         $menu_items = (array) wp_get_nav_menu_items( $menu_id, ... );
+	 *         $last_item  = array_pop( $menu_items );
+	 *         ...
+	 *         $args['menu-item-position'] = 1 + $last_item->menu_order;
+	 *
+	 * so a 0 means "append to the end", and omitting the key reaches the same
+	 * branch through `wp_parse_args()`'s default. That substitution is right for a
+	 * CREATE, whose caller has no position in mind, and wrong for every write that
+	 * carries an existing item's own `menu_order` forward.
+	 *
+	 * AND 0 IS A REACHABLE STORED STATE, not a theoretical one. The `else` arm of
+	 * the same block answers `count( $menu_items )` against a list `array_pop()`
+	 * has already emptied, so THE FIRST ITEM CREATED IN AN EMPTY MENU IS STORED AT
+	 * `menu_order` 0 — including every item menu-item-create makes. An update or a
+	 * rollback that hands that 0 straight back therefore moves the menu's FIRST
+	 * item to LAST, silently: `position` is not a field a partial update promises,
+	 * so WriteVerifier has nothing to compare and reports success.
+	 *
+	 * The correction is a second write rather than a rewritten argument, because
+	 * the alternatives are both wrong. Sending 1 instead would land the item on top
+	 * of whatever already sits at 1 — an ambiguous tie, not the prior arrangement.
+	 * Leaving it to core's substitution loses the arrangement outright.
+	 *
+	 * AN ABSENT KEY IS NOT A ZERO. A field set that does not carry
+	 * `menu-item-position` is one that does not describe the position, and this
+	 * writes nothing for it — the same array_key_exists() rule that governs every
+	 * other field on the restore path.
+	 *
+	 * NOT SAFE TO CALL FROM captureSnapshot(), which the engine runs twice and
+	 * which must stay side-effect free. This belongs on the apply and restore paths
+	 * only, after the write it corrects has already landed.
+	 *
+	 * @param int                  $item_id The menu item post identifier.
+	 * @param array<string, mixed> $data    The field set that was written.
+	 */
+	public static function correctAppendedPosition( int $item_id, array $data ): void {
+		if ( ! array_key_exists( 'menu-item-position', $data ) || 0 !== (int) $data['menu-item-position'] ) {
+			return;
+		}
+
+		wp_update_post(
+			[
+				'ID'         => $item_id,
+				'menu_order' => 0,
+			]
+		);
+	}
 	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 
 	// phpcs:disable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase -- $restoreState matches the WriteOperation contract.

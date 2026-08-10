@@ -703,4 +703,62 @@ final class MenuItemCreateTest extends MenuItemCreateTestCase {
 		);
 		$this->assertInstanceOf( PlannedChange::class, $planned );
 	}
+
+	/**
+	 * A SUPPLIED 0 POSITION IS RECORDED AS ONE, even though it produces the same
+	 * placement as omitting it. 0 means "at the end" here — that is what core does
+	 * with it, and unlike the sibling update this operation documents and wants
+	 * that — so the difference between supplying it and omitting it is not WHERE
+	 * the item lands but WHAT THE PLAN PROMISES. An operator who asked for the end
+	 * of the menu sees the end of the menu in the plan they approve.
+	 *
+	 * `! empty()` in place of array_key_exists() drops the 0, and the promise then
+	 * says nothing about the position at all — a silent narrowing of the approved
+	 * plan that no placement assertion could catch.
+	 *
+	 * Mutation that breaks this: `! empty( $input['position'] )` at the position
+	 * gate in MenuItemCreate::optional_fields().
+	 */
+	public function test_a_supplied_zero_position_is_promised_rather_than_dropped(): void {
+		$context = $this->makeContext();
+		$input   = [
+			'menu'     => 'primary',
+			'title'    => 'Contact',
+			'url'      => 'https://example.com/contact',
+			'position' => 0,
+		];
+		$current = $this->operation->resolveTarget( $input, $context );
+		$planned = $this->operation->planChange( $current, $input, $context );
+
+		$this->assertArrayHasKey( 'position', $planned->afterFields );
+		$this->assertSame( 0, $planned->afterFields['position'] );
+		$this->assertSame( 0, $planned->payload['position'] );
+	}
+
+	/**
+	 * An explicitly empty description is a value the operator chose. `! empty()`
+	 * collapses it into "no description supplied", which is a different plan.
+	 *
+	 * Mutation that breaks this: `! empty( $input['description'] )` at the
+	 * description gate in MenuItemCreate::optional_fields().
+	 */
+	public function test_an_explicitly_empty_description_is_promised_rather_than_dropped(): void {
+		$context = $this->makeContext();
+		$input   = [
+			'menu'        => 'primary',
+			'title'       => 'Contact',
+			'url'         => 'https://example.com/contact',
+			'description' => '',
+		];
+		$current = $this->operation->resolveTarget( $input, $context );
+		$planned = $this->operation->planChange( $current, $input, $context );
+
+		$this->assertArrayHasKey( 'description', $planned->afterFields );
+		$this->assertSame( '', $planned->afterFields['description'] );
+
+		$this->operation->applyChange( $current, $planned, $context );
+
+		$this->assertArrayHasKey( 'menu-item-description', $this->written[0] );
+		$this->assertSame( '', $this->written[0]['menu-item-description'] );
+	}
 }

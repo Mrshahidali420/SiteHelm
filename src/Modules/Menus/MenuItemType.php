@@ -25,8 +25,26 @@ use SiteHelm\Contracts\OperationException;
  * the change engine's plan, snapshot, and rollback contract.
  *
  * The existence checks are the point: `wp_update_nav_menu_item()` happily stores a
- * `post_type` item naming a post that was never published, and the menu then renders
- * a link to nowhere.
+ * `post_type` item naming a post that DOES NOT EXIST, and the menu then renders a
+ * link to nowhere. Core only marks such an item `_invalid` once it is read back,
+ * which is after the damage is stored.
+ *
+ * WHAT IS DELIBERATELY NOT CHECKED IS `post_status`. A draft, a pending review, a
+ * private page, or a post scheduled to go live next week is a legitimate menu
+ * target: a staging site is built entirely against unpublished content, and an
+ * operator assembling navigation for a launch needs the item in place before the
+ * post is. Refusing an unpublished target would break the ordinary case in order
+ * to catch the accidental one, so an item MAY name content whose current status
+ * renders a 404 for a logged-out visitor, and this class does not treat that as
+ * an error. The status is not hidden from the operator either — it is a property
+ * of the content, readable through the core module's content operations, not
+ * something the menus module is the right place to re-report.
+ *
+ * The better answer than either refusing or staying silent is a non-fatal warning
+ * naming the `objectId` field, with the status itself carried in the write's
+ * `data.state` rather than in the warning text. That belongs to the operation
+ * that owns the envelope — warnings travel on PlannedChange — so it is a change
+ * to MenuItemCreate, not to this class.
  *
  * @package SiteHelm
  */

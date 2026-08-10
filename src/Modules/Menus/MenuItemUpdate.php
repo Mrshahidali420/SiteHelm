@@ -140,6 +140,15 @@ final class MenuItemUpdate implements WriteOperation {
 	/**
 	 * The operation's registered definition.
 	 *
+	 * `position` carries `minimum: 1` and that bound is LOAD BEARING rather than
+	 * decorative, exactly as the sibling MenuItemsReorder documents it: there is no
+	 * way to ask `wp_update_nav_menu_item()` for position 0, because core replaces
+	 * a 0 with the menu's last position plus one and appends. An operator sending a
+	 * zero-based 0 to mean "first" would get "last", so the bound refuses the value
+	 * rather than honouring the opposite of it. SchemaValidator enforces `minimum`
+	 * at the dispatcher, and presentation_fields() refuses it again for a caller
+	 * that reaches the operation without going through one.
+	 *
 	 * @return OperationDefinition The definition registered for menu-item-update.
 	 */
 	public static function definition(): OperationDefinition {
@@ -173,8 +182,8 @@ final class MenuItemUpdate implements WriteOperation {
 					],
 					'position'    => [
 						'type'        => 'integer',
-						'minimum'     => 0,
-						'description' => 'Where the item sits among its siblings.',
+						'minimum'     => 1,
+						'description' => 'The item\'s position among its siblings, counting from 1.',
 					],
 					'target'      => [
 						'type'        => 'string',
@@ -392,6 +401,12 @@ final class MenuItemUpdate implements WriteOperation {
 			);
 		}
 
+		// THE MERGE BASE CAN CARRY A 0, and core reads a 0 as "append". An item
+		// stored first in its menu — which is where menu-item-create leaves the
+		// first item of an empty menu — would otherwise be moved to LAST by a
+		// request that only renamed it, and moved again by the rollback.
+		MenuTarget::correctAppendedPosition( $item_id, $data );
+
 		clean_post_cache( $item_id );
 
 		return MenuTarget::itemTargetKey( $item_id );
@@ -447,10 +462,18 @@ final class MenuItemUpdate implements WriteOperation {
 	 * The fields the request actually asked to change, normalized.
 	 *
 	 * EVERY TEST IS array_key_exists(), never `??` and never truthiness. A
-	 * supplied '' description, 0 position, or 0 parent are all meaningful values;
-	 * an absent key is the instruction to leave that field alone. This method is
-	 * the first of the two places where collapsing those destroys data, the other
-	 * being the replay in MenuTarget::restoreItem().
+	 * supplied '' title, '' description, '' xfn, or 0 parent are all meaningful
+	 * values; an absent key is the instruction to leave that field alone. This
+	 * method is the first of the two places where collapsing those destroys data,
+	 * the other being the replay in MenuTarget::restoreItem().
+	 *
+	 * A 0 POSITION IS NOT IN THAT LIST, and the difference matters. An empty title
+	 * and a 0 parent are values WordPress stores as sent; a 0 position is one core
+	 * REPLACES with "the end of the menu" before storing, so honouring it would put
+	 * the item at the opposite end from where an operator asking for "first" meant.
+	 * presentation_fields() refuses it, which is still an array_key_exists() gate
+	 * rather than a truthiness one: the refusal is only reachable because a
+	 * supplied 0 is seen at all.
 	 *
 	 * @param TargetState          $current The resolved item.
 	 * @param array<string, mixed> $input   The validated arguments.
@@ -618,17 +641,33 @@ final class MenuItemUpdate implements WriteOperation {
 		return $parents;
 	}
 
+	// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The messages are literals written for end users.
 	/**
 	 * The presentation fields the request supplied, normalized.
 	 *
 	 * @param array<string, mixed> $input The validated arguments.
 	 *
 	 * @return array<string, mixed> The supplied presentation fields.
+	 *
+	 * @throws OperationException With ErrorCode::InvalidInput.
 	 */
 	private function presentation_fields( array $input ): array {
 		$fields = [];
 
 		if ( array_key_exists( 'position', $input ) ) {
+			// The schema's `minimum: 1` refused this already for anyone who came
+			// through the dispatcher. It is refused a second time here, and named
+			// separately from "the request names no field to change", because the
+			// two are different mistakes: a caller sending a zero-based index needs
+			// to be told the count starts at 1, not that they sent nothing.
+			if ( (int) $input['position'] < 1 ) {
+				throw new OperationException(
+					ErrorCode::InvalidInput,
+					'A menu item position counts from 1, and 0 is not "first": WordPress reads it as "no position given" and moves the item to the end of the menu.',
+					'Retry with the position the item should take among its siblings, counting from 1.'
+				);
+			}
+
 			$fields['position'] = (int) $input['position'];
 		}
 
@@ -661,6 +700,7 @@ final class MenuItemUpdate implements WriteOperation {
 
 		return $fields;
 	}
+	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 
 	/**
 	 * The after-state this operation promises, in the read path's field order.

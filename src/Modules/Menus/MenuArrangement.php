@@ -250,5 +250,58 @@ final class MenuArrangement {
 			'menu-item-position'    => $position,
 		];
 	}
+
+	/**
+	 * The first identifier whose stored arrangement differs from the intended one.
+	 *
+	 * `wp_update_nav_menu_item()` returning an identifier proves the row was saved,
+	 * not that `menu_order` holds what was sent — a `wp_update_nav_menu_item` filter
+	 * can rewrite the arguments, and on a restore path there is no WriteVerifier
+	 * downstream to notice. So the arrangement is re-read and compared rather than
+	 * assumed.
+	 *
+	 * EVERY POSITION IS COMPARED LITERALLY, INCLUDING 0. This comparison used to
+	 * exempt a recorded 0, on the grounds that `wp_update_nav_menu_item()`
+	 * substitutes "the end of the menu" for one and so it could never read back as
+	 * 0. That was a true observation about core and the wrong conclusion from it: a
+	 * recorded 0 means the item was stored FIRST, restoring it appended it LAST, and
+	 * the exemption reported that as a successful rollback. The hazard had been
+	 * diagnosed and its only symptom suppressed. Callers now correct the substituted
+	 * position through MenuTarget::correctAppendedPosition() before asking, so there
+	 * is a real value to compare and no reason left to skip one.
+	 *
+	 * ANSWERS, NEVER REFUSES. Returning the offending identifier rather than
+	 * throwing is what keeps this class a question and leaves the decision to refuse
+	 * — and the envelope wording that goes with it — where the rest of the refusals
+	 * live.
+	 *
+	 * @param int                            $menu_id  The menu's term identifier.
+	 * @param array<int, array<string, int>> $intended The intended parent and position per identifier.
+	 *
+	 * @return int|null The first mismatched identifier, or null when every one landed.
+	 */
+	public function firstMisplaced( int $menu_id, array $intended ): ?int {
+		$stored = [];
+
+		foreach ( $this->currentOrder( $menu_id ) as $row ) {
+			$stored[ (int) $row['id'] ] = $row;
+		}
+
+		foreach ( $intended as $id => $target ) {
+			$row = $stored[ $id ] ?? null;
+
+			// null rather than 0 for a missing row: 0 is a legitimate stored parent,
+			// so a row the menu no longer holds must not compare equal to one
+			// recorded at top level.
+			$parent   = is_array( $row ) ? (int) $row['parent'] : null;
+			$position = is_array( $row ) ? (int) $row['position'] : null;
+
+			if ( $parent !== $target['parent'] || $position !== $target['position'] ) {
+				return (int) $id;
+			}
+		}
+
+		return null;
+	}
 	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 }
