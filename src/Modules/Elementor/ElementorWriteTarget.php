@@ -422,7 +422,6 @@ final class ElementorWriteTarget {
 	}
 	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 
-	// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The message is a literal written for end users and quotes no stored content.
 	/**
 	 * The element list one recorded `_elementor_data` string holds.
 	 *
@@ -455,7 +454,6 @@ final class ElementorWriteTarget {
 
 		return $decoded;
 	}
-	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 
 	/**
 	 * Decodes a recorded document, slashed or not.
