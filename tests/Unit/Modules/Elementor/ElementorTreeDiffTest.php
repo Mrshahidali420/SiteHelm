@@ -166,6 +166,181 @@ final class ElementorTreeDiffTest extends TestCase {
 	}
 
 	/**
+	 * INSERTING ONE CHILD MOVES NOBODY.
+	 *
+	 * A path is a chain of zero-based child positions, so a child inserted at
+	 * position 0 renumbers every later sibling. Deciding `moved` by path equality
+	 * therefore rendered a single insertion into a many-child section as "1
+	 * added, N moved" — every one of those entries true about the path and false
+	 * about the event, and an operator reads them as N relocations.
+	 */
+	public function test_inserting_a_child_at_the_front_moves_no_sibling(): void {
+		$existing = [];
+		for ( $index = 0; $index < 6; $index++ ) {
+			$existing[] = $this->widget( 'w' . $index );
+		}
+
+		$before = [ $this->container( 'c1', $existing ) ];
+		$after  = [ $this->container( 'c1', array_merge( [ $this->widget( 'new' ) ], $existing ) ) ];
+
+		$result = $this->diff->diff( $before, $after );
+
+		$this->assertSame( [ 'added' ], array_column( $result['changes'], 'op' ) );
+		$this->assertSame( 'new', $result['changes'][0]['elementId'] );
+		$this->assertSame( '0.0', $result['changes'][0]['toPath'] );
+	}
+
+	/**
+	 * Removing one child likewise moves nobody.
+	 */
+	public function test_removing_a_child_from_the_front_moves_no_sibling(): void {
+		$existing = [];
+		for ( $index = 0; $index < 6; $index++ ) {
+			$existing[] = $this->widget( 'w' . $index );
+		}
+
+		$before = [ $this->container( 'c1', $existing ) ];
+		$after  = [ $this->container( 'c1', array_slice( $existing, 1 ) ) ];
+
+		$result = $this->diff->diff( $before, $after );
+
+		$this->assertSame( [ 'removed' ], array_column( $result['changes'], 'op' ) );
+		$this->assertSame( 'w0', $result['changes'][0]['elementId'] );
+	}
+
+	/**
+	 * A genuine reorder of two siblings still reports `moved` — for both.
+	 *
+	 * The narrowing must not cost the diff the event it exists to report.
+	 */
+	public function test_a_genuine_sibling_reorder_is_still_reported_as_moved(): void {
+		$before = [ $this->container( 'c1', [ $this->widget( 'w1' ), $this->widget( 'w2' ) ] ) ];
+		$after  = [ $this->container( 'c1', [ $this->widget( 'w2' ), $this->widget( 'w1' ) ] ) ];
+
+		$result = $this->diff->diff( $before, $after );
+
+		$this->assertSame( [ 'moved', 'moved' ], array_column( $result['changes'], 'op' ) );
+		$this->assertSame( [ 'w1', 'w2' ], array_column( $result['changes'], 'elementId' ) );
+		$this->assertSame(
+			[
+				[
+					'op'        => 'moved',
+					'elementId' => 'w1',
+					'fromPath'  => '0.0',
+					'toPath'    => '0.1',
+				],
+				[
+					'op'        => 'moved',
+					'elementId' => 'w2',
+					'fromPath'  => '0.1',
+					'toPath'    => '0.0',
+				],
+			],
+			$result['changes']
+		);
+	}
+
+	/**
+	 * A parent renumbered by an insertion above it moves none of its children.
+	 *
+	 * Every descendant path changes here, and none of it is movement.
+	 */
+	public function test_a_renumbered_parent_moves_none_of_its_children(): void {
+		$section = $this->container( 'c1', [ $this->widget( 'w1' ), $this->widget( 'w2' ) ] );
+
+		$before = [ $section ];
+		$after  = [ $this->container( 'c0' ), $section ];
+
+		$result = $this->diff->diff( $before, $after );
+
+		$this->assertSame( [ 'added' ], array_column( $result['changes'], 'op' ) );
+		$this->assertSame( 'c0', $result['changes'][0]['elementId'] );
+	}
+
+	/**
+	 * The known bound, recorded as a test rather than only as prose.
+	 *
+	 * A parent with no stored id cannot be keyed by one, so its children fall
+	 * back to its raw path — and a renumbering of that IDLESS parent does still
+	 * produce a `moved` nobody performed. No synthetic id is invented to hide
+	 * it. This test exists so the limitation is visible if anyone changes the
+	 * rule.
+	 */
+	public function test_a_renumbered_idless_parent_still_moves_its_children(): void {
+		$wrapper = [ 'elements' => [ $this->widget( 'w1' ) ] ];
+
+		$before = [ $wrapper ];
+		$after  = [ $this->container( 'c0' ), $wrapper ];
+
+		$result = $this->diff->diff( $before, $after );
+
+		$this->assertSame( [ 'moved', 'added' ], array_column( $result['changes'], 'op' ) );
+		$this->assertSame( [ 'w1', 'c0' ], array_column( $result['changes'], 'elementId' ) );
+	}
+
+	/**
+	 * Stored content nested past MAX_SETTINGS_DEPTH is refused, not truncated.
+	 *
+	 * `ElementorTree` bounds ELEMENT nesting and never walks `settings` — it
+	 * drops them — so the depth of a settings array is caller-influenced input
+	 * this class must bound itself. Truncating instead would compare a shortened
+	 * value and report no change for a change.
+	 */
+	public function test_settings_nested_past_the_bound_are_refused_rather_than_truncated(): void {
+		$settings = [ 'leaf' => 'value' ];
+		for ( $index = 0; $index <= ElementorTreeDiff::MAX_SETTINGS_DEPTH; $index++ ) {
+			$settings = [ 'nested' => $settings ];
+		}
+
+		$element             = $this->widget( 'w1' );
+		$element['settings'] = $settings;
+
+		try {
+			$this->diff->diff( [ $element ], [] );
+			$this->fail( 'Over-deep stored settings should have been refused.' );
+		} catch ( OperationException $exception ) {
+			$this->assertSame( ErrorCode::ExecutionFailed, $exception->errorCode );
+		}
+	}
+
+	/**
+	 * That refusal names no part of the stored tree either.
+	 */
+	public function test_a_settings_depth_refusal_names_no_part_of_the_stored_tree(): void {
+		$settings = [ 'leaf' => 'Confidential note' ];
+		for ( $index = 0; $index <= ElementorTreeDiff::MAX_SETTINGS_DEPTH; $index++ ) {
+			$settings = [ 'nested' => $settings ];
+		}
+
+		$element             = $this->widget( 'w1' );
+		$element['settings'] = $settings;
+
+		try {
+			$this->diff->diff( [ $element ], [] );
+			$this->fail( 'Over-deep stored settings should have been refused.' );
+		} catch ( OperationException $exception ) {
+			$text = $exception->getMessage() . ' ' . (string) $exception->remediation;
+			$this->assertStringNotContainsString( 'Confidential note', $text );
+			$this->assertSame( 0, preg_match( '/\\\\|\/var\/|\/home\/|wp-content|password|secret/i', $text ) );
+		}
+	}
+
+	/**
+	 * Legitimately nested settings, well inside the bound, are compared normally.
+	 */
+	public function test_deeply_but_legitimately_nested_settings_are_still_compared(): void {
+		$before_element             = $this->widget( 'w1' );
+		$before_element['settings'] = [ 'a' => [ 'b' => [ 'c' => [ 'd' => 'Before' ] ] ] ];
+
+		$after_element             = $this->widget( 'w1' );
+		$after_element['settings'] = [ 'a' => [ 'b' => [ 'c' => [ 'd' => 'After' ] ] ] ];
+
+		$result = $this->diff->diff( [ $before_element ], [ $after_element ] );
+
+		$this->assertSame( [ 'updated' ], array_column( $result['changes'], 'op' ) );
+	}
+
+	/**
 	 * A settings-only edit is `updated`.
 	 *
 	 * `ElementorTree` drops `settings`, so a diff computed from the normalized
