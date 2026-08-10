@@ -7,7 +7,8 @@
         "elementor-element-update",
         "elementor-widget-settings-update",
         "elementor-element-move",
-        "elementor-element-duplicate"
+        "elementor-element-duplicate",
+        "elementor-element-remove"
     ],
-    "operationCount": 8
+    "operationCount": 9
 }

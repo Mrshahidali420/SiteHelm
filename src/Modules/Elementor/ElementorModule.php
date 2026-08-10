@@ -245,5 +245,10 @@ final class ElementorModule implements IntegrationModule {
 				new PayloadNormalizer()
 			)
 		);
+
+		$registry->registerWrite(
+			ElementorElementRemove::definition(),
+			new ElementorElementRemove( $targets, $document, $merge, $edit, $coercion, $writer, $diff )
+		);
 	}
 }
