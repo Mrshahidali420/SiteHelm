@@ -22,8 +22,12 @@ use SiteHelm\Contracts\OperationException;
  * THE NODE SHAPE IS FROZEN BY THE SPECIFICATION (Decision 4) and Phase 6b diffs
  * against it:
  *
- *     node   := { id, elType, widgetType|null, kind, label, depth, childCount, children[] }
+ *     node   := { id|null, elType, widgetType|null, kind, label, depth, childCount, children[] }
  *     totals := { nodeCount, maxDepth, widgetTypeCounts{ <type>: <count> } }
+ *
+ * `id` IS NULLABLE. A stored element declaring no identifier reports null, not
+ * the empty string, so that a node which cannot be addressed by a write is
+ * unaddressable by construction rather than by documentation. See node().
  *
  * IT REFUSES RATHER THAN TRUNCATES. Both bounds below throw; neither trims. A
  * partial tree that LOOKS complete is the shape that produces a wrong diff in
@@ -170,6 +174,26 @@ final class ElementorTree {
 	 * mid-response. `id` is likewise guarded on being scalar, because `(string)`
 	 * on an array is a fatal.
 	 *
+	 * **`id` IS NULL — NOT `''` — WHEN THE STORED ELEMENT DECLARES NONE.** The
+	 * schema types it `['string','null']` for the same reason. An element with
+	 * no stored identifier has no stable way to be addressed, and null is the
+	 * only honest report of that: `''` is a string a client can compare against
+	 * a real id, and every such node in a document carries the same one, so a
+	 * Phase 6b diff keying nodes by `id` would match the wrong sibling, match
+	 * all of them, or report a phantom no-op — an approved preview that does not
+	 * describe the change applied. This is not hypothetical input: templates
+	 * exported by older Elementor versions carry nodes with neither `elType` nor
+	 * `id`, and this branch reads them deliberately.
+	 *
+	 * The two alternatives were rejected on the record. REFUSING the document
+	 * would make legitimately old templates unreadable, and reading them is the
+	 * point of this operation. SYNTHESIZING a positional identifier would put a
+	 * derived value in the field a write keys on, dressed as a stored one —
+	 * which is the exact defect class this codebase has already shipped twice.
+	 * A nullable type forces every consumer to confront the absence rather than
+	 * string-comparing against a sentinel, which is what makes it stronger than
+	 * a description fix alone.
+	 *
 	 * @param array<string, mixed> $element    One raw element.
 	 * @param int                  $depth      This node's zero-based depth.
 	 * @param int                  $node_count The running node total, by reference.
@@ -205,7 +229,8 @@ final class ElementorTree {
 		);
 
 		return [
-			'id'         => is_scalar( $id ) ? (string) $id : '',
+			// NULL, NOT ''. See the note on this method's `id` handling above.
+			'id'         => is_scalar( $id ) ? (string) $id : null,
 			'elType'     => $el_type,
 			'widgetType' => $widget_type,
 			// An untyped element is reported as a container, because `widget` is
@@ -256,7 +281,6 @@ final class ElementorTree {
 		return '' === $el_type ? 'element' : $el_type;
 	}
 
-	// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The messages are literals written for end users.
 	/**
 	 * The refusal a breached bound produces.
 	 *
@@ -282,5 +306,4 @@ final class ElementorTree {
 			'Open the page in the Elementor editor and reduce the number or the nesting of its elements, then retry.'
 		);
 	}
-	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 }

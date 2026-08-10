@@ -186,7 +186,6 @@ final class ElementorDocument {
 		return is_string( $unslashed ) ? json_decode( $unslashed, true ) : null;
 	}
 
-	// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The messages are literals written for end users.
 	/**
 	 * The one refusal a stored tree this reader cannot understand produces.
 	 *
@@ -211,5 +210,4 @@ final class ElementorDocument {
 			'Open the page in the Elementor editor, confirm it displays as expected, save it, and retry.'
 		);
 	}
-	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 }

@@ -238,7 +238,7 @@ final class ElementorDocumentGet {
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 
-	// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped, WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- The messages are literals written for end users, and the module vocabulary is camelCase across every class.
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- The module vocabulary is camelCase across every class.
 	/**
 	 * The single not-found refusal.
 	 *
@@ -262,5 +262,5 @@ final class ElementorDocumentGet {
 			'Call elementor-document-list to see the documents Elementor controls, and confirm your WordPress user may edit the one you named.'
 		);
 	}
-	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped, WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 }

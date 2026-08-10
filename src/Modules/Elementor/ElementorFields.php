@@ -167,8 +167,12 @@ final class ElementorFields {
 			'type'                 => 'object',
 			'properties'           => [
 				'id'         => [
-					'type'        => 'string',
-					'description' => 'Elementor\'s own element identifier, carried through unchanged so that it is stable across reads.',
+					// NULLABLE, and the type is what makes the absence
+					// unmissable. An empty string here would be a value a client
+					// could compare against a real identifier and a write could
+					// key on; null is neither. See ElementorTree::node().
+					'type'        => [ 'string', 'null' ],
+					'description' => 'Elementor\'s own element identifier, carried through unchanged, so it is stable across reads whenever it is present. Null means the stored element declares no identifier — such an element cannot be addressed by a write, and null is never unique within a document.',
 				],
 				'elType'     => [
 					'type'        => 'string',

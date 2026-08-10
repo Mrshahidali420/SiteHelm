@@ -182,8 +182,11 @@
                         "type": "object",
                         "properties": {
                             "id": {
-                                "type": "string",
-                                "description": "Elementor's own element identifier, carried through unchanged so that it is stable across reads."
+                                "type": [
+                                    "string",
+                                    "null"
+                                ],
+                                "description": "Elementor's own element identifier, carried through unchanged, so it is stable across reads whenever it is present. Null means the stored element declares no identifier — such an element cannot be addressed by a write, and null is never unique within a document."
                             },
                             "elType": {
                                 "type": "string",
