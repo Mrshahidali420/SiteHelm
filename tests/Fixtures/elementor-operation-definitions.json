@@ -1,9 +1,10 @@
 {
     "operationIds": [
         "elementor-document-list",
-        "elementor-document-get"
+        "elementor-document-get",
+        "elementor-widget-availability"
     ],
-    "operationCount": 2,
+    "operationCount": 3,
     "definitions": {
         "elementor-document-list": {
             "inputSchema": {
@@ -232,6 +233,78 @@
                         "additionalProperties": false
                     }
                 }
+            }
+        },
+        "elementor-widget-availability": {
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "widgetTypes": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 100,
+                            "description": "One Elementor widget type name, such as heading or image-box."
+                        },
+                        "minItems": 1,
+                        "maxItems": 100,
+                        "description": "The widget type names to check, at least one and at most 100. A longer list is refused rather than shortened, so that no answer is ever missing without saying so. A name repeated in the list is answered once."
+                    }
+                },
+                "required": [
+                    "widgetTypes"
+                ],
+                "additionalProperties": false
+            },
+            "outputSchema": {
+                "type": "object",
+                "properties": {
+                    "widgets": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "type": {
+                                    "type": "string",
+                                    "description": "The proposed widget type name, exactly as it was asked about."
+                                },
+                                "available": {
+                                    "type": "boolean",
+                                    "description": "True when the Elementor installed on this site registers this widget type."
+                                }
+                            },
+                            "required": [
+                                "type",
+                                "available"
+                            ],
+                            "additionalProperties": false
+                        },
+                        "description": "One entry per distinct proposed type, in the order first asked about."
+                    },
+                    "unavailable": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "description": "Only the proposed types this site does not register, so a client never has to re-derive the list. Empty when every proposed type is available."
+                    },
+                    "elementorVersion": {
+                        "type": "string",
+                        "description": "The Elementor version the check was made against."
+                    },
+                    "registeredCount": {
+                        "type": "integer",
+                        "description": "How many widget types the registry holds in total. Zero means the registry was read and holds nothing, which is a different state from a registry that could not be read at all — that one refuses instead of answering."
+                    }
+                },
+                "required": [
+                    "widgets",
+                    "unavailable",
+                    "elementorVersion",
+                    "registeredCount"
+                ],
+                "additionalProperties": false
             }
         }
     }

@@ -180,5 +180,10 @@ final class ElementorModule implements IntegrationModule {
 			ElementorDocumentGet::definition(),
 			[ new ElementorDocumentGet( $fields, $document, $tree, $this->presence ), 'handle' ]
 		);
+
+		$registry->register(
+			ElementorWidgetAvailability::definition(),
+			[ new ElementorWidgetAvailability( $this->presence ), 'handle' ]
+		);
 	}
 }
