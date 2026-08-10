@@ -40,12 +40,19 @@ use SiteHelm\Tests\TestCase;
  * fixture for it to be written into. Every assertion below names the operation
  * it failed on.
  *
- * GROWING THIS FILE: Task 3 appends `elementor-document-get` to OPERATION_IDS
- * and bumps ELEMENTOR_READ_COUNT; Task 4 does the same for
- * `elementor-widget-availability`. Neither is optional: an operation missing
- * from OPERATION_IDS fails the catalog-order assertion, and a count left behind
+ * GROWING THIS FILE: every task that registers an Elementor operation appends
+ * its identifier to OPERATION_IDS, and also bumps ELEMENTOR_READ_COUNT or
+ * ELEMENTOR_WRITE_COUNT according to which it is. Neither is optional: an operation missing from
+ * OPERATION_IDS fails the catalog-order assertion, and a count left behind
  * fails its own assertion. That is what makes this file a net rather than a
  * snapshot of whatever happened to be registered.
+ *
+ * THE WRITE BLOCK OPENED WITH `elementor-element-add`. Where this file used to
+ * assert that Phase 6a registered no write at all, it now asserts the shape a
+ * registered write must have and that the READS did not quietly become writes —
+ * the same net, moved to where the boundary now is. Deleting that assertion
+ * rather than moving it would have left the module free to register a read on
+ * the write dispatcher with nothing noticing.
  */
 final class ElementorDefinitionInvariantsTest extends TestCase {
 
@@ -66,12 +73,24 @@ final class ElementorDefinitionInvariantsTest extends TestCase {
 		'elementor-document-list',
 		'elementor-document-get',
 		'elementor-widget-availability',
+		'elementor-element-add',
 	];
 
 	/**
-	 * The Elementor module's read count. Bumped by Tasks 3 and 4.
+	 * The Elementor module's read count, bumped by every task registering a read.
+	 *
+	 * NOT the size of OPERATION_IDS, and the difference is the point: the reads
+	 * are derived from the catalog by asking the registry which identifiers are
+	 * not writes, and this number is what that derivation is checked against. A
+	 * read that silently became a write, or a write registered without its write
+	 * handler, moves the derived count away from this one.
 	 */
 	private const ELEMENTOR_READ_COUNT = 3;
+
+	/**
+	 * The Elementor module's write count, bumped by every task registering a write.
+	 */
+	private const ELEMENTOR_WRITE_COUNT = 1;
 
 	/**
 	 * The capabilities an Elementor operation may declare.
@@ -312,10 +331,16 @@ final class ElementorDefinitionInvariantsTest extends TestCase {
 		);
 
 		foreach ( $this->registeredDefinitions( $registry ) as $definition ) {
-			$this->assertSame(
-				'elementor-read',
+			$this->assertContains(
 				$definition->dispatcherName(),
-				"Operation '{$definition->id}' routes to '{$definition->dispatcherName()}'; every Phase 6a operation is a read on elementor-read."
+				[ 'elementor-read', 'elementor-write' ],
+				"Operation '{$definition->id}' routes to '{$definition->dispatcherName()}'; every Elementor operation belongs on elementor-read or elementor-write."
+			);
+
+			$this->assertSame(
+				$registry->hasWriteOperation( $definition->id ) ? 'elementor-write' : 'elementor-read',
+				$definition->dispatcherName(),
+				"Operation '{$definition->id}' is on the wrong dispatcher for what it is. A write reachable from the read catalog is a mutation a client browsing reads would find."
 			);
 		}
 
@@ -366,31 +391,66 @@ final class ElementorDefinitionInvariantsTest extends TestCase {
 	}
 
 	/**
-	 * Phase 6a registers no write, so nothing may reach the elementor-write
-	 * dispatcher or the write registry. A write registered here would be a
-	 * mutation the change engine's preview/snapshot/rollback story has not been
-	 * designed for yet.
+	 * Every Elementor write declares the shape the change engine requires of one,
+	 * and every Elementor read is still a read.
+	 *
+	 * THE SECOND HALF IS THE ONE THAT MATTERS. `CapabilityRegistry::registerWrite()`
+	 * already refuses a definition that is not Mode::Write with previewPolicy
+	 * Required, so the first half restates a guarantee the registry gives. What
+	 * nothing else asserts is the other direction: that the three reads have not
+	 * quietly acquired a write handler, which would put a mutation behind an
+	 * operation the catalog advertises as read-only.
 	 */
-	public function test_phase_six_a_registers_no_write_anywhere(): void {
+	public function test_every_elementor_write_declares_the_write_shape_and_no_read_became_one(): void {
 		$registry = $this->registryWithElementorModule();
 
-		$this->assertSame( [], $registry->forDispatcher( 'elementor-write' ) );
+		$writes = array_values(
+			array_filter(
+				$this->registeredDefinitions( $registry ),
+				static fn( OperationDefinition $d ): bool => $registry->hasWriteOperation( $d->id )
+			)
+		);
 
-		foreach ( self::OPERATION_IDS as $id ) {
-			$this->assertFalse( $registry->hasWriteOperation( $id ), "Operation '{$id}' must not be registered as a write." );
+		$this->assertCount(
+			self::ELEMENTOR_WRITE_COUNT,
+			$writes,
+			'The Elementor module write count has moved. A write added without bumping ELEMENTOR_WRITE_COUNT is a mutation nothing here examined.'
+		);
+
+		foreach ( $writes as $write ) {
+			$this->assertFalse( $write->isReadOnly, "Write '{$write->id}' must declare isReadOnly false." );
+			$this->assertSame( 'write', $write->mode->value, "Write '{$write->id}' must declare Mode::Write." );
+			$this->assertSame( 'required', $write->previewPolicy->value, "Write '{$write->id}' must require a preview." );
+			$this->assertSame( 'required', $write->snapshotPolicy->value, "Write '{$write->id}' must require a snapshot." );
+			$this->assertSame( 'supported', $write->rollbackPolicy->value, "Write '{$write->id}' must support rollback." );
+			$this->assertSame( 'elementor-write', $write->dispatcherName(), "Write '{$write->id}' must route to elementor-write." );
 		}
+
+		// The reads were registered first and the write block follows them, so the
+		// writes are exactly the tail of the catalog. Asserting the identifiers —
+		// not just the count — is what catches a read that acquired a write handler
+		// while a genuine write lost one, which leaves the count untouched.
+		$this->assertSame(
+			array_slice( self::OPERATION_IDS, self::ELEMENTOR_READ_COUNT ),
+			array_map( static fn( OperationDefinition $d ): string => $d->id, $writes ),
+			'An operation the read block registered is now a write, or a write is missing its write handler.'
+		);
 	}
 
 	/**
-	 * The module must add nothing to any dispatcher other than elementor-read. A
+	 * The module must add nothing to any dispatcher other than its own two. A
 	 * Domain typo would otherwise plant an Elementor operation on the content or
 	 * media catalog, where a client browsing content would find it.
+	 *
+	 * The write dispatcher joined the exempt pair when the write block opened; the
+	 * remaining nine are still asserted empty, and the previous test is what keeps
+	 * `elementor-write` from becoming a place a read can hide.
 	 */
-	public function test_the_module_registers_nothing_outside_the_elementor_read_dispatcher(): void {
+	public function test_the_module_registers_nothing_outside_its_own_two_dispatchers(): void {
 		$registry = $this->registryWithElementorModule();
 
 		foreach ( CapabilityRegistry::DISPATCHERS as $dispatcher ) {
-			if ( 'elementor-read' === $dispatcher ) {
+			if ( in_array( $dispatcher, [ 'elementor-read', 'elementor-write' ], true ) ) {
 				continue;
 			}
 

@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace SiteHelm\Modules\Elementor;
 
+use SiteHelm\Change\PayloadNormalizer;
 use SiteHelm\Contracts\IntegrationModule;
 use SiteHelm\Contracts\ModuleHealth;
 use SiteHelm\Contracts\ModuleId;
@@ -184,6 +185,29 @@ final class ElementorModule implements IntegrationModule {
 		$registry->register(
 			ElementorWidgetAvailability::definition(),
 			[ new ElementorWidgetAvailability( $this->presence ), 'handle' ]
+		);
+
+		// The write block. Every one of these shares a single ElementorWriteTarget,
+		// and the target shares a single ElementorApi with the cache invalidator the
+		// writer holds — one presence gate, one registry read, one cache flush per
+		// document, rather than one of each per operation.
+		$api      = new ElementorApi( $this->presence );
+		$coercion = new ElementorPropCoercion( $api );
+		$writer   = new ElementorDocumentWriter( $api, $document, new ElementorCacheInvalidator( $api ) );
+		$targets  = new ElementorWriteTarget( $document, $tree, $this->presence, $coercion, $writer );
+
+		$registry->registerWrite(
+			ElementorElementAdd::definition(),
+			new ElementorElementAdd(
+				$targets,
+				$document,
+				new ElementorTreeEdit(),
+				new ElementorIdMint(),
+				$coercion,
+				$writer,
+				new ElementorTreeDiff( $tree ),
+				new PayloadNormalizer()
+			)
 		);
 	}
 }
