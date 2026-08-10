@@ -70,7 +70,9 @@ The menus module shipped an unbounded item tree and it became a deferred minor. 
 - **`MAX_DEPTH = 50`** — a tree nested deeper is malformed, and a recursive normalizer on a cyclic or hostile structure is a stack overflow, which is a crash, not an error response.
 - **`MAX_NODES = 5000`** — a whole-tree walk that never terminates is a request that never returns.
 
-On either breach the operation **refuses** with `ErrorCode::ValidationFailed` and a remedy naming the Elementor editor. It never returns a truncated tree: a partial tree that looks complete is the shape that produces a wrong diff in Phase 6b, and a wrong diff is an approved plan that does not describe the change.
+On either breach the operation **refuses** with `ErrorCode::ExecutionFailed` and a remedy naming the Elementor editor.
+
+*(Corrected during Task 1: this section first named `ErrorCode::ValidationFailed`, which does not exist — the eleven codes are frozen and that is not one of them. `ExecutionFailed` is the fit: the read could not be completed because of site state, and it is retryable, since re-saving the page in the editor clears the condition. `InvalidInput` would misdirect — nothing about the caller's request is wrong. Worth recording that every prior use of `ExecutionFailed` in this codebase is on a write path; this is its first use by a read, and Tasks 3 and 4 must follow it.)* It never returns a truncated tree: a partial tree that looks complete is the shape that produces a wrong diff in Phase 6b, and a wrong diff is an approved plan that does not describe the change.
 
 Malformed JSON, or JSON that decodes to something other than a list of nodes, refuses the same way. A half-decoded tree is never returned.
 

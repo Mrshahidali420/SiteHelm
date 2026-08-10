@@ -13,6 +13,8 @@
 Every task's requirements implicitly include all of these.
 
 - **No new dispatcher and no new error code.** Eleven of each are frozen. Use `elementor-read`; use existing `ErrorCode` cases.
+- **Refusals caused by unusable stored Elementor data use `ErrorCode::ExecutionFailed`** — malformed JSON, a non-list tree, a depth or node-count breach. Settled in Task 1 after the spec named a code that does not exist. Every other use of `ExecutionFailed` in the codebase is on a write path; this is its first use by a read, and all three operations must agree on it.
+- **`totals.maxDepth` counts LEVELS, not the greatest zero-based `depth`.** A tree whose deepest node sits at `depth` 2 reports `maxDepth` 3; an empty tree reports 0. Settled in Task 1; Task 3's output schema must match.
 - **Every file under 800 lines, test files included.** If a file approaches the limit, extract by responsibility — do not trim documentation.
 - **Uncovered-statement ceiling is 96**, not a percentage floor. Baseline on this branch is 87. Every task reports its uncovered count.
 - **No class-level `readonly class`** — does not parse on PHP 8.1. Use `final class` with per-property `readonly`.
