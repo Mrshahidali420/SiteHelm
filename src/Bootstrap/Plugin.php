@@ -17,6 +17,7 @@ use SiteHelm\Gateway\McpServer;
 use SiteHelm\Gateway\RestTransport;
 use SiteHelm\Modules\Core\CoreModule;
 use SiteHelm\Modules\Diagnostics\DiagnosticsModule;
+use SiteHelm\Modules\Elementor\ElementorModule;
 use SiteHelm\Modules\Media\MediaModule;
 use SiteHelm\Modules\Menus\MenusModule;
 use SiteHelm\Policy\PolicyEngine;
@@ -37,6 +38,31 @@ use Throwable;
  * @package SiteHelm
  */
 final class Plugin {
+
+	/**
+	 * Every module the plugin boots, in boot order.
+	 *
+	 * Later phases append module class names here. Class names rather than
+	 * instances so that each construction sits inside the isolation boundary:
+	 * a throwing constructor must not be able to take down the gateway.
+	 *
+	 * PUBLIC BECAUSE THE CATALOG-WIDE TESTS MUST ENUMERATE THE REAL TABLE. When
+	 * this list lived as a local inside `register()`, the REQ-0063 absence test
+	 * — no non-Elementor page builder may appear in any V1 dispatcher catalog —
+	 * had to keep a hand-written copy of it, so a module added here and nowhere
+	 * else shipped a foreign builder into the catalog with the suite still
+	 * green. A requirement about the whole catalog has to read the whole
+	 * catalog from the single place that defines it.
+	 *
+	 * @var class-string<IntegrationModule>[]
+	 */
+	public const MODULE_CLASSES = [
+		DiagnosticsModule::class,
+		CoreModule::class,
+		MediaModule::class,
+		MenusModule::class,
+		ElementorModule::class,
+	];
 
 	/**
 	 * Singleton instance.
@@ -66,11 +92,7 @@ final class Plugin {
 	public function register(): void {
 		$registry = new CapabilityRegistry();
 
-		// Later phases append module class names here. Class names rather than
-		// instances so that each construction sits inside the isolation boundary:
-		// a throwing constructor must not be able to take down the gateway.
-		$module_classes = [ DiagnosticsModule::class, CoreModule::class, MediaModule::class, MenusModule::class ];
-		$module_health  = ( new ModuleLoader() )->load( $this->constructModules( $module_classes ), $registry );
+		$module_health = ( new ModuleLoader() )->load( $this->constructModules( self::MODULE_CLASSES ), $registry );
 
 		$server = new McpServer(
 			new Dispatcher(
