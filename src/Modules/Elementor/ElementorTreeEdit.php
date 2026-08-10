@@ -36,11 +36,35 @@ use SiteHelm\Contracts\OperationException;
  * exported templates contain sibling elements that declare none. Matching the
  * first idless node would let a write edit an element the operator never named.
  * Such a node is still walked THROUGH — an addressable child of an
- * unaddressable parent is addressable — but `find()` then reports its parent as
- * `parentId: null, parentAddressable: false`. Callers MUST read that flag before
- * feeding `parentId` back into `insert()`, because a null parent means the
- * document root there: re-inserting a copy "beside its original" inside an
- * idless container would otherwise silently move it to the top level.
+ * unaddressable parent is addressable — but `find()` then reports
+ * `parentAddressable: false`.
+ *
+ * NO CALLER IS EVER HANDED A PARENT ID IT COULD MISUSE. `find()` returns NO
+ * `parentId` key at all; the only way to obtain a destination parent is
+ * `destinationParent()`, which returns the id when the parent is addressable
+ * and REFUSES when it is not. That refusal is the whole point: a null parent
+ * means "the document root" to `insert()`, so handing back a null for "inside
+ * something nothing can name" would silently promote a copy to the top level —
+ * a relocation nobody approved, with no exception and a green suite. The
+ * duplicate pipeline therefore reads:
+ *
+ *     $found = find( $tree, $element_id );
+ *     $copy  = remap( reassign( $found['node'], ... ) );
+ *     insert( $tree, destinationParent( $found ), $found['index'] + 1, $copy );
+ *
+ * and the incorrect version of that call does not exist to be written.
+ *
+ * POSITIONS COUNT ELEMENTS, NEVER RAW MEMBERS. A stored child list may hold a
+ * member that is not an array — damaged documents do — and every method here
+ * agrees to skip such a member WITHOUT counting it. So `find()`'s `index`, the
+ * position in `path()`, and the `$index` `insert()` and `move()` accept are ONE
+ * index space: the Nth element of a list, not its Nth raw member. That is the
+ * space the caller can reason about, because it is the space the operator sees;
+ * it also matches the path space `ElementorTreeDiff` reports. `spliced()`
+ * therefore translates the requested position back to a raw offset rather than
+ * splicing at it directly, which is what keeps `insert( $tree, $parent,
+ * $found['index'] + 1, $copy )` landing AFTER its source even when junk sits in
+ * front of it.
  *
  * PURE: no WordPress function, no `\Elementor\` symbol, no state.
  *
@@ -66,15 +90,53 @@ final class ElementorTreeEdit {
 	/**
 	 * One element, with where it sits, or null when the tree does not hold it.
 	 *
+	 * THERE IS NO `parentId` KEY, deliberately. `parent` carries the raw answer
+	 * and is `false` when the parent cannot be named — a value `insert()` will
+	 * not accept — so the destination for an insertion is read through
+	 * `destinationParent()` and nowhere else.
+	 *
+	 * `index` counts ELEMENTS, not raw members: see the class docblock.
+	 *
 	 * @param array[] $tree       The raw stored tree.
 	 * @param string  $element_id The stored element id to look for.
 	 *
-	 * @return array<string, mixed>|null Keys 'node', 'path', 'parentId',
-	 *                                   'parentAddressable' and 'index'.
+	 * @return array<string, mixed>|null Keys 'node', 'path', 'index',
+	 *                                   'parentAddressable' and 'parent'.
 	 */
 	public function find( array $tree, string $element_id ): ?array {
 		return $this->locate( $tree, $element_id, null, true );
 	}
+
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid,WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The module vocabulary is camelCase across every class; the message is a fixed literal carrying no value from the request, which the T_THROW sniff cannot tell.
+	/**
+	 * The parent to insert beside a found element, or a refusal.
+	 *
+	 * Null means the DOCUMENT ROOT and nothing else. When the element sits
+	 * inside a container that stores no id there is no such destination, and
+	 * this refuses rather than answering null — because answering null would
+	 * move the element to the top level while reporting success.
+	 *
+	 * @param array<string, mixed> $found One `find()` result.
+	 *
+	 * @return string|null The parent id, or null at the document root.
+	 *
+	 * @throws OperationException With ErrorCode::InvalidInput when the parent
+	 *                           cannot be named.
+	 */
+	public function destinationParent( array $found ): ?string {
+		if ( true !== ( $found['parentAddressable'] ?? false ) ) {
+			throw new OperationException(
+				ErrorCode::InvalidInput,
+				'This element sits inside a container that stores no identifier, so there is nowhere to place a sibling beside it.',
+				'Target the enclosing element instead, or re-save the page in Elementor so every container carries an identifier, and retry.'
+			);
+		}
+
+		$parent = $found['parent'] ?? null;
+
+		return is_string( $parent ) ? $parent : null;
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid,WordPress.Security.EscapeOutput.ExceptionNotEscaped
 
 	/**
 	 * Where one element sits, as `parentId/index`, or null when absent.
@@ -121,8 +183,8 @@ final class ElementorTreeEdit {
 	 * the write operations bound the caller-supplied value themselves.
 	 *
 	 * @param array[]              $tree      The raw stored tree.
-	 * @param string|null          $parent_id The destination parent, null for the document root.
-	 * @param int                  $index     The zero-based position among the destination's children.
+	 * @param string|null          $parent_id The destination parent, null for the document root, from `destinationParent()`.
+	 * @param int                  $index     The zero-based position among the destination's child ELEMENTS.
 	 * @param array<string, mixed> $node      The raw element to insert.
 	 *
 	 * @return array[] The new tree.
@@ -245,7 +307,7 @@ final class ElementorTreeEdit {
 				return [
 					'node'              => $child,
 					'path'              => ( $parent_id ?? '' ) . self::PATH_SEPARATOR . $position,
-					'parentId'          => $parent_id,
+					'parent'            => $addressable ? $parent_id : false,
 					'parentAddressable' => $addressable,
 					'index'             => $position,
 				];
@@ -380,21 +442,56 @@ final class ElementorTreeEdit {
 	}
 
 	/**
-	 * One child list with a node inserted at a bounded position.
+	 * One child list with a node inserted at a bounded ELEMENT position.
+	 *
+	 * The index is clamped rather than refused, and it is translated from the
+	 * element space `find()` reports into a raw offset before splicing. Both
+	 * halves matter: splicing at the requested number directly would place the
+	 * node one seat early for every non-array member sitting in front of the
+	 * target, which is exactly how a duplicate would land BEFORE its source.
 	 *
 	 * @param array<array-key, mixed> $children One raw child list.
-	 * @param int                     $index    The requested position.
+	 * @param int                     $index    The requested element position.
 	 * @param array<string, mixed>    $node     The raw element to insert.
 	 *
 	 * @return array[] The new list.
 	 */
 	private function spliced( array $children, int $index, array $node ): array {
-		$list  = array_values( $children );
-		$bound = max( 0, min( $index, count( $list ) ) );
+		$list = array_values( $children );
 
-		array_splice( $list, $bound, 0, [ $node ] );
+		array_splice( $list, $this->offset( $list, max( 0, $index ) ), 0, [ $node ] );
 
 		return $list;
+	}
+
+	/**
+	 * The raw offset a requested element position names in a child list.
+	 *
+	 * Counts array members only, the same way `locate()` does. A position past
+	 * the last element answers the end of the list, which is what an append
+	 * asks for and what keeps any trailing junk where the document put it.
+	 *
+	 * @param array<array-key, mixed> $members One raw child list, already re-indexed.
+	 * @param int                     $index   The requested element position, never negative.
+	 *
+	 * @return int The raw offset to splice at.
+	 */
+	private function offset( array $members, int $index ): int {
+		$position = 0;
+
+		foreach ( $members as $offset => $member ) {
+			if ( ! is_array( $member ) ) {
+				continue;
+			}
+
+			if ( $position === $index ) {
+				return (int) $offset;
+			}
+
+			++$position;
+		}
+
+		return count( $members );
 	}
 
 	/**
