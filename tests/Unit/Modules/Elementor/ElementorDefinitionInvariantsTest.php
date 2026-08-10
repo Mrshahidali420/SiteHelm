@@ -74,6 +74,8 @@ final class ElementorDefinitionInvariantsTest extends TestCase {
 		'elementor-document-get',
 		'elementor-widget-availability',
 		'elementor-element-add',
+		'elementor-element-update',
+		'elementor-widget-settings-update',
 	];
 
 	/**
@@ -90,7 +92,7 @@ final class ElementorDefinitionInvariantsTest extends TestCase {
 	/**
 	 * The Elementor module's write count, bumped by every task registering a write.
 	 */
-	private const ELEMENTOR_WRITE_COUNT = 1;
+	private const ELEMENTOR_WRITE_COUNT = 3;
 
 	/**
 	 * The capabilities an Elementor operation may declare.

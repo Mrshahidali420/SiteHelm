@@ -17,10 +17,13 @@ use SiteHelm\Contracts\OperationException;
 use SiteHelm\Contracts\PreviewPolicy;
 use SiteHelm\Contracts\RollbackPolicy;
 use SiteHelm\Contracts\SnapshotPolicy;
+use SiteHelm\Modules\Elementor\ElementorApi;
 use SiteHelm\Modules\Elementor\ElementorElementAdd;
 use SiteHelm\Modules\Elementor\ElementorElementAddInput;
+use SiteHelm\Modules\Elementor\ElementorPresence;
 use SiteHelm\Modules\Elementor\ElementorPropCoercion;
 use SiteHelm\Modules\Elementor\ElementorTreeDiff;
+use SiteHelm\Modules\Elementor\ElementorTreeEdit;
 use SiteHelm\Modules\Elementor\ElementorWriteFields;
 use SiteHelm\Tests\Doubles\ElementAddFixtures;
 use SiteHelm\Tests\TestCase;
@@ -281,6 +284,42 @@ final class ElementorElementAddTest extends TestCase {
 			->payload[ ElementorElementAdd::PAYLOAD_ELEMENT_ID ];
 
 		$this->assertNotContains( $minted, [ 'c111111', 'w111111', 'w222222', 'w333333' ] );
+	}
+
+	// ------------------------------------------------------- the shared bounds
+
+	/**
+	 * THE LENGTH BOUND IS ONE NUMBER, SPELLED ONCE.
+	 *
+	 * `WIDGET_TYPE_PATTERN` is built by concatenating `WIDGET_TYPE_MAX_LENGTH`
+	 * into it rather than repeating the digits, and this pins that: a widget type
+	 * of exactly the declared length is accepted and one character more is
+	 * refused. The pattern is private, so the pin has to be behavioural — which
+	 * is the stronger form anyway, because it is the accepted LENGTH that matters
+	 * to a caller and not how the class spells it.
+	 *
+	 * Were the two ever to drift — the constant raised without the pattern, or
+	 * the reverse — exactly one of these two assertions goes red.
+	 */
+	public function test_the_widget_type_length_bound_is_the_one_the_constant_declares(): void {
+		$inputs = new ElementorElementAddInput(
+			new ElementorPropCoercion( new ElementorApi( new ElementorPresence() ) ),
+			new ElementorTreeEdit()
+		);
+		$longest = str_repeat( 'a', ElementorElementAddInput::WIDGET_TYPE_MAX_LENGTH );
+
+		$this->assertSame(
+			$longest,
+			$inputs->requestedWidgetType( ElementorElementAddInput::EL_TYPE_WIDGET, [ 'widgetType' => $longest ] ),
+			'A widget type of exactly the declared length must be accepted.'
+		);
+
+		try {
+			$inputs->requestedWidgetType( ElementorElementAddInput::EL_TYPE_WIDGET, [ 'widgetType' => $longest . 'a' ] );
+			$this->fail( 'A widget type one character over the declared length must be refused.' );
+		} catch ( OperationException $exception ) {
+			$this->assertSame( ErrorCode::InvalidInput, $exception->errorCode );
+		}
 	}
 
 	// ------------------------------------------------------- what a plan says

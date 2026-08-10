@@ -195,20 +195,34 @@ final class ElementorModule implements IntegrationModule {
 		$coercion = new ElementorPropCoercion( $api );
 		$writer   = new ElementorDocumentWriter( $api, $document, new ElementorCacheInvalidator( $api ) );
 		$targets  = new ElementorWriteTarget( $document, $tree, $this->presence, $coercion, $writer );
+		$edit     = new ElementorTreeEdit();
+		$inputs   = new ElementorElementAddInput( $coercion, $edit );
+		$merge    = new ElementorSettingsMerge( $edit, $coercion );
+		$diff     = new ElementorTreeDiff( $tree );
 
 		$registry->registerWrite(
 			ElementorElementAdd::definition(),
 			new ElementorElementAdd(
 				$targets,
 				$document,
-				new ElementorTreeEdit(),
+				$edit,
 				new ElementorIdMint(),
 				$coercion,
 				$writer,
-				new ElementorTreeDiff( $tree ),
+				$diff,
 				new PayloadNormalizer(),
-				new ElementorElementAddInput( $coercion, new ElementorTreeEdit() )
+				$inputs
 			)
+		);
+
+		$registry->registerWrite(
+			ElementorElementUpdate::definition(),
+			new ElementorElementUpdate( $targets, $document, $merge, $edit, $coercion, $writer, $diff, $inputs )
+		);
+
+		$registry->registerWrite(
+			ElementorWidgetSettingsUpdate::definition(),
+			new ElementorWidgetSettingsUpdate( $targets, $document, $merge, $edit, $coercion, $writer, $diff, $inputs )
 		);
 	}
 }
