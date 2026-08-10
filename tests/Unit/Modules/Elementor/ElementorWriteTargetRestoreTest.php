@@ -113,7 +113,11 @@ final class ElementorWriteTargetRestoreTest extends TestCase {
 				$this->writes[] = [ $post_id, $key ];
 
 				if ( ! in_array( $key, $this->silentKeys, true ) ) {
-					$this->meta[ $post_id . '|' . $key ] = $value;
+					// UNSLASHED on the way in, exactly as WordPress does it. The
+					// restore path writes through ElementorDocumentWriter, which slashes,
+					// so a double that stored the value verbatim would let a digest
+					// computed over the wrong bytes look correct.
+					$this->meta[ $post_id . '|' . $key ] = is_string( $value ) ? stripslashes( $value ) : $value;
 				}
 
 				return true;
