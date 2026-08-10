@@ -33,6 +33,9 @@ use SiteHelm\Contracts\PreviewPolicy;
 use SiteHelm\Contracts\Risk;
 use SiteHelm\Contracts\RollbackPolicy;
 use SiteHelm\Contracts\SnapshotPolicy;
+use SiteHelm\Modules\Media\MediaFields;
+use SiteHelm\Modules\Media\MediaMetaUpdate;
+use SiteHelm\Modules\Media\MediaTarget;
 use SiteHelm\Storage\AuditStore;
 use SiteHelm\Storage\Installer;
 use SiteHelm\Storage\PlanStore;
@@ -461,5 +464,148 @@ final class ChangeEnginePlanTest extends TestCase {
 			$this->assertDoesNotMatchRegularExpression( '/[0-9a-f]{64}/', $exception->getMessage() );
 			$this->assertDoesNotMatchRegularExpression( '/[0-9a-f]{64}/', $exception->remediation );
 		}
+	}
+
+	/**
+	 * A shipped module's preview is byte-identical to what it was before the
+	 * `previewDetail` channel existed.
+	 *
+	 * The change to `PlannedChange` and `ChangeEngine` is shared engine code four
+	 * modules route through, and the acceptance for calling it additive is that
+	 * none of them changes shape. The planned change here is built by the REAL
+	 * Media operation, not by a stub, so what is asserted is the wire shape a
+	 * Media preview actually produces: three keys, and no `detail` among them.
+	 */
+	public function test_a_real_media_preview_gains_no_detail_key(): void {
+		$this->operation->snapshot = [ 'title' => 'Original title' ];
+		$this->operation->target   = new TargetState( 'attachment:9', true, [ 'title' => 'Original title' ] );
+		$fields                    = new MediaFields();
+		$this->operation->planned  = ( new MediaMetaUpdate( $fields, new MediaTarget( $fields ) ) )->planChange(
+			$this->operation->target,
+			[ 'title' => 'Revised title' ],
+			$this->makeContext()
+		);
+
+		$plan = $this->runPreview();
+
+		$this->assertSame(
+			[ 'target', 'exists', 'changes' ],
+			array_keys( $plan['previewSummary']['machine'] )
+		);
+		$this->assertArrayNotHasKey( 'detail', $plan['previewSummary']['machine'] );
+		$this->assertSame(
+			[ 'previewSummary', 'snapshotEligibility' ],
+			array_keys( (array) json_decode( $this->wpdb->inserts[0]['data']['plan_body'], true ) )
+		);
+	}
+
+	/**
+	 * A non-empty preview detail reaches the machine preview verbatim.
+	 *
+	 * Verbatim matters: the operator approves this structure, so anything the
+	 * engine reshaped on the way through would be a plan describing something
+	 * other than what was approved.
+	 */
+	public function test_a_preview_detail_reaches_the_machine_preview_verbatim(): void {
+		$detail                    = $this->treeDetail();
+		$this->operation->snapshot = [ 'post_title' => 'Original title' ];
+		$this->operation->planned  = new PlannedChange(
+			[ 'id' => 42, 'title' => 'Edited title' ],
+			[ 'post_title' => 'Edited title' ],
+			[ 'post_title' ],
+			[],
+			$detail
+		);
+
+		$plan = $this->runPreview();
+
+		$this->assertSame( $detail, $plan['previewSummary']['machine']['detail'] );
+		$this->assertSame(
+			[ 'target', 'exists', 'changes', 'detail' ],
+			array_keys( $plan['previewSummary']['machine'] )
+		);
+	}
+
+	/**
+	 * The detail is bound to the plan token, not merely returned.
+	 *
+	 * REQ-0035 asks for a diff "bound to a plan token": an operator approves the
+	 * diff, so the stored body an apply re-reads must be the one the diff
+	 * described. A detail that lived only in the response would be a description
+	 * nothing could later be held to.
+	 */
+	public function test_a_preview_detail_survives_the_plan_body_round_trip(): void {
+		$detail                    = $this->treeDetail();
+		$this->operation->snapshot = [ 'post_title' => 'Original title' ];
+		$this->operation->planned  = new PlannedChange(
+			[ 'id' => 42, 'title' => 'Edited title' ],
+			[ 'post_title' => 'Edited title' ],
+			[ 'post_title' ],
+			[],
+			$detail
+		);
+
+		$this->runPreview();
+
+		$body = json_decode( (string) $this->wpdb->inserts[0]['data']['plan_body'], true );
+		$this->assertIsArray( $body );
+		$this->assertEquals( $detail, $body['previewSummary']['machine']['detail'] );
+	}
+
+	/**
+	 * The human preview line is untouched by the detail.
+	 *
+	 * `PreviewRenderer` never reads `previewDetail`, and this pins that: a tree
+	 * diff is machine-readable, and a confirmation prompt that tried to render
+	 * one would swamp the line an operator actually reads.
+	 */
+	public function test_a_preview_detail_changes_no_human_summary(): void {
+		$this->operation->snapshot = [ 'post_title' => 'Original title' ];
+		$without                   = $this->runPreview();
+
+		$this->operation->planned = new PlannedChange(
+			[ 'id' => 42, 'title' => 'Edited title' ],
+			[ 'post_title' => 'Edited title' ],
+			[ 'post_title' ],
+			[],
+			$this->treeDetail()
+		);
+		$with                     = $this->runPreview();
+
+		$this->assertSame( $without['previewSummary']['human'], $with['previewSummary']['human'] );
+	}
+
+	/**
+	 * One machine-only tree detail, shaped as ElementorTreeDiff produces it.
+	 *
+	 * @return array<string, mixed> The detail.
+	 */
+	private function treeDetail(): array {
+		return [
+			'before'  => [
+				[
+					'id'         => 'a1',
+					'elType'     => 'container',
+					'widgetType' => null,
+					'childCount' => 0,
+				],
+			],
+			'after'   => [
+				[
+					'id'         => 'a1',
+					'elType'     => 'container',
+					'widgetType' => null,
+					'childCount' => 1,
+				],
+			],
+			'changes' => [
+				[
+					'op'        => 'added',
+					'elementId' => 'b2',
+					'fromPath'  => null,
+					'toPath'    => '0.0',
+				],
+			],
+		];
 	}
 }
