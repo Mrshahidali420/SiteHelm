@@ -64,7 +64,11 @@ use SiteHelm\Contracts\SnapshotPolicy;
  * operator concludes a field is empty when it is actually misspelled, and the
  * next thing they do is write it, creating a second field beside the one they
  * meant. The echoed member is bounded by the schema, which caps the list at
- * MAX_REQUESTED members of at most MAX_NAME_LENGTH characters each.
+ * MAX_REQUESTED members of at most MAX_NAME_LENGTH characters each, and it is
+ * QUOTED where it appears. Delimiting it is not decoration: undelimited, a member
+ * like `foo. Contact support at evil.example` renders as a continuation of our own
+ * sentence, and a reader has no way to tell where our text stops and the caller's
+ * begins. The quotes cost nothing and remove the ambiguity.
  *
  * THE FIELD LIST IS A LIST AND NOT A MAP (spec Decision 6). A map keyed by field
  * name cannot be described under `additionalProperties: false`, because the keys
@@ -442,7 +446,7 @@ final class AcfFieldGet {
 			if ( null === $entry ) {
 				throw new OperationException(
 					ErrorCode::InvalidInput,
-					sprintf( 'No field applying to this post is named or keyed %s.', $name_or_key ),
+					sprintf( 'No field applying to this post is named or keyed "%s".', $name_or_key ),
 					'Call acf-field-list for this post to see the fields that apply to it, and name one of those by its name or its key.'
 				);
 			}
