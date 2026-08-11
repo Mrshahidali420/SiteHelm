@@ -152,6 +152,8 @@ trait AcfWordPressStubs {
 	 *
 	 * `$with_fields_function` false installs acf_get_field_groups() without
 	 * acf_get_fields(), the shape AcfApi::fields() probes for separately.
+	 * `$with_value_function` does the same for get_field() independently, so a
+	 * site missing one read symbol can be built without also losing the other.
 	 *
 	 * `$values_by_key` IS KEYED BY FIELD KEY AND NOT BY NAME, because that is what
 	 * AcfApi::readValue() is given. A double keyed by name would answer for a
@@ -165,6 +167,7 @@ trait AcfWordPressStubs {
 	 * @param string|null          $version              The ACF version this site reports; null defines no constant.
 	 * @param bool                 $with_fields_function Whether acf_get_fields() exists on this site.
 	 * @param array<string, mixed> $values_by_key        What get_field() answers, keyed by field key.
+	 * @param bool                 $with_value_function  Whether get_field() exists on this site.
 	 */
 	private function installAcf(
 		mixed $groups,
