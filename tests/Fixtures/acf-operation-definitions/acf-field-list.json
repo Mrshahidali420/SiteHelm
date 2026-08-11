@@ -1,0 +1,85 @@
+{
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "post": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "The post, page or custom post type entry whose applicable fields are wanted."
+            }
+        },
+        "required": [
+            "post"
+        ],
+        "additionalProperties": false
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "target": {
+                "type": "integer",
+                "description": "The post the fields were listed for, echoed so a response can be matched to its request."
+            },
+            "fields": {
+                "type": "array",
+                "description": "The top-level fields that apply to this post, in the order ACF reports them, group by group. Sub-fields are not listed: they are addressed through their parent.",
+                "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "key",
+                        "name",
+                        "label",
+                        "type",
+                        "required",
+                        "groupKey",
+                        "groupTitle"
+                    ],
+                    "properties": {
+                        "key": {
+                            "type": "string",
+                            "description": "ACF's field key, for example field_5f3a1b2c. The stable identifier; the name can be renamed."
+                        },
+                        "name": {
+                            "type": "string",
+                            "description": "The field name used in template code and as the meta key suffix."
+                        },
+                        "label": {
+                            "type": "string",
+                            "description": "The label shown in the editor."
+                        },
+                        "type": {
+                            "type": "string",
+                            "description": "The ACF field type, for example text, repeater, or flexible_content."
+                        },
+                        "required": {
+                            "type": "boolean",
+                            "description": "Whether ACF marks the field required in the editor."
+                        },
+                        "groupKey": {
+                            "type": "string",
+                            "description": "The key of the field group this field belongs to, as acf-group-list reports it."
+                        },
+                        "groupTitle": {
+                            "type": "string",
+                            "description": "That group's title, as shown in the editor."
+                        }
+                    }
+                }
+            },
+            "warnings": {
+                "type": "array",
+                "items": {
+                    "type": "string"
+                },
+                "description": "Anything the listing could not report faithfully, such as a field group whose field definitions could not be read. Names groups and counts only, never a field's value."
+            }
+        },
+        "required": [
+            "target",
+            "fields",
+            "warnings"
+        ],
+        "additionalProperties": false
+    }
+}

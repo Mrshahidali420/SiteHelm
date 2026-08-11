@@ -52,6 +52,13 @@ final class AcfFieldIndexTest extends TestCase {
 	private bool $mayEdit = true;
 
 	/**
+	 * Every capability question asked, in order. Required by the double's contract.
+	 *
+	 * @var array[]
+	 */
+	private array $capabilityChecks = [];
+
+	/**
 	 * Every doubled ACF call, in the order it was made.
 	 *
 	 * @var array[]
@@ -61,8 +68,9 @@ final class AcfFieldIndexTest extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();
 
-		$this->mayEdit  = true;
-		$this->acfCalls = [];
+		$this->mayEdit          = true;
+		$this->acfCalls         = [];
+		$this->capabilityChecks = [];
 
 		$this->stubAcfWordPress();
 	}

@@ -1,6 +1,7 @@
 {
     "operationIds": [
-        "acf-group-list"
+        "acf-group-list",
+        "acf-field-list"
     ],
-    "operationCount": 1
+    "operationCount": 2
 }

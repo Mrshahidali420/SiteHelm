@@ -166,10 +166,16 @@ final class AcfModule implements IntegrationModule {
 	public function register( CapabilityRegistry $registry ): void {
 		$api    = new AcfApi( $this->presence );
 		$format = new AcfSchemaFormat();
+		$index  = new AcfFieldIndex( $api );
 
 		$registry->register(
 			AcfGroupList::definition(),
 			[ new AcfGroupList( $this->presence, $api, $format ), 'handle' ]
+		);
+
+		$registry->register(
+			AcfFieldList::definition(),
+			[ new AcfFieldList( $this->presence, $index ), 'handle' ]
 		);
 	}
 }
