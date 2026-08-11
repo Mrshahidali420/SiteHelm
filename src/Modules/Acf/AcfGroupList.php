@@ -178,6 +178,8 @@ final class AcfGroupList {
 	) {
 	}
 
+	// phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase -- OperationContext::$userId is a contract property this module does not name.
+	// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Every message is a literal written for end users and echoes no caller input.
 	/**
 	 * Lists the site's field groups.
 	 *
@@ -193,9 +195,6 @@ final class AcfGroupList {
 	 *                            filter is not a usable group key; or
 	 *                            ErrorCode::ExecutionFailed when ACF is installed
 	 *                            but its field groups cannot be read.
-	 *
-	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
-	 * phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 	 */
 	public function handle( array $input, OperationContext $context ): array {
 		// PolicyEngine already gates on the declared capability; this asks the same
@@ -325,15 +324,19 @@ final class AcfGroupList {
 
 		if ( $dropped > 0 ) {
 			$warnings[] = sprintf(
-				'%d field group could not be read and was left out of the listing.',
-				$dropped
+				'%d %s could not be read and %s left out of the listing.',
+				$dropped,
+				$this->plural( $dropped, 'field group', 'field groups' ),
+				$this->plural( $dropped, 'was', 'were' )
 			);
 		}
 
 		if ( $unreadable > 0 ) {
 			$warnings[] = sprintf(
-				'The field definitions of %d field group could not be read, so those groups are reported with no fields.',
-				$unreadable
+				'The field definitions of %d %s could not be read, so %s reported with no fields.',
+				$unreadable,
+				$this->plural( $unreadable, 'field group', 'field groups' ),
+				$this->plural( $unreadable, 'that group is', 'those groups are' )
 			);
 		}
 
@@ -353,6 +356,25 @@ final class AcfGroupList {
 			'truncated' => $truncated,
 			'warnings'  => $warnings,
 		];
+	}
+
+	/**
+	 * Picks the singular or plural wording for a counted warning.
+	 *
+	 * Not a translation function. These warnings are diagnostic English written
+	 * for the operator reading the envelope, and running them through WordPress's
+	 * _n() would put strings a plugin can filter into a response this operation is
+	 * responsible for the contents of. Selecting the wording here keeps
+	 * "3 field groups could not be read" from reading as machine output.
+	 *
+	 * @param int    $count    How many things the warning counts.
+	 * @param string $singular The wording for exactly one.
+	 * @param string $plural   The wording for any other count.
+	 *
+	 * @return string The wording that fits the count.
+	 */
+	private function plural( int $count, string $singular, string $plural ): string {
+		return 1 === $count ? $singular : $plural;
 	}
 
 	/**
@@ -388,6 +410,15 @@ final class AcfGroupList {
 	 * whole group's listing to one unreadable rule would be the worse outcome, and
 	 * a TypeError inside a read the worst of all.
 	 *
+	 * AN EMPTY RULE GROUP IS KEPT; ONE EMPTIED BY DROPPING IS NOT. `location =>
+	 * [[]]` is ACF's own spelling of an AND with no conditions in it, which matches
+	 * everything, and dropping it would report the group as narrower than the site
+	 * declared it. A rule group that arrived with rules and lost all of them to the
+	 * shape guards is the opposite case: emitting `[]` for it would turn "these
+	 * conditions could not be read" into "there are no conditions", which is the
+	 * broadest possible claim and one the site never made. The two are told apart
+	 * by whether the SOURCE was empty, not by whether the result is.
+	 *
 	 * @param mixed $location The stored location rules.
 	 *
 	 * @return array[] The readable rule groups.
@@ -418,7 +449,7 @@ final class AcfGroupList {
 				];
 			}
 
-			if ( [] !== $rules ) {
+			if ( [] !== $rules || [] === $rule_group ) {
 				$rule_groups[] = $rules;
 			}
 		}
