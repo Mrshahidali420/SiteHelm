@@ -67,6 +67,31 @@ final class AcfValueCanonicalTest extends TestCase {
 	}
 
 	/**
+	 * A float passes through as a float, and two spellings of one float agree.
+	 *
+	 * A float is the one scalar whose JSON bytes depend on the runtime — PHP's
+	 * serialize_precision decides how many digits json_encode emits — so a
+	 * projection that rounded, formatted, or stringified it would put a
+	 * runtime-dependent value into a stored digest. It does none of those: the
+	 * value is handed back untouched, and the encoding is left to the one place
+	 * that encodes.
+	 *
+	 * @test
+	 */
+	public function test_a_float_projects_to_itself(): void {
+		$this->assertSame( 1.5, $this->canonical()->project( 1.5 ) );
+		$this->assertIsFloat(
+			$this->canonical()->project( 2.0 ),
+			'A whole-numbered float must not be narrowed to an integer.'
+		);
+		$this->assertSame(
+			$this->canonical()->project( 0.1 + 0.2 ),
+			$this->canonical()->project( 0.30000000000000004 ),
+			'One float reached two ways projects to one value.'
+		);
+	}
+
+	/**
 	 * Null is a value an operator can legitimately write — it is how a field is
 	 * cleared — so it must survive the projection as itself rather than becoming
 	 * the null a truncation also answers with at some other depth.
@@ -91,6 +116,53 @@ final class AcfValueCanonicalTest extends TestCase {
 				[
 					0 => 'a',
 					2 => 'b',
+				]
+			)
+		);
+	}
+
+	/**
+	 * A list is ordered BY KEY, not by the order its members happened to arrive.
+	 *
+	 * `{"2":"a","0":"b"}` and `{"0":"b","2":"a"}` are two JSON spellings of one
+	 * object; json_decode hands them back in different insertion orders, and a bare
+	 * array_values() would answer ['a','b'] for the first and ['b','a'] for the
+	 * second. Two spellings of one value digesting apart surfaces as a stale plan
+	 * an operator cannot diagnose.
+	 *
+	 * @test
+	 */
+	public function test_a_positional_array_is_ordered_by_key_and_not_by_arrival(): void {
+		$this->assertSame(
+			[ 'b', 'a' ],
+			$this->canonical()->project(
+				[
+					2 => 'a',
+					0 => 'b',
+				]
+			),
+			'The member at key 0 comes first however late it arrived.'
+		);
+
+		$this->assertSame(
+			$this->canonical()->project( json_decode( '{"2":"a","0":"b"}', true ) ),
+			$this->canonical()->project( json_decode( '{"0":"b","2":"a"}', true ) ),
+			'Two JSON spellings of one object must project identically.'
+		);
+	}
+
+	/**
+	 * Integer keys sort as numbers, so 10 does not land before 2.
+	 *
+	 * @test
+	 */
+	public function test_a_positional_array_orders_its_keys_numerically(): void {
+		$this->assertSame(
+			[ 'two', 'ten' ],
+			$this->canonical()->project(
+				[
+					10 => 'ten',
+					2  => 'two',
 				]
 			)
 		);
@@ -158,15 +230,17 @@ final class AcfValueCanonicalTest extends TestCase {
 			]
 		);
 
+		// The rows come back in KEY order — row 0 before row 2 — however they were
+		// inserted, and each row's own members come back key-sorted.
 		$this->assertSame(
 			[
 				[
-					'order' => 1,
-					'title' => 'Second',
-				],
-				[
 					'order' => 0,
 					'title' => 'First',
+				],
+				[
+					'order' => 1,
+					'title' => 'Second',
 				],
 			],
 			$projected
