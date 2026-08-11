@@ -105,6 +105,46 @@ final class MetaboxPresence {
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- The module vocabulary is camelCase across every class.
+	/**
+	 * Whether the installed Meta Box is at or above this module's floor.
+	 *
+	 * SEPARATE FROM isLoaded() BECAUSE "ABSENT" AND "TOO OLD" ARE DIFFERENT ANSWERS
+	 * AND LEAD AN OPERATOR TO DIFFERENT ACTIONS — install the plugin, or update it.
+	 * The operations refuse the first with `IntegrationUnavailable` and the second
+	 * with `UnsupportedVersion`, and they ask this question for themselves rather
+	 * than assuming an upstream gate ran: the dispatcher's version block fires on
+	 * `ModuleHealth::VersionBlocked`, and no module in this plugin reports that state,
+	 * so for a Meta Box below MIN_VERSION the dispatcher waves the call straight
+	 * through. Without this method the refusal simply would not happen anywhere.
+	 *
+	 * IT ALSO PREVENTS A REAL MISBEHAVIOUR RATHER THAN ONLY A MISLEADING MESSAGE.
+	 * MIN_VERSION is the ALL-SYMBOLS floor: `get_by()` arrives at 4.13.0 and
+	 * `rwmb_set_meta()` only at 5.3.0, so on an older site MetaboxApi's method_exists
+	 * probes answer false and the reads degrade into empty lists — a site reported as
+	 * defining no field groups when the truth is that this module cannot address the
+	 * ones it has. Refusing is the honest answer.
+	 *
+	 * AN UNREADABLE VERSION IS NOT TREATED AS AN OLD ONE. version() answers null when
+	 * `RWMB_VER` holds something that is not a scalar, and that is a claim this gate
+	 * cannot substantiate in either direction; refusing on it would block a site over
+	 * a constant another plugin mangled, while the module's own method_exists probes
+	 * still refuse anything it genuinely cannot address. A version this code cannot
+	 * read is therefore not evidence of an unsupported one.
+	 *
+	 * @return bool True when Meta Box is loaded and not known to be below the floor.
+	 */
+	public function isSupported(): bool {
+		if ( ! $this->isLoaded() ) {
+			return false;
+		}
+
+		$version = $this->version();
+
+		return null === $version || version_compare( $version, self::MIN_VERSION, '>=' );
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+
 	/**
 	 * The installed Meta Box version, or null when Meta Box is absent.
 	 *
