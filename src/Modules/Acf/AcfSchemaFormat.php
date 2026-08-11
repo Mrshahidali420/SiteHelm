@@ -40,7 +40,11 @@ namespace SiteHelm\Modules\Acf;
 final class AcfSchemaFormat {
 
 	/**
-	 * The five members every projected field carries, in emission order.
+	 * The four string members every projected field carries, in emission order.
+	 *
+	 * `required` is the fifth always-present member and is not in this table
+	 * because it is a boolean read from a different stored spelling; it is
+	 * emitted directly in field() right after this loop.
 	 *
 	 * They are always present because a field with no readable label is still a
 	 * field, and a client walking the list needs a uniform shape to walk. A
@@ -58,13 +62,19 @@ final class AcfSchemaFormat {
 	 * statement per member, so adding a member is one line and the two spellings
 	 * are stated once.
 	 *
-	 * The kinds:
+	 * The kinds, which also decide what counts as a declaration — see declares():
 	 *  - `text`   a scalar read as a string; a non-scalar is dropped.
-	 *  - `map`    an array read as value => label, dropping unreadable labels.
+	 *  - `map`    an array read as a list of value/label pairs, dropping any
+	 *             entry whose label cannot be read.
 	 *  - `raw`    passed through untouched, because its type follows the field's.
+	 *             ZERO-VALUED IS STILL DECLARED: a number field's
+	 *             `default_value => 0` and a true_false field's
+	 *             `default_value => false` are real answers, so this kind is
+	 *             tested with isset() and not with emptiness.
 	 *  - `flag`   a boolean; only ever emitted true, since a falsy flag is not a
 	 *             declaration (see the emptiness rule in declares()).
 	 *  - `number` a bound, kept in whatever numeric or string form ACF stored.
+	 *             Also tested with isset(): `min => 0` is a bound, not an absence.
 	 *  - `names`  a list of identifiers, normalised from ACF's string-or-list.
 	 */
 	private const OPTIONAL_MEMBERS = [
@@ -113,7 +123,7 @@ final class AcfSchemaFormat {
 		$projection['required'] = ! empty( $field['required'] );
 
 		foreach ( self::OPTIONAL_MEMBERS as $source => $target ) {
-			if ( ! $this->declares( $field, $source ) ) {
+			if ( ! $this->declares( $field, $source, $target[1] ) ) {
 				continue;
 			}
 
@@ -148,13 +158,29 @@ final class AcfSchemaFormat {
 	 * would therefore put an empty member on nearly every field in the response,
 	 * which is the noise the sparse-projection rule exists to remove.
 	 *
+	 * EMPTINESS IS NOT ABSENCE FOR EVERY KIND, AND THAT IS THE POINT OF $kind. A
+	 * number field really does declare `min => 0`, and a true_false field really
+	 * does default to `false`; both are falsy and neither is an absence. Reading
+	 * them with emptiness dropped a stated bound and a stated default from the
+	 * response and made the projection say the field declared nothing. The two
+	 * kinds whose whole value range includes falsy values — `number` and `raw` —
+	 * are therefore tested with isset(), which still treats a stored null as no
+	 * declaration. Every other kind keeps the emptiness rule, because '' is not
+	 * an instruction, [] is not a choice list, and 0 is not a raised flag.
+	 *
 	 * @param array<string, mixed> $field  The field definition.
 	 * @param string               $member The source key.
+	 * @param string               $kind   The member's kind, or '' for the plain
+	 *                                     emptiness rule used by the containers.
 	 *
-	 * @return bool True when the member holds something.
+	 * @return bool True when the member holds a declaration.
 	 */
-	private function declares( array $field, string $member ): bool {
-		return isset( $field[ $member ] ) && ! empty( $field[ $member ] );
+	private function declares( array $field, string $member, string $kind = '' ): bool {
+		if ( 'number' === $kind || 'raw' === $kind ) {
+			return isset( $field[ $member ] );
+		}
+
+		return ! empty( $field[ $member ] );
 	}
 
 	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- The module vocabulary is camelCase across every class.
@@ -202,22 +228,40 @@ final class AcfSchemaFormat {
 	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 
 	/**
-	 * Reads a choices map, dropping any entry whose label cannot be read.
+	 * Reads a choices map as a LIST of value/label pairs.
+	 *
+	 * A LIST AND NOT AN OBJECT, FOR THE REASON LAYOUTS ARE A LIST. ACF stores
+	 * choices keyed by the stored value, and those keys are administrator-chosen
+	 * text that no `additionalProperties: false` schema can declare. Worse, the
+	 * commonest choice set of all — `[ 1 => 'Yes', 2 => 'No' ]` — cannot survive
+	 * as an object at all in PHP: an array key that looks like an integer IS an
+	 * integer, so a projection keyed by value re-numbers itself into a list and
+	 * `json_encode` emits `["Yes","No"]`, silently violating the object the schema
+	 * published. Emitting a list of pairs closes that hole in the structure rather
+	 * than leaning on an encoding flag that every future caller has to remember.
+	 *
+	 * An entry whose label cannot be read is dropped; `(string)` on an array is a
+	 * fatal, and a label invented from one would be a fabrication rather than a
+	 * reading. A map whose entries are all unreadable answers null so the member
+	 * is omitted, because an empty list would claim the field offers no choices.
 	 *
 	 * @param array<array-key, mixed> $choices The stored map.
 	 *
-	 * @return array<string, string> Stored value => displayed label.
+	 * @return array[]|null Pairs of stored value and displayed label, or null.
 	 */
-	private function choices( array $choices ): array {
+	private function choices( array $choices ): ?array {
 		$read = [];
 
 		foreach ( $choices as $value => $label ) {
 			if ( is_scalar( $label ) ) {
-				$read[ (string) $value ] = (string) $label;
+				$read[] = [
+					'value' => (string) $value,
+					'label' => (string) $label,
+				];
 			}
 		}
 
-		return $read;
+		return [] === $read ? null : $read;
 	}
 
 	/**

@@ -188,7 +188,7 @@ final class AcfSchemaFormatTest extends TestCase {
 		$this->assertArrayNotHasKey( 'allow_null', $projection );
 	}
 
-	public function test_declared_choices_project_as_a_string_map_and_drop_unreadable_members(): void {
+	public function test_declared_choices_project_as_value_label_pairs_and_drop_unreadable_members(): void {
 		$projection = $this->format->field(
 			$this->fieldDefinition(
 				[
@@ -204,12 +204,133 @@ final class AcfSchemaFormatTest extends TestCase {
 
 		$this->assertSame(
 			[
-				'red'  => 'Red',
-				'blue' => 'Blue',
+				[
+					'value' => 'red',
+					'label' => 'Red',
+				],
+				[
+					'value' => 'blue',
+					'label' => 'Blue',
+				],
 			],
 			$projection['choices'],
 			'A choice whose label is not scalar is dropped rather than cast; (string) on an array is a fatal.'
 		);
+	}
+
+	/**
+	 * THE REASON choices IS A LIST RATHER THAN AN OBJECT, pinned as behaviour.
+	 *
+	 * `[ 1 => 'Yes', 2 => 'No' ]` is the commonest choice set ACF stores, and a
+	 * projection keyed by the stored value cannot survive it: PHP re-casts a
+	 * numeric-string key back to an integer, the array becomes a list, and
+	 * json_encode emits `["Yes","No"]` — an array where the schema published an
+	 * object, with the stored values gone entirely. The pair form keeps the value
+	 * as data instead of as a key, so there is no key for PHP to re-type.
+	 */
+	public function test_numeric_choice_keys_keep_their_values_and_encode_as_objects(): void {
+		$projection = $this->format->field(
+			$this->fieldDefinition(
+				[
+					'type'    => 'select',
+					'choices' => [
+						1 => 'Yes',
+						2 => 'No',
+					],
+				]
+			)
+		);
+
+		$this->assertSame(
+			[
+				[
+					'value' => '1',
+					'label' => 'Yes',
+				],
+				[
+					'value' => '2',
+					'label' => 'No',
+				],
+			],
+			$projection['choices']
+		);
+
+		$this->assertSame(
+			'[{"value":"1","label":"Yes"},{"value":"2","label":"No"}]',
+			(string) json_encode( $projection['choices'] ),
+			'The encoded form is what the client sees, and it must carry the stored values.'
+		);
+	}
+
+	/**
+	 * A choices map whose every label is unreadable omits the member rather than
+	 * emitting an empty list, which would claim the field offers no choices at all.
+	 */
+	public function test_choices_whose_labels_are_all_unreadable_omit_the_member(): void {
+		$projection = $this->format->field(
+			$this->fieldDefinition(
+				[
+					'type'    => 'select',
+					'choices' => [ 'bad' => [ 'not a label' ] ],
+				]
+			)
+		);
+
+		$this->assertArrayNotHasKey( 'choices', $projection );
+	}
+
+	/**
+	 * ZERO AND FALSE ARE DECLARATIONS. A number field really does declare
+	 * `min => 0`, and a true_false field really does default to `false`. Reading
+	 * those with emptiness dropped a stated bound and a stated default out of the
+	 * response, and made the projection report that the field declared neither.
+	 */
+	public function test_a_zero_bound_and_a_false_default_are_reported_rather_than_dropped(): void {
+		$projection = $this->format->field(
+			$this->fieldDefinition(
+				[
+					'type'          => 'number',
+					'min'           => 0,
+					'max'           => '0',
+					'default_value' => 0,
+				]
+			)
+		);
+
+		$this->assertSame( 0, $projection['min'] );
+		$this->assertSame( '0', $projection['max'] );
+		$this->assertSame( 0, $projection['defaultValue'] );
+
+		$false_default = $this->format->field(
+			$this->fieldDefinition(
+				[
+					'type'          => 'true_false',
+					'default_value' => false,
+				]
+			)
+		);
+
+		$this->assertArrayHasKey( 'defaultValue', $false_default );
+		$this->assertFalse( $false_default['defaultValue'] );
+	}
+
+	/**
+	 * The boundary of the rule above: a stored null is still no declaration, and a
+	 * falsy FLAG is still no declaration, because 0 is not a raised flag.
+	 */
+	public function test_a_null_bound_and_a_falsy_flag_remain_undeclared(): void {
+		$projection = $this->format->field(
+			$this->fieldDefinition(
+				[
+					'min'           => null,
+					'default_value' => null,
+					'multiple'      => 0,
+					'allow_null'    => false,
+				]
+			)
+		);
+
+		$this->assertSame( [ 'key', 'name', 'label', 'type', 'required' ], array_keys( $projection ) );
 	}
 
 	/**
