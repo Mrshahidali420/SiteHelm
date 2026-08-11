@@ -200,6 +200,80 @@ final class SchemaValidatorTest extends TestCase {
 	}
 
 	/**
+	 * An empty object is accepted, and so is an empty array.
+	 *
+	 * The request body is decoded associatively, so JSON `{}` and JSON `[]` both
+	 * arrive as PHP `[]`. A validator that accepted one and refused the other
+	 * would be refusing a value it cannot actually distinguish from the one it
+	 * accepts — and it refused the object, which is the shape every settings map
+	 * in this plugin declares.
+	 */
+	public function test_an_empty_object_is_accepted_for_an_object_typed_property(): void {
+		$schema = [
+			'type'                 => 'object',
+			'properties'           => [
+				'settings' => [ 'type' => 'object' ],
+				'tags'     => [ 'type' => 'array' ],
+			],
+			'required'             => [],
+			'additionalProperties' => false,
+		];
+
+		$input = [
+			'settings' => [],
+			'tags'     => [],
+		];
+
+		$this->assertSame( $input, $this->validator->validate( $input, $schema ) );
+	}
+
+	/**
+	 * A NON-empty list is still refused where an object is declared.
+	 *
+	 * The empty case is a decoding ambiguity; this one is not. Without this test
+	 * the fix above could be widened to accept any array at all and nothing would
+	 * fail.
+	 */
+	public function test_a_populated_list_is_still_refused_for_an_object_typed_property(): void {
+		$schema = [
+			'type'                 => 'object',
+			'properties'           => [ 'settings' => [ 'type' => 'object' ] ],
+			'required'             => [],
+			'additionalProperties' => false,
+		];
+
+		try {
+			$this->validator->validate( [ 'settings' => [ 'a', 'b' ] ], $schema );
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			$this->assertStringContainsString( 'settings', $e->getMessage() );
+			$this->assertStringContainsString( 'object', $e->getMessage() );
+		}
+	}
+
+	/**
+	 * A populated map is still refused where a list is declared.
+	 *
+	 * The mirror of the test above, so the two arms cannot collapse into one.
+	 */
+	public function test_a_populated_map_is_still_refused_for_an_array_typed_property(): void {
+		$schema = [
+			'type'                 => 'object',
+			'properties'           => [ 'tags' => [ 'type' => 'array' ] ],
+			'required'             => [],
+			'additionalProperties' => false,
+		];
+
+		try {
+			$this->validator->validate( [ 'tags' => [ 'k' => 'v' ] ], $schema );
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			$this->assertStringContainsString( 'tags', $e->getMessage() );
+			$this->assertStringContainsString( 'array', $e->getMessage() );
+		}
+	}
+
+	/**
 	 * Array items should be validated recursively.
 	 */
 	public function test_array_items_are_validated_recursively(): void {

@@ -1,0 +1,79 @@
+{
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "limit": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "Page size, clamped to 100. The response echoes the size actually used."
+            },
+            "offset": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Documents to skip before the page begins."
+            }
+        },
+        "additionalProperties": false
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "documents": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "id": {
+                            "type": "integer",
+                            "description": "The document's WordPress post identifier."
+                        },
+                        "type": {
+                            "type": "string",
+                            "description": "The WordPress post type: page, post, or elementor_library for a saved template."
+                        },
+                        "title": {
+                            "type": "string",
+                            "description": "The document's title."
+                        },
+                        "status": {
+                            "type": "string",
+                            "description": "The WordPress post status, such as publish or draft."
+                        },
+                        "editMode": {
+                            "type": "string",
+                            "description": "The stored Elementor edit mode, normally builder. Empty when the stored value is unreadable."
+                        }
+                    },
+                    "required": [
+                        "id",
+                        "type",
+                        "title",
+                        "status",
+                        "editMode"
+                    ],
+                    "additionalProperties": false
+                },
+                "description": "One page of the documents Elementor controls that the caller may edit."
+            },
+            "total": {
+                "type": "integer",
+                "description": "Documents Elementor controls across the whole site, before this page was taken."
+            },
+            "limit": {
+                "type": "integer",
+                "description": "The page size actually used, after clamping."
+            },
+            "offset": {
+                "type": "integer",
+                "description": "The page start actually used."
+            }
+        },
+        "required": [
+            "documents",
+            "total",
+            "limit",
+            "offset"
+        ],
+        "additionalProperties": false
+    }
+}

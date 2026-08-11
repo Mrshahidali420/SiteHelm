@@ -1,0 +1,130 @@
+{
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "document": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "Identifier of the Elementor document to change. Call elementor-document-list for the documents Elementor controls."
+            },
+            "parentElementId": {
+                "type": [
+                    "string",
+                    "null"
+                ],
+                "minLength": 1,
+                "maxLength": 64,
+                "pattern": "^[A-Za-z0-9_-]{1,64}$",
+                "description": "Identifier of the element the new element is placed inside, exactly as elementor-document-get reports it. Send null, the default, to place it at the top level of the document."
+            },
+            "index": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Zero-based position among the destination's existing children. Send 0, the default, for first; a position past the last child places the element at the end."
+            },
+            "elType": {
+                "type": "string",
+                "enum": [
+                    "container",
+                    "section",
+                    "column",
+                    "widget"
+                ],
+                "description": "The kind of element to add. Use \"container\" for a layout box and \"widget\" for a piece of content."
+            },
+            "widgetType": {
+                "type": [
+                    "string",
+                    "null"
+                ],
+                "maxLength": 64,
+                "description": "Which widget to add, as elementor-widget-availability reports it. Required when elType is \"widget\", and not accepted for any other kind."
+            },
+            "settings": {
+                "type": "object",
+                "description": "The new element's settings, keyed by setting name. Omit it entirely for an element with no settings of its own. A widget accepts only the settings it declares."
+            }
+        },
+        "required": [
+            "document",
+            "elType"
+        ],
+        "additionalProperties": false
+    },
+    "outputSchema": {
+        "type": "object",
+        "oneOf": [
+            {
+                "title": "Plan phase",
+                "type": "object",
+                "properties": {
+                    "plan": {
+                        "type": "object",
+                        "description": "The change plan to approve, including its plan token."
+                    }
+                },
+                "required": [
+                    "plan"
+                ],
+                "additionalProperties": false
+            },
+            {
+                "title": "Apply phase",
+                "type": "object",
+                "properties": {
+                    "target": {
+                        "type": "string",
+                        "description": "The concrete target that was written."
+                    },
+                    "changed": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "description": "The fields the approved plan changed."
+                    },
+                    "state": {
+                        "type": "object",
+                        "properties": {
+                            "documentDigest": {
+                                "type": "string",
+                                "description": "Fingerprint of the document exactly as it is stored. Two reads of an unchanged document give the same value."
+                            },
+                            "elementCount": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "description": "How many elements the stored document holds, counting every nesting level."
+                            },
+                            "maxDepth": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "description": "How many nesting levels the stored document has. An empty document has none."
+                            },
+                            "widgetTypeCounts": {
+                                "type": "object",
+                                "additionalProperties": {
+                                    "type": "integer",
+                                    "minimum": 1
+                                },
+                                "description": "How many of each widget type the stored document holds, keyed by widget type name."
+                            }
+                        },
+                        "required": [
+                            "documentDigest",
+                            "elementCount",
+                            "maxDepth",
+                            "widgetTypeCounts"
+                        ],
+                        "additionalProperties": false
+                    }
+                },
+                "required": [
+                    "target",
+                    "changed",
+                    "state"
+                ],
+                "additionalProperties": false
+            }
+        ]
+    }
+}
