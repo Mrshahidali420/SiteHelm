@@ -58,24 +58,45 @@ trait RelocationFixtures {
 
 	/**
 	 * The container holding the five siblings the move cases reorder.
+	 *
+	 * A static method rather than a constant because TRAITS CANNOT HAVE CONSTANTS
+	 * until PHP 8.2 and this plugin's floor is 8.1 — the same rule the CONTRACT
+	 * above states, which four constants here used to break. It is a fatal parse
+	 * error, not a warning, so the whole suite dies at file load.
+	 *
+	 * @return string The element id.
 	 */
-	private const OUTER_ID = 'c111111';
+	private static function outerId(): string {
+		return 'c111111';
+	}
 
 	/**
 	 * The middle sibling, itself a container, that the descendant case moves.
+	 *
+	 * @return string The element id.
 	 */
-	private const MIDDLE_ID = 'c222222';
+	private static function middleId(): string {
+		return 'c222222';
+	}
 
 	/**
 	 * The container INSIDE the middle sibling. Moving the middle sibling into
 	 * this is the descendant refusal.
+	 *
+	 * @return string The element id.
 	 */
-	private const INNER_ID = 'c333333';
+	private static function innerId(): string {
+		return 'c333333';
+	}
 
 	/**
 	 * The last of the five siblings, the one the ordering case relocates.
+	 *
+	 * @return string The element id.
 	 */
-	private const LAST_ID = 'w444444';
+	private static function lastId(): string {
+		return 'w444444';
+	}
 
 	/**
 	 * Installs the WordPress functions these operations' collaborators call.
@@ -331,7 +352,7 @@ trait RelocationFixtures {
 	private function moveTree(): array {
 		return [
 			[
-				'id'       => self::OUTER_ID,
+				'id'       => self::outerId(),
 				'elType'   => 'container',
 				'settings' => [ 'content_width' => 'boxed' ],
 				'elements' => [
@@ -350,11 +371,11 @@ trait RelocationFixtures {
 						'elements'   => [],
 					],
 					[
-						'id'       => self::MIDDLE_ID,
+						'id'       => self::middleId(),
 						'elType'   => 'container',
 						'elements' => [
 							[
-								'id'       => self::INNER_ID,
+								'id'       => self::innerId(),
 								'elType'   => 'container',
 								'elements' => [
 									[
@@ -374,7 +395,7 @@ trait RelocationFixtures {
 						'elements'   => [],
 					],
 					[
-						'id'         => self::LAST_ID,
+						'id'         => self::lastId(),
 						'elType'     => 'widget',
 						'widgetType' => 'e-heading',
 						'settings'   => [ 'title' => $this->enveloped( 'Last heading' ) ],
@@ -403,7 +424,7 @@ trait RelocationFixtures {
 	private function duplicateTree(): array {
 		return [
 			[
-				'id'       => self::OUTER_ID,
+				'id'       => self::outerId(),
 				'elType'   => 'container',
 				'styles'   => [
 					'e-c111111-aaa111' => [
@@ -445,7 +466,7 @@ trait RelocationFixtures {
 				],
 			],
 			[
-				'id'       => self::MIDDLE_ID,
+				'id'       => self::middleId(),
 				'elType'   => 'container',
 				'elements' => [],
 			],
