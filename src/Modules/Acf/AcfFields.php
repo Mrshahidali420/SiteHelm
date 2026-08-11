@@ -235,9 +235,23 @@ final class AcfFields {
 				'description' => 'The editor help text.',
 			],
 			'choices'      => [
-				'type'                 => 'object',
-				'description'          => 'Selectable values, as stored value => displayed label.',
-				'additionalProperties' => [ 'type' => 'string' ],
+				'type'        => 'array',
+				'description' => 'Selectable values, each as a stored value with the label shown beside it. A list rather than the map ACF stores, for the reason layouts are a list: the keys are administrator-chosen text, and a numeric-looking key cannot survive as an object key in PHP at all.',
+				'items'       => [
+					'type'                 => 'object',
+					'additionalProperties' => false,
+					'required'             => [ 'value', 'label' ],
+					'properties'           => [
+						'value' => [
+							'type'        => 'string',
+							'description' => 'The value ACF stores when this choice is selected.',
+						],
+						'label' => [
+							'type'        => 'string',
+							'description' => 'The label shown in the editor.',
+						],
+					],
+				],
 			],
 			'defaultValue' => [
 				'description' => 'The value ACF applies when none is stored. Its type follows the field type, so none is declared here.',
