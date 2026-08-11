@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace SiteHelm\Modules\Metabox;
 
+use SiteHelm\Change\PayloadNormalizer;
 use SiteHelm\Contracts\IntegrationModule;
 use SiteHelm\Contracts\ModuleHealth;
 use SiteHelm\Contracts\ModuleId;
@@ -209,6 +210,24 @@ final class MetaboxModule implements IntegrationModule {
 		$registry->register(
 			MetaboxFieldGet::definition(),
 			[ new MetaboxFieldGet( $this->presence, $index, $api, new MetaboxValueNormalizer() ), 'handle' ]
+		);
+
+		// THE WRITE LAST, AND THROUGH registerWrite() RATHER THAN register(). A
+		// WriteOperation is six methods the change engine drives across two requests,
+		// not a handler the dispatcher calls once; registering it as a handler would
+		// put a preview-required, snapshot-required operation on the path that has
+		// neither. Its collaborators are the same presence gate, api wrapper and index
+		// the reads share, so "which fields apply to this post" is one answer for the
+		// read path and the write path rather than two that can drift.
+		$registry->registerWrite(
+			MetaboxFieldUpdate::definition(),
+			new MetaboxFieldUpdate(
+				new MetaboxWriteTarget( $this->presence, $index ),
+				new MetaboxFieldUpdateInput(),
+				$api,
+				new MetaboxValueCanonical(),
+				new PayloadNormalizer()
+			)
 		);
 	}
 }

@@ -83,7 +83,7 @@ final class MetaboxDefinitionInvariantsTest extends TestCase {
 	 *
 	 * @var string[]
 	 */
-	private const OPERATION_IDS = [ 'metabox-group-list', 'metabox-field-list', 'metabox-field-get' ];
+	private const OPERATION_IDS = [ 'metabox-group-list', 'metabox-field-list', 'metabox-field-get', 'metabox-field-update' ];
 
 	/**
 	 * The Metabox module's read count, bumped by every task registering a read.
@@ -101,7 +101,7 @@ final class MetaboxDefinitionInvariantsTest extends TestCase {
 	 * would be a definition that had drifted onto the write dispatcher rather than a
 	 * feature.
 	 */
-	private const METABOX_WRITE_COUNT = 0;
+	private const METABOX_WRITE_COUNT = 1;
 
 	/**
 	 * The identifiers of the module's writes.
@@ -114,7 +114,7 @@ final class MetaboxDefinitionInvariantsTest extends TestCase {
 	 *
 	 * @var string[]
 	 */
-	private const METABOX_WRITE_IDS = [];
+	private const METABOX_WRITE_IDS = [ 'metabox-field-update' ];
 
 	/**
 	 * The two dispatchers a Metabox operation may appear on.
