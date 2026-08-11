@@ -269,7 +269,7 @@ final class AcfFieldUpdateInput {
 		if ( ! is_array( $value ) ) {
 			throw new OperationException(
 				ErrorCode::InvalidInput,
-				sprintf( 'The value for the flexible content field %s must be a list of rows.', $entry['name'] ),
+				sprintf( 'The value for the flexible content field "%s" must be a list of rows.', $entry['name'] ),
 				'Send a list of row objects, or an empty list to clear the field.'
 			);
 		}
@@ -283,11 +283,11 @@ final class AcfFieldUpdateInput {
 				throw new OperationException(
 					ErrorCode::InvalidInput,
 					sprintf(
-						'Every row of the flexible content field %s must carry an %s naming one of that field\'s layouts.',
+						'Every row of the flexible content field "%s" must carry an %s naming one of that field\'s layouts.',
 						$entry['name'],
 						self::LAYOUT_MEMBER
 					),
-					'Call acf-field-list for this post to see the layouts the field declares.'
+					'Call acf-group-list for this post to see the layouts the field declares.'
 				);
 			}
 
@@ -295,8 +295,8 @@ final class AcfFieldUpdateInput {
 			if ( ! in_array( $layout, $declared, true ) ) {
 				throw new OperationException(
 					ErrorCode::InvalidInput,
-					sprintf( 'A row names a layout the flexible content field %s does not declare.', $entry['name'] ),
-					'Call acf-field-list for this post to see the layouts the field declares.'
+					sprintf( 'A row names a layout the flexible content field "%s" does not declare.', $entry['name'] ),
+					'Call acf-group-list for this post to see the layouts the field declares.'
 				);
 			}
 		}
