@@ -405,7 +405,7 @@ final class ElementorDocumentWriter {
 		}
 
 		return is_string( $stored )
-			&& hash( self::DIGEST_ALGORITHM, $stored ) === hash( self::DIGEST_ALGORITHM, $json );
+			&& self::digestOf( $stored ) === self::digestOf( $json );
 	}
 
 	/**
