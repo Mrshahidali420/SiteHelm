@@ -151,7 +151,6 @@ final class MetaboxModule implements IntegrationModule {
 		return [ 'posts', 'post_meta' ];
 	}
 
-	// phpcs:disable Generic.CodeAnalysis.UnusedFunctionParameter.Found -- The registration table is filled in by the operations of the later tasks.
 	/**
 	 * Registers the Metabox module's operations.
 	 *
@@ -167,17 +166,27 @@ final class MetaboxModule implements IntegrationModule {
 	 * version too old to have it. Each handler refuses on its own when Meta Box is
 	 * absent, and health() reports the state.
 	 *
-	 * IT REGISTERS NOTHING YET, AND THE EMPTY BODY IS THE POINT OF THIS TASK. The
-	 * module is on the boot table, reports its health and answers its dependency from
-	 * the first commit, so the site's diagnostics can describe a Meta Box install
-	 * before a single operation exists. The reads and the write are added here as
-	 * they are built, and the golden fixture — currently an empty operation list — is
-	 * what makes each addition a visible, reviewed change to the catalog rather than
-	 * a silent one.
+	 * THE DISCOVERY READ COMES FIRST because everything else in this module takes as
+	 * input an identifier read out of its response: a field is addressed by its `id`,
+	 * which is its meta key, and nothing else on the site publishes that vocabulary.
+	 * The remaining reads and the write are added here as they are built, and the
+	 * golden fixture is what makes each addition a visible, reviewed change to the
+	 * catalog rather than a silent one.
+	 *
+	 * ONE PRESENCE GATE AND ONE API WRAPPER FOR THE WHOLE MODULE, constructed here and
+	 * shared by every operation, so that "does this site run Meta Box, and which
+	 * version" is answered by one object within a request rather than by one per
+	 * operation that could disagree mid-call.
 	 *
 	 * @param CapabilityRegistry $registry The capability registry.
 	 */
 	public function register( CapabilityRegistry $registry ): void {
+		$api    = new MetaboxApi( $this->presence );
+		$format = new MetaboxSchemaFormat();
+
+		$registry->register(
+			MetaboxGroupList::definition(),
+			[ new MetaboxGroupList( $this->presence, $api, $format ), 'handle' ]
+		);
 	}
-	// phpcs:enable Generic.CodeAnalysis.UnusedFunctionParameter.Found
 }

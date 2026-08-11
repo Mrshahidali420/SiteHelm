@@ -77,13 +77,13 @@ final class MetaboxDefinitionInvariantsTest extends TestCase {
 	 * definition that has drifted off the frozen dispatcher set is still examined
 	 * here, and still fails by name.
 	 *
-	 * EMPTY, because this task registers the module and no operation. It is the
-	 * expected answer the live catalog is compared against, not a list anything here
-	 * asserts about.
+	 * IN REGISTRATION ORDER, because that is the order the dispatcher catalog
+	 * advertises and the order the golden fixture pins. It is the expected answer the
+	 * live catalog is compared against, not a list anything here asserts about.
 	 *
 	 * @var string[]
 	 */
-	private const OPERATION_IDS = [];
+	private const OPERATION_IDS = [ 'metabox-group-list' ];
 
 	/**
 	 * The Metabox module's read count, bumped by every task registering a read.
@@ -92,7 +92,7 @@ final class MetaboxDefinitionInvariantsTest extends TestCase {
 	 * derived from the catalog by asking the registry which identifiers land on the
 	 * read dispatcher, and this number is what that derivation is checked against.
 	 */
-	private const METABOX_READ_COUNT = 0;
+	private const METABOX_READ_COUNT = 1;
 
 	/**
 	 * The Metabox module's write count.
@@ -293,6 +293,23 @@ final class MetaboxDefinitionInvariantsTest extends TestCase {
 		$this->skipUntilAnOperationIsRegistered();
 
 		$registry = $this->registryWithMetaboxModule();
+
+		// THE NAMED WRITES AND THE DISPATCHED WRITES ARE THE SAME SET, asserted before
+		// the loop rather than left implicit in it. Until Task 5 lands, METABOX_WRITE_IDS
+		// is empty and the loop below examines nothing — so without this line the test
+		// would pass by doing nothing at all, and would go on passing if a write were
+		// registered and never named here. This assertion is what makes the loop's
+		// emptiness a claim rather than an accident.
+		$this->assertSame(
+			self::METABOX_WRITE_IDS,
+			array_values(
+				array_map(
+					static fn ( $definition ): string => $definition->id,
+					$registry->forDispatcher( 'fields-write' )
+				)
+			),
+			'Every write on the write dispatcher must be named in METABOX_WRITE_IDS.'
+		);
 
 		foreach ( self::METABOX_WRITE_IDS as $id ) {
 			$definition = $registry->definition( $id );
