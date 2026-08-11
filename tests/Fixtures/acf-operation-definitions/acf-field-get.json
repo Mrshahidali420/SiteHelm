@@ -63,12 +63,12 @@
                             "description": "The ACF field type, for example text, repeater, or flexible_content."
                         },
                         "value": {
-                            "description": "The stored value, formatted as ACF presents it and projected into something JSON can carry: a post becomes { id, title, postType, url }, a user { id, displayName }, a term { id, name, taxonomy }, an attachment { id, url, alt, mime }, and any other structure keeps its own shape. Null where a field holds nothing — and also where a structure nested deeper than 10 levels was cut off, which the warnings name the field for. Its type follows the field, so none is declared here."
+                            "description": "The stored value, formatted as ACF presents it and projected into something JSON can carry: a post becomes { id, title, postType, url }, a user { id, displayName }, a term { id, name, taxonomy }, an attachment { id, url, alt, mime }, and any other structure keeps its own shape. Null where a field holds nothing — and also where a structure nested deeper than 10 levels was cut off, which fieldReadNotices names the field for. Its type follows the field, so none is declared here."
                         }
                     }
                 }
             },
-            "warnings": {
+            "fieldReadNotices": {
                 "type": "array",
                 "items": {
                     "type": "string"
@@ -80,7 +80,7 @@
             "provider",
             "target",
             "fields",
-            "warnings"
+            "fieldReadNotices"
         ],
         "additionalProperties": false
     }

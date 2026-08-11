@@ -204,9 +204,9 @@ final class AcfGroupListTest extends TestCase {
 
 		$payload = $this->handle();
 
-		$this->assertSame( [ 'groups', 'truncated', 'warnings' ], array_keys( $payload ) );
+		$this->assertSame( [ 'groups', 'truncated', 'groupListingNotices' ], array_keys( $payload ) );
 		$this->assertFalse( $payload['truncated'] );
-		$this->assertSame( [], $payload['warnings'] );
+		$this->assertSame( [], $payload['groupListingNotices'] );
 		$this->assertCount( 2, $payload['groups'] );
 
 		$page = $payload['groups'][0];
@@ -447,7 +447,7 @@ final class AcfGroupListTest extends TestCase {
 
 		$this->assertSame( [], $payload['groups'] );
 		$this->assertFalse( $payload['truncated'] );
-		$this->assertSame( [], $payload['warnings'] );
+		$this->assertSame( [], $payload['groupListingNotices'] );
 	}
 
 	// ------------------------------------------------------------------ the filter
@@ -484,9 +484,9 @@ final class AcfGroupListTest extends TestCase {
 		$payload = $this->handle( [ 'group' => 'group_missing' ] );
 
 		$this->assertSame( [], $payload['groups'] );
-		$this->assertCount( 1, $payload['warnings'] );
-		$this->assertStringContainsString( 'group', $payload['warnings'][0] );
-		$this->assertStringNotContainsString( 'group_missing', $payload['warnings'][0], 'A warning names the field, never its value.' );
+		$this->assertCount( 1, $payload['groupListingNotices'] );
+		$this->assertStringContainsString( 'group', $payload['groupListingNotices'][0] );
+		$this->assertStringNotContainsString( 'group_missing', $payload['groupListingNotices'][0], 'A warning names the field, never its value.' );
 	}
 
 	public function test_a_filter_that_is_not_a_string_is_refused_as_invalid_input(): void {
@@ -572,7 +572,7 @@ final class AcfGroupListTest extends TestCase {
 
 		$this->assertCount( 1, $payload['groups'] );
 		$this->assertSame( 'group_page', $payload['groups'][0]['key'] );
-		$this->assertNotSame( [], $payload['warnings'], 'A dropped group is a fact the caller has to be told.' );
+		$this->assertNotSame( [], $payload['groupListingNotices'], 'A dropped group is a fact the caller has to be told.' );
 	}
 
 	/**
@@ -588,7 +588,7 @@ final class AcfGroupListTest extends TestCase {
 		$payload = $this->handle();
 
 		$this->assertSame( [], $payload['groups'][0]['fields'] );
-		$this->assertNotSame( [], $payload['warnings'] );
+		$this->assertNotSame( [], $payload['groupListingNotices'] );
 	}
 
 	// -------------------------------------------------------------- the ceiling
@@ -614,8 +614,8 @@ final class AcfGroupListTest extends TestCase {
 
 		$this->assertCount( AcfFields::MAX_GROUPS, $payload['groups'] );
 		$this->assertTrue( $payload['truncated'] );
-		$this->assertCount( 1, $payload['warnings'] );
-		$this->assertStringContainsString( (string) AcfFields::MAX_GROUPS, $payload['warnings'][0] );
+		$this->assertCount( 1, $payload['groupListingNotices'] );
+		$this->assertStringContainsString( (string) AcfFields::MAX_GROUPS, $payload['groupListingNotices'][0] );
 
 		// The ceiling has to bound the WORK, not just the response: reading the
 		// fields of every group and then discarding most of them would leave the

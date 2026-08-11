@@ -71,7 +71,7 @@
                         },
                         "fields": {
                             "type": "array",
-                            "description": "The group's field definitions. Empty when the group defines none, or when they could not be read — in which case a warning says so.",
+                            "description": "The group's field definitions. Empty when the group defines none, or when they could not be read — in which case a notice says so.",
                             "items": {
                                 "$ref": "#/$defs/acfFieldSchema"
                             }
@@ -81,9 +81,9 @@
             },
             "truncated": {
                 "type": "boolean",
-                "description": "True when this site defines more field groups than one call reports. The listing stops rather than continuing, and a warning says how many were returned."
+                "description": "True when this site defines more field groups than one call reports. The listing stops rather than continuing, and a notice says how many were returned."
             },
-            "warnings": {
+            "groupListingNotices": {
                 "type": "array",
                 "items": {
                     "type": "string"
@@ -94,7 +94,7 @@
         "required": [
             "groups",
             "truncated",
-            "warnings"
+            "groupListingNotices"
         ],
         "additionalProperties": false,
         "$defs": {

@@ -57,11 +57,14 @@ use SiteHelm\Contracts\SnapshotPolicy;
  * is planned against.
  *
  * NOTHING IS SILENTLY LOST. A group whose field definitions could not be read is
- * skipped so the other groups survive, and the skip is warned about, because a
- * shorter list reported as complete reads as fields having been deleted. THE
- * WARNINGS NAME GROUPS AND COUNTS ONLY and never carry a field's value: a warning
- * is text a client may display, and a value quoted into it is how a message
- * becomes an injection surface.
+ * skipped so the other groups survive, and the skip is reported through
+ * `fieldListingNotices`, because a shorter list reported as complete reads as
+ * fields having been deleted. THE NOTICES NAME GROUPS AND COUNTS ONLY and never
+ * carry a field's value: a notice is text a client may display, and a value
+ * quoted into it is how a message becomes an injection surface.
+ *
+ * THE CHANNEL IS NOT CALLED `warnings`, AND THAT IS THE ENVELOPE'S DOING. See the
+ * comment beside the member in the output schema.
  *
  * Nothing here names an ACF symbol. Every fact about the plugin arrives through
  * AcfPresence and AcfFieldIndex (spec Decision 2).
@@ -110,11 +113,11 @@ final class AcfFieldList {
 			outputSchema: [
 				'type'                 => 'object',
 				'properties'           => [
-					'target'   => [
+					'target'              => [
 						'type'        => 'integer',
 						'description' => 'The post the fields were listed for, echoed so a response can be matched to its request.',
 					],
-					'fields'   => [
+					'fields'              => [
 						'type'        => 'array',
 						'description' => 'The top-level fields that apply to this post, in the order ACF reports them, group by group. Sub-fields are not listed: they are addressed through their parent.',
 						'items'       => [
@@ -153,13 +156,20 @@ final class AcfFieldList {
 							],
 						],
 					],
-					'warnings' => [
+					// DELIBERATELY NOT CALLED `warnings`: THE ENVELOPE OWNS THAT NAME.
+					// Dispatcher builds every read's OperationResult with `warnings: []`
+					// and OperationResult::toArray() emits it, so a `warnings` member
+					// inside data would sit one level below an identically named empty
+					// envelope member — and a client honouring the envelope contract
+					// would report no warnings for a listing that was missing a group.
+					// The same trap TaxonomyList names at its own `unreadableTaxonomies`.
+					'fieldListingNotices' => [
 						'type'        => 'array',
 						'items'       => [ 'type' => 'string' ],
 						'description' => 'Anything the listing could not report faithfully, such as a field group whose field definitions could not be read. Names groups and counts only, never a field\'s value.',
 					],
 				],
-				'required'             => [ 'target', 'fields', 'warnings' ],
+				'required'             => [ 'target', 'fields', 'fieldListingNotices' ],
 				'additionalProperties' => false,
 			],
 			schemaVersion: 1,
@@ -200,7 +210,7 @@ final class AcfFieldList {
 	 * @param array<string, mixed> $input   Validated input carrying 'post'.
 	 * @param OperationContext     $context The operation context.
 	 *
-	 * @return array<string, mixed> The target, the applicable fields and the warnings.
+	 * @return array<string, mixed> The target, the applicable fields and the notices.
 	 *
 	 * @throws OperationException With ErrorCode::Forbidden when the resolved
 	 *                            WordPress user may not edit the target post;
@@ -256,9 +266,9 @@ final class AcfFieldList {
 		}
 
 		return [
-			'target'   => $post_id,
-			'fields'   => $this->reported( $index['fields'] ),
-			'warnings' => $this->warnings( $index['skippedGroups'] ),
+			'target'              => $post_id,
+			'fields'              => $this->reported( $index['fields'] ),
+			'fieldListingNotices' => $this->notices( $index['skippedGroups'] ),
 		];
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
@@ -349,9 +359,9 @@ final class AcfFieldList {
 	 *
 	 * @param string[] $skipped The keys of the groups whose fields could not be read.
 	 *
-	 * @return string[] The warnings.
+	 * @return string[] The notices.
 	 */
-	private function warnings( array $skipped ): array {
+	private function notices( array $skipped ): array {
 		if ( [] === $skipped ) {
 			return [];
 		}

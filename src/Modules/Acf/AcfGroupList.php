@@ -52,12 +52,15 @@ use SiteHelm\Contracts\SnapshotPolicy;
  *
  * NOTHING IS SILENTLY LOST. A group that could not be read, a group whose fields
  * could not be read, a filter that matched nothing, and a listing that hit the
- * ceiling each add a warning. A response that quietly dropped any of them would
- * be indistinguishable from a smaller site, and an operator acts on that
- * difference. THE WARNINGS NAME FIELDS AND COUNTS ONLY and never echo a value the
- * caller sent or a value read from the site: a refusal or warning message is text
- * a client may display, and caller-controlled text quoted into it is how a
- * message becomes an injection surface.
+ * ceiling each add a notice to `groupListingNotices`. A response that quietly
+ * dropped any of them would be indistinguishable from a smaller site, and an
+ * operator acts on that difference. THE NOTICES NAME FIELDS AND COUNTS ONLY and
+ * never echo a value the caller sent or a value read from the site: a refusal or
+ * notice message is text a client may display, and caller-controlled text quoted
+ * into it is how a message becomes an injection surface.
+ *
+ * THE CHANNEL IS NOT CALLED `warnings`, AND THAT IS THE ENVELOPE'S DOING. See the
+ * comment beside the member in the output schema.
  *
  * Nothing here names an ACF symbol. Every fact about the plugin arrives through
  * AcfPresence and AcfApi (spec Decision 2).
@@ -105,7 +108,7 @@ final class AcfGroupList {
 				'$id'                  => self::OUTPUT_SCHEMA_ID,
 				'type'                 => 'object',
 				'properties'           => [
-					'groups'    => [
+					'groups'              => [
 						'type'        => 'array',
 						'description' => 'The field groups this site defines, at most ' . AcfFields::MAX_GROUPS . ' per call.',
 						'items'       => [
@@ -124,23 +127,30 @@ final class AcfGroupList {
 								'locationRules' => AcfFields::locationRulesSchema(),
 								'fields'        => [
 									'type'        => 'array',
-									'description' => 'The group\'s field definitions. Empty when the group defines none, or when they could not be read — in which case a warning says so.',
+									'description' => 'The group\'s field definitions. Empty when the group defines none, or when they could not be read — in which case a notice says so.',
 									'items'       => [ '$ref' => '#/$defs/' . AcfFields::FIELD_SCHEMA_DEF ],
 								],
 							],
 						],
 					],
-					'truncated' => [
+					'truncated'           => [
 						'type'        => 'boolean',
-						'description' => 'True when this site defines more field groups than one call reports. The listing stops rather than continuing, and a warning says how many were returned.',
+						'description' => 'True when this site defines more field groups than one call reports. The listing stops rather than continuing, and a notice says how many were returned.',
 					],
-					'warnings'  => [
+					// DELIBERATELY NOT CALLED `warnings`: THE ENVELOPE OWNS THAT NAME.
+					// Dispatcher builds every read's OperationResult with `warnings: []`
+					// and OperationResult::toArray() emits it, so a `warnings` member
+					// inside data would sit one level below an identically named empty
+					// envelope member — and a client honouring the envelope contract
+					// would report no warnings for a degraded listing. The same trap
+					// TaxonomyList names at its own `unreadableTaxonomies`.
+					'groupListingNotices' => [
 						'type'        => 'array',
 						'items'       => [ 'type' => 'string' ],
 						'description' => 'Anything the listing could not report faithfully: a group that could not be read, a group whose fields could not be read, a filter that matched nothing, or a listing that reached the ceiling.',
 					],
 				],
-				'required'             => [ 'groups', 'truncated', 'warnings' ],
+				'required'             => [ 'groups', 'truncated', 'groupListingNotices' ],
 				'additionalProperties' => false,
 				'$defs'                => [
 					AcfFields::FIELD_SCHEMA_DEF => AcfFields::fieldSchemaSchema(),
@@ -186,7 +196,7 @@ final class AcfGroupList {
 	 * @param array<string, mixed> $input   Validated input, optionally carrying 'group'.
 	 * @param OperationContext     $context The operation context.
 	 *
-	 * @return array<string, mixed> The groups, the truncation flag and the warnings.
+	 * @return array<string, mixed> The groups, the truncation flag and the notices.
 	 *
 	 * @throws OperationException With ErrorCode::Forbidden when the resolved
 	 *                            WordPress user may not edit posts;
@@ -352,9 +362,9 @@ final class AcfGroupList {
 		}
 
 		return [
-			'groups'    => $reported,
-			'truncated' => $truncated,
-			'warnings'  => $warnings,
+			'groups'              => $reported,
+			'truncated'           => $truncated,
+			'groupListingNotices' => $warnings,
 		];
 	}
 

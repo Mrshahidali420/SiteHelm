@@ -220,9 +220,9 @@ final class AcfFieldGetTest extends TestCase {
 
 		$payload = $this->handle();
 
-		$this->assertSame( [ 'provider', 'target', 'fields', 'warnings' ], array_keys( $payload ) );
+		$this->assertSame( [ 'provider', 'target', 'fields', 'fieldReadNotices' ], array_keys( $payload ) );
 		$this->assertSame( self::TARGET, $payload['target'] );
-		$this->assertSame( [], $payload['warnings'] );
+		$this->assertSame( [], $payload['fieldReadNotices'] );
 
 		$this->assertSame(
 			[
@@ -470,7 +470,7 @@ final class AcfFieldGetTest extends TestCase {
 		$payload = $this->handle();
 
 		$this->assertSame( [], $payload['fields'] );
-		$this->assertSame( [], $payload['warnings'] );
+		$this->assertSame( [], $payload['fieldReadNotices'] );
 		$this->assertSame( 'acf', $payload['provider'] );
 	}
 
@@ -612,16 +612,16 @@ final class AcfFieldGetTest extends TestCase {
 
 		$payload = $this->handle( [ 'post' => self::TARGET, 'fields' => [ 'rows' ] ] );
 
-		$this->assertCount( 1, $payload['warnings'] );
-		$this->assertStringNotContainsString( 'unmistakable-leaf-string', $payload['warnings'][0] );
-		$this->assertStringNotContainsString( 'inner-key-name', $payload['warnings'][0] );
+		$this->assertCount( 1, $payload['fieldReadNotices'] );
+		$this->assertStringNotContainsString( 'unmistakable-leaf-string', $payload['fieldReadNotices'][0] );
+		$this->assertStringNotContainsString( 'inner-key-name', $payload['fieldReadNotices'][0] );
 
 		// The WHOLE string. A substring assertion passes over a warning that names
 		// the field and then trails off, or that says '1 field' while listing none.
 		$this->assertSame(
 			'The value of 1 field nests deeper than the 10 levels this response reports, '
 				. 'so everything below that depth is reported as null rather than as its contents: rows.',
-			$payload['warnings'][0]
+			$payload['fieldReadNotices'][0]
 		);
 	}
 
@@ -632,7 +632,7 @@ final class AcfFieldGetTest extends TestCase {
 	public function test_a_value_that_fits_within_the_cap_warns_about_nothing(): void {
 		$this->installThreeFields( [ 'field_rows' => [ [ 'heading' => 'First' ] ] ] );
 
-		$this->assertSame( [], $this->handle()['warnings'] );
+		$this->assertSame( [], $this->handle()['fieldReadNotices'] );
 	}
 
 	public function test_two_truncated_values_are_named_together_in_one_warning(): void {
@@ -651,11 +651,11 @@ final class AcfFieldGetTest extends TestCase {
 
 		$payload = $this->handle();
 
-		$this->assertCount( 1, $payload['warnings'] );
+		$this->assertCount( 1, $payload['fieldReadNotices'] );
 		$this->assertSame(
 			'The values of 2 fields nest deeper than the 10 levels this response reports, '
 				. 'so everything below that depth is reported as null rather than as its contents: subtitle, rows.',
-			$payload['warnings'][0]
+			$payload['fieldReadNotices'][0]
 		);
 	}
 
@@ -683,12 +683,12 @@ final class AcfFieldGetTest extends TestCase {
 		$payload = $this->handle();
 
 		$this->assertSame( [ 'field_subtitle' ], array_column( $payload['fields'], 'key' ) );
-		$this->assertCount( 1, $payload['warnings'] );
-		$this->assertStringNotContainsString( 'A subtitle', $payload['warnings'][0], 'A warning names groups, never a value.' );
+		$this->assertCount( 1, $payload['fieldReadNotices'] );
+		$this->assertStringNotContainsString( 'A subtitle', $payload['fieldReadNotices'][0], 'A warning names groups, never a value.' );
 		$this->assertSame(
 			'The field definitions of 1 field group that applies to this post could not be read, '
 				. 'so no value is reported for any field in it: group_broken.',
-			$payload['warnings'][0]
+			$payload['fieldReadNotices'][0]
 		);
 	}
 
@@ -711,12 +711,12 @@ final class AcfFieldGetTest extends TestCase {
 
 		$payload = $this->handle();
 
-		$this->assertCount( 1, $payload['warnings'] );
-		$this->assertStringNotContainsString( ':', $payload['warnings'][0], 'Nothing can be named here, so nothing is introduced.' );
+		$this->assertCount( 1, $payload['fieldReadNotices'] );
+		$this->assertStringNotContainsString( ':', $payload['fieldReadNotices'][0], 'Nothing can be named here, so nothing is introduced.' );
 		$this->assertSame(
 			'The field definitions of 1 field group that applies to this post could not be read, '
 				. 'so no value is reported for any field in it.',
-			$payload['warnings'][0]
+			$payload['fieldReadNotices'][0]
 		);
 	}
 
@@ -739,11 +739,11 @@ final class AcfFieldGetTest extends TestCase {
 
 		$payload = $this->handle();
 
-		$this->assertCount( 1, $payload['warnings'] );
+		$this->assertCount( 1, $payload['fieldReadNotices'] );
 		$this->assertSame(
 			'The field definitions of 2 field groups that apply to this post could not be read, '
 				. 'so no value is reported for any field in them. 1 of them could be identified: group_broken.',
-			$payload['warnings'][0]
+			$payload['fieldReadNotices'][0]
 		);
 	}
 }
