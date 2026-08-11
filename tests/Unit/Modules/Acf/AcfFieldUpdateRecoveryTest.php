@@ -441,6 +441,44 @@ final class AcfFieldUpdateRecoveryTest extends TestCase {
 		$this->assertSame( 0, $this->acfCallCount( 'delete' ), 'Nothing may be deleted from a corrupt entry.' );
 	}
 
+	/**
+	 * AN ABSENT `value` IS NOT A RECORDED null. The entry says the field HAD a row,
+	 * so a restore that read the member with `??` would put null into a field that
+	 * held content and report that it restored it — the one outcome a rollback may
+	 * never produce. The member is checked with array_key_exists() rather than a
+	 * null test for the same reason: null is a value this operation records and
+	 * writes, and "recorded as null" and "not recorded" are different facts.
+	 */
+	public function test_restore_refuses_an_entry_that_records_no_value(): void {
+		$this->installFixtureSite();
+
+		$operation = $this->writeOperation();
+
+		$state = $this->recorded(
+			[
+				[
+					'key'     => self::subtitleKey(),
+					'name'    => 'subtitle',
+					'present' => true,
+				],
+			]
+		);
+
+		$refusal = $this->refusalFrom(
+			fn() => $operation->restore( $state, $this->writeContext() ),
+			'An entry that records no value must be refused rather than restored as null.'
+		);
+
+		$this->assertSame(
+			ErrorCode::ExecutionFailed,
+			$refusal->errorCode,
+			'A recorded state this operation cannot use is an execution failure, not a bad request.'
+		);
+
+		$this->assertSame( 0, $this->acfCallCount( 'update' ), 'Nothing may be written from an entry with no value.' );
+		$this->assertSame( 0, $this->acfCallCount( 'delete' ), 'Nothing may be deleted from an entry with no value.' );
+	}
+
 	public function test_restore_refuses_a_recorded_state_that_names_no_post(): void {
 		$this->installFixtureSite();
 
@@ -465,7 +503,62 @@ final class AcfFieldUpdateRecoveryTest extends TestCase {
 		$this->assertSame( 0, $this->acfCallCount( 'delete' ), 'No row may be removed from an unidentified post.' );
 	}
 
+	/**
+	 * THE PREMISE THE DOUBLE IS BUILT ON, ASSERTED RATHER THAN BELIEVED.
+	 *
+	 * The `update_field` double answers null for a field whose row it removed.
+	 * Real ACF does not: `acf_get_value()` falls back to the field's
+	 * `default_value` when the metadata is gone, so a field declaring one answers
+	 * that instead. The double is faithful only while no fixture field declares a
+	 * default — a premise that lives in a comment and would otherwise be broken by
+	 * the next person to add a field, silently, in whichever direction suits them.
+	 *
+	 * Asserted over the whole definition, sub-fields and layouts included, because
+	 * a default nested inside a repeater's sub-field breaks it exactly as hard.
+	 */
+	public function test_no_fixture_field_declares_a_default_the_double_would_have_to_model(): void {
+		$definitions = [
+			'subtitle'  => self::subtitleField(),
+			'tagline'   => self::taglineField(),
+			'sections'  => self::sectionsField(),
+			'reference' => self::referenceField(),
+		];
+
+		foreach ( $definitions as $name => $definition ) {
+			$this->assertFalse(
+				$this->declaresDefault( $definition ),
+				"The fixture field '{$name}' declares a default_value, which AcfWordPressStubs does not model: "
+					. 'teach the update_field double about defaults, or leave the field without one.'
+			);
+		}
+	}
+
 	// --------------------------------------------------------------------- helpers
+
+	/**
+	 * Whether a field definition declares a default_value anywhere inside it.
+	 *
+	 * @param mixed $definition The definition, or any part of one.
+	 *
+	 * @return bool True when a default_value member appears at any depth.
+	 */
+	private function declaresDefault( mixed $definition ): bool {
+		if ( ! is_array( $definition ) ) {
+			return false;
+		}
+
+		if ( array_key_exists( 'default_value', $definition ) ) {
+			return true;
+		}
+
+		foreach ( $definition as $member ) {
+			if ( $this->declaresDefault( $member ) ) {
+				return true;
+			}
+		}
+
+		return false;
+	}
 
 	/**
 	 * Resolves one request and hands back the operation and the state together.
