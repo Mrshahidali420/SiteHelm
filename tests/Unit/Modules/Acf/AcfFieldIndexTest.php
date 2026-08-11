@@ -275,7 +275,39 @@ final class AcfFieldIndexTest extends TestCase {
 
 		$this->assertNotNull( $index );
 		$this->assertSame( [ 'field_subtitle' ], array_column( $index['fields'], 'key' ) );
-		$this->assertSame( [ '' ], $index['skippedGroups'] );
+		$this->assertSame( [ AcfFieldIndex::UNNAMEABLE_GROUP ], $index['skippedGroups'] );
+	}
+
+	/**
+	 * THE SECOND PATH TO AN UNNAMEABLE GROUP. This group IS an array, so it is asked
+	 * for its fields and the ask fails — but its `key` is not a string, so there is
+	 * still nothing to name it by. Read that key with a bare cast and the skip is
+	 * recorded as the literal 'Array'; read it without the empty-is-absent rule and
+	 * a group keyed '' is recorded as though it had a name.
+	 *
+	 * Task 4 consumes skippedGroups, so what this path puts in it is a contract and
+	 * not an implementation detail.
+	 */
+	public function test_an_array_group_with_no_usable_key_is_skipped_as_unnameable(): void {
+		$this->installAcf(
+			[
+				[
+					'key'   => [ 'group_broken' ],
+					'title' => 'Broken',
+				],
+				$this->group( 'group_page', 'Page settings' ),
+			],
+			[
+				''           => 'not a list of fields',
+				'group_page' => [ $this->field( 'field_subtitle', 'subtitle' ) ],
+			]
+		);
+
+		$index = $this->index()->forPost( 42 );
+
+		$this->assertNotNull( $index );
+		$this->assertSame( [ 'field_subtitle' ], array_column( $index['fields'], 'key' ) );
+		$this->assertSame( [ AcfFieldIndex::UNNAMEABLE_GROUP ], $index['skippedGroups'] );
 	}
 
 	// ------------------------------------------------------------------- dedup
@@ -363,6 +395,120 @@ final class AcfFieldIndexTest extends TestCase {
 
 		$this->assertNotNull( $index );
 		$this->assertSame( [ 'field_subtitle' ], array_column( $index['fields'], 'key' ) );
+	}
+
+	/**
+	 * THE EMPTY STRING IS ABSENCE, NOT AN IDENTIFIER. It is scalar, so a shape guard
+	 * alone lets it through — and then the first empty-keyed field takes the '' slot
+	 * in the dedup and every later one is silently swallowed as a duplicate. Two
+	 * fields are given an empty key here precisely so that a rule that merely
+	 * tolerated '' would report one of them and hide the other.
+	 */
+	public function test_an_entry_whose_key_is_the_empty_string_is_dropped(): void {
+		$this->installAcf(
+			[ $this->group( 'group_page', 'Page settings' ) ],
+			[
+				'group_page' => [
+					$this->field( '', 'first_unkeyed' ),
+					$this->field( '', 'second_unkeyed' ),
+					$this->field( 'field_subtitle', 'subtitle' ),
+				],
+			]
+		);
+
+		$index = $this->index()->forPost( 42 );
+
+		$this->assertNotNull( $index );
+		$this->assertSame( [ 'field_subtitle' ], array_column( $index['fields'], 'key' ) );
+	}
+
+	/**
+	 * An entry whose NAME is the empty string is dropped for the mirror reason: the
+	 * name is what the response puts beside the key, and a field reported with a
+	 * blank one is a row an operator cannot match against the editor.
+	 */
+	public function test_an_entry_whose_name_is_the_empty_string_is_dropped(): void {
+		$this->installAcf(
+			[ $this->group( 'group_page', 'Page settings' ) ],
+			[
+				'group_page' => [
+					$this->field( 'field_unnamed', '' ),
+					$this->field( 'field_subtitle', 'subtitle' ),
+				],
+			]
+		);
+
+		$index = $this->index()->forPost( 42 );
+
+		$this->assertNotNull( $index );
+		$this->assertSame( [ 'field_subtitle' ], array_column( $index['fields'], 'key' ) );
+	}
+
+	// ------------------------------------------------------------- shape guards
+
+	/**
+	 * THE DESCRIPTIVE MEMBERS ARE GUARDED, NOT CAST. `acf/load_field` is public, so
+	 * `label`, `type` and the group's `title` can all arrive as arrays. `(string)`
+	 * on an array is a fatal error in the middle of a read — the whole call dies,
+	 * not the one field — so each is answered '' instead. Unlike a key, a missing
+	 * label does not make the field unaddressable, so the field itself survives.
+	 */
+	public function test_descriptive_members_that_are_not_scalar_are_reported_empty_not_cast(): void {
+		$this->installAcf(
+			[
+				[
+					'key'   => 'group_page',
+					'title' => [ 'Page settings' ],
+				],
+			],
+			[
+				'group_page' => [
+					$this->field(
+						'field_subtitle',
+						'subtitle',
+						[
+							'label' => [ 'Subtitle' ],
+							'type'  => [ 'text' ],
+						]
+					),
+				],
+			]
+		);
+
+		$index = $this->index()->forPost( 42 );
+
+		$this->assertNotNull( $index );
+		$this->assertCount( 1, $index['fields'] );
+
+		$entry = $index['fields'][0];
+
+		$this->assertSame( 'field_subtitle', $entry['key'], 'The field is still usable; only its description was unreadable.' );
+		$this->assertSame( '', $entry['label'] );
+		$this->assertSame( '', $entry['type'] );
+		$this->assertSame( '', $entry['groupTitle'] );
+	}
+
+	/**
+	 * `required` IS GUARDED BEFORE IT IS CAST, and this is the guard that changes an
+	 * answer rather than avoiding a crash: `(bool)` on a non-empty array is TRUE, so
+	 * an unguarded cast reports an optional field as required. A client that trusts
+	 * that refuses to submit a write until it invents a value for a field the site
+	 * never demanded.
+	 */
+	public function test_a_required_flag_that_is_not_scalar_is_false_rather_than_true(): void {
+		$this->installAcf(
+			[ $this->group( 'group_page', 'Page settings' ) ],
+			[
+				'group_page' => [
+					$this->field( 'field_subtitle', 'subtitle', [ 'required' => [ 'yes' ] ] ),
+				],
+			]
+		);
+
+		$index = $this->index()->forPost( 42 );
+
+		$this->assertNotNull( $index );
+		$this->assertFalse( $index['fields'][0]['required'] );
 	}
 
 	/**

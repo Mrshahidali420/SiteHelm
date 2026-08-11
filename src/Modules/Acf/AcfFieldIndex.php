@@ -53,10 +53,13 @@ final class AcfFieldIndex {
 	/**
 	 * The key a group whose name could not be read is recorded under.
 	 *
-	 * A group ACF answered with that is not an array cannot be asked for its
-	 * fields and carries no readable key either. It is still a skipped group and
-	 * still has to be reported, so it is recorded under a key no real group can
-	 * have; the operation above counts it instead of naming it.
+	 * TWO PATHS REACH IT. A group ACF answered with that is not an array cannot be
+	 * asked for its fields and carries no readable key either; and a group that IS
+	 * an array can still fail to yield its fields while carrying no usable `key`
+	 * member — missing, non-scalar, or the empty string. Both are skipped groups,
+	 * both still have to be reported, and neither can be named, so both are
+	 * recorded under a key no real group can have; the operation above counts them
+	 * instead of naming them.
 	 */
 	public const UNNAMEABLE_GROUP = '';
 
@@ -115,7 +118,10 @@ final class AcfFieldIndex {
 			$definitions = $this->api->fields( $group );
 
 			if ( null === $definitions ) {
-				$skipped[] = $this->text( $group, 'key' );
+				// A group that carries no usable key is as unnameable as one that was
+				// not an array; identifier() applies the same empty-is-absent rule the
+				// fields themselves get, so the two skip paths agree on what a name is.
+				$skipped[] = $this->identifier( $group, 'key' ) ?? self::UNNAMEABLE_GROUP;
 				continue;
 			}
 
@@ -251,19 +257,24 @@ final class AcfFieldIndex {
 	 * field, and a write built on it would land on the wrong field reporting
 	 * success.
 	 *
-	 * @param array[] $index        The index's `fields` list.
+	 * THE ARGUMENT IS THE `fields` LIST, NOT THE INDEX. Callers pass
+	 * `$index['fields']`, and the parameter is named for what it actually receives
+	 * so that no later caller hands over the two-key return whole and gets null for
+	 * every field on the post.
+	 *
+	 * @param array[] $fields       The index's `fields` list.
 	 * @param string  $name_or_key  The identifier to resolve.
 	 *
 	 * @return array<string, mixed>|null The entry, or null.
 	 */
-	public function find( array $index, string $name_or_key ): ?array {
-		foreach ( $index as $entry ) {
+	public function find( array $fields, string $name_or_key ): ?array {
+		foreach ( $fields as $entry ) {
 			if ( is_array( $entry ) && ( $entry['key'] ?? null ) === $name_or_key ) {
 				return $entry;
 			}
 		}
 
-		foreach ( $index as $entry ) {
+		foreach ( $fields as $entry ) {
 			if ( is_array( $entry ) && ( $entry['name'] ?? null ) === $name_or_key ) {
 				return $entry;
 			}
