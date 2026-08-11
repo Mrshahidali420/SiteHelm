@@ -78,7 +78,7 @@ Test doubles: **ONE** shared WordPress+ACF stub file, `tests/Doubles/AcfWordPres
 - Create: `src/Modules/Acf/AcfSchemaFormat.php`
 - Create: `src/Modules/Acf/AcfGroupList.php`
 - Create: `src/Modules/Acf/AcfModule.php`
-- Modify: `src/Bootstrap/ModuleLoader.php` — register `AcfModule` alongside the existing modules, in the same shape they use.
+- Modify: `src/Bootstrap/Plugin.php` — append `AcfModule::class` to the `MODULE_CLASSES` const, after `ElementorModule`. (`ModuleLoader` holds no table; it iterates what `Plugin` hands it. Modules are constructed with `new $class()` and no DI, so `AcfModule::__construct` must be zero-arg-safe.)
 - Create: `tests/Doubles/AcfWordPressStubs.php`
 - Create: `tests/Unit/Modules/Acf/AcfPresenceTest.php`
 - Create: `tests/Unit/Modules/Acf/AcfSchemaFormatTest.php`
