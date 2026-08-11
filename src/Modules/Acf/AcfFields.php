@@ -78,7 +78,17 @@ final class AcfFields {
 	 * answer, and because captureSnapshot() is probed at preview the refusal arrives
 	 * before anything has been written.
 	 */
-	public const MAX_SNAPSHOT_BYTES = self::MAX_SNAPSHOT_MEGABYTES * 1048576;
+	public const MAX_SNAPSHOT_BYTES = self::MAX_SNAPSHOT_MEGABYTES * self::BYTES_PER_MEBIBYTE;
+
+	/**
+	 * The conversion the two snapshot bounds share.
+	 *
+	 * Named because the two bounds above are one bound expressed twice, and a bare
+	 * 1048576 between them is the only part of that equality a reader has to take
+	 * on trust. MEBIBYTE rather than MEGABYTE: it is 1024², and the operator-facing
+	 * refusal says "MB" because that is the word an operator uses.
+	 */
+	private const BYTES_PER_MEBIBYTE = 1048576;
 
 	/**
 	 * The same bound in the unit the oversize refusal names.
