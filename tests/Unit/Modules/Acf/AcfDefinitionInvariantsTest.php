@@ -100,6 +100,7 @@ final class AcfDefinitionInvariantsTest extends TestCase {
 		'acf-group-list',
 		'acf-field-list',
 		'acf-field-get',
+		'acf-field-update',
 	];
 
 	/**
@@ -113,9 +114,23 @@ final class AcfDefinitionInvariantsTest extends TestCase {
 	private const ACF_READ_COUNT = 3;
 
 	/**
-	 * The ACF module's write count. Task 4 raises it to one.
+	 * The ACF module's write count.
+	 *
+	 * One, and REQ-0047 is the only write in the V1 requirement set for this
+	 * module, so a second appearing here is a definition that has drifted onto the
+	 * write dispatcher rather than a feature.
 	 */
-	private const ACF_WRITE_COUNT = 0;
+	private const ACF_WRITE_COUNT = 1;
+
+	/**
+	 * The identifier of the module's one write.
+	 *
+	 * Named rather than derived, so that the read invariants below can exclude
+	 * exactly one operation by name. Deriving the exclusion from the mode each
+	 * definition declares would make the read block assert nothing about a read
+	 * that had accidentally become a write.
+	 */
+	private const ACF_WRITE_ID = 'acf-field-update';
 
 	/**
 	 * The two dispatchers an ACF operation may appear on.
@@ -311,11 +326,19 @@ final class AcfDefinitionInvariantsTest extends TestCase {
 	 *
 	 * `Mode::Read` alone is not the claim: a definition can declare read mode and
 	 * still say it is destructive or that it previews, and the three policies are
-	 * what the change engine actually branches on. Until Task 4 opens the write
-	 * block, every one of these must hold.
+	 * what the change engine actually branches on.
+	 *
+	 * THE ONE WRITE IS EXCLUDED BY NAME, not by asking each definition what mode it
+	 * declares. A definition that had accidentally become a write would exclude
+	 * itself from this block under a mode-derived filter and be asserted on by
+	 * nothing at all.
 	 */
 	public function test_every_registered_operation_is_a_read_in_every_declaration(): void {
 		foreach ( $this->registeredDefinitions() as $definition ) {
+			if ( self::ACF_WRITE_ID === $definition->id ) {
+				continue;
+			}
+
 			$this->assertSame( Mode::Read, $definition->mode, "Operation '{$definition->id}' must be a read." );
 			$this->assertTrue( $definition->isReadOnly, "Operation '{$definition->id}' must be read-only." );
 			$this->assertFalse( $definition->isDestructive, "Operation '{$definition->id}' must not be destructive." );
@@ -324,6 +347,33 @@ final class AcfDefinitionInvariantsTest extends TestCase {
 			$this->assertSame( SnapshotPolicy::NotApplicable, $definition->snapshotPolicy, "Operation '{$definition->id}' must not declare a snapshot policy." );
 			$this->assertSame( RollbackPolicy::NotApplicable, $definition->rollbackPolicy, "Operation '{$definition->id}' must not declare a rollback policy." );
 		}
+	}
+
+	/**
+	 * The one write is a write in every declaration.
+	 *
+	 * THE THREE POLICIES ARE THE CLAIM, not `Mode::Write`. REQ-0047 states all
+	 * three, and the change engine branches on them rather than on the mode: a
+	 * definition declaring write mode with `PreviewPolicy::NotApplicable` is an ACF
+	 * write that applies without ever being previewed, and the registry's own gate
+	 * would be the only thing between that and a live site.
+	 *
+	 * `isDestructive` IS FALSE, DELIBERATELY. This operation replaces values; it
+	 * removes no content. Declaring it destructive would force nothing REQ-0047 does
+	 * not already require through the three policies and would misreport a subtitle
+	 * edit as a deletion to every client that surfaces the flag.
+	 */
+	public function test_the_one_write_is_a_write_in_every_declaration(): void {
+		$definition = $this->registryWithAcfModule()->definition( self::ACF_WRITE_ID );
+
+		$this->assertSame( Mode::Write, $definition->mode );
+		$this->assertFalse( $definition->isReadOnly, 'A write is not read-only.' );
+		$this->assertFalse( $definition->isDestructive, 'Replacing a value removes no content.' );
+		$this->assertSame( PreviewPolicy::Required, $definition->previewPolicy );
+		$this->assertSame( SnapshotPolicy::Required, $definition->snapshotPolicy );
+		$this->assertSame( RollbackPolicy::Required, $definition->rollbackPolicy );
+		$this->assertSame( [ 'edit_post' ], $definition->requiredCapabilities, 'The write is gated on the post it names, not on the site.' );
+		$this->assertSame( 'fields-write', $definition->dispatcherName() );
 	}
 
 	public function test_every_operation_belongs_to_the_fields_domain_and_the_acf_module(): void {
@@ -377,16 +427,31 @@ final class AcfDefinitionInvariantsTest extends TestCase {
 		}
 	}
 
+	/**
+	 * THE WRITE'S OUTPUT SCHEMA IS CLOSED ONE BRANCH AT A TIME, and it has to be.
+	 * A write answers two different shapes — a plan, then a result — so its output
+	 * schema is a `oneOf` union with no `properties` of its own; an
+	 * `additionalProperties: false` at that root would reject every response rather
+	 * than close anything. The closure that matters is on each branch, which is what
+	 * makes a response carrying `plan` AND `target` at once fail both.
+	 */
 	public function test_every_operation_closes_both_of_its_schemas_to_unknown_members(): void {
 		foreach ( $this->registeredDefinitions() as $definition ) {
 			$this->assertFalse(
 				$definition->inputSchema['additionalProperties'] ?? null,
 				"Operation '{$definition->id}' must declare inputSchema additionalProperties false. SchemaValidator has no other signal that the argument list is closed."
 			);
-			$this->assertFalse(
-				$definition->outputSchema['additionalProperties'] ?? null,
-				"Operation '{$definition->id}' must declare outputSchema additionalProperties false."
-			);
+
+			$branches = $definition->outputSchema['oneOf'] ?? [ $definition->outputSchema ];
+
+			$this->assertNotSame( [], $branches, "Operation '{$definition->id}' must declare an output schema." );
+
+			foreach ( $branches as $index => $branch ) {
+				$this->assertFalse(
+					$branch['additionalProperties'] ?? null,
+					"Operation '{$definition->id}' must declare outputSchema additionalProperties false, on every branch; branch {$index} is open."
+				);
+			}
 		}
 	}
 
