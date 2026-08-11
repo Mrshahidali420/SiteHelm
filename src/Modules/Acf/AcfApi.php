@@ -271,7 +271,7 @@ final class AcfApi {
 	/**
 	 * Removes one field's stored value.
 	 *
-	 * void FOR THE REASON writeValue() IS: `delete_field()` answers false for a row
+	 * RETURNS void FOR THE REASON writeValue() DOES: `delete_field()` answers false for a row
 	 * that was not there, which is the state a delete is trying to reach rather
 	 * than a failure to reach it.
 	 *
