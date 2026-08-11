@@ -19,6 +19,7 @@ use SiteHelm\Modules\Metabox\MetaboxFieldUpdateInput;
 use SiteHelm\Modules\Metabox\MetaboxPresence;
 use SiteHelm\Modules\Metabox\MetaboxSchemaFormat;
 use SiteHelm\Modules\Metabox\MetaboxValueCanonical;
+use SiteHelm\Modules\Metabox\MetaboxWriteRecovery;
 use SiteHelm\Modules\Metabox\MetaboxWriteTarget;
 
 /**
@@ -235,12 +236,14 @@ trait MetaboxWriteFixtures {
 		$api      = new MetaboxApi( $presence );
 		$index    = new MetaboxFieldIndex( $api );
 
+		$canonical = new MetaboxValueCanonical();
+
 		return new MetaboxFieldUpdate(
 			new MetaboxWriteTarget( $presence, $index ),
 			new MetaboxFieldUpdateInput(),
 			$api,
-			new MetaboxValueCanonical(),
-			new PayloadNormalizer()
+			$canonical,
+			new MetaboxWriteRecovery( $api, $canonical, new PayloadNormalizer() )
 		);
 	}
 

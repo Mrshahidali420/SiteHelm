@@ -14,6 +14,7 @@ use SiteHelm\Contracts\ErrorCode;
 use SiteHelm\Contracts\OperationException;
 use SiteHelm\Modules\Metabox\MetaboxFieldUpdate;
 use SiteHelm\Modules\Metabox\MetaboxSchemaFormat;
+use SiteHelm\Modules\Metabox\MetaboxWriteRecovery;
 use SiteHelm\Tests\Doubles\MetaboxWriteFixtures;
 use SiteHelm\Tests\TestCase;
 
@@ -204,7 +205,7 @@ final class MetaboxFieldUpdateRecoveryTest extends TestCase {
 	 * figure the arithmetic is written from.
 	 */
 	public function test_capture_refuses_a_snapshot_past_the_byte_ceiling(): void {
-		$oversized = str_repeat( 'q', MetaboxFieldUpdate::MAX_SNAPSHOT_BYTES + 1024 );
+		$oversized = str_repeat( 'q', MetaboxWriteRecovery::MAX_SNAPSHOT_BYTES + 1024 );
 
 		$this->installFixtureSite( values: [ self::subtitleId() => $oversized ] );
 
@@ -222,7 +223,7 @@ final class MetaboxFieldUpdateRecoveryTest extends TestCase {
 		$this->assertSame( ErrorCode::RollbackUnavailable, $refusal->errorCode, 'The change cannot be made reversible.' );
 
 		$this->assertStringContainsString(
-			(string) MetaboxFieldUpdate::MAX_SNAPSHOT_MEGABYTES,
+			(string) MetaboxWriteRecovery::MAX_SNAPSHOT_MEGABYTES,
 			$refusal->getMessage(),
 			'The refusal quotes the bound in the unit the arithmetic declares it in.'
 		);
