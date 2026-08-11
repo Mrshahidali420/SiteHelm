@@ -72,6 +72,7 @@ final class AcfFields {
 	 */
 	public const FIELD_SCHEMA_DEF = 'acfFieldSchema';
 
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- The module vocabulary is camelCase across every class.
 	/**
 	 * The version ranges every ACF operation declares.
 	 *
@@ -89,7 +90,9 @@ final class AcfFields {
 			'acf'       => '>=' . AcfPresence::MIN_VERSION,
 		];
 	}
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- The module vocabulary is camelCase across every class.
 	/**
 	 * The schema for a field group's location rules, as ACF stores them.
 	 *
@@ -136,7 +139,9 @@ final class AcfFields {
 			],
 		];
 	}
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- The module vocabulary is camelCase across every class.
 	/**
 	 * The recursive schema for one field definition.
 	 *
@@ -212,7 +217,9 @@ final class AcfFields {
 			),
 		];
 	}
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- The module vocabulary is camelCase across every class.
 	/**
 	 * The declarations for the members a field carries only when it declares them.
 	 *
@@ -267,4 +274,5 @@ final class AcfFields {
 			],
 		];
 	}
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 }
