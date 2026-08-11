@@ -9,7 +9,6 @@ declare(strict_types=1);
 
 namespace SiteHelm\Modules\Metabox;
 
-use SiteHelm\Change\PayloadNormalizer;
 use SiteHelm\Change\PlannedChange;
 use SiteHelm\Change\TargetState;
 use SiteHelm\Change\WriteOperation;
@@ -77,31 +76,6 @@ final class MetaboxFieldUpdate implements WriteOperation {
 	 * core content write against post 42 must not present as the same target.
 	 */
 	public const TARGET_PREFIX = 'metabox-post:';
-
-	/**
-	 * The largest rollback snapshot this operation will record, in mebibytes.
-	 *
-	 * DECLARED HERE BECAUSE THIS IS THE ONLY PATH THAT RECORDS ONE. The module's
-	 * shared vocabulary lives in MetaboxSchemaFormat — PROVIDER, MAX_DEPTH,
-	 * MAX_GROUPS — and those are read by the reads and the write alike; a snapshot
-	 * bound is read by nothing but captureSnapshot(), and putting it there would
-	 * publish a constant to three classes that must never consult it.
-	 */
-	public const MAX_SNAPSHOT_MEGABYTES = 4;
-
-	/**
-	 * The largest rollback snapshot this operation will record, in bytes.
-	 *
-	 * THE ARITHMETIC IS WRITTEN ONCE, HERE. A byte figure spelled at the comparison
-	 * and a megabyte figure spelled in the message are two numbers that drift, and
-	 * the drift surfaces as a refusal quoting a limit that is not the limit.
-	 */
-	public const MAX_SNAPSHOT_BYTES = self::MAX_SNAPSHOT_MEGABYTES * self::BYTES_PER_MEBIBYTE;
-
-	/**
-	 * Bytes in one mebibyte.
-	 */
-	private const BYTES_PER_MEBIBYTE = 1048576;
 
 	/**
 	 * The writes resolveTarget() resolved, one entry per field the request names.
@@ -173,14 +147,14 @@ final class MetaboxFieldUpdate implements WriteOperation {
 	 * @param MetaboxFieldUpdateInput $input      The request-shape half of the validation.
 	 * @param MetaboxApi              $api        The one wrapper around Meta Box's own reads and writes.
 	 * @param MetaboxValueCanonical   $canonical  The pure, digest-stable value projection.
-	 * @param PayloadNormalizer       $normalizer The canonical JSON the snapshot is measured in.
+	 * @param MetaboxWriteRecovery    $recovery   The reversibility half: recording a prior state and putting it back.
 	 */
 	public function __construct(
 		private readonly MetaboxWriteTarget $targets,
 		private readonly MetaboxFieldUpdateInput $input,
 		private readonly MetaboxApi $api,
 		private readonly MetaboxValueCanonical $canonical,
-		private readonly PayloadNormalizer $normalizer,
+		private readonly MetaboxWriteRecovery $recovery,
 	) {
 	}
 
@@ -356,46 +330,13 @@ final class MetaboxFieldUpdate implements WriteOperation {
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 
 	// phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase -- TargetState::$targetKey is a contract property this module does not name.
-	// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The messages are literals written for end users and quote no stored value.
 	/**
 	 * Captures the state a rollback would put back.
 	 *
-	 * `present` IS metadata_exists() AND NEVER A TEST OF THE VALUE (spec §5).
-	 * `rwmb_meta()` answers `''` for a field with no row at all, so a field holding
-	 * the empty string and a field the editor never filled in read identically
-	 * through every Meta Box reader on the site. A rollback has to tell them apart:
-	 * the first is written back to `''`, and the second must have its row DELETED,
-	 * because a write that created a post's first row for a field is undone by
-	 * removing that row and not by storing an empty one beside it. This snapshot is
-	 * the only place in the request where that difference still exists, which is why
-	 * the question goes to `metadata_exists()` through MetaboxApi::hasStoredRow() and
-	 * never to the value. `0`, `false`, `''` and `[]` are all PRESENT.
-	 *
-	 * IT RUNS AFTER MetaboxWriteTarget::resolve(), AND THAT ORDERING IS THE
-	 * GUARANTEE. `hasStoredRow()` answers false both for "there is no row" and for "I
-	 * could not tell", and a bool cannot say which; what keeps them apart is that an
-	 * unreachable site is refused IntegrationUnavailable before a change is planned.
-	 * Capturing ahead of that refusal would record `present: false` for every field
-	 * on an unreadable site and turn the rollback into a mass delete.
-	 *
-	 * THE RECORDED VALUE IS THE RAW STORED ONE AND IS NEVER PROJECTED. A snapshot
-	 * exists to make a rollback faithful, and a value normalized, truncated or
-	 * redacted on its way in is a value restore() would write back while reporting
-	 * success (spec §7). Symmetry with the forward write is not a defence: the
-	 * forward path bounds a caller-supplied value through the input schema, while
-	 * this handles a pre-existing, site-derived value nobody bounded.
-	 *
-	 * AND WHEN THE RAW VALUE CANNOT BE RECORDED FAITHFULLY, IT REFUSES. A value that
-	 * would not survive being written back — nested past MetaboxSchemaFormat::MAX_DEPTH,
-	 * or past the byte ceiling below — is refused RollbackUnavailable here, before
-	 * anything is written. Not ExecutionFailed: nothing has executed at capture time,
-	 * and the question on this path is reversibility. Recording the truncated value
-	 * and warning would leave the operator holding a snapshot that looks usable and
-	 * is not.
-	 *
-	 * SIDE-EFFECT FREE AND SAFE TO CALL TWICE. SnapshotLifecycle::eligibility() probes
-	 * it at preview and SnapshotLifecycle::capture() calls it again at apply; a
-	 * capture that wrote anything would make a preview a write.
+	 * The phase is this operation's — the engine calls it here, before anything is
+	 * written — and the rules it obeys belong to MetaboxWriteRecovery: the recorded
+	 * value is the RAW stored one, and a value that cannot be recorded faithfully is
+	 * refused rather than truncated. See that class for why.
 	 *
 	 * NEVER null, which the engine would turn into RollbackUnavailable under this
 	 * operation's required snapshot policy. A post whose named fields all lack rows
@@ -406,67 +347,12 @@ final class MetaboxFieldUpdate implements WriteOperation {
 	 *
 	 * @return array<string, mixed>|null The restore state.
 	 *
-	 * @throws OperationException With ErrorCode::RollbackUnavailable when the resolved
-	 *                            state names no post, when a stored value cannot be
-	 *                            recorded faithfully, or when the recorded values are
-	 *                            past self::MAX_SNAPSHOT_BYTES.
+	 * @throws OperationException With ErrorCode::RollbackUnavailable when the state
+	 *                            could not be recorded.
 	 */
 	public function captureSnapshot( TargetState $current, OperationContext $context ): ?array {
-		$post = self::postIdFromKey( $current->targetKey );
-
-		// REFUSED, NEVER SUBSTITUTED, and RollbackUnavailable rather than the
-		// TargetNotFound planChange() gives the same condition: nothing is missing from
-		// the caller's request, and what cannot be done is the recording. A null return
-		// would reach the engine's own RollbackUnavailable, whose message says the
-		// target has no recoverable prior state — a false claim about a post that has one.
-		if ( null === $post ) {
-			throw new OperationException(
-				ErrorCode::RollbackUnavailable,
-				'The resolved target does not name a post, so no state could be recorded to roll back to and nothing was written.',
-				'Preview the change again with metabox-field-update, naming the post by id.'
-			);
-		}
-
-		$fields = [];
-
-		foreach ( $this->resolved as $write ) {
-			// THE ID, BECAUSE THE ID IS THE META KEY. A stored row is postmeta and
-			// postmeta is keyed by the field's id; asking about the human label answers
-			// false on a site that stores the field perfectly well, and restore() would
-			// then delete a row the operator still had.
-			$present = $this->api->hasStoredRow( $write['id'], $post );
-
-			$fields[] = [
-				'id'      => $write['id'],
-				'name'    => $write['name'],
-				'present' => $present,
-				'value'   => $present ? $this->recordable( $write['id'], $write['name'], $post ) : null,
-			];
-		}
-
-		$snapshot = [
-			'fields' => $fields,
-			'post'   => $post,
-		];
-
-		// MEASURED IN THE ENCODING THE STORE WILL ACTUALLY USE.
-		// SnapshotLifecycle::capture() persists this through the same PayloadNormalizer,
-		// so a bound measured any other way would bound something other than the row
-		// that has to fit.
-		if ( strlen( $this->normalizer->canonicalJson( $snapshot ) ) > self::MAX_SNAPSHOT_BYTES ) {
-			throw new OperationException(
-				ErrorCode::RollbackUnavailable,
-				sprintf(
-					'The values these fields currently hold are larger than the %d MB a rollback snapshot may record, so this change cannot be made reversible and nothing was written.',
-					self::MAX_SNAPSHOT_MEGABYTES
-				),
-				'Write fewer fields in one request, or reduce the amount of content those fields hold before changing them.'
-			);
-		}
-
-		return $snapshot;
+		return $this->recovery->capture( $current->targetKey, $this->resolved );
 	}
-	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 
 	// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The messages are written for end users and name a field, never a value.
@@ -549,7 +435,7 @@ final class MetaboxFieldUpdate implements WriteOperation {
 					ErrorCode::VerificationFailed,
 					sprintf(
 						'Meta Box did not store the value this plan promised for the field "%s", so that value was not written.',
-						$this->label( $write )
+						self::label( $write )
 					),
 					'Request a fresh preview and retry. If it is refused again, ask a site administrator to confirm that no other plugin is filtering Meta Box\'s field definitions for this post.',
 					$completed
@@ -557,7 +443,7 @@ final class MetaboxFieldUpdate implements WriteOperation {
 			}
 
 			$written[]   = $write['id'];
-			$completed[] = sprintf( 'wrote %s', $this->label( $write ) );
+			$completed[] = sprintf( 'wrote %s', self::label( $write ) );
 		}
 
 		$this->written = $written;
@@ -607,32 +493,12 @@ final class MetaboxFieldUpdate implements WriteOperation {
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
 
 	// phpcs:disable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase -- $restoreState matches the recorded-state vocabulary used across the change engine.
-	// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The messages are literals written for end users and quote no recorded value.
 	/**
 	 * Puts a recorded snapshot back.
 	 *
-	 * IT BRANCHES ON `present` AND NEVER ON `??` (spec §7). Four write paths on this
-	 * branch have shipped the coalescing version: `$entry['value'] ?? null` reads a
-	 * recorded `null` as "nothing was recorded", so a `null` this snapshot recorded on
-	 * purpose — the value of a field that HAD a row holding null — is skipped or
-	 * deleted rather than written back. The recorded flag says which of the two
-	 * operations undoes the write, and nothing else is consulted:
-	 *
-	 *   - `present === true`  → writeValue( id, post, value ), including when the
-	 *                           value is `''`, `0`, `false` or `[]`. All four are
-	 *                           values a row held, and putting a row back holding one
-	 *                           of them is the restore.
-	 *   - `present === false` → deleteValue( id, post ). The write created this post's
-	 *                           first row for the field, and undoing it means the row
-	 *                           is gone again. Writing the recorded `null` here
-	 *                           instead would leave a row the operator never had,
-	 *                           which every later read reports as a set field.
-	 *
-	 * EVERY ENTRY IS GATED ON array_key_exists AND NOTHING IS GUESSED. An entry
-	 * carrying no flag records neither state, and both available actions are
-	 * destructive in the case it is not: write invents a row, delete removes one.
-	 * ExecutionFailed, because the recorded state is unusable rather than the caller's
-	 * request being wrong, and a fresh preview cannot repair a row already stored.
+	 * The phase is this operation's — the engine calls it here — and the rule it obeys
+	 * belongs to MetaboxWriteRecovery, which branches on the recorded `present` flag
+	 * and never on the value. See that class for why.
 	 *
 	 * @param array<string, mixed> $restoreState The recorded restore state.
 	 * @param OperationContext     $context      The request context.
@@ -643,58 +509,8 @@ final class MetaboxFieldUpdate implements WriteOperation {
 	 *                            state is not one this operation wrote.
 	 */
 	public function restore( array $restoreState, OperationContext $context ): string {
-		$post   = $restoreState['post'] ?? null;
-		$fields = $restoreState['fields'] ?? null;
-
-		// The `??` HERE IS ABOUT THE ENVELOPE AND NOT ABOUT A FIELD, and the difference
-		// is the whole rule above. An absent `post` and an absent `fields` have exactly
-		// one meaning — this is not a snapshot this operation recorded — and both are
-		// refused rather than defaulted. `(int) null` is 0, and a delete against post 0
-		// removes a row from whatever post the request made global.
-		if ( ! is_int( $post ) || $post < 1 || ! is_array( $fields ) ) {
-			throw new OperationException(
-				ErrorCode::ExecutionFailed,
-				'The recorded state does not describe the post and the fields to put back, so nothing was restored.',
-				'Read the post with metabox-field-get to confirm what its fields now hold, and correct them with metabox-field-update.'
-			);
-		}
-
-		$completed = [];
-
-		foreach ( $fields as $entry ) {
-			if ( ! is_array( $entry )
-				|| ! is_string( $entry['id'] ?? null )
-				|| '' === $entry['id']
-				|| ! array_key_exists( 'present', $entry )
-				|| ! is_bool( $entry['present'] )
-				|| ! array_key_exists( 'value', $entry ) ) {
-				throw new OperationException(
-					ErrorCode::ExecutionFailed,
-					'One entry in the recorded state does not say whether that field had a stored value, so it could not be put back and the restore stopped there.',
-					'Read the post with metabox-field-get to confirm what its fields now hold, and correct them with metabox-field-update.',
-					$completed
-				);
-			}
-
-			// GATED ON THE RECORDED FLAG AND NEVER ON THE VALUE. A `??` here reads a
-			// faithfully recorded null — a real stored state — as "there was no row" and
-			// deletes the row instead of putting the value back.
-			if ( $entry['present'] ) {
-				$this->api->writeValue( $entry['id'], $post, $entry['value'] );
-			} else {
-				$this->api->deleteValue( $entry['id'], $post );
-			}
-
-			$completed[] = sprintf(
-				'%s %s',
-				$entry['present'] ? 'restored' : 'cleared',
-				$this->label( $entry )
-			);
-		}
-
-		return self::targetKey( $post );
+		return $this->recovery->restore( $restoreState );
 	}
-	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
 
 	/**
@@ -718,46 +534,6 @@ final class MetaboxFieldUpdate implements WriteOperation {
 		return $this->canonical->project( $this->api->readValue( $id, $post_id ) );
 	}
 
-	// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The refusal names a field, never a value, and an OperationException is not output.
-	/**
-	 * One field's RAW stored value, or a refusal when it cannot be recorded.
-	 *
-	 * THE VALUE IS RETURNED EXACTLY AS THE SITE HOLDS IT. Nothing here projects,
-	 * normalizes, truncates or redacts, because this is what restore() writes back.
-	 * The canonical projection is consulted only to ASK a question — would recording
-	 * this lose part of it — and its answer is never what is recorded.
-	 *
-	 * @param string $id      The field id, which is the meta key.
-	 * @param string $name    The field's human label, for the refusal.
-	 * @param int    $post_id The post the value is stored against.
-	 *
-	 * @return mixed The raw stored value.
-	 *
-	 * @throws OperationException With ErrorCode::RollbackUnavailable when the value
-	 *                            cannot be recorded faithfully.
-	 */
-	private function recordable( string $id, string $name, int $post_id ): mixed {
-		$raw = $this->api->readValue( $id, $post_id );
-
-		// THE FIELD IS NAMED AND THE VALUE IS NOT, the rule every message in this
-		// module keeps: an identifier is what an operator recognises, and a stored
-		// value belongs in data.state or nowhere.
-		if ( $this->canonical->truncates( $raw ) ) {
-			throw new OperationException(
-				ErrorCode::RollbackUnavailable,
-				sprintf(
-					'The value the field "%s" currently holds is nested more than %d levels deep, so it could not be recorded faithfully enough to roll back to and nothing was written.',
-					'' !== $name ? $name : $id,
-					MetaboxSchemaFormat::MAX_DEPTH
-				),
-				'Write this field with metabox-field-update once its stored value is less deeply nested, or write the other fields without it.'
-			);
-		}
-
-		return $raw;
-	}
-	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
-
 	/**
 	 * How one field is named to an operator.
 	 *
@@ -765,11 +541,18 @@ final class MetaboxFieldUpdate implements WriteOperation {
 	 * identifiers rather than content, so both are permitted in operator-facing text
 	 * where a value is not.
 	 *
+	 * PUBLIC AND STATIC BECAUSE BOTH HALVES OF THE WRITE NAME FIELDS. applyChange()
+	 * reads it twice and MetaboxWriteRecovery::restore() once, and one spelling of
+	 * "what an operator calls this field" is worth a call across the seam: two
+	 * spellings is how a refusal and its rollback come to name the same field
+	 * differently. It is pure — no site, no state — so calling it from the collaborator
+	 * costs nothing and hides nothing.
+	 *
 	 * @param array<string, mixed> $entry A plan entry or a snapshot entry.
 	 *
 	 * @return string The label.
 	 */
-	private function label( array $entry ): string {
+	public static function label( array $entry ): string {
 		$name = $entry['name'] ?? null;
 
 		if ( is_string( $name ) && '' !== $name ) {
