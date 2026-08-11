@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace SiteHelm\Tests\Unit\Modules\Elementor;
 
+use SiteHelm\Change\PlannedChange;
 use SiteHelm\Contracts\ErrorCode;
 use SiteHelm\Contracts\OperationException;
 use SiteHelm\Modules\Elementor\ElementorDocument;
@@ -137,6 +138,53 @@ final class ElementorElementAddApplyTest extends TestCase {
 		$this->assertArrayHasKey(
 			$planned->payload[ ElementorElementAdd::PAYLOAD_ELEMENT_ID ],
 			$this->flatten( $this->storedTree() )
+		);
+	}
+
+	/**
+	 * A PLAN WITHOUT THE TREE IT PROMISED IS REFUSED, NEVER SUBSTITUTED, which is
+	 * the same answer `ElementorElementDuplicate` and `ElementorElementRemove`
+	 * give to the same question and with the same code.
+	 *
+	 * The consequence of the other answer is what makes this worth a test:
+	 * substituting `[]` for the missing member writes an EMPTY DOCUMENT over the
+	 * page, so the whole content of it is gone with only the snapshot behind it,
+	 * on a rollback policy that is Supported rather than Required. This is the
+	 * defensive half of the same guard `test_a_plan_naming_no_document_...`
+	 * covers on the sibling operations, and the document must be untouched after
+	 * the refusal.
+	 */
+	public function test_a_plan_that_does_not_carry_its_tree_is_refused_without_writing(): void {
+		$this->withElementor();
+		$this->storeRaw( (string) json_encode( $this->fixtureTree() ) );
+
+		$input     = $this->arguments( [ 'elType' => 'container' ] );
+		$operation = $this->operation();
+		$target    = $operation->resolveTarget( $input, $this->context() );
+		$planned   = $operation->planChange( $target, $input, $this->context() );
+
+		$payload = $planned->payload;
+		unset( $payload[ ElementorElementAdd::PAYLOAD_TREE ] );
+
+		$before       = $this->meta[ self::DOCUMENT_ID . '|' . ElementorDocument::META_DATA ];
+		$this->writes = [];
+
+		try {
+			$operation->applyChange(
+				$target,
+				new PlannedChange( $payload, $planned->afterFields, ElementorWriteFields::FIELD_ORDER ),
+				$this->context()
+			);
+			$this->fail( 'A plan that does not carry its tree must be refused.' );
+		} catch ( OperationException $exception ) {
+			$this->assertSame( ErrorCode::ExecutionFailed, $exception->errorCode );
+		}
+
+		$this->assertSame( [], $this->writes, 'Nothing may be written for a plan with no tree.' );
+		$this->assertSame(
+			$before,
+			$this->meta[ self::DOCUMENT_ID . '|' . ElementorDocument::META_DATA ],
+			'The stored document must be exactly what it was — an emptied page is the failure this guards.'
 		);
 	}
 

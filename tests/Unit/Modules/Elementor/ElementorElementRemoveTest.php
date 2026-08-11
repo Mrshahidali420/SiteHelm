@@ -322,10 +322,15 @@ final class ElementorElementRemoveTest extends TestCase {
 	}
 
 	/**
-	 * An element the document does not hold is a target that is not there, and
-	 * nothing is written for it.
+	 * An element the document does not hold is a target that is not there.
+	 *
+	 * The "and nothing is written" half this case used to claim was true by
+	 * construction: it only plans, and `planChange()` cannot reach the writer
+	 * under any mutation of this operation. The write claim is made where a write
+	 * is possible — `test_a_plan_naming_no_document_is_refused_without_writing`
+	 * below calls `applyChange()`.
 	 */
-	public function test_an_element_the_document_does_not_hold_is_refused_without_writing(): void {
+	public function test_an_element_the_document_does_not_hold_is_refused(): void {
 		$this->withElementor();
 		$this->storeMoveFixture();
 
@@ -335,8 +340,6 @@ final class ElementorElementRemoveTest extends TestCase {
 		} catch ( OperationException $exception ) {
 			$this->assertSame( ErrorCode::TargetNotFound, $exception->errorCode );
 		}
-
-		$this->assertSame( [], $this->writes, 'A refused removal must write nothing.' );
 	}
 
 	// ------------------------------------------------- half one: it is absent

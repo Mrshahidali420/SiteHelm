@@ -9,7 +9,6 @@ declare(strict_types=1);
 
 namespace SiteHelm\Tests\Doubles;
 
-use Brain\Monkey\Functions;
 use SiteHelm\Change\PayloadNormalizer;
 use SiteHelm\Change\PlannedChange;
 use SiteHelm\Change\TargetState;
@@ -55,6 +54,7 @@ use SiteHelm\Modules\Elementor\ElementorWriteTarget;
 trait RelocationFixtures {
 
 	use WriteTargetFixtures;
+	use ElementorWordPressStubs;
 
 	/**
 	 * The container holding the five siblings the move cases reorder.
@@ -85,45 +85,7 @@ trait RelocationFixtures {
 	 * recorders.
 	 */
 	private function stubWordPress(): void {
-		Functions\when( 'user_can' )->alias(
-			fn( int $user_id, string $capability, mixed ...$args ): bool => $this->mayEdit
-		);
-
-		Functions\when( 'get_post_meta' )->alias(
-			function ( int $post_id, string $key, bool $single = false ): mixed {
-				$this->reads[] = [ $post_id, $key ];
-
-				return $this->meta[ $post_id . '|' . $key ] ?? '';
-			}
-		);
-
-		Functions\when( 'update_post_meta' )->alias(
-			function ( int $post_id, string $key, mixed $value ): bool {
-				$this->writes[] = [ $post_id, $key ];
-
-				// Exactly what WordPress does: the value is unslashed on the way in,
-				// so the slashes wp_slash() added are transport and never reach the
-				// stored row.
-				$this->meta[ $post_id . '|' . $key ] = is_string( $value ) ? stripslashes( $value ) : $value;
-
-				return true;
-			}
-		);
-
-		Functions\when( 'delete_post_meta' )->alias(
-			function ( int $post_id, string $key ): bool {
-				$this->writes[] = [ $post_id, $key ];
-				unset( $this->meta[ $post_id . '|' . $key ] );
-
-				return true;
-			}
-		);
-
-		Functions\when( 'wp_slash' )->alias( fn( mixed $value ): mixed => is_string( $value ) ? addslashes( $value ) : $value );
-		Functions\when( 'wp_unslash' )->alias( fn( mixed $value ): mixed => is_string( $value ) ? stripslashes( $value ) : $value );
-		Functions\when( 'wp_json_encode' )->alias( fn( mixed $data ): mixed => json_encode( $data ) );
-		Functions\when( 'wp_upload_dir' )->alias( fn(): array => [ 'basedir' => sys_get_temp_dir() . '/sitehelm-relocation' ] );
-		Functions\when( 'wp_delete_file' )->alias( fn( string $path ): null => null );
+		$this->stubElementorWordPress( 'sitehelm-relocation' );
 	}
 
 	/**
