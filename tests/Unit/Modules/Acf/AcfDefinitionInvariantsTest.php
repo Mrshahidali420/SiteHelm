@@ -99,6 +99,7 @@ final class AcfDefinitionInvariantsTest extends TestCase {
 	private const OPERATION_IDS = [
 		'acf-group-list',
 		'acf-field-list',
+		'acf-field-get',
 	];
 
 	/**
@@ -109,7 +110,7 @@ final class AcfDefinitionInvariantsTest extends TestCase {
 	 * on the read dispatcher, and this number is what that derivation is checked
 	 * against.
 	 */
-	private const ACF_READ_COUNT = 2;
+	private const ACF_READ_COUNT = 3;
 
 	/**
 	 * The ACF module's write count. Task 4 raises it to one.
