@@ -238,6 +238,12 @@ final class AcfFieldUpdateTest extends TestCase {
 		// BYTES, NOT EQUALITY. PlanAdmission digests the canonical JSON of the
 		// payload, so two structures that assertEquals would call equal and
 		// json_encode would spell differently are a stale plan at apply.
+		//
+		// THIS IS NOT THE DETERMINISM PROOF, and should not be read as one: two calls
+		// a microsecond apart agree even when the payload is built from the clock or
+		// from site state. What it does prove is spelling — that the payload's SHAPE
+		// is stable across calls, which digest comparison needs and equality cannot
+		// see. The determinism proof is the recorded call count above it.
 		$this->assertSame(
 			$this->encode( $first->payload ),
 			$this->encode( $second->payload ),
@@ -275,10 +281,11 @@ final class AcfFieldUpdateTest extends TestCase {
 			)
 		);
 
-		// `true` is promised as 1 because 1 is what ACF stores for a true/false
-		// field, and the rows are re-indexed in KEY order rather than insertion
-		// order. Promising the value as sent would make every such write read back
-		// as adjusted, or worse, as not applied.
+		// `true` is promised as 1 because 1 is the canonical projection of a boolean —
+		// AcfValueCanonical's rule, applied to whatever field it is sent to — and the
+		// rows are re-indexed in KEY order rather than insertion order. Promising the
+		// value as sent would make every such write read back as adjusted, or worse,
+		// as not applied.
 		$this->assertSame(
 			[
 				self::subtitleKey() => 1,
@@ -354,6 +361,95 @@ final class AcfFieldUpdateTest extends TestCase {
 		);
 	}
 
+	public function test_plan_change_refuses_a_resolved_state_that_names_no_post(): void {
+		$this->installFixtureSite();
+
+		$operation = $this->writeOperation();
+		$request   = $this->writeRequest( [ $this->writeMember( 'subtitle', 'New subtitle' ) ] );
+		$context   = $this->writeContext();
+
+		// The operation is resolved normally and then handed a state whose key names
+		// no post — `acf-post:0` rather than a malformed string, because 0 is the
+		// value a substitution would silently produce and it parses perfectly.
+		$operation->resolveTarget( $request, $context );
+
+		$thrown = null;
+
+		try {
+			$operation->planChange( new TargetState( 'acf-post:0', true, [] ), $request, $context );
+		} catch ( OperationException $exception ) {
+			$thrown = $exception;
+		}
+
+		$this->assertInstanceOf(
+			OperationException::class,
+			$thrown,
+			'A state that names no post must be refused rather than planned against post 0.'
+		);
+
+		$this->assertSame(
+			ErrorCode::TargetNotFound,
+			$thrown->errorCode,
+			'A target that names no post is a target that was not found.'
+		);
+	}
+
+	public function test_apply_change_refuses_a_plan_that_names_no_post(): void {
+		$this->installFixtureSite( [ self::subtitleKey() => 'subtitle' ] );
+
+		$operation = $this->writeOperation();
+		$request   = $this->writeRequest( [ $this->writeMember( 'subtitle', 'New subtitle' ) ] );
+		$context   = $this->writeContext();
+
+		$state = $operation->resolveTarget( $request, $context );
+
+		// A payload whose `post` is null, which is what planChange() would have
+		// produced before it began refusing. `(int) null` is 0, and a write to post 0
+		// lands on whatever post the request made global.
+		$planned = new PlannedChange(
+			[
+				'post'   => null,
+				'fields' => [
+					[
+						'key'   => self::subtitleKey(),
+						'name'  => 'subtitle',
+						'value' => 'New subtitle',
+					],
+				],
+			],
+			[ self::subtitleKey() => 'New subtitle' ]
+		);
+
+		$thrown = null;
+
+		try {
+			$operation->applyChange( $state, $planned, $context );
+		} catch ( OperationException $exception ) {
+			$thrown = $exception;
+		}
+
+		$this->assertInstanceOf(
+			OperationException::class,
+			$thrown,
+			'A plan that names no post must be refused rather than written to post 0.'
+		);
+
+		$this->assertSame(
+			ErrorCode::ExecutionFailed,
+			$thrown->errorCode,
+			'A plan this operation cannot execute is an execution failure.'
+		);
+
+		// THE ASSERTION THAT MAKES THE REFUSAL WORTH ANYTHING. An operation that threw
+		// after writing would satisfy every assertion above and still have moved the
+		// wrong post.
+		$this->assertSame(
+			0,
+			$this->acfCallCount( 'update' ),
+			'A refused plan must reach no write at all.'
+		);
+	}
+
 	public function test_apply_change_refuses_when_the_write_stored_nothing(): void {
 		// No key creates a row on this site, so the write to `tagline` — the one
 		// field with no stored row to begin with — resolves to nothing and stores
@@ -393,10 +489,10 @@ final class AcfFieldUpdateTest extends TestCase {
 		);
 	}
 
-	public function test_apply_change_does_not_refuse_a_field_that_already_had_a_row(): void {
-		// The same no-op site as the refusal above, and the same missing row AFTER
-		// the write. Only the row that existed BEFORE differs, and it is what turns
-		// the dropped-write guard off.
+	public function test_apply_change_does_not_refuse_a_field_whose_row_survives_the_write(): void {
+		// The same no-op site as the refusal above. `subtitle` has a row and the write
+		// leaves it there, so the guard's SECOND condition is what stays it. This test
+		// says nothing about the first: see the removed-row case below for that.
 		$this->installFixtureSite();
 
 		$this->apply( [ $this->writeMember( 'subtitle', 'New subtitle' ) ] );
@@ -404,7 +500,35 @@ final class AcfFieldUpdateTest extends TestCase {
 		$this->assertSame(
 			1,
 			$this->acfCallCount( 'update' ),
-			'A field that already had a stored row must be written without refusal.'
+			'A field whose stored row survives the write must be written without refusal.'
+		);
+	}
+
+	public function test_apply_change_does_not_refuse_a_field_whose_row_the_write_removed(): void {
+		// THE ONLY SITE ON WHICH THE GUARD'S FIRST CONDITION DECIDES ANYTHING, and the
+		// reason it is worth building. `subtitle` has a row, the requested value is not
+		// the empty form, and this site's write DELETES the row — which is what an
+		// `acf/update_value` filter answering null does to a non-empty value, the very
+		// "another plugin is filtering ACF" case this operation's own remediation text
+		// names. Both later conditions therefore hold, and only "it had no row before"
+		// keeps the refusal from firing on a field ACF was told to change and did.
+		$this->installFixtureSite( [], [ self::subtitleKey() => 'subtitle' ] );
+
+		$this->apply( [ $this->writeMember( 'subtitle', 'New subtitle' ) ] );
+
+		$this->assertSame(
+			1,
+			$this->acfCallCount( 'update' ),
+			'A field that HAD a stored row must not be refused when the write removes it.'
+		);
+
+		// The second question is never asked, and that is the assertion. `&&`
+		// short-circuits on a field that had a row, so a single recorded question is
+		// proof the first condition was the one that decided.
+		$this->assertSame(
+			[ [ 'post', self::fixturePost(), 'subtitle' ] ],
+			$this->acfCallArguments( 'row' ),
+			'A field that had a row must settle the guard before the write is questioned again.'
 		);
 	}
 
