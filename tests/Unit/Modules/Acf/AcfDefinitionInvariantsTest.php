@@ -442,14 +442,30 @@ final class AcfDefinitionInvariantsTest extends TestCase {
 				"Operation '{$definition->id}' must declare inputSchema additionalProperties false. SchemaValidator has no other signal that the argument list is closed."
 			);
 
-			$branches = $definition->outputSchema['oneOf'] ?? [ $definition->outputSchema ];
+			// THE ONE WRITE IS EXCLUDED BY NAME, and by name rather than by shape so
+			// that a read which grew a `oneOf` would fail here instead of quietly
+			// taking the relaxed path. Every write in this plugin answers the shared
+			// WriteOutputSchema, a two-branch union with no properties of its own;
+			// `additionalProperties: false` at that root has nothing to permit and
+			// would reject every response the operation can give. The branches are
+			// each closed, and that is asserted just below.
+			if ( self::ACF_WRITE_ID !== $definition->id ) {
+				$this->assertFalse(
+					$definition->outputSchema['additionalProperties'] ?? null,
+					"Operation '{$definition->id}' must declare outputSchema additionalProperties false. SchemaValidator has no other signal that the response shape is closed."
+				);
 
-			$this->assertNotSame( [], $branches, "Operation '{$definition->id}' must declare an output schema." );
+				continue;
+			}
+
+			$branches = $definition->outputSchema['oneOf'] ?? [];
+
+			$this->assertNotSame( [], $branches, "Operation '{$definition->id}' must declare its output schema as a union of closed branches." );
 
 			foreach ( $branches as $index => $branch ) {
 				$this->assertFalse(
 					$branch['additionalProperties'] ?? null,
-					"Operation '{$definition->id}' must declare outputSchema additionalProperties false, on every branch; branch {$index} is open."
+					"Operation '{$definition->id}' must close every outputSchema branch; branch {$index} is open."
 				);
 			}
 		}

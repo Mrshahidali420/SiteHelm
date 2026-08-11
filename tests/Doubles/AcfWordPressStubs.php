@@ -175,6 +175,23 @@ trait AcfWordPressStubs {
 	 * would answer for a caller that asked the wrong question and hide the one
 	 * confusion this module is most likely to make. Each entry is `"$post_id:$name"`.
 	 *
+	 * A WRITE MOVES THIS SITE, AND ONLY AS FAR AS THE CALLER SAYS IT DOES. A double
+	 * whose `update_field()` recorded the call and changed nothing is faithful right
+	 * up to the rule the write path is specified on: ACF resolving a key to nothing
+	 * and storing nothing is a real failure, and a double that behaves that way for
+	 * EVERY write cannot tell a dropped write from a successful one. So a write here
+	 * updates the value get_field() answers with, and moves the postmeta rows exactly
+	 * as `$rows_created_by_key` and `$rows_removed_by_key` say it does.
+	 *
+	 * BOTH ROW MAPS DEFAULT TO EMPTY, and the three sites they build are the three
+	 * the dropped-write guard has to be told apart on. Neither map names the key: the
+	 * write stores nothing, which is the failure the guard exists for. Only
+	 * `$rows_created_by_key` names it: the ordinary site, where the guard must stay
+	 * silent because the row appeared. Only `$rows_removed_by_key` names it: a field
+	 * that HAD a row and no longer does, which is what an `acf/update_value` filter
+	 * returning null does to a non-empty value — the guard must stay silent there
+	 * too, and it is the only site on which its first condition decides anything.
+	 *
 	 * @param mixed                $groups                 What acf_get_field_groups() answers.
 	 * @param array<string, mixed> $fields_by_group        What acf_get_fields() answers, keyed by group key.
 	 *                                                     A group with no entry answers an empty list.
@@ -184,19 +201,10 @@ trait AcfWordPressStubs {
 	 * @param bool                 $with_value_function    Whether get_field() exists on this site.
 	 * @param bool                 $with_update_function   Whether update_field() exists on this site.
 	 * @param bool                 $with_delete_function   Whether delete_field() exists on this site.
-	 * A WRITE MOVES THIS SITE, AND ONLY AS FAR AS THE CALLER SAYS IT DOES. A double
-	 * whose `update_field()` recorded the call and changed nothing is faithful right
-	 * up to the rule the write path is specified on: ACF resolving a key to nothing
-	 * and storing nothing is a real failure, and a double that behaves that way for
-	 * EVERY write cannot tell a dropped write from a successful one. So a write here
-	 * updates the value get_field() answers with, and creates a postmeta row only for
-	 * the keys `$rows_created_by_key` names. The default names none, which is the
-	 * no-op site the dropped-write guard has to be proven against; naming a key gives
-	 * the ordinary site where the guard must stay silent.
-	 *
 	 * @param string[]             $stored_rows            The postmeta rows this site holds, each `"$post_id:$name"`.
 	 * @param bool                 $with_metadata_function Whether metadata_exists() exists in this process.
 	 * @param array<string, string> $rows_created_by_key   The postmeta NAME a write to each field KEY creates a row under.
+	 * @param array<string, string> $rows_removed_by_key   The postmeta NAME a write to each field KEY deletes the row of.
 	 */
 	private function installAcf(
 		mixed $groups,
@@ -209,7 +217,8 @@ trait AcfWordPressStubs {
 		bool $with_delete_function = true,
 		array $stored_rows = [],
 		bool $with_metadata_function = true,
-		array $rows_created_by_key = []
+		array $rows_created_by_key = [],
+		array $rows_removed_by_key = []
 	): void {
 		// THE TWO MUTABLE SETS BOTH CLOSURES SHARE. They are locals captured by
 		// reference rather than test properties so that a suite installing this
@@ -284,19 +293,26 @@ trait AcfWordPressStubs {
 		// site that wrote a field its stored value already matched.
 		if ( $with_update_function ) {
 			Functions\when( 'update_field' )->alias(
-				function ( mixed $selector = null, mixed $value = null, mixed $post_id = false ) use ( &$values, &$rows, $rows_created_by_key ): bool {
+				function ( mixed $selector = null, mixed $value = null, mixed $post_id = false ) use ( &$values, &$rows, $rows_created_by_key, $rows_removed_by_key ): bool {
 					$this->acfCalls[] = [ 'update', [ $selector, $value, $post_id ] ];
 
-					$key = is_scalar( $selector ) ? (string) $selector : '';
+					$key    = is_scalar( $selector ) ? (string) $selector : '';
+					$prefix = is_scalar( $post_id ) ? $post_id : '';
 
 					$values[ $key ] = $value;
 
 					if ( isset( $rows_created_by_key[ $key ] ) ) {
-						$row = sprintf( '%s:%s', is_scalar( $post_id ) ? $post_id : '', $rows_created_by_key[ $key ] );
+						$row = sprintf( '%s:%s', $prefix, $rows_created_by_key[ $key ] );
 
 						if ( ! in_array( $row, $rows, true ) ) {
 							$rows[] = $row;
 						}
+					}
+
+					if ( isset( $rows_removed_by_key[ $key ] ) ) {
+						$row = sprintf( '%s:%s', $prefix, $rows_removed_by_key[ $key ] );
+
+						$rows = array_values( array_filter( $rows, static fn ( string $held ): bool => $held !== $row ) );
 					}
 
 					return false;

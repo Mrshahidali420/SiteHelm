@@ -106,14 +106,17 @@ trait AcfWriteFixtures {
 	 *
 	 * ONLY EVER FROM A TEST RUNNING IN ITS OWN PROCESS: it defines ACF_VERSION.
 	 *
-	 * `$rows_created_by_key` IS THE WHOLE POINT OF THE PARAMETER. Left empty, every
+	 * THE TWO ROW MAPS ARE THE WHOLE POINT OF THE PARAMETERS. Both left empty, every
 	 * write on this site stores nothing — the no-op site the dropped-write guard is
-	 * proven against. Naming a key gives the ordinary site where a write really does
-	 * create the postmeta row, and the guard must then stay silent.
+	 * proven against. Naming a key in the first gives the ordinary site where a write
+	 * really does create the postmeta row. Naming a key in the second gives the site
+	 * where a write DELETES a row the field already had, which is the only site on
+	 * which the guard's "had no row before" condition decides anything at all.
 	 *
 	 * @param array<string, string> $rows_created_by_key The postmeta NAME a write to each field KEY creates.
+	 * @param array<string, string> $rows_removed_by_key The postmeta NAME a write to each field KEY deletes.
 	 */
-	private function installFixtureSite( array $rows_created_by_key = [] ): void {
+	private function installFixtureSite( array $rows_created_by_key = [], array $rows_removed_by_key = [] ): void {
 		$this->installAcf(
 			[ self::detailsGroup(), self::extraGroup() ],
 			[
@@ -128,7 +131,8 @@ trait AcfWriteFixtures {
 			true,
 			self::storedRows(),
 			true,
-			$rows_created_by_key
+			$rows_created_by_key,
+			$rows_removed_by_key
 		);
 	}
 

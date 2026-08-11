@@ -220,7 +220,12 @@ final class AcfFieldUpdate implements WriteOperation {
 	 * The digit test is what keeps this from answering 0 for a malformed key, and
 	 * 0 names no post: `get_field( $key, 0 )` reads against whatever `$post` the
 	 * request happens to have made global, which is one post's values reported as
-	 * another's.
+	 * another's — and `update_field( $key, $value, 0 )` WRITES there.
+	 *
+	 * `acf-post:0` IS REFUSED TOO, and the digit test alone would not refuse it: the
+	 * string is well-formed and parses to exactly the 0 the paragraph above is about.
+	 * A key that names no post and a key that names post 0 have the same one honest
+	 * answer, so both give null and every caller has a single case to handle.
 	 *
 	 * @param string $target_key The target key.
 	 *
@@ -233,7 +238,13 @@ final class AcfFieldUpdate implements WriteOperation {
 
 		$digits = substr( $target_key, strlen( self::TARGET_PREFIX ) );
 
-		return '' !== $digits && ctype_digit( $digits ) ? (int) $digits : null;
+		if ( '' === $digits || ! ctype_digit( $digits ) ) {
+			return null;
+		}
+
+		$post_id = (int) $digits;
+
+		return $post_id > 0 ? $post_id : null;
 	}
 
 	/**
@@ -284,6 +295,7 @@ final class AcfFieldUpdate implements WriteOperation {
 	}
 
 	// phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase -- TargetState::$targetKey is a contract property this module does not name.
+	// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The message is a literal written for end users and quotes no stored content.
 	/**
 	 * Builds the change this write promises, deterministically.
 	 *
@@ -312,8 +324,29 @@ final class AcfFieldUpdate implements WriteOperation {
 	 * @param OperationContext     $context The request context.
 	 *
 	 * @return PlannedChange The normalized payload and promised after-state.
+	 *
+	 * @throws OperationException With ErrorCode::TargetNotFound when the resolved
+	 *                            state names no post.
 	 */
 	public function planChange( TargetState $current, array $input, OperationContext $context ): PlannedChange {
+		$post = self::postIdFromKey( $current->targetKey );
+
+		// REFUSED, NEVER SUBSTITUTED, which is the answer the five shipped Elementor
+		// writes give to this same question. postIdFromKey() answers null, and a null
+		// carried into the payload casts to 0 the moment applyChange() reads it —
+		// `update_field( $key, $value, 0 )` writes against whatever post the request
+		// made global, so the substitution is not a degraded write but a write to
+		// another post entirely. That the engine builds this key itself from a post it
+		// just resolved, and so cannot currently hand over one that names no post, is
+		// a property of the engine rather than of this method.
+		if ( null === $post ) {
+			throw new OperationException(
+				ErrorCode::TargetNotFound,
+				'The resolved target does not name a post to write these fields to, so no change was planned.',
+				'Preview the change again with acf-field-update, naming the post by id.'
+			);
+		}
+
 		$fields = [];
 		$after  = [];
 
@@ -331,7 +364,7 @@ final class AcfFieldUpdate implements WriteOperation {
 
 		return new PlannedChange(
 			[
-				'post'   => self::postIdFromKey( $current->targetKey ),
+				'post'   => $post,
 				'fields' => $fields,
 			],
 			$after,
@@ -339,6 +372,7 @@ final class AcfFieldUpdate implements WriteOperation {
 			$this->notices
 		);
 	}
+	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 
 	// phpcs:disable Squiz.Commenting.FunctionComment.InvalidNoReturn -- The declared return type is the interface's; this body throws instead of reaching it, which is the point until Task 6.
@@ -395,15 +429,33 @@ final class AcfFieldUpdate implements WriteOperation {
 	 *
 	 * @return string The concrete target key that was written.
 	 *
-	 * @throws OperationException With ErrorCode::ExecutionFailed when a write was
-	 *                            dropped.
+	 * @throws OperationException With ErrorCode::ExecutionFailed when the plan names
+	 *                            no post, or when a write was dropped.
 	 */
 	public function applyChange( TargetState $current, PlannedChange $planned, OperationContext $context ): string {
-		$post      = (int) $planned->payload['post'];
+		$post   = $planned->payload['post'] ?? null;
+		$writes = $planned->payload['fields'] ?? null;
+
+		// REFUSED, NEVER SUBSTITUTED, and this is the one place where substituting
+		// costs the most. `(int) null` is 0 and `update_field( $key, $value, 0 )`
+		// stores against whatever post the request made global: not a write that
+		// fails, a write that lands on the wrong post and reports success. The plan
+		// is re-planned in this process before it is applied, so this reads the
+		// member planChange() just refused to leave null rather than trusting it. The
+		// field list is checked in the same breath and for the same reason: a payload
+		// missing it is a payload this operation cannot execute.
+		if ( ! is_int( $post ) || $post < 1 || ! is_array( $writes ) ) {
+			throw new OperationException(
+				ErrorCode::ExecutionFailed,
+				'The approved plan does not name a post to write these fields to, so nothing was written.',
+				'Preview the change again and apply the plan token that preview returned.'
+			);
+		}
+
 		$completed = [ 'plan approved', 'snapshot captured' ];
 		$written   = [];
 
-		foreach ( $planned->payload['fields'] as $write ) {
+		foreach ( $writes as $write ) {
 			// The NAME, because a stored row is postmeta and postmeta is keyed by
 			// the field's name. Asked before the write so the guard below has a
 			// before-state that the write itself cannot have moved.
