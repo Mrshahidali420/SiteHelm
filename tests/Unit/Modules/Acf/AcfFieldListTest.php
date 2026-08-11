@@ -331,6 +331,37 @@ final class AcfFieldListTest extends TestCase {
 		}
 	}
 
+	/**
+	 * THE ONLY TEST THAT PROVES PRESENCE RUNS BEFORE THE TARGET LOOKUP.
+	 *
+	 * Every other guard test satisfies exactly one guard, so none of them can see
+	 * the order of two: the ACF-absent case names a post that EXISTS, and the
+	 * missing-post case runs on a site where ACF IS installed. Swap the two blocks
+	 * in handle() and both still pass, which makes the documented ordering a claim
+	 * with nothing behind it.
+	 *
+	 * This crosses them — no ACF AND no such post — so exactly one error code is
+	 * possible per ordering, and the assertion picks the right one. Presence must
+	 * win: "this site does not run ACF" is the fact that makes the whole call
+	 * meaningless, and answering TargetNotFound first would send an operator
+	 * hunting for a post identifier when no ordering of correct identifiers could
+	 * have worked.
+	 */
+	public function test_a_site_without_acf_refuses_for_the_plugin_before_it_refuses_for_the_target(): void {
+		try {
+			$this->handle( [ 'post' => 999 ] );
+			$this->fail( 'A site without ACF must refuse.' );
+		} catch ( OperationException $e ) {
+			$this->assertSame(
+				ErrorCode::IntegrationUnavailable,
+				$e->errorCode,
+				'Presence is asked before the target is looked up, so an absent plugin outranks a missing post.'
+			);
+		}
+
+		$this->assertSame( [], $this->postCalls, 'No post is looked up on a site that cannot answer the question at all.' );
+	}
+
 	// -------------------------------------------------------------- the target
 
 	public function test_a_post_that_does_not_exist_refuses_as_a_missing_target(): void {
