@@ -179,12 +179,16 @@ final class AcfGroupList {
 final class AcfFieldIndex {
     public function __construct( private readonly AcfApi $api ) {}
     /**
-     * @return array[]|null One entry per applicable top-level field, or null when ACF is unreachable.
-     *                      Entry: { key, name, label, type, required, groupKey, groupTitle, definition }
+     * @return array<string, mixed>|null Null when ACF is unreachable. Otherwise two channels:
+     *                      'fields'        => array[], one entry per applicable top-level field,
+     *                                         { key, name, label, type, required, groupKey, groupTitle, definition }
+     *                      'skippedGroups' => string[], group keys whose fields could not be read.
+     *                                         An unnameable group is recorded as
+     *                                         AcfFieldIndex::UNNAMEABLE_GROUP ('') and counted, not named.
      */
     public function forPost( int $post_id ): ?array;
-    /** @param array[] $index @return array<string, mixed>|null */
-    public function find( array $index, string $name_or_key ): ?array;
+    /** @param array[] $fields The 'fields' channel, NOT the whole index. @return array<string, mixed>|null */
+    public function find( array $fields, string $name_or_key ): ?array;
 }
 ```
 
