@@ -292,12 +292,19 @@ final class AcfValueCanonical {
 
 final class AcfWriteTarget {
     public function __construct( AcfPresence $presence, AcfApi $api, AcfFieldIndex $index ) {}
-    /** @return array{post:int, index:array[], resolved:array[]} */
+    /**
+     * `index` is AcfFieldIndex::forPost()'s whole two-key answer — { fields, skippedGroups } —
+     * because the operation's warnings need skippedGroups. `resolved` is the already-unwrapped
+     * `fields` list, so a caller never has to remember which key `find()` expects.
+     *
+     * @return array{post:int, index:array{fields:array[], skippedGroups:string[]}, resolved:array[]}
+     */
     public function resolve( array $input, OperationContext $context ): array;
 }
 
 final class AcfFieldUpdateInput {
     public const MAX_FIELDS = 50;
+    public function __construct( AcfFieldIndex $index ) {}
     /** @param array[] $index @return array[] One entry per request: { key, name, type, value, definition } */
     public function validate( array $input, array $index ): array;
 }
@@ -310,6 +317,8 @@ final class AcfFieldUpdateInput {
 - `hasStoredRow( string $name, int $post_id )` asks `metadata_exists( 'post', $post_id, $name )`. It takes the field **name**, because that is the postmeta key ACF stores under, while writes take the key. Both spellings appear in `AcfApi` and nowhere else. Document the asymmetry in the method docblock — it is the single most confusable thing in the module.
 - `AcfValueCanonical::project()` (spec Decision 8b): `true`→`1`, `false`→`0`, arrays canonicalized member-wise with list arrays re-indexed and associative arrays key-sorted, scalars unchanged, objects → `get_object_vars()` then the array rule, depth-capped at `AcfFields::MAX_DEPTH`. It must be **deterministic and pure** — same input, same output, no clock, no globals, no ACF call. `planChange()` depends on this: `PlanAdmission::assertPayloadMatches()` digests it at preview and compares at apply.
 - `AcfWriteTarget::resolve()` runs the guards in order: `user_can( $context->userId, 'edit_post', $post_id )` → `Forbidden`; `$presence->isLoaded()` → `IntegrationUnavailable`; `get_post( $post_id )` → `TargetNotFound`; then builds the index (`null` → `ExecutionFailed`).
+- **`AcfFieldUpdateInput` takes `AcfFieldIndex` in its constructor** and resolves every requested string through `AcfFieldIndex::find()`. Do not respell the lookup: the key-before-name rule already lives in `find()`, and a second spelling of it is how a request for one field writes another.
+- **Pass `resolve()`'s `resolved` list to `validate()`, never its `index`.** `resolved` is the unwrapped `fields` list `find()` expects; handing it the two-key `index` is the one trap this shape exists to remove.
 - `AcfFieldUpdateInput::validate()`: `fields` non-empty, at most `MAX_FIELDS`; every member an object with exactly `field` (non-empty string) and `value`; every `field` resolvable through the index or **`InvalidInput` naming it**; no duplicate resolved key across members (two writes to one field in one request is ambiguous — refuse); flexible-content rows validated (every row an array carrying a non-empty `acf_fc_layout` naming one of the field's declared layouts, else `InvalidInput`). **Nothing is skipped — the whole request refuses** (spec Decision 7).
 - Repeater and relationship arrays get **no** pre-write validation. ACF owns their shape.
 - **Do not write a Pro gate** on `repeater`/`flexible_content`/`gallery`/`clone`. A field only reaches here by being in the index, and it is only in the index because ACF registered it — the guard's own operand makes its case unreachable, which is the defect class this branch has paid for three times. If a reviewer asks for it, point at spec §2.
@@ -333,6 +342,7 @@ final class AcfFieldUpdateInput {
 - Create: `src/Modules/Acf/AcfFieldUpdate.php` — `definition()`, `resolveTarget()`, `planChange()`, `applyChange()`, `readBack()`. `captureSnapshot()` and `restore()` are stubbed in Task 5 only far enough to satisfy the interface and are completed in Task 6; the stub **throws** rather than returning `null`, so no test can pass against an unimplemented restore.
 - Create: `tests/Doubles/AcfWriteFixtures.php` — the shared subject wiring and fixture post for the write tests. **Not a trait constant anywhere** (PHP 8.1); use private static methods for shared identifiers.
 - Create: `tests/Unit/Modules/Acf/AcfFieldUpdateTest.php`
+- Modify: `tests/Unit/Modules/Acf/AcfFieldUpdateInputTest.php` — **split before adding anything.** Task 4 left it at 784 of the 800-line ceiling, so an append breaks the limit. Move the flexible-content cases out to `tests/Unit/Modules/Acf/AcfFieldUpdateInputFlexibleTest.php` — that is the natural seam, and it is the group Task 5's schema wording touches.
 - Modify: `src/Modules/Acf/AcfModule.php` — build the shared collaborators once in `register()` and register the write with `$registry->registerWrite( AcfFieldUpdate::definition(), $instance )`.
 - Create: `tests/Fixtures/acf-operation-definitions/acf-field-update.json`
 - Modify: `tests/Fixtures/acf-operation-definitions/index.json`
@@ -343,6 +353,7 @@ final class AcfFieldUpdateInput {
 
 - `Mode::Write`, `isReadOnly: false`, **`isDestructive: false`** (this replaces values, it does not remove content), `PreviewPolicy::Required`, `SnapshotPolicy::Required`, `RollbackPolicy::Required` — all three stated by REQ-0047, and `RollbackPolicy::Required` would force the snapshot policy anyway.
 - `requiredCapabilities: [ 'edit_post' ]`, `supportedVersions: AcfFields::supportedVersions()`, `ModuleId::Acf`, `Domain::Fields`, dispatcher `fields-write`.
+- **The `value` property's schema description must state that `[]` clears a flexible-content field.** Task 4 refuses `null` there (every row must be an array carrying `acf_fc_layout`), so `[]` is the only spelling of "remove every row" — and an operator who cannot find it will try `null` and get an `InvalidInput` that does not tell them what to send instead.
 
 **The six methods:**
 
@@ -389,6 +400,7 @@ final class AcfFieldUpdateInput {
   - `present === false` → `deleteValue( $key, $post )`
 - Every entry is gated on `array_key_exists( 'present', $entry )`. An entry without it is a corrupt snapshot → `ExecutionFailed`. Do not guess.
 - **Three write paths on this branch have shipped the `??` version of this bug.** Gate every restore field on `array_key_exists`: a recorded `''`/`0`/`null` means "set it back", an ABSENT key means "do not touch".
+- **Never take the snapshot before `AcfWriteTarget::resolve()` has run.** `AcfApi::hasStoredRow()` answers `false` for both "there is no row" and "I could not tell" — it cannot distinguish them, and it is not supposed to. What keeps those two apart is the `IntegrationUnavailable` refusal at `AcfWriteTarget.php:131`, which means "could not tell" never reaches the snapshot. Capture ahead of that refusal and every unreadable field records `present: false`, so `restore()` deletes rows the operator still had. The ordering is the guarantee; do not reorder it for convenience.
 - `captureSnapshot()` must be side-effect-free and safe to call twice — `SnapshotLifecycle::eligibility()` probes it at preview and `SnapshotLifecycle::capture()` calls it again at apply.
 - Over `AcfFields::MAX_SNAPSHOT_BYTES` (measure the canonical JSON encoding of the snapshot), raise `RollbackUnavailable` — the same code and the same moment Elementor's writes use for an oversized document.
 
