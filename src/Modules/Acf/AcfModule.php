@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace SiteHelm\Modules\Acf;
 
+use SiteHelm\Change\PayloadNormalizer;
 use SiteHelm\Contracts\IntegrationModule;
 use SiteHelm\Contracts\ModuleHealth;
 use SiteHelm\Contracts\ModuleId;
@@ -194,7 +195,8 @@ final class AcfModule implements IntegrationModule {
 				new AcfWriteTarget( $this->presence, $api, $index ),
 				new AcfFieldUpdateInput( $index ),
 				$api,
-				new AcfValueCanonical()
+				new AcfValueCanonical(),
+				new PayloadNormalizer()
 			)
 		);
 	}

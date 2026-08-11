@@ -63,6 +63,34 @@ final class AcfFields {
 	public const MAX_GROUPS = 200;
 
 	/**
+	 * The greatest number of bytes of canonical JSON one rollback snapshot may hold.
+	 *
+	 * 4 MiB, the same bound and the same reasoning as
+	 * ElementorWriteTarget::MAX_SNAPSHOT_BYTES. A rollback snapshot is stored as
+	 * one row of canonical JSON, and a snapshot past this bound is one the engine
+	 * could not store intact — recording a truncated one would produce a rollback
+	 * that puts a fragment of the old values back while reporting success.
+	 *
+	 * IT BOUNDS THE SNAPSHOT AND NOT ANY ONE FIELD. A request may name up to
+	 * AcfFieldUpdateInput::MAX_FIELDS fields, and a repeater holding a few hundred
+	 * rows of textarea content is a real field on a real site; what the store has to
+	 * hold is their sum, so their sum is what is measured. Refusing is the honest
+	 * answer, and because captureSnapshot() is probed at preview the refusal arrives
+	 * before anything has been written.
+	 */
+	public const MAX_SNAPSHOT_BYTES = self::MAX_SNAPSHOT_MEGABYTES * 1048576;
+
+	/**
+	 * The same bound in the unit the oversize refusal names.
+	 *
+	 * The refusal is read by an operator rather than by a machine, and "4 MB" is the
+	 * sentence they can act on where 4194304 is not. It is the SOURCE of the byte
+	 * bound above rather than a second spelling of it, so the number the operator is
+	 * told and the number they are measured against cannot drift apart.
+	 */
+	public const MAX_SNAPSHOT_MEGABYTES = 4;
+
+	/**
 	 * The `$defs` name the recursive field-definition schema is published under.
 	 *
 	 * A recursive schema has to name itself to point at itself, and the name has
