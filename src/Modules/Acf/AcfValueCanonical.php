@@ -122,6 +122,9 @@ final class AcfValueCanonical {
 	 * by key and leave the gap in place, and the two spellings of those two rows
 	 * would still digest apart.
 	 *
+	 * THE LIST SORT IS SORT_NUMERIC because a positional array's keys are all
+	 * integers by construction, and sorting them as strings would order 10 before 2.
+	 *
 	 * THE MAP SORT IS SORT_STRING because a map's keys can be integers and strings
 	 * at once. PHP's default comparison for a mixed set is not a total order a
 	 * later PHP version is obliged to keep, and a sort whose result could change
@@ -143,6 +146,14 @@ final class AcfValueCanonical {
 		}
 
 		if ( $this->is_positional( $value ) ) {
+			// SORTED BEFORE IT IS RE-INDEXED, not merely re-indexed. Insertion order
+			// and key order are not the same thing: `{"2":"a","0":"b"}` decodes to
+			// `[ 2 => 'a', 0 => 'b' ]` and `{"0":"b","2":"a"}` to `[ 0 => 'b', 2 => 'a' ]`,
+			// so array_values() alone answers ['a','b'] for one and ['b','a'] for the
+			// other — two JSON spellings of one value digesting apart, which surfaces
+			// as a stale_plan no operator can diagnose.
+			ksort( $projected, SORT_NUMERIC );
+
 			return array_values( $projected );
 		}
 
