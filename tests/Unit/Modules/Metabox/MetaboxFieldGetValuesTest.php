@@ -295,6 +295,75 @@ final class MetaboxFieldGetValuesTest extends TestCase {
 		$this->assertStringNotContainsString( 'leaf', $payload['fieldReadNotices'][0] );
 	}
 
+	// ------------------------------------------------------- the path redaction
+
+	/**
+	 * NO ENVELOPE THIS PLUGIN EMITS CARRIES A FILESYSTEM PATH, AND THAT IS
+	 * UNCONDITIONAL (spec §8). The value here carries a `path` and no `ID`, so no
+	 * attachment detection rule recognises it and it reaches the generic array rule —
+	 * which is exactly the shape a custom `save_field` filter produces on a real site,
+	 * and exactly the shape whose server path used to ride out intact.
+	 *
+	 * The assertion is made against the whole encoded payload rather than against one
+	 * member, because the leak is about where the string ends up and not about which key
+	 * it sat under.
+	 */
+	public function test_a_server_path_never_reaches_the_payload_from_any_shape(): void {
+		$this->givenTwoFields(
+			[
+				'subtitle' => [
+					'path'  => '/srv/www/example.com/wp-content/uploads/2026/08/contract.pdf',
+					'url'   => 'https://example.com/wp-content/uploads/2026/08/contract.pdf',
+					'title' => 'The signed contract',
+				],
+			],
+			[ '42:subtitle' ]
+		);
+
+		$payload = $this->handle(
+			[
+				'post'   => 42,
+				'fields' => [ 'subtitle' ],
+			]
+		);
+
+		$this->assertStringNotContainsString( '/srv/www', (string) json_encode( $payload ) );
+		$this->assertArrayNotHasKey( 'path', $payload['fields'][0]['value'] );
+		$this->assertSame(
+			'https://example.com/wp-content/uploads/2026/08/contract.pdf',
+			$payload['fields'][0]['value']['url']
+		);
+	}
+
+	/**
+	 * THE REDACTION IS ANNOUNCED, NOT SILENT, for the reason the truncation is: a member
+	 * that vanished without a word reads as a member the site never stored, and the next
+	 * write would be planned from that reading. The notice names the field id and
+	 * carries no part of the value — least of all the path it was removing.
+	 */
+	public function test_a_redacted_value_is_announced_by_field_id_and_not_by_path(): void {
+		$this->givenTwoFields(
+			[
+				'subtitle' => [
+					'path' => '/srv/www/example.com/wp-content/uploads/2026/08/contract.pdf',
+					'url'  => 'https://example.com/wp-content/uploads/2026/08/contract.pdf',
+				],
+			],
+			[ '42:subtitle' ]
+		);
+
+		$notices = $this->handle(
+			[
+				'post'   => 42,
+				'fields' => [ 'subtitle' ],
+			]
+		)['fieldReadNotices'];
+
+		$this->assertCount( 1, $notices );
+		$this->assertStringContainsString( 'subtitle', $notices[0] );
+		$this->assertStringNotContainsString( '/srv/www', $notices[0] );
+	}
+
 	// -------------------------------------------------------- the degraded read
 
 	/**

@@ -153,6 +153,39 @@ final class MetaboxValueNormalizer {
 	 */
 	private const ATTACHMENT_CORROBORATORS = [ 'full_url', 'path', 'mime_type' ];
 
+	/**
+	 * The members that carry a position on the server's disk, stripped wherever they
+	 * appear, in lower case.
+	 *
+	 * THE STRIP IS UNCONDITIONAL AND DOES NOT DEPEND ON THE ATTACHMENT PROJECTION. Spec
+	 * §8 forbids a filesystem path in any envelope this plugin emits and forbids it
+	 * without qualification, so tying the guard to a detection rule leaves the leak open
+	 * for every shape the rule does not recognise — an array carrying a `path` and no
+	 * `ID`, which is what a `save_field` filter or a custom field class assembles, is
+	 * not an attachment by any rule here and reached the generic array rule intact.
+	 *
+	 * IT IS A LIST OF MEMBER NAMES AND NOT A TEST OF THE VALUE. A string that looks like
+	 * a path is data an operator may have stored on purpose; the member name is what
+	 * says the site put a server location there. `url` and `full_url` are deliberately
+	 * absent: a URL is the addressable half of an attachment and is what the caller came
+	 * for.
+	 *
+	 * `path` is what Meta Box's own file and image info arrays publish. `full_path` and
+	 * `file_path` are the spellings that travel beside `full_url` in the values custom
+	 * field classes and `rwmb_*_value` filters assemble, and `dir`, `basedir` and
+	 * `basepath` are the upload-directory members such a value is built from.
+	 *
+	 * @var string[]
+	 */
+	private const SERVER_PATH_MEMBERS = [
+		'path',
+		'full_path',
+		'file_path',
+		'dir',
+		'basedir',
+		'basepath',
+	];
+
 	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- The module vocabulary is camelCase across every class.
 	/**
 	 * The reportable form of one Meta Box value.
@@ -166,8 +199,10 @@ final class MetaboxValueNormalizer {
 	 * @param mixed $value The value Meta Box answered with, of any shape.
 	 * @param int   $depth How deep this value sits; 0 for the field's own value.
 	 *
-	 * @return array{value: mixed, truncated: bool} The value, and whether anything
-	 *                                              below it was dropped at the cap.
+	 * @return array{value: mixed, truncated: bool, redacted: bool} The value, whether
+	 *                                              anything below it was dropped at the
+	 *                                              cap, and whether a server path was
+	 *                                              stripped out of it.
 	 */
 	public function normalize( mixed $value, int $depth = 0 ): array {
 		// A scalar and null are already reportable AT ANY DEPTH, which is why this runs
@@ -182,6 +217,7 @@ final class MetaboxValueNormalizer {
 			return [
 				'value'     => null,
 				'truncated' => true,
+				'redacted'  => false,
 			];
 		}
 
@@ -216,7 +252,7 @@ final class MetaboxValueNormalizer {
 	 * @param object $value The value Meta Box answered with.
 	 * @param int    $depth How deep it sits.
 	 *
-	 * @return array{value: mixed, truncated: bool} The value and the truncation flag.
+	 * @return array{value: mixed, truncated: bool, redacted: bool} The value and the two flags.
 	 */
 	private function instance( object $value, int $depth ): array {
 		if ( class_exists( 'WP_Post' ) && $value instanceof WP_Post ) {
@@ -247,15 +283,20 @@ final class MetaboxValueNormalizer {
 	 * publishes Meta Box's whole file row, including the `path` member holding the
 	 * file's absolute position on the server's disk.
 	 *
-	 * KEYS ARE PRESERVED, INCLUDING THE NUMERIC ONES. A clonable field stores a list
-	 * of rows and a group field stores a map of sub-values; re-indexing or dropping
-	 * keys here would make a clone indistinguishable from a group and lose the
-	 * sub-field ids a write is addressed by.
+	 * KEYS ARE PRESERVED, INCLUDING THE NUMERIC ONES, EXCEPT THE ONES THAT NAME A PLACE
+	 * ON THE SERVER'S DISK. A clonable field stores a list of rows and a group field
+	 * stores a map of sub-values; re-indexing or dropping keys here would make a clone
+	 * indistinguishable from a group and lose the sub-field ids a write is addressed by.
+	 * The server-path members are the single exception, and they are dropped HERE — in
+	 * the generic rule every unrecognised shape passes through — rather than in the
+	 * attachment projection, so that the guard does not depend on a shape being
+	 * recognised. Because this rule recurses, the strip reaches every level: a path
+	 * three levels inside a group is the same leak as one at the top.
 	 *
 	 * @param array<array-key, mixed> $value The value Meta Box answered with.
 	 * @param int                     $depth How deep it sits.
 	 *
-	 * @return array{value: mixed, truncated: bool} The value and the truncation flag.
+	 * @return array{value: mixed, truncated: bool, redacted: bool} The value and the two flags.
 	 */
 	private function entries( array $value, int $depth ): array {
 		$attachment = $this->attachment( $value );
@@ -266,21 +307,46 @@ final class MetaboxValueNormalizer {
 
 		$normalized = [];
 		$truncated  = false;
+		$redacted   = false;
 
 		foreach ( $value as $key => $member ) {
+			if ( $this->stripped( $key ) ) {
+				$redacted = true;
+
+				continue;
+			}
+
 			$result = $this->normalize( $member, $depth + 1 );
 
 			$normalized[ $key ] = $result['value'];
 
 			// OR, not assignment. One truncated member out of twenty has to survive the
-			// nineteen that were not, or the operation above warns about nothing.
+			// nineteen that were not, or the operation above warns about nothing. The
+			// redaction flag is OR-ed for the same reason and across the same level.
 			$truncated = $truncated || $result['truncated'];
+			$redacted  = $redacted || $result['redacted'];
 		}
 
 		return [
 			'value'     => $normalized,
 			'truncated' => $truncated,
+			'redacted'  => $redacted,
 		];
+	}
+
+	/**
+	 * Whether a member name is one this class refuses to publish.
+	 *
+	 * COMPARED IN LOWER CASE AND ONLY FOR STRING KEYS. A numeric key is a clone row's
+	 * index and can never be one of these names; a `Path` written by a filter that
+	 * capitalises its members is the same disclosure as a `path`.
+	 *
+	 * @param int|string $key The member name.
+	 *
+	 * @return bool True when the member must be stripped.
+	 */
+	private function stripped( int|string $key ): bool {
+		return is_string( $key ) && in_array( strtolower( $key ), self::SERVER_PATH_MEMBERS, true );
 	}
 
 	/**
@@ -404,14 +470,22 @@ final class MetaboxValueNormalizer {
 	/**
 	 * A value that is reported exactly as it stands, with nothing dropped.
 	 *
+	 * THE ATTACHMENT PROJECTION COMES THROUGH HERE AND CLAIMS NO REDACTION, which is
+	 * deliberate. It drops `path` as part of a fixed five-member shape a client reads
+	 * positionally, so nothing disappeared that the shape ever promised. The redaction
+	 * flag exists for the other case — a member the site really published vanishing from
+	 * an otherwise verbatim map — and a notice raised on every image field on a site
+	 * would bury the one occurrence that means something.
+	 *
 	 * @param mixed $value The value.
 	 *
-	 * @return array{value: mixed, truncated: bool} The result.
+	 * @return array{value: mixed, truncated: bool, redacted: bool} The result.
 	 */
 	private function plain( mixed $value ): array {
 		return [
 			'value'     => $value,
 			'truncated' => false,
+			'redacted'  => false,
 		];
 	}
 }

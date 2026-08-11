@@ -519,4 +519,152 @@ final class MetaboxValueNormalizerTest extends TestCase {
 		$this->assertSame( 'here', $result['value']['shallow'] );
 		$this->assertNull( $result['value']['deep'] );
 	}
+
+	// ------------------------------------------------------- the path redaction
+
+	/**
+	 * THE STRIP DOES NOT DEPEND ON THE ATTACHMENT SHAPE BEING RECOGNISED. An array
+	 * carrying a `path` and no `ID` is not an attachment by any detection rule — a
+	 * `save_field` filter or a custom field class can assemble one — so it reaches the
+	 * generic array rule, and before this guard the server path rode out with it.
+	 *
+	 * Spec §8 forbids a filesystem path in any envelope this plugin emits, and it
+	 * forbids it unconditionally. An operator handed a server path has no way to know a
+	 * filter put it there.
+	 */
+	public function test_a_path_member_is_removed_even_when_the_array_is_not_an_attachment(): void {
+		$result = $this->normalizer()->normalize(
+			[
+				'path'  => '/srv/www/example.com/wp-content/uploads/2026/08/contract.pdf',
+				'url'   => 'https://example.com/wp-content/uploads/2026/08/contract.pdf',
+				'label' => 'The signed contract',
+			]
+		);
+
+		$this->assertArrayNotHasKey( 'path', $result['value'] );
+		$this->assertStringNotContainsString( '/srv/www', (string) json_encode( $result['value'] ) );
+		$this->assertTrue( $result['redacted'] );
+	}
+
+	/**
+	 * A LEGITIMATE URL IS WHAT THE OPERATOR CAME FOR AND IT STAYS. The redaction is
+	 * keyed on the members that carry a server path and on nothing else; widening it to
+	 * anything that looks like a location would take the addressable half of an
+	 * attachment with it.
+	 */
+	public function test_the_url_members_survive_the_redaction_untouched(): void {
+		$value = $this->normalizer()->normalize(
+			[
+				'path'     => '/srv/www/example.com/wp-content/uploads/2026/08/photo.jpg',
+				'url'      => 'https://example.com/photo-300x200.jpg',
+				'full_url' => 'https://example.com/photo.jpg',
+			]
+		)['value'];
+
+		$this->assertSame(
+			[
+				'url'      => 'https://example.com/photo-300x200.jpg',
+				'full_url' => 'https://example.com/photo.jpg',
+			],
+			$value
+		);
+	}
+
+	/**
+	 * EVERY MEMBER META BOX AND ITS FILTERS USE FOR THE SERVER POSITION, not `path`
+	 * alone. Meta Box's file and image info arrays publish `path`; the upload-directory
+	 * members a custom filter assembles a value from are named `dir`, `basedir` and
+	 * `basepath`, and `full_path` and `file_path` are the spellings that travel beside
+	 * `full_url`. One of them left unlisted is the whole guard defeated for the shape
+	 * that uses it.
+	 *
+	 * @return array<string, array{string}> One member name per case.
+	 */
+	public function serverPathMembers(): array {
+		return [
+			'path'      => [ 'path' ],
+			'full_path' => [ 'full_path' ],
+			'file_path' => [ 'file_path' ],
+			'dir'       => [ 'dir' ],
+			'basedir'   => [ 'basedir' ],
+			'basepath'  => [ 'basepath' ],
+		];
+	}
+
+	/**
+	 * @dataProvider serverPathMembers
+	 *
+	 * @param string $member The member that carries a server path.
+	 */
+	public function test_every_server_path_member_is_removed_wherever_it_appears( string $member ): void {
+		$result = $this->normalizer()->normalize( [ $member => '/srv/www/example.com/uploads/file.pdf' ] );
+
+		$this->assertSame( [], $result['value'] );
+		$this->assertTrue( $result['redacted'] );
+	}
+
+	/**
+	 * THE STRIP IS DEPTH-RECURSIVE. A path nested three levels inside a group field is
+	 * the same leak as one at the top, and a guard applied only to the field's own value
+	 * would miss every clonable row and every sub-group — which is where Meta Box puts
+	 * file values in practice.
+	 */
+	public function test_a_path_nested_inside_a_group_is_removed_at_its_own_level(): void {
+		$result = $this->normalizer()->normalize(
+			[
+				'rows' => [
+					[
+						'attachment' => [
+							'path'  => '/srv/www/example.com/uploads/deep.pdf',
+							'title' => 'Deep',
+						],
+					],
+				],
+			]
+		);
+
+		$this->assertSame(
+			[ 'rows' => [ [ 'attachment' => [ 'title' => 'Deep' ] ] ] ],
+			$result['value']
+		);
+		$this->assertTrue( $result['redacted'], 'A redaction below the top level may not be reported as no redaction.' );
+	}
+
+	/**
+	 * AN ORDINARY VALUE CLAIMS NO REDACTION, which is the half that stops the flag from
+	 * being decoration: reported unconditionally it would put a notice on every field
+	 * this site holds and the operator would learn to ignore it.
+	 */
+	public function test_a_value_with_no_path_member_is_not_reported_as_redacted(): void {
+		$result = $this->normalizer()->normalize(
+			[
+				'title' => 'A title',
+				'url'   => 'https://example.com/a-page/',
+			]
+		);
+
+		$this->assertFalse( $result['redacted'] );
+	}
+
+	/**
+	 * THE ATTACHMENT PROJECTION STAYS SILENT, and that is a deliberate difference. It
+	 * drops `path` as part of a declared five-member shape a client reads positionally,
+	 * so nothing was lost that the shape ever promised; the notice exists for the case
+	 * where a member the site really published disappears from an otherwise verbatim
+	 * map. A notice on every image field would bury the one that matters.
+	 */
+	public function test_the_attachment_projection_drops_its_path_without_claiming_a_redaction(): void {
+		$result = $this->normalizer()->normalize(
+			[
+				'ID'        => 7,
+				'url'       => 'https://example.com/photo.jpg',
+				'path'      => '/srv/www/example.com/uploads/photo.jpg',
+				'mime_type' => 'image/jpeg',
+			]
+		);
+
+		$this->assertSame( 7, $result['value']['id'] );
+		$this->assertArrayNotHasKey( 'path', $result['value'] );
+		$this->assertFalse( $result['redacted'] );
+	}
 }
