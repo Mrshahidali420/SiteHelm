@@ -298,7 +298,6 @@ final class AcfFieldList {
 	}
 	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 
-	// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The message is a literal written for end users and echoes no caller input.
 	/**
 	 * Projects the index entries down to the members this operation reports.
 	 *
@@ -307,18 +306,14 @@ final class AcfFieldList {
 	 * response unannounced and fail the closed output schema at the boundary rather
 	 * than here.
 	 *
-	 * THE MEMBER IS CHECKED BEFORE IT IS READ. AcfFieldIndex sets all seven on every
-	 * entry it builds, so a missing one means that invariant has broken; reading it
-	 * unguarded would raise a PHP warning, substitute null, and fail at the schema
-	 * boundary with an error naming the response rather than the cause. Refusing here
-	 * puts the failure in this module's own vocabulary at the point it happened.
+	 * THE READ IS UNGUARDED ON AN INVARIANT: AcfFieldIndex::collect() sets all seven
+	 * of these members on every entry it builds, it is the only producer of them, and
+	 * the class is final — so give reported() a second producer and it is this line
+	 * that has to be revisited.
 	 *
 	 * @param array[] $fields The index's entries.
 	 *
 	 * @return array[] The reported entries.
-	 *
-	 * @throws OperationException With ErrorCode::ExecutionFailed when an index entry
-	 *                            is missing a member this operation must report.
 	 */
 	private function reported( array $fields ): array {
 		$reported = [];
@@ -327,14 +322,6 @@ final class AcfFieldList {
 			$row = [];
 
 			foreach ( self::REPORTED_MEMBERS as $member ) {
-				if ( ! array_key_exists( $member, $entry ) ) {
-					throw new OperationException(
-						ErrorCode::ExecutionFailed,
-						'The custom fields that apply to this post could not be described completely.',
-						'Check the site for an error log entry from Advanced Custom Fields, then try again.'
-					);
-				}
-
 				$row[ $member ] = $entry[ $member ];
 			}
 
@@ -343,7 +330,6 @@ final class AcfFieldList {
 
 		return $reported;
 	}
-	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 
 	/**
 	 * What the listing could not report faithfully.
