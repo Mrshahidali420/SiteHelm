@@ -1,0 +1,526 @@
+<?php
+/**
+ * The ACF module's own declarations, and the invariants every ACF operation
+ * definition must satisfy whatever it declares.
+ *
+ * @package SiteHelm
+ */
+
+declare(strict_types=1);
+
+namespace SiteHelm\Tests\Unit\Modules\Acf;
+
+use Brain\Monkey\Functions;
+use SiteHelm\Bootstrap\Plugin;
+use SiteHelm\Contracts\Domain;
+use SiteHelm\Contracts\Mode;
+use SiteHelm\Contracts\ModuleHealth;
+use SiteHelm\Contracts\ModuleId;
+use SiteHelm\Contracts\OperationDefinition;
+use SiteHelm\Contracts\PreviewPolicy;
+use SiteHelm\Contracts\RollbackPolicy;
+use SiteHelm\Contracts\SnapshotPolicy;
+use SiteHelm\Modules\Acf\AcfFields;
+use SiteHelm\Modules\Acf\AcfModule;
+use SiteHelm\Modules\Acf\AcfPresence;
+use SiteHelm\Registry\CapabilityRegistry;
+use SiteHelm\Storage\Installer;
+use SiteHelm\Tests\Doubles\AcfWordPressStubs;
+use SiteHelm\Tests\TestCase;
+
+/**
+ * Two things live here, and they live together on purpose.
+ *
+ * FIRST, the module's own declarations: identity, dependency, cache groups, the
+ * three health states, and its presence in the plugin's module table. A module
+ * that is never constructed registers nothing, so the table entry is as much a
+ * part of "this module exists" as the registration method is.
+ *
+ * SECOND, the rules that hold across every ACF definition regardless of what any
+ * one of them declares. These are deliberately separate from
+ * AcfDefinitionBaselineTest. That test pins the schemas byte-for-byte, but only
+ * against a fixture that Tasks 2 through 4 will regenerate the moment they
+ * register another operation — and a regenerated baseline absorbs whatever else
+ * changed alongside the intended edit, silently taking any invariant with it. An
+ * invariant asserted by name in code survives regeneration because there is no
+ * fixture for it to be written into.
+ *
+ * GROWING THIS FILE: every later task that registers an ACF operation appends its
+ * identifier to OPERATION_IDS and bumps ACF_READ_COUNT or ACF_WRITE_COUNT
+ * according to which it is. Neither is optional — an operation missing from
+ * OPERATION_IDS fails the catalog-order assertion and a count left behind fails
+ * its own — and that is what makes this file a net rather than a snapshot of
+ * whatever happened to be registered.
+ *
+ * THE WRITE BLOCK IS STILL CLOSED. Task 4 opens it with `acf-field-update`. Until
+ * then this file asserts that the module exposes NOTHING on `fields-write`, which
+ * is the assertion that would catch a read accidentally declared destructive or
+ * registered through registerWrite().
+ */
+final class AcfDefinitionInvariantsTest extends TestCase {
+
+	use AcfWordPressStubs;
+
+	/**
+	 * Whether the doubled WordPress user may edit posts.
+	 *
+	 * Required by the shared double's contract. Nothing here calls a capability
+	 * check, but the trait installs one and PHP 8.1 has no trait properties that
+	 * would not collide.
+	 */
+	private bool $mayEdit = true;
+
+	/**
+	 * Every capability question asked, in order. Required by the double's contract.
+	 *
+	 * @var array[]
+	 */
+	private array $capabilityChecks = [];
+
+	/**
+	 * Every doubled ACF call, in the order it was made.
+	 *
+	 * @var array[]
+	 */
+	private array $acfCalls = [];
+
+	/**
+	 * Every operation the ACF module registers, in registration order.
+	 *
+	 * Hardcoded rather than read back from the registry's dispatcher catalogs:
+	 * forDispatcher() returns only definitions whose composed name equals one of
+	 * the eleven, so a definition derived that way is in the eleven by
+	 * construction and asserting it would be a tautology. Starting from the
+	 * identifiers means a definition that has drifted off the frozen dispatcher
+	 * set is still examined here, and still fails by name.
+	 *
+	 * @var string[]
+	 */
+	private const OPERATION_IDS = [
+		'acf-group-list',
+		'acf-field-list',
+		'acf-field-get',
+		'acf-field-update',
+	];
+
+	/**
+	 * The ACF module's read count, bumped by every task registering a read.
+	 *
+	 * NOT the size of OPERATION_IDS, and the difference is the point: the reads
+	 * are derived from the catalog by asking the registry which identifiers land
+	 * on the read dispatcher, and this number is what that derivation is checked
+	 * against.
+	 */
+	private const ACF_READ_COUNT = 3;
+
+	/**
+	 * The ACF module's write count.
+	 *
+	 * One, and REQ-0047 is the only write in the V1 requirement set for this
+	 * module, so a second appearing here is a definition that has drifted onto the
+	 * write dispatcher rather than a feature.
+	 */
+	private const ACF_WRITE_COUNT = 1;
+
+	/**
+	 * The identifier of the module's one write.
+	 *
+	 * Named rather than derived, so that the read invariants below can exclude
+	 * exactly one operation by name. Deriving the exclusion from the mode each
+	 * definition declares would make the read block assert nothing about a read
+	 * that had accidentally become a write.
+	 */
+	private const ACF_WRITE_ID = 'acf-field-update';
+
+	/**
+	 * The two dispatchers an ACF operation may appear on.
+	 *
+	 * @var string[]
+	 */
+	private const OWN_DISPATCHERS = [ 'fields-read', 'fields-write' ];
+
+	/**
+	 * The capabilities an ACF operation may declare.
+	 *
+	 * `edit_posts` gates what answers about the site as a whole and `edit_post`
+	 * gates what names a single post's values. Anything else would be wrong in one
+	 * of two directions: `read` would let a subscriber enumerate every custom
+	 * field the site stores, and `manage_options` would refuse the editor the
+	 * requirements are written for.
+	 *
+	 * @var string[]
+	 */
+	private const ALLOWED_CAPABILITIES = [ 'edit_posts', 'edit_post' ];
+
+	protected function setUp(): void {
+		parent::setUp();
+
+		$this->mayEdit          = true;
+		$this->acfCalls         = [];
+		$this->capabilityChecks = [];
+	}
+
+	/**
+	 * A registry with the ACF module registered.
+	 *
+	 * @return CapabilityRegistry The populated registry.
+	 */
+	private function registryWithAcfModule(): CapabilityRegistry {
+		$registry = new CapabilityRegistry();
+		( new AcfModule() )->register( $registry );
+
+		return $registry;
+	}
+
+	/**
+	 * Every registered definition, looked up by identifier.
+	 *
+	 * @return OperationDefinition[] The registered definitions.
+	 */
+	private function registeredDefinitions(): array {
+		$registry = $this->registryWithAcfModule();
+
+		return array_map(
+			static fn( string $id ): OperationDefinition => $registry->definition( $id ),
+			self::OPERATION_IDS
+		);
+	}
+
+	/**
+	 * Makes Installer::isAvailable() answer the given readiness.
+	 *
+	 * @param bool $ready Whether the change-engine tables are usable.
+	 */
+	private function stubStorage( bool $ready ): void {
+		Functions\when( 'get_option' )->alias(
+			static fn( string $key, mixed $fallback = false ): mixed =>
+				Installer::STATUS_OPTION === $key
+					? ( $ready ? Installer::STATUS_READY : Installer::STATUS_UNAVAILABLE )
+					: $fallback
+		);
+	}
+
+	// ------------------------------------------------------- module identity
+
+	public function test_the_module_declares_acf_as_its_dependency_at_the_module_floor(): void {
+		$module = new AcfModule();
+
+		$this->assertSame( ModuleId::Acf, $module->id() );
+		$this->assertSame( 'acf', $module->dependency()['name'] );
+		$this->assertSame( '>=' . AcfPresence::MIN_VERSION, $module->dependency()['versionRange'] );
+		$this->assertNotSame( '', $module->displayName() );
+	}
+
+	/**
+	 * No `terms`. An ACF value is post meta and the post row is what a reader gets
+	 * it from; no ACF operation in the V1 requirement set writes a taxonomy term,
+	 * and declaring a cache group nothing invalidates would flush a cache on every
+	 * ACF write for no reason.
+	 */
+	public function test_the_module_declares_only_the_caches_its_writes_can_invalidate(): void {
+		$this->assertSame( [ 'posts', 'post_meta' ], ( new AcfModule() )->cacheCleanup() );
+	}
+
+	/**
+	 * A module absent from the plugin's table is never constructed, so it
+	 * registers nothing however complete its registration method is. The brief for
+	 * this task named ModuleLoader as the place to add it; ModuleLoader holds no
+	 * table at all — it iterates the modules it is handed — and Plugin::MODULE_CLASSES
+	 * is the table the loader is handed. This assertion pins the real one.
+	 */
+	public function test_the_plugin_boot_table_carries_the_acf_module(): void {
+		$this->assertContains( AcfModule::class, Plugin::MODULE_CLASSES );
+	}
+
+	// --------------------------------------------------------- module health
+
+	/**
+	 * THE ORDINARY STATE OF MOST SITES: the tables are fine, ACF simply is not
+	 * installed. Reporting Active here would let the fields-read catalog advertise
+	 * an operation every invocation then refuses.
+	 *
+	 * ACF is deliberately NOT installed in this process, which is the shared
+	 * process's default state.
+	 */
+	public function test_storage_ready_but_acf_absent_reports_inactive_with_no_version(): void {
+		$this->stubStorage( true );
+
+		$health = ( new AcfModule() )->health();
+
+		$this->assertSame( ModuleHealth::Inactive->value, $health['health'] );
+		$this->assertNull( $health['version'] );
+	}
+
+	/**
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_storage_ready_and_acf_present_reports_active_with_the_installed_version(): void {
+		$this->installAcf( [], [], '6.2.7' );
+		$this->stubStorage( true );
+
+		$health = ( new AcfModule() )->health();
+
+		$this->assertSame( ModuleHealth::Active->value, $health['health'] );
+		$this->assertSame( '6.2.7', $health['version'] );
+	}
+
+	/**
+	 * The tables branch wins even with ACF installed, which is why this test
+	 * installs it: with ACF absent the two branches are indistinguishable and the
+	 * assertion would pass without the tables check existing at all.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_acf_present_but_storage_unavailable_reports_inactive_with_no_version(): void {
+		$this->installAcf( [], [], '6.2.7' );
+		$this->stubStorage( false );
+
+		$health = ( new AcfModule() )->health();
+
+		$this->assertSame( ModuleHealth::Inactive->value, $health['health'] );
+		$this->assertNull( $health['version'] );
+	}
+
+	// ---------------------------------------------------- definition invariants
+
+	public function test_the_registered_identifiers_are_exactly_the_declared_ones_in_order(): void {
+		$registry = $this->registryWithAcfModule();
+		$ids      = [];
+
+		foreach ( self::OWN_DISPATCHERS as $dispatcher ) {
+			foreach ( $registry->forDispatcher( $dispatcher ) as $definition ) {
+				$ids[] = $definition->id;
+			}
+		}
+
+		$this->assertSame( self::OPERATION_IDS, $ids );
+	}
+
+	public function test_the_module_exposes_nothing_on_a_dispatcher_that_is_not_its_own(): void {
+		$registry = $this->registryWithAcfModule();
+
+		foreach ( CapabilityRegistry::DISPATCHERS as $dispatcher ) {
+			if ( in_array( $dispatcher, self::OWN_DISPATCHERS, true ) ) {
+				continue;
+			}
+
+			$this->assertSame(
+				[],
+				$registry->forDispatcher( $dispatcher ),
+				"The ACF module must expose nothing on '{$dispatcher}'."
+			);
+		}
+	}
+
+	public function test_the_read_and_write_counts_are_what_the_catalogs_hold(): void {
+		$registry = $this->registryWithAcfModule();
+
+		$this->assertCount( self::ACF_READ_COUNT, $registry->forDispatcher( 'fields-read' ) );
+		$this->assertCount( self::ACF_WRITE_COUNT, $registry->forDispatcher( 'fields-write' ) );
+	}
+
+	/**
+	 * Every registered operation is a read, and a read all the way down.
+	 *
+	 * `Mode::Read` alone is not the claim: a definition can declare read mode and
+	 * still say it is destructive or that it previews, and the three policies are
+	 * what the change engine actually branches on.
+	 *
+	 * THE ONE WRITE IS EXCLUDED BY NAME, not by asking each definition what mode it
+	 * declares. A definition that had accidentally become a write would exclude
+	 * itself from this block under a mode-derived filter and be asserted on by
+	 * nothing at all.
+	 */
+	public function test_every_registered_operation_is_a_read_in_every_declaration(): void {
+		foreach ( $this->registeredDefinitions() as $definition ) {
+			if ( self::ACF_WRITE_ID === $definition->id ) {
+				continue;
+			}
+
+			$this->assertSame( Mode::Read, $definition->mode, "Operation '{$definition->id}' must be a read." );
+			$this->assertTrue( $definition->isReadOnly, "Operation '{$definition->id}' must be read-only." );
+			$this->assertFalse( $definition->isDestructive, "Operation '{$definition->id}' must not be destructive." );
+			$this->assertTrue( $definition->isIdempotent, "Operation '{$definition->id}' must be idempotent." );
+			$this->assertSame( PreviewPolicy::NotApplicable, $definition->previewPolicy, "Operation '{$definition->id}' must not declare a preview policy." );
+			$this->assertSame( SnapshotPolicy::NotApplicable, $definition->snapshotPolicy, "Operation '{$definition->id}' must not declare a snapshot policy." );
+			$this->assertSame( RollbackPolicy::NotApplicable, $definition->rollbackPolicy, "Operation '{$definition->id}' must not declare a rollback policy." );
+		}
+	}
+
+	/**
+	 * The one write is a write in every declaration.
+	 *
+	 * THE THREE POLICIES ARE THE CLAIM, not `Mode::Write`. REQ-0047 states all
+	 * three, and the change engine branches on them rather than on the mode: a
+	 * definition declaring write mode with `PreviewPolicy::NotApplicable` is an ACF
+	 * write that applies without ever being previewed, and the registry's own gate
+	 * would be the only thing between that and a live site.
+	 *
+	 * `isDestructive` IS FALSE, DELIBERATELY. This operation replaces values; it
+	 * removes no content. Declaring it destructive would force nothing REQ-0047 does
+	 * not already require through the three policies and would misreport a subtitle
+	 * edit as a deletion to every client that surfaces the flag.
+	 */
+	public function test_the_one_write_is_a_write_in_every_declaration(): void {
+		$definition = $this->registryWithAcfModule()->definition( self::ACF_WRITE_ID );
+
+		$this->assertSame( Mode::Write, $definition->mode );
+		$this->assertFalse( $definition->isReadOnly, 'A write is not read-only.' );
+		$this->assertFalse( $definition->isDestructive, 'Replacing a value removes no content.' );
+		$this->assertSame( PreviewPolicy::Required, $definition->previewPolicy );
+		$this->assertSame( SnapshotPolicy::Required, $definition->snapshotPolicy );
+		$this->assertSame( RollbackPolicy::Required, $definition->rollbackPolicy );
+		$this->assertSame( [ 'edit_post' ], $definition->requiredCapabilities, 'The write is gated on the post it names, not on the site.' );
+		$this->assertSame( 'fields-write', $definition->dispatcherName() );
+	}
+
+	public function test_every_operation_belongs_to_the_fields_domain_and_the_acf_module(): void {
+		foreach ( $this->registeredDefinitions() as $definition ) {
+			$this->assertSame( Domain::Fields, $definition->domain, "Operation '{$definition->id}' must sit in the fields domain." );
+			$this->assertSame( ModuleId::Acf, $definition->module, "Operation '{$definition->id}' must belong to the ACF module." );
+		}
+	}
+
+	/**
+	 * BOTH ranges on every definition. OperationDefinition throws without the
+	 * plugin range for a plugin-backed module, so the omission cannot ship — but a
+	 * range hardcoded as a literal instead of built from the module's own floor
+	 * CAN, and would then drift away from what health() reports.
+	 */
+	public function test_every_operation_declares_both_the_wordpress_and_acf_version_ranges(): void {
+		foreach ( $this->registeredDefinitions() as $definition ) {
+			$this->assertSame(
+				[
+					'wordpress' => '>=' . SITEHELM_MIN_WP,
+					'acf'       => '>=' . AcfPresence::MIN_VERSION,
+				],
+				$definition->supportedVersions,
+				"Operation '{$definition->id}' must declare the WordPress range and the ACF range, both built from the declared floors."
+			);
+		}
+
+		// The same ranges, read from the one method every definition is required to
+		// call. Asserting the shape above and the source here is what stops a
+		// definition passing by carrying an identical literal.
+		$this->assertSame(
+			[
+				'wordpress' => '>=' . SITEHELM_MIN_WP,
+				'acf'       => '>=' . AcfPresence::MIN_VERSION,
+			],
+			AcfFields::supportedVersions()
+		);
+	}
+
+	public function test_every_operation_gates_on_a_post_editing_capability_and_nothing_wider(): void {
+		foreach ( $this->registeredDefinitions() as $definition ) {
+			$this->assertNotSame( [], $definition->requiredCapabilities, "Operation '{$definition->id}' must declare a capability." );
+
+			foreach ( $definition->requiredCapabilities as $capability ) {
+				$this->assertContains(
+					$capability,
+					self::ALLOWED_CAPABILITIES,
+					"Operation '{$definition->id}' declares a capability outside the set this module may use."
+				);
+			}
+		}
+	}
+
+	/**
+	 * THE WRITE'S OUTPUT SCHEMA IS CLOSED ONE BRANCH AT A TIME, and it has to be.
+	 * A write answers two different shapes — a plan, then a result — so its output
+	 * schema is a `oneOf` union with no `properties` of its own; an
+	 * `additionalProperties: false` at that root would reject every response rather
+	 * than close anything. The closure that matters is on each branch, which is what
+	 * makes a response carrying `plan` AND `target` at once fail both.
+	 */
+	public function test_every_operation_closes_both_of_its_schemas_to_unknown_members(): void {
+		foreach ( $this->registeredDefinitions() as $definition ) {
+			$this->assertFalse(
+				$definition->inputSchema['additionalProperties'] ?? null,
+				"Operation '{$definition->id}' must declare inputSchema additionalProperties false. SchemaValidator has no other signal that the argument list is closed."
+			);
+
+			// THE ONE WRITE IS EXCLUDED BY NAME, and by name rather than by shape so
+			// that a read which grew a `oneOf` would fail here instead of quietly
+			// taking the relaxed path. Every write in this plugin answers the shared
+			// WriteOutputSchema, a two-branch union with no properties of its own;
+			// `additionalProperties: false` at that root has nothing to permit and
+			// would reject every response the operation can give. The branches are
+			// each closed, and that is asserted just below.
+			if ( self::ACF_WRITE_ID !== $definition->id ) {
+				$this->assertFalse(
+					$definition->outputSchema['additionalProperties'] ?? null,
+					"Operation '{$definition->id}' must declare outputSchema additionalProperties false. SchemaValidator has no other signal that the response shape is closed."
+				);
+
+				continue;
+			}
+
+			$branches = $definition->outputSchema['oneOf'] ?? [];
+
+			$this->assertNotSame( [], $branches, "Operation '{$definition->id}' must declare its output schema as a union of closed branches." );
+
+			foreach ( $branches as $index => $branch ) {
+				$this->assertFalse(
+					$branch['additionalProperties'] ?? null,
+					"Operation '{$definition->id}' must close every outputSchema branch; branch {$index} is open."
+				);
+			}
+		}
+	}
+
+	/**
+	 * A schema that references itself must carry the document its pointer resolves
+	 * against. A `$defs` with no `$id` beside it dangles the moment the schema is
+	 * nested inside a dispatcher catalog response, and a dangling pointer is a
+	 * schema a client cannot use at all.
+	 */
+	public function test_every_output_schema_that_defines_a_pointer_target_also_declares_an_id(): void {
+		foreach ( $this->registeredDefinitions() as $definition ) {
+			if ( ! isset( $definition->outputSchema['$defs'] ) ) {
+				continue;
+			}
+
+			$this->assertNotSame(
+				'',
+				$definition->outputSchema['$id'] ?? '',
+				"Operation '{$definition->id}' declares \$defs and must declare an \$id for its pointers to resolve against."
+			);
+		}
+	}
+
+	/**
+	 * ASSERTED AGAINST THE REGISTERED DEFINITIONS, NOT AGAINST THE LIST THIS TEST
+	 * DECLARES. Iterating OPERATION_IDS and asserting on the strings in it tests
+	 * the fixture: those slugs are written here, so they match here whatever the
+	 * operations are called. What has to hold is that the id each operation
+	 * REGISTERS is a slug of this shape.
+	 */
+	public function test_every_identifier_is_a_unique_lower_case_slug(): void {
+		$ids = array_map(
+			static fn( OperationDefinition $definition ): string => $definition->id,
+			$this->registeredDefinitions()
+		);
+
+		foreach ( $ids as $id ) {
+			$this->assertMatchesRegularExpression( '/^[a-z0-9]+(?:-[a-z0-9]+)*$/', $id );
+			$this->assertStringStartsWith( 'acf-', $id, 'An ACF operation is named for its provider, because Meta Box will share this dispatcher.' );
+		}
+
+		$this->assertSame( $ids, array_values( array_unique( $ids ) ) );
+	}
+
+	public function test_every_operation_documents_itself_with_a_description_and_a_worked_example(): void {
+		foreach ( $this->registeredDefinitions() as $definition ) {
+			$this->assertNotSame( '', $definition->description, "Operation '{$definition->id}' must describe itself." );
+			$this->assertSame(
+				$definition->id,
+				$definition->example['operation'] ?? null,
+				"Operation '{$definition->id}' must carry an example naming itself."
+			);
+			$this->assertArrayHasKey( 'arguments', $definition->example, "Operation '{$definition->id}' must carry example arguments." );
+		}
+	}
+}

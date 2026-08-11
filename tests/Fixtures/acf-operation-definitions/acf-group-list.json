@@ -1,0 +1,244 @@
+{
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "group": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Restrict the listing to the one field group with this key, such as group_5f3a1b2c. Omit to list every group."
+            }
+        },
+        "required": [],
+        "additionalProperties": false
+    },
+    "outputSchema": {
+        "$id": "urn:sitehelm:schema:acf-group-list:output:1",
+        "type": "object",
+        "properties": {
+            "groups": {
+                "type": "array",
+                "description": "The field groups this site defines, at most 200 per call.",
+                "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "key",
+                        "title",
+                        "locationRules",
+                        "fields"
+                    ],
+                    "properties": {
+                        "key": {
+                            "type": "string",
+                            "description": "The field group key, such as group_5f3a1b2c. The identifier every other ACF operation takes."
+                        },
+                        "title": {
+                            "type": "string",
+                            "description": "The group title as shown in the editor."
+                        },
+                        "locationRules": {
+                            "type": "array",
+                            "description": "Location rule groups, as ACF stores them: the outer list is an OR, each inner list an AND. Reported, not interpreted.",
+                            "items": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "additionalProperties": false,
+                                    "required": [
+                                        "param"
+                                    ],
+                                    "properties": {
+                                        "param": {
+                                            "type": "string",
+                                            "description": "What the rule tests, for example post_type or page_template."
+                                        },
+                                        "operator": {
+                                            "type": "string",
+                                            "description": "How it is tested, for example == or !=."
+                                        },
+                                        "value": {
+                                            "type": [
+                                                "string",
+                                                "number",
+                                                "boolean",
+                                                "null"
+                                            ],
+                                            "description": "What it is tested against. Null when ACF stored no readable value."
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        "fields": {
+                            "type": "array",
+                            "description": "The group's field definitions. Empty when the group defines none, or when they could not be read — in which case a notice says so.",
+                            "items": {
+                                "$ref": "#/$defs/acfFieldSchema"
+                            }
+                        }
+                    }
+                }
+            },
+            "truncated": {
+                "type": "boolean",
+                "description": "True when this site defines more field groups than one call reports. The listing stops rather than continuing, and a notice says how many were returned."
+            },
+            "groupListingNotices": {
+                "type": "array",
+                "items": {
+                    "type": "string"
+                },
+                "description": "Anything the listing could not report faithfully: a group that could not be read, a group whose fields could not be read, a filter that matched nothing, or a listing that reached the ceiling."
+            }
+        },
+        "required": [
+            "groups",
+            "truncated",
+            "groupListingNotices"
+        ],
+        "additionalProperties": false,
+        "$defs": {
+            "acfFieldSchema": {
+                "type": "object",
+                "description": "One ACF field definition. Container types carry subFields or layouts, recursively, to a depth of 10.",
+                "additionalProperties": false,
+                "required": [
+                    "key",
+                    "name",
+                    "label",
+                    "type",
+                    "required"
+                ],
+                "properties": {
+                    "key": {
+                        "type": "string",
+                        "description": "ACF's field key, for example field_5f3a1b2c. The stable identifier; the name can be renamed."
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "The field name used in template code and as the meta key suffix."
+                    },
+                    "label": {
+                        "type": "string",
+                        "description": "The label shown in the editor."
+                    },
+                    "type": {
+                        "type": "string",
+                        "description": "The ACF field type, for example text, repeater, or flexible_content."
+                    },
+                    "required": {
+                        "type": "boolean",
+                        "description": "Whether ACF marks the field required in the editor."
+                    },
+                    "instructions": {
+                        "type": "string",
+                        "description": "The editor help text."
+                    },
+                    "choices": {
+                        "type": "array",
+                        "description": "Selectable values, each as a stored value with the label shown beside it. A list rather than the map ACF stores, for the reason layouts are a list: the keys are administrator-chosen text, and a numeric-looking key cannot survive as an object key in PHP at all.",
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                                "value",
+                                "label"
+                            ],
+                            "properties": {
+                                "value": {
+                                    "type": "string",
+                                    "description": "The value ACF stores when this choice is selected."
+                                },
+                                "label": {
+                                    "type": "string",
+                                    "description": "The label shown in the editor."
+                                }
+                            }
+                        }
+                    },
+                    "defaultValue": {
+                        "description": "The value ACF applies when none is stored. Its type follows the field type, so none is declared here."
+                    },
+                    "returnFormat": {
+                        "type": "string",
+                        "description": "How ACF returns the value, for example array, url, or id."
+                    },
+                    "min": {
+                        "type": [
+                            "number",
+                            "string"
+                        ],
+                        "description": "The lower bound, as ACF stored it. ACF stores editor input verbatim, so a string is a real answer."
+                    },
+                    "max": {
+                        "type": [
+                            "number",
+                            "string"
+                        ],
+                        "description": "The upper bound, as ACF stored it."
+                    },
+                    "multiple": {
+                        "type": "boolean",
+                        "description": "Whether the field accepts more than one value."
+                    },
+                    "allowNull": {
+                        "type": "boolean",
+                        "description": "Whether the field accepts an empty selection."
+                    },
+                    "postType": {
+                        "type": "array",
+                        "description": "Post types the field selects from.",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "taxonomy": {
+                        "type": "array",
+                        "description": "Taxonomies the field selects from.",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "subFields": {
+                        "type": "array",
+                        "description": "Child field definitions, for container types such as repeater and group. Absent at the depth cap, where the children exist but are not reported.",
+                        "items": {
+                            "$ref": "#/$defs/acfFieldSchema"
+                        }
+                    },
+                    "layouts": {
+                        "type": "array",
+                        "description": "Flexible-content layouts, each with its own sub-fields. A list rather than the map ACF stores, because the map is keyed by administrator-chosen text no closed schema can declare.",
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                                "key",
+                                "name",
+                                "label",
+                                "subFields"
+                            ],
+                            "properties": {
+                                "key": {
+                                    "type": "string"
+                                },
+                                "name": {
+                                    "type": "string"
+                                },
+                                "label": {
+                                    "type": "string"
+                                },
+                                "subFields": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/$defs/acfFieldSchema"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

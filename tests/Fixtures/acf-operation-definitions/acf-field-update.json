@@ -1,0 +1,88 @@
+{
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "post": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "The post, page or custom post type entry whose field values are being written."
+            },
+            "fields": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 50,
+                "description": "The fields to write, at most 50, each named once. Every entry is validated before any of them is written: one entry this operation cannot use refuses the whole request and leaves the post untouched.",
+                "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "field",
+                        "value"
+                    ],
+                    "properties": {
+                        "field": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 255,
+                            "description": "One field name or ACF field key, for example subtitle or field_5f3a1b2c. Matched against the fields that apply to the post by key first and then by name."
+                        },
+                        "value": {
+                            "description": "The value to store, in the raw form ACF stores rather than the formatted form a read returns: an attachment id rather than an attachment object, a post id rather than a post. Its type follows the field, so none is declared here. Send an empty list [] to clear a flexible content field or a repeater — every row of a flexible content field must be an object carrying an acf_fc_layout naming one of that field's layouts, so null is refused and [] is how every row is removed."
+                        }
+                    }
+                }
+            }
+        },
+        "required": [
+            "post",
+            "fields"
+        ],
+        "additionalProperties": false
+    },
+    "outputSchema": {
+        "type": "object",
+        "oneOf": [
+            {
+                "title": "Plan phase",
+                "type": "object",
+                "properties": {
+                    "plan": {
+                        "type": "object",
+                        "description": "The change plan to approve, including its plan token."
+                    }
+                },
+                "required": [
+                    "plan"
+                ],
+                "additionalProperties": false
+            },
+            {
+                "title": "Apply phase",
+                "type": "object",
+                "properties": {
+                    "target": {
+                        "type": "string",
+                        "description": "The concrete target that was written."
+                    },
+                    "changed": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "description": "The fields the approved plan changed."
+                    },
+                    "state": {
+                        "type": "object",
+                        "description": "The verified persisted state of the target."
+                    }
+                },
+                "required": [
+                    "target",
+                    "changed",
+                    "state"
+                ],
+                "additionalProperties": false
+            }
+        ]
+    }
+}

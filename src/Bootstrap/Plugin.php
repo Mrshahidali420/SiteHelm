@@ -15,6 +15,7 @@ use SiteHelm\Gateway\ContextFactory;
 use SiteHelm\Gateway\Dispatcher;
 use SiteHelm\Gateway\McpServer;
 use SiteHelm\Gateway\RestTransport;
+use SiteHelm\Modules\Acf\AcfModule;
 use SiteHelm\Modules\Core\CoreModule;
 use SiteHelm\Modules\Diagnostics\DiagnosticsModule;
 use SiteHelm\Modules\Elementor\ElementorModule;
@@ -62,6 +63,7 @@ final class Plugin {
 		MediaModule::class,
 		MenusModule::class,
 		ElementorModule::class,
+		AcfModule::class,
 	];
 
 	/**
