@@ -331,10 +331,12 @@ final class MetaboxFieldGet {
 
 		$groups    = $this->index->applicableGroups( $post_id );
 		$truncated = [];
+		$redacted  = [];
 		$fields    = $this->read(
 			$this->selected( $this->index->fieldsInGroups( $groups ), $requested ),
 			$post_id,
-			$truncated
+			$truncated,
+			$redacted
 		);
 
 		return [
@@ -343,7 +345,8 @@ final class MetaboxFieldGet {
 			'fields'           => $fields,
 			'fieldReadNotices' => array_merge(
 				$this->omissions( $groups ),
-				$this->truncations( $truncated )
+				$this->truncations( $truncated ),
+				$this->redactions( $redacted )
 			),
 		];
 	}
@@ -512,10 +515,13 @@ final class MetaboxFieldGet {
 	 * @param string[]                         $truncated Collects the ID of every field whose
 	 *                                                    value was cut off at the depth cap,
 	 *                                                    by reference.
+	 * @param string[]                         $redacted  Collects the ID of every field a
+	 *                                                    server path was stripped out of,
+	 *                                                    by reference.
 	 *
 	 * @return array<int, array<string, mixed>> The reported field entries.
 	 */
-	private function read( array $entries, int $post_id, array &$truncated ): array {
+	private function read( array $entries, int $post_id, array &$truncated, array &$redacted ): array {
 		$reported = [];
 
 		foreach ( $entries as $entry ) {
@@ -524,6 +530,10 @@ final class MetaboxFieldGet {
 
 			if ( $normalized['truncated'] ) {
 				$truncated[] = $field_id;
+			}
+
+			if ( $normalized['redacted'] ) {
+				$redacted[] = $field_id;
 			}
 
 			$reported[] = [
@@ -601,6 +611,40 @@ final class MetaboxFieldGet {
 				$notice,
 				count( $named ),
 				implode( ', ', $named )
+			),
+		];
+	}
+
+	/**
+	 * What was read and then had a server location taken out of it.
+	 *
+	 * THE REMOVAL IS ANNOUNCED FOR THE SAME REASON THE TRUNCATION IS. A member that
+	 * disappeared without a word reads as a member the site never stored, and the next
+	 * write would be planned from that reading — so a client diffing this response
+	 * against a later one would see a change that never happened on the site.
+	 *
+	 * THE NOTICE NAMES THE FIELD AND NEVER THE PATH. Reporting what was removed by
+	 * quoting it into the notices channel would put the disclosure back in the envelope
+	 * through a different member, which is the whole of what this guard prevents.
+	 *
+	 * @param string[] $redacted The ids of the fields a server path was stripped from.
+	 *
+	 * @return string[] The notices.
+	 */
+	private function redactions( array $redacted ): array {
+		if ( [] === $redacted ) {
+			return [];
+		}
+
+		$count = count( $redacted );
+
+		return [
+			sprintf(
+				'%s of %d %s a member naming a location on this site\'s server, which SiteHelm never reports, so that member was removed from the value: %s.',
+				1 === $count ? 'The value' : 'The values',
+				$count,
+				1 === $count ? 'field carried' : 'fields carried',
+				implode( ', ', $redacted )
 			),
 		];
 	}
