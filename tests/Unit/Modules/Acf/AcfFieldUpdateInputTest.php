@@ -244,6 +244,31 @@ final class AcfFieldUpdateInputTest extends TestCase {
 	}
 
 	/**
+	 * Two members, one of them `field` — the count rule cannot see the missing
+	 * `value` either, and neither can the `field` type check that follows it.
+	 *
+	 * This is the case that pins the required-member loop. `field` is a usable
+	 * string and the member count is right, so with that loop removed the entry
+	 * resolves and the write proceeds — with no value the caller ever sent.
+	 * A silent null write is exactly what the missing-`value` rule exists to stop.
+	 *
+	 * @test
+	 */
+	public function test_a_member_that_swaps_value_for_another_key_is_refused(): void {
+		$this->refusal(
+			[
+				'fields' => [
+					[
+						'field'  => 'subtitle',
+						'append' => true,
+					],
+				],
+			],
+			$this->index()
+		);
+	}
+
+	/**
 	 * @test
 	 */
 	public function test_a_field_identifier_that_is_not_a_string_is_refused(): void {
