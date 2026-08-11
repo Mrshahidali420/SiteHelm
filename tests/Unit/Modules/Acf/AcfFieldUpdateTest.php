@@ -490,9 +490,14 @@ final class AcfFieldUpdateTest extends TestCase {
 	}
 
 	public function test_apply_change_does_not_refuse_a_field_whose_row_survives_the_write(): void {
-		// The same no-op site as the refusal above. `subtitle` has a row and the write
-		// leaves it there, so the guard's SECOND condition is what stays it. This test
-		// says nothing about the first: see the removed-row case below for that.
+		// THIS PINS NO SINGLE CONDITION, and saying otherwise is how the defect the
+		// removed-row test below exists to fix got written down as fixed once already.
+		// `subtitle` has a row before and still has one after, so conditions one and
+		// two BOTH hold the refusal off and condition one short-circuits first —
+		// dropping either one on its own leaves this green, and so does deleting the
+		// guard outright. It is a FALSE-POSITIVE FENCE and only that: it fails when
+		// the guard starts firing on an ordinary write, which is what asking about
+		// the row by key, or keeping only the `! isEmptyForm()` condition, does.
 		$this->installFixtureSite();
 
 		$this->apply( [ $this->writeMember( 'subtitle', 'New subtitle' ) ] );

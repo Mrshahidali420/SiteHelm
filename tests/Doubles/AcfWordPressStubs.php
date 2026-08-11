@@ -191,6 +191,7 @@ trait AcfWordPressStubs {
 	 * that HAD a row and no longer does, which is what an `acf/update_value` filter
 	 * returning null does to a non-empty value — the guard must stay silent there
 	 * too, and it is the only site on which its first condition decides anything.
+	 * A removal takes the value with it, because `acf_delete_value()` does.
 	 *
 	 * @param mixed                $groups                 What acf_get_field_groups() answers.
 	 * @param array<string, mixed> $fields_by_group        What acf_get_fields() answers, keyed by group key.
@@ -309,10 +310,27 @@ trait AcfWordPressStubs {
 						}
 					}
 
+					// THE ROW AND THE VALUE GO TOGETHER, because in ACF they are the
+					// same fact. A removal here stands for `acf_update_value()` taking
+					// its delete branch: `acf_delete_value()` deletes the postmeta row
+					// AND its reference row and flushes the value cache, so the next
+					// `get_field()` finds no metadata and answers null. A double that
+					// deleted the row and kept answering the written value would be
+					// faithful everywhere except the rule Task 6 reads back through.
+					//
+					// NULL AND NOT THE FIELD'S DEFAULT, which is the one place this
+					// diverges from ACF and does so knowingly: `acf_get_value()` falls
+					// back to `default_value` when the metadata is gone, so a field
+					// declaring one answers that rather than null. No fixture field on
+					// any site this double builds declares a default, so modelling
+					// defaults would add a branch nothing exercises. A suite that adds
+					// one must teach this closure about it rather than assume null.
 					if ( isset( $rows_removed_by_key[ $key ] ) ) {
 						$row = sprintf( '%s:%s', $prefix, $rows_removed_by_key[ $key ] );
 
 						$rows = array_values( array_filter( $rows, static fn ( string $held ): bool => $held !== $row ) );
+
+						$values[ $key ] = null;
 					}
 
 					return false;

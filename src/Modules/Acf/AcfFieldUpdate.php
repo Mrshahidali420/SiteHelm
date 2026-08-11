@@ -443,11 +443,13 @@ final class AcfFieldUpdate implements WriteOperation {
 		// is re-planned in this process before it is applied, so this reads the
 		// member planChange() just refused to leave null rather than trusting it. The
 		// field list is checked in the same breath and for the same reason: a payload
-		// missing it is a payload this operation cannot execute.
+		// missing it is a payload this operation cannot execute. ONE CONDITION AND ONE
+		// MESSAGE NAMING BOTH, because the two halves have one answer — nothing was
+		// written — and a message naming only the post would misdescribe the other.
 		if ( ! is_int( $post ) || $post < 1 || ! is_array( $writes ) ) {
 			throw new OperationException(
 				ErrorCode::ExecutionFailed,
-				'The approved plan does not name a post to write these fields to, so nothing was written.',
+				'The approved plan does not describe the post and the fields to write, so nothing was written.',
 				'Preview the change again and apply the plan token that preview returned.'
 			);
 		}
