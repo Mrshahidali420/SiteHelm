@@ -157,6 +157,7 @@ final class AcfSchemaFormat {
 		return isset( $field[ $member ] ) && ! empty( $field[ $member ] );
 	}
 
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- The module vocabulary is camelCase across every class.
 	/**
 	 * Reads one optional member according to its kind.
 	 *
@@ -198,6 +199,7 @@ final class AcfSchemaFormat {
 				return $value;
 		}
 	}
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 
 	/**
 	 * Reads a choices map, dropping any entry whose label cannot be read.
@@ -311,6 +313,7 @@ final class AcfSchemaFormat {
 		return $projected;
 	}
 
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- The module vocabulary is camelCase across every class.
 	/**
 	 * Reads one scalar member of a layout, falling back when it cannot be read.
 	 *
@@ -329,4 +332,5 @@ final class AcfSchemaFormat {
 
 		return is_scalar( $value ) ? (string) $value : $fallback;
 	}
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 }
