@@ -352,6 +352,25 @@ final class AcfFieldUpdateInputTest extends TestCase {
 	}
 
 	/**
+	 * Two members, neither of them `field` — the count rule alone cannot see this.
+	 *
+	 * @test
+	 */
+	public function test_a_member_that_swaps_field_for_another_key_is_refused(): void {
+		$this->refusal(
+			[
+				'fields' => [
+					[
+						'value'  => 'x',
+						'append' => true,
+					],
+				],
+			],
+			$this->index()
+		);
+	}
+
+	/**
 	 * @test
 	 */
 	public function test_a_field_identifier_that_is_not_a_string_is_refused(): void {
@@ -567,6 +586,64 @@ final class AcfFieldUpdateInputTest extends TestCase {
 				],
 			],
 			$this->index()
+		);
+	}
+
+	/**
+	 * A field whose layouts cannot be read declares none, and none is not "any".
+	 *
+	 * @test
+	 */
+	public function test_a_field_whose_layouts_cannot_be_read_refuses_every_row(): void {
+		$this->refusal(
+			[ 'fields' => [ $this->member( 'sections', [ [ 'acf_fc_layout' => 'hero' ] ] ) ] ],
+			[
+				$this->entry(
+					'field_flex',
+					'sections',
+					'flexible_content',
+					[ 'layouts' => 'not a list of layouts' ]
+				),
+			]
+		);
+	}
+
+	/**
+	 * An unreadable layout entry is skipped rather than cast into a name.
+	 *
+	 * @test
+	 */
+	public function test_a_layout_entry_with_no_readable_name_declares_nothing(): void {
+		$index = [
+			$this->entry(
+				'field_flex',
+				'sections',
+				'flexible_content',
+				[
+					'layouts' => [
+						'broken',
+						[ 'label' => 'No name at all' ],
+						[ 'name' => '' ],
+						[ 'name' => 'hero' ],
+					],
+				]
+			),
+		];
+
+		$this->refusal(
+			[ 'fields' => [ $this->member( 'sections', [ [ 'acf_fc_layout' => 'quote' ] ] ) ] ],
+			$index
+		);
+
+		$validated = $this->input->validate(
+			[ 'fields' => [ $this->member( 'sections', [ [ 'acf_fc_layout' => 'hero' ] ] ) ] ],
+			$index
+		);
+
+		$this->assertCount(
+			1,
+			$validated,
+			'The one readable layout beside the broken ones is still declared.'
 		);
 	}
 
