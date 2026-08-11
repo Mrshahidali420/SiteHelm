@@ -124,11 +124,16 @@ final class AcfFieldUpdateLayoutsTest extends TestCase {
 		);
 
 		$this->assertStringContainsString(
-			'sections',
+			'"sections"',
 			$refusal->getMessage(),
-			'Naming the field is what makes the refusal actionable.'
+			'Naming the field is what makes the refusal actionable, and the echoed name is DELIMITED: undelimited, a name ending in a full stop reads as a continuation of our own sentence.'
 		);
 		$this->assertStringNotContainsString( 'banner', $refusal->getMessage() );
+		$this->assertSame(
+			'Call acf-group-list for this post to see the layouts the field declares.',
+			$refusal->remediation,
+			'The remediation must name an operation that can actually answer: acf-field-list reports values, and it is acf-group-list that reports the layouts a field declares.'
+		);
 	}
 
 	/**
