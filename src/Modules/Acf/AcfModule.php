@@ -182,5 +182,20 @@ final class AcfModule implements IntegrationModule {
 			AcfFieldGet::definition(),
 			[ new AcfFieldGet( $this->presence, $index, $api, new AcfValueNormalizer() ), 'handle' ]
 		);
+
+		// REGISTERED THROUGH registerWrite() AND NOT register(), because a write is
+		// not a handler the dispatcher calls: it is six phases the change engine
+		// drives, and the registry enforces that a Mode::Write operation arrives as a
+		// WriteOperation with PreviewPolicy::Required rather than as a callable that
+		// would run unplanned.
+		$registry->registerWrite(
+			AcfFieldUpdate::definition(),
+			new AcfFieldUpdate(
+				new AcfWriteTarget( $this->presence, $api, $index ),
+				new AcfFieldUpdateInput( $index ),
+				$api,
+				new AcfValueCanonical()
+			)
+		);
 	}
 }
