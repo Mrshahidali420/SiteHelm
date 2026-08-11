@@ -43,9 +43,13 @@ use SiteHelm\Tests\TestCase;
  *    runs in a process where ACF is genuinely absent so that only the order can
  *    decide the answer;
  *  - presence before the read, by
- *    test_a_half_loaded_acf_refuses_without_reading_anything, which installs the
- *    ACF functions WITHOUT ACF_VERSION so the gate must refuse while the doubles
- *    can still record a read that should never have happened.
+ *    test_a_half_loaded_acf_is_refused_as_a_missing_plugin_not_a_failed_read,
+ *    which installs the ACF functions WITHOUT ACF_VERSION and asserts WHICH
+ *    refusal is raised. Removing the guard does not let the read through —
+ *    AcfApi gates itself as well — it changes the refusal into ExecutionFailed,
+ *    which sends the operator to retry a call that cannot succeed. A call count
+ *    cannot see that, because AcfApi's own gate keeps it at zero either way; the
+ *    count is asserted in AcfApiTest, over the gate that produces it.
  *
  * test_a_denied_caller_causes_no_acf_read_at_all is deliberately NOT one of them.
  * It proves no work is done for a denied caller, which is worth proving, but it
@@ -227,14 +231,48 @@ final class AcfGroupListTest extends TestCase {
 							],
 						],
 					],
+					// A choices-bearing field, with the numeric keys that were the
+					// actual failure mode: keyed by value, this member re-typed
+					// itself into a JSON array and broke the object the schema
+					// published. Its presence here is what makes the conformance
+					// check exercise the emitter and the schema against each other
+					// rather than only member by member.
+					[
+						'key'     => 'field_layout',
+						'name'    => 'layout',
+						'label'   => 'Layout',
+						'type'    => 'select',
+						'choices' => [
+							1 => 'Wide',
+							2 => 'Narrow',
+						],
+					],
 				],
 			]
+		);
+
+		$payload = $this->handle();
+
+		// A conformance check passes just as happily over a member that was never
+		// emitted, so the choices list is asserted present before it is validated.
+		$this->assertSame(
+			[
+				[
+					'value' => '1',
+					'label' => 'Wide',
+				],
+				[
+					'value' => '2',
+					'label' => 'Narrow',
+				],
+			],
+			$payload['groups'][0]['fields'][1]['choices']
 		);
 
 		// The recursive `$ref` into `#/$defs/acfFieldSchema` only resolves against
 		// the schema document, so this assertion is also the proof that the
 		// declared `$id` and `$defs` are actually wired to each other.
-		$this->assertConformsToOutputSchema( $this->handle(), AcfGroupList::definition()->outputSchema );
+		$this->assertConformsToOutputSchema( $payload, AcfGroupList::definition()->outputSchema );
 	}
 
 	// -------------------------------------------------------------- guard order
@@ -303,16 +341,23 @@ final class AcfGroupListTest extends TestCase {
 	}
 
 	/**
-	 * THE SECOND ORDERING PROOF: presence runs before the read, and this one CAN
-	 * fail. The ACF functions are installed here but ACF_VERSION is not, which is
-	 * the shape of a fork or a half-loaded plugin — the presence gate must refuse,
-	 * and because the functions exist the doubles can record whether anything
-	 * called them anyway. Delete the presence guard from handle() and the read
-	 * runs: the call stops refusing and the recorded count stops being zero. A
-	 * test written against a site where the functions do not exist at all could
-	 * not have told those two worlds apart.
+	 * A HALF-LOADED ACF IS BLAMED ON THE PLUGIN, NOT ON THE READ. The ACF
+	 * functions are installed here but ACF_VERSION is not, which is the shape of a
+	 * fork, a disturbed load order, or another plugin's compatibility shim. The
+	 * presence gate must refuse it as an unavailable integration.
+	 *
+	 * Delete the presence guard from handle() and the operation still refuses —
+	 * AcfApi::groups() re-checks presence for itself, so the read answers null —
+	 * but it refuses with ExecutionFailed, telling an operator to retry a call
+	 * that will never succeed and to go looking at a filter instead of at the
+	 * plugin. That substitution is what this test detects, and it is why the
+	 * assertion is on WHICH refusal rather than on a call count: a count of zero
+	 * is guaranteed by AcfApi's own gate whether handle() checks or not, so
+	 * asserting it here would be asserting something that cannot fail. The place
+	 * where zero recorded calls IS load-bearing is AcfApiTest, over the gate that
+	 * actually produces it.
 	 */
-	public function test_a_half_loaded_acf_refuses_without_reading_anything(): void {
+	public function test_a_half_loaded_acf_is_refused_as_a_missing_plugin_not_a_failed_read(): void {
 		$this->installAcf( [ $this->group( 'group_page', 'Page settings' ) ], [], null );
 
 		try {
@@ -320,9 +365,12 @@ final class AcfGroupListTest extends TestCase {
 			$this->fail( 'A site whose ACF does not declare a version must refuse.' );
 		} catch ( OperationException $e ) {
 			$this->assertSame( ErrorCode::IntegrationUnavailable, $e->errorCode );
+			$this->assertNotSame(
+				ErrorCode::ExecutionFailed,
+				$e->errorCode,
+				'Without the presence guard the read would fail instead, and the operator would be told to retry a call that cannot succeed.'
+			);
 		}
-
-		$this->assertSame( 0, $this->acfCallCount(), 'The presence gate must run BEFORE any ACF read.' );
 	}
 
 	/**

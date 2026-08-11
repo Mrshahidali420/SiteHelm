@@ -105,9 +105,15 @@ trait AcfWordPressStubs {
 			define( AcfPresence::VERSION_CONSTANT, $version );
 		}
 
+		// VARIADIC, SO THAT "NO FILTER" AND "AN EMPTY FILTER" STAY DIFFERENT CALLS.
+		// Declared as `array $filter = []` the double recorded [] for both, and an
+		// assertion on the recorded value could not tell acf_get_field_groups()
+		// from acf_get_field_groups([]) — which is exactly the distinction
+		// AcfApi::groups() makes when it is given no post id. A call with no
+		// argument records null.
 		Functions\when( AcfPresence::PROBE_FUNCTION )->alias(
-			function ( array $filter = [] ) use ( $groups ): mixed {
-				$this->acfCalls[] = [ 'groups', $filter ];
+			function ( mixed ...$filter ) use ( $groups ): mixed {
+				$this->acfCalls[] = [ 'groups', $filter[0] ?? null ];
 
 				return $groups;
 			}
