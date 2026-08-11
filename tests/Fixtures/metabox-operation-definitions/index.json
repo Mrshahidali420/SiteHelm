@@ -1,6 +1,7 @@
 {
     "operationIds": [
-        "metabox-group-list"
+        "metabox-group-list",
+        "metabox-field-list"
     ],
-    "operationCount": 1
+    "operationCount": 2
 }
