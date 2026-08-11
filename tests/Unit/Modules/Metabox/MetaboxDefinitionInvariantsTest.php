@@ -83,7 +83,7 @@ final class MetaboxDefinitionInvariantsTest extends TestCase {
 	 *
 	 * @var string[]
 	 */
-	private const OPERATION_IDS = [ 'metabox-group-list', 'metabox-field-list' ];
+	private const OPERATION_IDS = [ 'metabox-group-list', 'metabox-field-list', 'metabox-field-get' ];
 
 	/**
 	 * The Metabox module's read count, bumped by every task registering a read.
@@ -92,7 +92,7 @@ final class MetaboxDefinitionInvariantsTest extends TestCase {
 	 * derived from the catalog by asking the registry which identifiers land on the
 	 * read dispatcher, and this number is what that derivation is checked against.
 	 */
-	private const METABOX_READ_COUNT = 2;
+	private const METABOX_READ_COUNT = 3;
 
 	/**
 	 * The Metabox module's write count.
