@@ -786,6 +786,14 @@ final class AcfFieldUpdate implements WriteOperation {
 			return [ $warning . '.' ];
 		}
 
+		// EVERY ONE OF THEM NAMED IS NOT "SOME OF THEM", the branch acf-field-list
+		// and acf-field-get both spell. Counting again would tell an operator who
+		// can already see all three keys that three of three could be identified —
+		// a sentence that reads like a partial answer to a complete one.
+		if ( count( $named ) === count( $skipped ) ) {
+			return [ sprintf( '%s: %s.', $warning, implode( ', ', $named ) ) ];
+		}
+
 		return [ sprintf( '%s. %d of them could be identified: %s.', $warning, count( $named ), implode( ', ', $named ) ) ];
 	}
 }
