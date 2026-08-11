@@ -433,8 +433,6 @@ final class ElementorWidgetSettingsUpdateTest extends TestCase {
 		} catch ( OperationException $exception ) {
 			$this->assertSame( ErrorCode::InvalidInput, $exception->errorCode );
 		}
-
-		$this->assertSame( [], $this->writes, 'A refused plan must not have written anything.' );
 	}
 
 	/**
@@ -445,8 +443,17 @@ final class ElementorWidgetSettingsUpdateTest extends TestCase {
 	 * both halves at once: an undeclared key is refused, and — from the case
 	 * above, which writes `title_tablet` successfully — a declared key is not
 	 * refused merely because the stored spelling carries a suffix.
+	 *
+	 * THE NAME SAYS "PLANNED" AND NOT "BEFORE ANYTHING IS WRITTEN" because this
+	 * case only plans. `resolveTarget()` and `planChange()` cannot reach the
+	 * writer under any mutation of this operation, so an assertion here that
+	 * nothing was written would be true by construction and would tell a reader
+	 * auditing #102 that a claim was covered when nothing had checked it. What
+	 * makes the refusal fail closed on the APPLY call is that `ChangeEngine`
+	 * re-runs `planChange()` there, so this same guard runs again before any
+	 * write — a property of the engine, asserted where the engine is.
 	 */
-	public function test_a_setting_the_widget_does_not_declare_is_refused_before_anything_is_written(): void {
+	public function test_a_setting_the_widget_does_not_declare_is_refused_when_the_change_is_planned(): void {
 		$this->withElementor();
 		$this->storeFixture();
 
@@ -465,8 +472,6 @@ final class ElementorWidgetSettingsUpdateTest extends TestCase {
 		} catch ( OperationException $exception ) {
 			$this->assertSame( ErrorCode::InvalidInput, $exception->errorCode );
 		}
-
-		$this->assertSame( [], $this->writes, 'A refused plan must not have written anything.' );
 	}
 
 	/**

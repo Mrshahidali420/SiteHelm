@@ -211,7 +211,8 @@ final class ElementorModule implements IntegrationModule {
 				$writer,
 				$diff,
 				new PayloadNormalizer(),
-				$inputs
+				$inputs,
+				$merge
 			)
 		);
 

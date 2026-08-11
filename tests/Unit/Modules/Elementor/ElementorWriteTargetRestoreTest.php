@@ -108,6 +108,11 @@ final class ElementorWriteTargetRestoreTest extends TestCase {
 			}
 		);
 
+		Functions\when( 'metadata_exists' )->alias(
+			fn( string $meta_type, int $object_id, string $key ): bool =>
+				array_key_exists( $object_id . '|' . $key, $this->meta )
+		);
+
 		Functions\when( 'update_post_meta' )->alias(
 			function ( int $post_id, string $key, mixed $value ): bool {
 				$this->writes[] = [ $post_id, $key ];
@@ -211,6 +216,48 @@ final class ElementorWriteTargetRestoreTest extends TestCase {
 		);
 
 		$this->assertSame( '', $this->meta[ self::DOCUMENT_ID . '|' . ElementorDocument::META_EDIT_MODE ] );
+	}
+
+	/**
+	 * THE `''` MODE IS THE ONE THE VERIFICATION MUST STILL BE ABLE TO FAIL FOR.
+	 *
+	 * `get_post_meta( …, true )` answers `''` for a key that is not there at all,
+	 * so a verification that only compared values would read `'' !== ''` — false
+	 * — for a `''` write whether or not the write landed. And `''` is exactly the
+	 * recorded value the restore rule singles out as load-bearing: it means "this
+	 * post was NOT an Elementor document, put that back".
+	 *
+	 * Here the post carries NO `_elementor_edit_mode` row, the recorded mode is
+	 * `''`, and the write is dropped by a meta filter — so the value comparison
+	 * sees `''` on both sides and the row still does not exist. Only
+	 * `metadata_exists()` can tell "stored as empty" from "absent", and without it
+	 * this restore reports a success that stored nothing.
+	 *
+	 * No `_elementor_data` is recorded, so nothing stamps the key on the way past
+	 * and the absence under test is the real one.
+	 */
+	public function test_a_dropped_empty_edit_mode_write_is_told_from_an_absent_row(): void {
+		$this->silentKeys = [ ElementorDocument::META_EDIT_MODE ];
+
+		try {
+			$this->target()->restore(
+				[
+					'post_id'              => self::DOCUMENT_ID,
+					'_elementor_edit_mode' => '',
+				],
+				$this->context()
+			);
+			$this->fail( 'An empty edit mode that was never stored must not report success.' );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::ExecutionFailed, $e->errorCode );
+			$this->assertSame( [], $e->completedSteps );
+		}
+
+		$this->assertArrayNotHasKey(
+			self::DOCUMENT_ID . '|' . ElementorDocument::META_EDIT_MODE,
+			$this->meta,
+			'The row must still be absent — that is the state the refusal is about.'
+		);
 	}
 
 	/**

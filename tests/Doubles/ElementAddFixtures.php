@@ -9,7 +9,6 @@ declare(strict_types=1);
 
 namespace SiteHelm\Tests\Doubles;
 
-use Brain\Monkey\Functions;
 use SiteHelm\Change\PayloadNormalizer;
 use SiteHelm\Change\PlannedChange;
 use SiteHelm\Change\TargetState;
@@ -22,6 +21,7 @@ use SiteHelm\Modules\Elementor\ElementorElementAddInput;
 use SiteHelm\Modules\Elementor\ElementorIdMint;
 use SiteHelm\Modules\Elementor\ElementorPresence;
 use SiteHelm\Modules\Elementor\ElementorPropCoercion;
+use SiteHelm\Modules\Elementor\ElementorSettingsMerge;
 use SiteHelm\Modules\Elementor\ElementorTree;
 use SiteHelm\Modules\Elementor\ElementorTreeDiff;
 use SiteHelm\Modules\Elementor\ElementorTreeEdit;
@@ -33,15 +33,10 @@ use SiteHelm\Modules\Elementor\ElementorWriteTarget;
  * out so the planning half and the applying half of the operation are exercised
  * against one identical fixture site.
  *
- * `update_post_meta()` HERE UNSLASHES WHAT IT IS GIVEN, which is what the real
- * function does — it calls `wp_unslash()` on its value before storing. That one
- * detail is load-bearing rather than cosmetic: `ElementorDocumentWriter` hands
- * it `wp_slash( wp_json_encode( $tree ) )`, so a double that stored the value
- * verbatim would leave a SLASHED document in the fixture meta table, and the
- * digest this operation promises — taken over the unslashed encoding, because
- * that is what a real `get_post_meta()` gives back — would then disagree with
- * every read of the fixture. A test built on that double could only be made to
- * pass by promising a digest production never produces.
+ * THE WORDPRESS DOUBLES COME FROM `ElementorWordPressStubs`, shared with the
+ * other two Elementor write fixtures. Its docblock records why the
+ * `update_post_meta()` unslash and the `metadata_exists()` presence answer are
+ * load-bearing rather than cosmetic.
  *
  * CONTRACT: the using class must declare `const DOCUMENT_ID` (int) and the
  * properties `array $meta`, `array $reads`, `array $writes`, `bool $mayEdit`.
@@ -52,54 +47,18 @@ use SiteHelm\Modules\Elementor\ElementorWriteTarget;
 trait ElementAddFixtures {
 
 	use WriteTargetFixtures;
+	use ElementorWordPressStubs;
 
 	/**
 	 * Installs the WordPress functions this operation's collaborators call.
 	 *
 	 * Called from the using class's `setUp()` rather than defined as one, so the
 	 * using class keeps a single visible `setUp()` that also resets its own
-	 * recorders.
+	 * recorders. The bodies live in `ElementorWordPressStubs`, one copy for the
+	 * three Elementor write fixtures; only the upload directory differs.
 	 */
 	private function stubWordPress(): void {
-		Functions\when( 'user_can' )->alias(
-			fn( int $user_id, string $capability, mixed ...$args ): bool => $this->mayEdit
-		);
-
-		Functions\when( 'get_post_meta' )->alias(
-			function ( int $post_id, string $key, bool $single = false ): mixed {
-				$this->reads[] = [ $post_id, $key ];
-
-				return $this->meta[ $post_id . '|' . $key ] ?? '';
-			}
-		);
-
-		Functions\when( 'update_post_meta' )->alias(
-			function ( int $post_id, string $key, mixed $value ): bool {
-				$this->writes[] = [ $post_id, $key ];
-
-				// Exactly what WordPress does: the value is unslashed on the way in,
-				// so the slashes wp_slash() added are transport and never reach the
-				// stored row.
-				$this->meta[ $post_id . '|' . $key ] = is_string( $value ) ? stripslashes( $value ) : $value;
-
-				return true;
-			}
-		);
-
-		Functions\when( 'delete_post_meta' )->alias(
-			function ( int $post_id, string $key ): bool {
-				$this->writes[] = [ $post_id, $key ];
-				unset( $this->meta[ $post_id . '|' . $key ] );
-
-				return true;
-			}
-		);
-
-		Functions\when( 'wp_slash' )->alias( fn( mixed $value ): mixed => is_string( $value ) ? addslashes( $value ) : $value );
-		Functions\when( 'wp_unslash' )->alias( fn( mixed $value ): mixed => is_string( $value ) ? stripslashes( $value ) : $value );
-		Functions\when( 'wp_json_encode' )->alias( fn( mixed $data ): mixed => json_encode( $data ) );
-		Functions\when( 'wp_upload_dir' )->alias( fn(): array => [ 'basedir' => sys_get_temp_dir() . '/sitehelm-element-add' ] );
-		Functions\when( 'wp_delete_file' )->alias( fn( string $path ): null => null );
+		$this->stubElementorWordPress( 'sitehelm-element-add' );
 	}
 
 	/**
@@ -131,7 +90,8 @@ trait ElementAddFixtures {
 			$writer,
 			new ElementorTreeDiff( $tree ),
 			new PayloadNormalizer(),
-			new ElementorElementAddInput( $coercion, $edit )
+			new ElementorElementAddInput( $coercion, $edit ),
+			new ElementorSettingsMerge( $edit, $coercion )
 		);
 	}
 

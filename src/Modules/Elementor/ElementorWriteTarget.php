@@ -76,19 +76,6 @@ final class ElementorWriteTarget {
 	public const STEP_DOCUMENT_RESTORED = 'document content restored';
 
 	/**
-	 * The digest algorithm, frozen to `ElementorDocumentWriter`'s.
-	 *
-	 * THE SAME FORMULA, AND THE TEST FREEZES THAT. The writer computes the AFTER
-	 * digest of a write whose BEFORE digest came from here, so two formulas
-	 * disagreeing by so much as a cast would make every write look silent, or no
-	 * write ever look silent — and both failures are themselves silent. The
-	 * writer's own constant is private, so the agreement is asserted rather than
-	 * shared: one test compares this class's answer against
-	 * `ElementorDocumentWriter::storedDigest()` for the same stored row.
-	 */
-	private const DIGEST_ALGORITHM = 'sha256';
-
-	/**
 	 * Bytes in the megabyte the oversize refusal names.
 	 */
 	private const BYTES_PER_MEGABYTE = 1048576;
@@ -210,6 +197,14 @@ final class ElementorWriteTarget {
 	/**
 	 * Measures one document in the four verification fields.
 	 *
+	 * THE DIGEST IS THE WRITER'S OWN, NOT A SECOND SPELLING OF IT.
+	 * `ElementorDocumentWriter::digestOf()` is the single formula: this class
+	 * produces the BEFORE value of a write whose AFTER value the writer produces,
+	 * and two spellings that disagreed by so much as a cast would make every write
+	 * look silent, or no write ever look silent — both of them failures that are
+	 * themselves silent. It is called rather than re-read through
+	 * `storedDigest()`, because the raw string is already in hand here.
+	 *
 	 * THE RAW STORED STRING IS WHAT IS FINGERPRINTED, never a re-encoded tree.
 	 * Two documents differing only in JSON key order decode to trees equal member
 	 * for member and are DIFFERENT ROWS, and the digest's whole job is to answer
@@ -234,7 +229,7 @@ final class ElementorWriteTarget {
 		$totals = $this->tree->normalize( $raw_tree )['totals'];
 
 		return [
-			ElementorWriteFields::FIELD_DIGEST  => hash( self::DIGEST_ALGORITHM, $raw_meta ),
+			ElementorWriteFields::FIELD_DIGEST  => ElementorDocumentWriter::digestOf( $raw_meta ),
 			ElementorWriteFields::FIELD_COUNT   => $totals['nodeCount'],
 			ElementorWriteFields::FIELD_DEPTH   => $totals['maxDepth'],
 			ElementorWriteFields::FIELD_WIDGETS => $totals['widgetTypeCounts'],
@@ -292,7 +287,7 @@ final class ElementorWriteTarget {
 		$snapshot = [
 			ElementorDocument::META_DATA       => $raw,
 			ElementorDocument::META_EDIT_MODE  => $this->raw_meta( $post_id, ElementorDocument::META_EDIT_MODE ),
-			ElementorWriteFields::FIELD_DIGEST => hash( self::DIGEST_ALGORITHM, $raw ),
+			ElementorWriteFields::FIELD_DIGEST => ElementorDocumentWriter::digestOf( $raw ),
 			self::SNAPSHOT_POST_ID             => $post_id,
 		];
 		ksort( $snapshot, SORT_STRING );
@@ -384,6 +379,23 @@ final class ElementorWriteTarget {
 	 * write a `update_post_metadata` filter short-circuited, and on this path
 	 * there is no later reader to notice.
 	 *
+	 * PRESENCE IS CHECKED BEFORE VALUE, and that is what makes the re-read able to
+	 * fail for the `''` mode. `get_post_meta( …, true )` answers `''` for a key
+	 * that is not there at all, so a value comparison alone reads `'' !== ''` —
+	 * false — for a `''` write whether or not the write landed, and `''` is
+	 * exactly the recorded value this class's own restore rule singles out as
+	 * load-bearing: a recorded `''` means "this post was NOT an Elementor
+	 * document, put that back". `metadata_exists()` separates "stored as empty"
+	 * from "absent", which is the distinction the value comparison cannot see.
+	 *
+	 * A `''` MODE IS STORED, NOT DELETED, and that is deliberate.
+	 * `ElementorDocument::isElementorDocument()` documents the site behaviour this
+	 * follows: Elementor itself writes `''` into `_elementor_edit_mode` when a
+	 * document is switched back to the block editor, so the key survives on posts
+	 * Elementor no longer controls. Deleting the row would put the post into a
+	 * state the snapshot never recorded and Elementor does not produce, and
+	 * `snapshot()` cannot tell an absent row from a stored `''` one in any case.
+	 *
 	 * @param int      $post_id       The document's post identifier.
 	 * @param mixed    $recorded      The recorded edit mode.
 	 * @param string[] $steps         The steps already completed.
@@ -408,7 +420,10 @@ final class ElementorWriteTarget {
 
 		update_post_meta( $post_id, ElementorDocument::META_EDIT_MODE, $mode );
 
-		if ( (string) get_post_meta( $post_id, ElementorDocument::META_EDIT_MODE, true ) !== $mode ) {
+		$stored = metadata_exists( 'post', $post_id, ElementorDocument::META_EDIT_MODE )
+			&& (string) get_post_meta( $post_id, ElementorDocument::META_EDIT_MODE, true ) === $mode;
+
+		if ( ! $stored ) {
 			throw new OperationException(
 				ErrorCode::ExecutionFailed,
 				'WordPress accepted the editing mode this rollback wrote but did not store it, so the page has not been fully restored.',

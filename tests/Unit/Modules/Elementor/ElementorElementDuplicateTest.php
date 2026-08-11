@@ -227,8 +227,6 @@ final class ElementorElementDuplicateTest extends TestCase {
 		} catch ( OperationException $exception ) {
 			$this->assertSame( ErrorCode::TargetNotFound, $exception->errorCode );
 		}
-
-		$this->assertSame( [], $this->writes, 'A refused duplication must write nothing.' );
 	}
 
 	/**

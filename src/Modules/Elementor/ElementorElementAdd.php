@@ -119,6 +119,7 @@ final class ElementorElementAdd implements WriteOperation {
 	 * @param ElementorTreeDiff        $diff       The structural preview detail.
 	 * @param PayloadNormalizer        $normalizer The canonical form the seed quotes.
 	 * @param ElementorElementAddInput $inputs     The shared element-input reader.
+	 * @param ElementorSettingsMerge   $merge      The shared write vocabulary.
 	 */
 	public function __construct(
 		private readonly ElementorWriteTarget $targets,
@@ -130,6 +131,7 @@ final class ElementorElementAdd implements WriteOperation {
 		private readonly ElementorTreeDiff $diff,
 		private readonly PayloadNormalizer $normalizer,
 		private readonly ElementorElementAddInput $inputs,
+		private readonly ElementorSettingsMerge $merge,
 	) {
 	}
 
@@ -272,7 +274,7 @@ final class ElementorElementAdd implements WriteOperation {
 		$post_id = ElementorWriteTarget::postIdFromKey( $current->targetKey );
 
 		if ( null === $post_id || ! $current->exists ) {
-			throw $this->document_not_found();
+			throw $this->merge->documentNotFound();
 		}
 
 		$el_type     = $this->inputs->requestedElType( $input );
@@ -378,19 +380,31 @@ final class ElementorElementAdd implements WriteOperation {
 	 */
 	public function applyChange( TargetState $current, PlannedChange $planned, OperationContext $context ): string {
 		$post_id = ElementorWriteTarget::postIdFromKey( $current->targetKey );
+		$payload = $planned->payload;
+		$tree    = $payload[ self::PAYLOAD_TREE ] ?? null;
 
-		if ( null === $post_id ) {
+		// REFUSED, NEVER SUBSTITUTED, and this is the same answer
+		// `ElementorElementDuplicate` and `ElementorElementRemove` give to the same
+		// question. A plan that does not carry the tree it promised is a plan this
+		// operation cannot execute; substituting `[]` for the missing member would
+		// write an EMPTY DOCUMENT over the page — the whole content of it gone, with
+		// only the snapshot behind it, on a rollback policy that is Supported rather
+		// than Required. That the change engine re-plans before the payload digest
+		// check, and so cannot currently produce a payload without this member, is a
+		// property of the engine's call order rather than of this method.
+		if ( null === $post_id || ! is_array( $tree ) ) {
 			throw new OperationException(
 				ErrorCode::ExecutionFailed,
-				'The approved plan does not name an Elementor document to add the element to, so nothing was written.',
+				'The approved plan does not describe an Elementor document to change, so nothing was written.',
 				'Preview the change again and apply the plan token that preview returned.'
 			);
 		}
 
-		$payload = $planned->payload;
-		$tree    = is_array( $payload[ self::PAYLOAD_TREE ] ?? null ) ? $payload[ self::PAYLOAD_TREE ] : [];
-
-		$this->writer->write( $post_id, $tree, $this->prior_digest( $current, $post_id, $context ) );
+		$this->writer->write(
+			$post_id,
+			$tree,
+			$this->merge->priorDigest( $this->captureSnapshot( $current, $context ), $post_id )
+		);
 
 		$this->assert_settings_landed(
 			$post_id,
@@ -461,35 +475,6 @@ final class ElementorElementAdd implements WriteOperation {
 		return $this->targets->restore( $restoreState, $context );
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
-
-	/**
-	 * The digest of the stored document as it was BEFORE this write.
-	 *
-	 * READ OUT OF THE SNAPSHOT, not computed here. `ElementorDocumentWriter::write()`
-	 * compares this value against one it computes itself after the save, and that
-	 * comparison is the whole of the silent-save defence: two values produced by
-	 * two formulas would make every write look silent, or no write ever look
-	 * silent. `ElementorWriteTarget::snapshot()` records the digest with
-	 * `ElementorDocumentWriter::storedDigest()`'s formula, so threading it through
-	 * keeps one formula on both sides.
-	 *
-	 * The fallback covers the one case the snapshot cannot answer: a target key
-	 * that resolved but whose post is no longer an Elementor document, where
-	 * `snapshot()` answers null. `storedDigest()` is the same formula, so the
-	 * fallback is a second READ rather than a second rule.
-	 *
-	 * @param TargetState      $current The resolved document.
-	 * @param int              $post_id The document's post identifier.
-	 * @param OperationContext $context The request context.
-	 *
-	 * @return string The pre-write digest.
-	 */
-	private function prior_digest( TargetState $current, int $post_id, OperationContext $context ): string {
-		$snapshot = $this->captureSnapshot( $current, $context );
-		$recorded = $snapshot[ ElementorWriteFields::FIELD_DIGEST ] ?? null;
-
-		return is_string( $recorded ) ? $recorded : ElementorDocumentWriter::storedDigest( $post_id );
-	}
 
 	// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The messages are literals written for end users and name a setting key that the schema has already bounded; no stored value reaches them.
 	/**
@@ -685,21 +670,4 @@ final class ElementorElementAdd implements WriteOperation {
 		];
 	}
 	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
-
-	/**
-	 * The refusal a document Elementor does not control produces.
-	 *
-	 * The same conflated vocabulary `ElementorWriteTarget` uses for its own
-	 * not-found: a caller must not be able to learn from the difference between
-	 * two refusals whether a page they may not touch exists.
-	 *
-	 * @return OperationException The refusal.
-	 */
-	private function document_not_found(): OperationException {
-		return new OperationException(
-			ErrorCode::TargetNotFound,
-			'No Elementor document on this site matches the requested identifier, or your WordPress user may not edit it.',
-			'Call elementor-document-list to see the documents Elementor controls, and confirm your WordPress user may edit the one you named.'
-		);
-	}
 }

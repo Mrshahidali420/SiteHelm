@@ -250,7 +250,10 @@ final class ElementorDocumentWriter {
 	 * ONE FORMULA, IN ONE PLACE, because the caller computes the before value and
 	 * this class computes the after value: two formulas that disagreed by a cast
 	 * would make every write look silent, or no write ever look silent, and both
-	 * failures are silent themselves.
+	 * failures are silent themselves. That is a claim about the CODE and not only
+	 * about today's behaviour, so the one place is `digestOf()` below and every
+	 * other digest of a stored Elementor document on this branch — including
+	 * `ElementorWriteTarget`'s snapshot and measurement — routes through it.
 	 *
 	 * The RAW value is digested rather than the decoded tree. What this answers is
 	 * "did the stored bytes move", which is the only question the API path's
@@ -270,6 +273,27 @@ final class ElementorDocumentWriter {
 			$raw     = is_string( $encoded ) ? $encoded : '';
 		}
 
+		return self::digestOf( $raw );
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- The module vocabulary is camelCase across every class.
+	/**
+	 * The fingerprint of one raw stored document string a caller already holds.
+	 *
+	 * THE SHARED SPELLING, and the reason it is public. A caller that has just
+	 * read `_elementor_data` — `ElementorWriteTarget::snapshot()` does, and so
+	 * does `fieldsFor()` — must not re-read it through `storedDigest()` merely to
+	 * digest it, and must not spell the algorithm a second time either. A second
+	 * spelling would agree with this one until the day somebody changed one of
+	 * them, and the failure that produces is a write that looks silent, or a
+	 * silent write that does not look silent, both of which are themselves silent.
+	 *
+	 * @param string $raw The raw stored document string.
+	 *
+	 * @return string The fingerprint.
+	 */
+	public static function digestOf( string $raw ): string {
 		return hash( self::DIGEST_ALGORITHM, $raw );
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
