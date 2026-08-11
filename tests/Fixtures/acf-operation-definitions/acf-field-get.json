@@ -1,0 +1,87 @@
+{
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "post": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "The post, page or custom post type entry whose field values are wanted."
+            },
+            "fields": {
+                "type": "array",
+                "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255,
+                    "description": "One field name or ACF field key, for example subtitle or field_5f3a1b2c."
+                },
+                "minItems": 1,
+                "maxItems": 100,
+                "description": "Restrict the read to these fields, at most 100. Each member is matched against the applicable fields by key first and then by name. A member matching nothing is refused rather than skipped. Omit this to read every field that applies to the post."
+            }
+        },
+        "required": [
+            "post"
+        ],
+        "additionalProperties": false
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "provider": {
+                "type": "string",
+                "const": "acf",
+                "description": "The plugin whose vocabulary these keys belong to. Always acf here: field_abc123 means one thing to ACF and nothing to another field plugin sharing this dispatcher."
+            },
+            "target": {
+                "type": "integer",
+                "description": "The post the values were read from, echoed so a response can be matched to its request."
+            },
+            "fields": {
+                "type": "array",
+                "description": "One entry per field read, in the order asked about, or in the order ACF reports them when no subset was named. A list rather than a map keyed by field name, because those keys are administrator-chosen text no closed schema can declare.",
+                "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "key",
+                        "name",
+                        "type",
+                        "value"
+                    ],
+                    "properties": {
+                        "key": {
+                            "type": "string",
+                            "description": "ACF's field key, for example field_5f3a1b2c. The stable identifier; the name can be renamed."
+                        },
+                        "name": {
+                            "type": "string",
+                            "description": "The field name used in template code and as the meta key suffix."
+                        },
+                        "type": {
+                            "type": "string",
+                            "description": "The ACF field type, for example text, repeater, or flexible_content."
+                        },
+                        "value": {
+                            "description": "The stored value, formatted as ACF presents it and projected into something JSON can carry: a post becomes { id, title, postType, url }, a user { id, displayName }, a term { id, name, taxonomy }, an attachment { id, url, alt, mime }, and any other structure keeps its own shape. Null where a field holds nothing — and also where a structure nested deeper than 10 levels was cut off, which the warnings name the field for. Its type follows the field, so none is declared here."
+                        }
+                    }
+                }
+            },
+            "warnings": {
+                "type": "array",
+                "items": {
+                    "type": "string"
+                },
+                "description": "Anything the read could not report faithfully: a field group whose definitions could not be read, or a value that nests deeper than this response reports. Names fields and groups only, never a value."
+            }
+        },
+        "required": [
+            "provider",
+            "target",
+            "fields",
+            "warnings"
+        ],
+        "additionalProperties": false
+    }
+}

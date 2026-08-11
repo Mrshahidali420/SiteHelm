@@ -153,17 +153,25 @@ trait AcfWordPressStubs {
 	 * `$with_fields_function` false installs acf_get_field_groups() without
 	 * acf_get_fields(), the shape AcfApi::fields() probes for separately.
 	 *
+	 * `$values_by_key` IS KEYED BY FIELD KEY AND NOT BY NAME, because that is what
+	 * AcfApi::readValue() is given. A double keyed by name would answer for a
+	 * caller that resolved a name to the wrong key, which is the one mistake the
+	 * key-before-name lookup exists to prevent. A key with no entry answers null,
+	 * which is what ACF answers for a field an editor never filled in.
+	 *
 	 * @param mixed                $groups               What acf_get_field_groups() answers.
 	 * @param array<string, mixed> $fields_by_group      What acf_get_fields() answers, keyed by group key.
 	 *                                                   A group with no entry answers an empty list.
 	 * @param string|null          $version              The ACF version this site reports; null defines no constant.
 	 * @param bool                 $with_fields_function Whether acf_get_fields() exists on this site.
+	 * @param array<string, mixed> $values_by_key        What get_field() answers, keyed by field key.
 	 */
 	private function installAcf(
 		mixed $groups,
 		array $fields_by_group = [],
 		?string $version = '6.2.7',
-		bool $with_fields_function = true
+		bool $with_fields_function = true,
+		array $values_by_key = []
 	): void {
 		if ( null !== $version && ! defined( AcfPresence::VERSION_CONSTANT ) ) {
 			define( AcfPresence::VERSION_CONSTANT, $version );
@@ -183,19 +191,35 @@ trait AcfWordPressStubs {
 			}
 		);
 
-		if ( ! $with_fields_function ) {
-			return;
+		// NOT AN EARLY RETURN. `$with_fields_function` is about acf_get_fields() and
+		// nothing else; a return here would silently take get_field() with it, and a
+		// test asking for one missing symbol would get two.
+		if ( $with_fields_function ) {
+			Functions\when( 'acf_get_fields' )->alias(
+				function ( mixed $group ) use ( $fields_by_group ): mixed {
+					$key = is_array( $group ) && isset( $group['key'] ) && is_scalar( $group['key'] )
+						? (string) $group['key']
+						: '';
+
+					$this->acfCalls[] = [ 'fields', $key ];
+
+					return $fields_by_group[ $key ] ?? [];
+				}
+			);
 		}
 
-		Functions\when( 'acf_get_fields' )->alias(
-			function ( mixed $group ) use ( $fields_by_group ): mixed {
-				$key = is_array( $group ) && isset( $group['key'] ) && is_scalar( $group['key'] )
-					? (string) $group['key']
-					: '';
+		// THE WHOLE ARGUMENT LIST IS RECORDED, not just the key. Whether the read
+		// asked for the FORMATTED value is a decision the operator-facing read makes
+		// on purpose, and an unformatted read answers a raw attachment id where the
+		// caller expected a file — a difference no assertion on the payload alone can
+		// see, because both are legitimate values.
+		Functions\when( 'get_field' )->alias(
+			function ( mixed $selector = null, mixed $post_id = false, mixed $format = true ) use ( $values_by_key ): mixed {
+				$key = is_scalar( $selector ) ? (string) $selector : '';
 
-				$this->acfCalls[] = [ 'fields', $key ];
+				$this->acfCalls[] = [ 'value', [ $key, $post_id, $format ] ];
 
-				return $fields_by_group[ $key ] ?? [];
+				return $values_by_key[ $key ] ?? null;
 			}
 		);
 	}
