@@ -49,6 +49,19 @@ final class AcfApi {
 	private const FIELDS_FUNCTION = 'acf_get_fields';
 
 	/**
+	 * The ACF function that reads one field's value.
+	 *
+	 * Probed separately for the same reason FIELDS_FUNCTION is. `get_field()` is
+	 * additionally the one ACF symbol with an unqualified, extremely common name,
+	 * so a site whose theme defines its own `get_field()` before ACF loads is a
+	 * real configuration rather than a hypothetical one — and on that site the
+	 * presence gate passes while this call reaches something else entirely. The
+	 * probe cannot tell those apart, but the containment rule means there is
+	 * exactly one line to revisit if it ever has to.
+	 */
+	private const VALUE_FUNCTION = 'get_field';
+
+	/**
 	 * Constructs the wrapper.
 	 *
 	 * The presence gate is injected rather than constructed here so that one
@@ -110,4 +123,38 @@ final class AcfApi {
 
 		return is_array( $fields ) ? $fields : null;
 	}
+
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- The module vocabulary is camelCase across every class.
+	/**
+	 * One field's stored value, as ACF answers it.
+	 *
+	 * THE ONLY METHOD HERE WHOSE null IS AMBIGUOUS, AND IT IS ALLOWED TO BE. The
+	 * other two answer null for "I could not read this" alone. Here null is also
+	 * an answer ACF itself gives for a field an editor never filled in, and the
+	 * two cannot be separated at this layer without asking ACF a second question
+	 * whose answer would be no better. The callers do not need them separated:
+	 * every one of them has already established through AcfFieldIndex that the
+	 * field APPLIES to the post, so "unreadable" has been ruled out before this is
+	 * called, and what is left is the field's value.
+	 *
+	 * NOTHING IS NORMALIZED HERE. ACF returns posts, users, terms, attachment
+	 * arrays and arbitrarily nested rows, and turning those into something JSON
+	 * can carry is AcfValueNormalizer's job. Doing it here would put a projection
+	 * inside the one file whose purpose is to be a thin, auditable list of the ACF
+	 * symbols this module touches.
+	 *
+	 * @param string $key       The field key, as ACF assigned it.
+	 * @param int    $post_id   The post the value is stored against.
+	 * @param bool   $formatted Whether ACF applies its return formatting.
+	 *
+	 * @return mixed The value, or null when ACF is unreachable.
+	 */
+	public function readValue( string $key, int $post_id, bool $formatted ): mixed {
+		if ( ! $this->presence->isLoaded() || ! function_exists( self::VALUE_FUNCTION ) ) {
+			return null;
+		}
+
+		return get_field( $key, $post_id, $formatted );
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 }
