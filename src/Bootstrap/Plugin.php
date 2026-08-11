@@ -21,6 +21,7 @@ use SiteHelm\Modules\Diagnostics\DiagnosticsModule;
 use SiteHelm\Modules\Elementor\ElementorModule;
 use SiteHelm\Modules\Media\MediaModule;
 use SiteHelm\Modules\Menus\MenusModule;
+use SiteHelm\Modules\Metabox\MetaboxModule;
 use SiteHelm\Policy\PolicyEngine;
 use SiteHelm\Registry\CapabilityRegistry;
 use SiteHelm\Registry\CatalogBuilder;
@@ -64,6 +65,7 @@ final class Plugin {
 		MenusModule::class,
 		ElementorModule::class,
 		AcfModule::class,
+		MetaboxModule::class,
 	];
 
 	/**
