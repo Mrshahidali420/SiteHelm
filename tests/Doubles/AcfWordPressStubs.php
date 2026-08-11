@@ -78,13 +78,30 @@ trait AcfWordPressStubs {
 	 * something that is not an array, and the null-versus-empty distinction the
 	 * operations are built on can only be tested if the double can express both.
 	 *
-	 * @param mixed                $groups          What acf_get_field_groups() answers.
-	 * @param array<string, mixed> $fields_by_group What acf_get_fields() answers, keyed by group key.
-	 *                                              A group with no entry answers an empty list.
-	 * @param string               $version         The ACF version this site reports.
+	 * `$version` MAY BE null, AND THAT IS NOT A DEGENERATE CASE. It installs the
+	 * ACF functions without defining ACF_VERSION, which is what a site running a
+	 * fork, a partial load, or another plugin's compatibility shim looks like. The
+	 * presence gate must refuse there, and because the functions DO exist the
+	 * doubles can then record whether anything called them — which is the only way
+	 * "the presence gate stopped the read" becomes an assertable fact rather than
+	 * an inference from an error code.
+	 *
+	 * `$with_fields_function` false installs acf_get_field_groups() without
+	 * acf_get_fields(), the shape AcfApi::fields() probes for separately.
+	 *
+	 * @param mixed                $groups               What acf_get_field_groups() answers.
+	 * @param array<string, mixed> $fields_by_group      What acf_get_fields() answers, keyed by group key.
+	 *                                                   A group with no entry answers an empty list.
+	 * @param string|null          $version              The ACF version this site reports; null defines no constant.
+	 * @param bool                 $with_fields_function Whether acf_get_fields() exists on this site.
 	 */
-	private function installAcf( mixed $groups, array $fields_by_group = [], string $version = '6.2.7' ): void {
-		if ( ! defined( AcfPresence::VERSION_CONSTANT ) ) {
+	private function installAcf(
+		mixed $groups,
+		array $fields_by_group = [],
+		?string $version = '6.2.7',
+		bool $with_fields_function = true
+	): void {
+		if ( null !== $version && ! defined( AcfPresence::VERSION_CONSTANT ) ) {
 			define( AcfPresence::VERSION_CONSTANT, $version );
 		}
 
@@ -95,6 +112,10 @@ trait AcfWordPressStubs {
 				return $groups;
 			}
 		);
+
+		if ( ! $with_fields_function ) {
+			return;
+		}
 
 		Functions\when( 'acf_get_fields' )->alias(
 			function ( mixed $group ) use ( $fields_by_group ): mixed {
@@ -107,6 +128,31 @@ trait AcfWordPressStubs {
 				return $fields_by_group[ $key ] ?? [];
 			}
 		);
+	}
+
+	/**
+	 * What the doubled ACF functions were called WITH, in call order.
+	 *
+	 * Recording the count alone proves a call did not happen; recording the
+	 * argument proves the call that did happen asked the right question. The
+	 * post-id filter AcfApi builds is the case that matters: a wrong key there
+	 * surfaces as an empty listing rather than as an error, so nothing downstream
+	 * would notice it.
+	 *
+	 * @param string $kind Either 'groups' or 'fields'.
+	 *
+	 * @return mixed[] The recorded argument of each call of that kind.
+	 */
+	private function acfCallArguments( string $kind ): array {
+		$arguments = [];
+
+		foreach ( $this->acfCalls as $call ) {
+			if ( $kind === $call[0] ) {
+				$arguments[] = $call[1];
+			}
+		}
+
+		return $arguments;
 	}
 
 	/**

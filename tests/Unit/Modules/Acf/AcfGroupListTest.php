@@ -32,14 +32,27 @@ use SiteHelm\Tests\TestCase;
  * suite in which the most important cases cannot exist.
  *
  * THE GUARD-ORDER PROOF IS THE POINT OF THIS FILE. Capability runs before
- * presence, and presence before any ACF read, and none of that is visible in the
- * error code alone: on a site where an unprivileged caller meets an absent
- * plugin, BOTH refusal conditions are true at once and only the ordering decides
- * which is raised. Two tests below hold it from both sides — one asserts that the
- * refusal is Forbidden and explicitly NOT IntegrationUnavailable in a process
- * where ACF is genuinely absent, and one asserts that on a site where ACF IS
- * installed the denied caller left ZERO recorded ACF calls behind. Move the
- * capability check below either of the others and one of the two fails.
+ * presence, presence before the read, and none of that is visible in the error
+ * code alone: on a site where an unprivileged caller meets an absent plugin, BOTH
+ * refusal conditions are true at once and only the ordering decides which is
+ * raised. Each ordering claim is held by EXACTLY ONE test, and each of those was
+ * verified by performing the mutation it claims to catch:
+ *
+ *  - capability before presence, by
+ *    test_a_denied_caller_is_refused_before_the_presence_gate_is_consulted, which
+ *    runs in a process where ACF is genuinely absent so that only the order can
+ *    decide the answer;
+ *  - presence before the read, by
+ *    test_a_half_loaded_acf_refuses_without_reading_anything, which installs the
+ *    ACF functions WITHOUT ACF_VERSION so the gate must refuse while the doubles
+ *    can still record a read that should never have happened.
+ *
+ * test_a_denied_caller_causes_no_acf_read_at_all is deliberately NOT one of them.
+ * It proves no work is done for a denied caller, which is worth proving, but it
+ * survives a swap of the two guards by construction — see its docblock. The
+ * distinction is recorded because the later tasks in this module will copy this
+ * file, and copying the wrong test would leave the ordering unprotected while
+ * looking as though it were covered.
  *
  * NULL AND [] ARE DIFFERENT ANSWERS, and the pair of tests holding that apart is
  * the second reason this file exists. A group list that could not be read is a
@@ -227,14 +240,23 @@ final class AcfGroupListTest extends TestCase {
 	// -------------------------------------------------------------- guard order
 
 	/**
-	 * THE ORDERING PROOF, FIRST FORM. ACF is deliberately NOT installed in this
-	 * process, so the caller trips BOTH the capability guard and the presence
-	 * guard at once and only the order decides which refusal is raised. Move the
-	 * presence check above the capability check and this test reports
-	 * IntegrationUnavailable — which would tell an unprivileged caller whether
-	 * this site runs ACF, a fact about the site's configuration they have no
-	 * right to, and would walk them through fixing a request that was never going
-	 * to run.
+	 * THE ORDERING PROOF. THIS IS THE ONLY TEST IN THE FILE THAT DETECTS A SWAP OF
+	 * THE CAPABILITY AND PRESENCE BLOCKS, and the reason is worth stating so the
+	 * later tasks in this module copy the right test rather than the impressive
+	 * looking one. ACF is deliberately NOT installed in this process, so the
+	 * caller trips BOTH guards at once and only the order decides which refusal is
+	 * raised. Move the presence check above the capability check and this test
+	 * reports IntegrationUnavailable — which would tell an unprivileged caller
+	 * whether this site runs ACF, a fact about the site's configuration they have
+	 * no right to, and would walk them through fixing a request that was never
+	 * going to run.
+	 *
+	 * VERIFIED BY MUTATION, NOT BY ARGUMENT. Swapping the two blocks in
+	 * AcfGroupList::handle() and running this file fails here with
+	 * "Failed asserting that two variables reference the same object" —
+	 * ErrorCode Enum (Forbidden) versus ErrorCode Enum (IntegrationUnavailable) —
+	 * and, once ACF is absent, nothing else in the file notices. The companion
+	 * test below survives that mutation by construction; see its docblock.
 	 */
 	public function test_a_denied_caller_is_refused_before_the_presence_gate_is_consulted(): void {
 		$this->mayEdit = false;
@@ -253,10 +275,18 @@ final class AcfGroupListTest extends TestCase {
 	}
 
 	/**
-	 * THE ORDERING PROOF, SECOND FORM. Here ACF IS installed, so the presence
-	 * guard would pass and the read would run — unless the capability guard
-	 * already stopped it. Zero recorded ACF calls is the assertable form of
-	 * "no work was done for a caller who may not have the answer".
+	 * NOT AN ORDERING PROOF — a no-work proof, and the distinction is the whole
+	 * point of this docblock. Here ACF IS installed, so a refusal for either
+	 * reason leaves the same evidence: swap the capability and presence blocks and
+	 * presence simply passes, the capability guard still throws Forbidden, and
+	 * zero ACF calls are still recorded. This test cannot see that mutation and
+	 * must not be described as though it can. AcfPresence::isLoaded() calls only
+	 * defined() and function_exists(), neither of which a double can observe, so
+	 * no amount of recording makes the presence gate itself countable.
+	 *
+	 * What it does prove is worth a test of its own: a caller who may not have the
+	 * answer causes no work to be done for them at all — no field-group read, no
+	 * per-group field read, nothing an expensive site would feel.
 	 */
 	public function test_a_denied_caller_causes_no_acf_read_at_all(): void {
 		$this->installAcf( [ $this->group( 'group_page', 'Page settings' ) ] );
@@ -270,6 +300,29 @@ final class AcfGroupListTest extends TestCase {
 		}
 
 		$this->assertSame( 0, $this->acfCallCount(), 'The capability check must run BEFORE any ACF read.' );
+	}
+
+	/**
+	 * THE SECOND ORDERING PROOF: presence runs before the read, and this one CAN
+	 * fail. The ACF functions are installed here but ACF_VERSION is not, which is
+	 * the shape of a fork or a half-loaded plugin — the presence gate must refuse,
+	 * and because the functions exist the doubles can record whether anything
+	 * called them anyway. Delete the presence guard from handle() and the read
+	 * runs: the call stops refusing and the recorded count stops being zero. A
+	 * test written against a site where the functions do not exist at all could
+	 * not have told those two worlds apart.
+	 */
+	public function test_a_half_loaded_acf_refuses_without_reading_anything(): void {
+		$this->installAcf( [ $this->group( 'group_page', 'Page settings' ) ], [], null );
+
+		try {
+			$this->handle();
+			$this->fail( 'A site whose ACF does not declare a version must refuse.' );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::IntegrationUnavailable, $e->errorCode );
+		}
+
+		$this->assertSame( 0, $this->acfCallCount(), 'The presence gate must run BEFORE any ACF read.' );
 	}
 
 	/**
@@ -429,6 +482,27 @@ final class AcfGroupListTest extends TestCase {
 		$this->assertCount( 1, $rules, 'A rule group that is not an array is dropped.' );
 		$this->assertCount( 1, $rules[0], 'A member that is not an array, and one carrying no scalar param, are both dropped.' );
 		$this->assertSame( 'post_type', $rules[0][0]['param'] );
+	}
+
+	/**
+	 * An AND with no conditions in it matches everything, and saying nothing about
+	 * it would report the group as narrower than the site declared it. A rule
+	 * group that arrived with rules and lost every one of them to the shape guards
+	 * is the opposite case and is dropped, because emitting `[]` there would turn
+	 * "these conditions could not be read" into "there are no conditions".
+	 */
+	public function test_an_empty_rule_group_is_kept_but_one_emptied_by_dropping_is_not(): void {
+		$this->installAcf(
+			[
+				$this->group( 'group_everywhere', 'Everywhere', [ 'location' => [ [] ] ] ),
+				$this->group( 'group_unreadable', 'Unreadable', [ 'location' => [ [ 'not a rule' ] ] ] ),
+			]
+		);
+
+		$payload = $this->handle();
+
+		$this->assertSame( [ [] ], $payload['groups'][0]['locationRules'] );
+		$this->assertSame( [], $payload['groups'][1]['locationRules'] );
 	}
 
 	public function test_a_group_that_is_not_an_array_is_dropped_and_warned_about(): void {
