@@ -142,7 +142,7 @@ final class ElementorWriteTargetRestoreTest extends TestCase {
 		Functions\when( 'wp_unslash' )->alias( fn( mixed $value ): mixed => is_string( $value ) ? stripslashes( $value ) : $value );
 		Functions\when( 'wp_json_encode' )->alias( fn( mixed $data ): mixed => json_encode( $data ) );
 		Functions\when( 'wp_upload_dir' )->alias( fn(): array => [ 'basedir' => sys_get_temp_dir() . '/sitehelm-write-target' ] );
-		Functions\when( 'wp_delete_file' )->alias( fn( string $path ): null => null );
+		Functions\when( 'wp_delete_file' )->alias( fn( string $path ) => null );
 	}
 
 	// ------------------------------------------------- restore
