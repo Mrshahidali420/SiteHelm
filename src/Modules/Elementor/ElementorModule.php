@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace SiteHelm\Modules\Elementor;
 
+use SiteHelm\Change\PayloadNormalizer;
 use SiteHelm\Contracts\IntegrationModule;
 use SiteHelm\Contracts\ModuleHealth;
 use SiteHelm\Contracts\ModuleId;
@@ -184,6 +185,71 @@ final class ElementorModule implements IntegrationModule {
 		$registry->register(
 			ElementorWidgetAvailability::definition(),
 			[ new ElementorWidgetAvailability( $this->presence ), 'handle' ]
+		);
+
+		// The write block. Every one of these shares a single ElementorWriteTarget,
+		// and the target shares a single ElementorApi with the cache invalidator the
+		// writer holds — one presence gate, one registry read, one cache flush per
+		// document, rather than one of each per operation.
+		$api      = new ElementorApi( $this->presence );
+		$coercion = new ElementorPropCoercion( $api );
+		$writer   = new ElementorDocumentWriter( $api, $document, new ElementorCacheInvalidator( $api ) );
+		$targets  = new ElementorWriteTarget( $document, $tree, $this->presence, $coercion, $writer );
+		$edit     = new ElementorTreeEdit();
+		$inputs   = new ElementorElementAddInput( $coercion, $edit );
+		$merge    = new ElementorSettingsMerge( $edit, $coercion );
+		$diff     = new ElementorTreeDiff( $tree );
+
+		$registry->registerWrite(
+			ElementorElementAdd::definition(),
+			new ElementorElementAdd(
+				$targets,
+				$document,
+				$edit,
+				new ElementorIdMint(),
+				$coercion,
+				$writer,
+				$diff,
+				new PayloadNormalizer(),
+				$inputs,
+				$merge
+			)
+		);
+
+		$registry->registerWrite(
+			ElementorElementUpdate::definition(),
+			new ElementorElementUpdate( $targets, $document, $merge, $edit, $coercion, $writer, $diff, $inputs )
+		);
+
+		$registry->registerWrite(
+			ElementorWidgetSettingsUpdate::definition(),
+			new ElementorWidgetSettingsUpdate( $targets, $document, $merge, $edit, $coercion, $writer, $diff, $inputs )
+		);
+
+		$registry->registerWrite(
+			ElementorElementMove::definition(),
+			new ElementorElementMove( $targets, $document, $merge, $edit, $coercion, $writer, $diff, $inputs )
+		);
+
+		$registry->registerWrite(
+			ElementorElementDuplicate::definition(),
+			new ElementorElementDuplicate(
+				$targets,
+				$document,
+				$merge,
+				$edit,
+				new ElementorIdMint(),
+				new ElementorStyleRemap(),
+				$coercion,
+				$writer,
+				$diff,
+				new PayloadNormalizer()
+			)
+		);
+
+		$registry->registerWrite(
+			ElementorElementRemove::definition(),
+			new ElementorElementRemove( $targets, $document, $merge, $edit, $coercion, $writer, $diff )
 		);
 	}
 }

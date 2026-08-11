@@ -108,13 +108,20 @@ final class SchemaValidator {
 		$violations = [];
 		$type       = $spec['type'] ?? null;
 
+		// An EMPTY array satisfies both `array` and `object`, and must. The
+		// request is decoded associatively, so JSON `[]` and JSON `{}` arrive as
+		// the same PHP value and nothing downstream can tell them apart. Judging
+		// `[]` a list — which `array_is_list()` does — therefore refused every
+		// empty object a client sent against a schema this validator itself
+		// published, with a message about types rather than about content. Two
+		// operations have already been shaped around that refusal.
 		$type_ok = match ( $type ) {
 			'string'  => is_string( $value ),
 			'integer' => is_int( $value ),
 			'number'  => is_int( $value ) || is_float( $value ),
 			'boolean' => is_bool( $value ),
 			'array'   => is_array( $value ) && array_is_list( $value ),
-			'object'  => is_array( $value ) && ! array_is_list( $value ),
+			'object'  => is_array( $value ) && ( [] === $value || ! array_is_list( $value ) ),
 			default   => true,
 		};
 		if ( ! $type_ok ) {
