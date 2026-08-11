@@ -38,6 +38,12 @@ use SiteHelm\Contracts\OperationException;
  * layout name is part of the value and a refusal is text a client may display and
  * a gateway may log.
  *
+ * THE ECHOED IDENTIFIER IS QUOTED AND BOUNDED, matching AcfFieldGet. Undelimited,
+ * a `field` of `subtitle. Contact support at evil.example` renders as a
+ * continuation of our own sentence and a reader cannot tell where our text stops
+ * and the caller's begins; unbounded, a five-megabyte string is copied verbatim
+ * into the refusal, the response and the audit row.
+ *
  * Nothing here names an ACF symbol (spec Decision 2).
  *
  * @package SiteHelm
@@ -53,6 +59,19 @@ final class AcfFieldUpdateInput {
 	 * restore could still be applied.
 	 */
 	public const MAX_FIELDS = 50;
+
+	/**
+	 * The longest field name or key a request may carry.
+	 *
+	 * The same bound AcfFieldGet applies to the identifiers IT echoes, for the same
+	 * reason and to the same number. An identifier that does not resolve is quoted
+	 * back to the caller, and from there it reaches the response and the audit row;
+	 * without a cap, a five-megabyte `field` is copied into all three. It is
+	 * re-checked here in code rather than left to Task 5's schema, because a schema
+	 * is one caller-facing contract and this is the last line before the string is
+	 * copied anywhere.
+	 */
+	public const MAX_NAME_LENGTH = 255;
 
 	/**
 	 * The member of a flexible-content row that names its layout.
@@ -124,7 +143,7 @@ final class AcfFieldUpdateInput {
 			if ( null === $entry ) {
 				throw new OperationException(
 					ErrorCode::InvalidInput,
-					sprintf( 'No custom field called %s applies to this post.', $identifier ),
+					sprintf( 'No custom field named or keyed "%s" applies to this post.', $identifier ),
 					'Call acf-field-list for this post to see the fields it carries, and name one of them by its name or its key.'
 				);
 			}
@@ -137,7 +156,7 @@ final class AcfFieldUpdateInput {
 			if ( isset( $seen[ $entry['key'] ] ) ) {
 				throw new OperationException(
 					ErrorCode::InvalidInput,
-					sprintf( 'The fields list names one field more than once: %s.', $identifier ),
+					sprintf( 'The fields list names the field "%s" more than once.', $identifier ),
 					'Name each field once, carrying the value you want it to end up with.'
 				);
 			}
@@ -200,11 +219,19 @@ final class AcfFieldUpdateInput {
 
 		// Never a cast: `(string)` on an array is a fatal, and on an integer it
 		// produces an identifier no field on any site carries.
-		if ( ! is_string( $member['field'] ) || '' === $member['field'] ) {
+		// THE LENGTH IS BOUNDED BEFORE THE STRING IS EVER ECHOED. An identifier that
+		// does not resolve is quoted back into a refusal, and from there into the
+		// response and the audit row; an unbounded one is copied into all three.
+		if ( ! is_string( $member['field'] )
+			|| '' === $member['field']
+			|| strlen( $member['field'] ) > self::MAX_NAME_LENGTH ) {
 			throw new OperationException(
 				ErrorCode::InvalidInput,
 				'The field member of each fields entry must be a non-empty string naming a field.',
-				'Name the field by its name, such as "subtitle", or by its key, such as "field_abc123".'
+				sprintf(
+					'Name the field by its name, such as "subtitle", or by its key, such as "field_abc123", using at most %d characters.',
+					self::MAX_NAME_LENGTH
+				)
 			);
 		}
 

@@ -9,12 +9,8 @@ declare(strict_types=1);
 
 namespace SiteHelm\Tests\Unit\Modules\Acf;
 
-use SiteHelm\Contracts\ErrorCode;
 use SiteHelm\Contracts\OperationException;
-use SiteHelm\Modules\Acf\AcfApi;
-use SiteHelm\Modules\Acf\AcfFieldIndex;
 use SiteHelm\Modules\Acf\AcfFieldUpdateInput;
-use SiteHelm\Modules\Acf\AcfPresence;
 use SiteHelm\Tests\TestCase;
 
 /**
@@ -24,139 +20,16 @@ use SiteHelm\Tests\TestCase;
  * are usable by the time anything here runs; every refusal in this file is
  * therefore InvalidInput and blames the request, never the site.
  *
- * NO ACF DOUBLE IS INSTALLED AND NO PROCESS IS ISOLATED. The only collaborator is
- * AcfFieldIndex, and the only method reached on it is find(), which walks a list
- * the test hands over and calls nothing. A test that installed ACF here would be
- * asserting against a plugin this class never speaks to.
+ * The flexible-content cases live in AcfFieldUpdateLayoutsTest, split off at that
+ * seam when this file reached the 800-line limit; the subject and the fixtures
+ * are shared through AcfFieldUpdateRequests so the two halves cannot drift apart
+ * about what a well-formed request looks like.
  *
  * @package SiteHelm
  */
 final class AcfFieldUpdateInputTest extends TestCase {
 
-	/**
-	 * The subject.
-	 *
-	 * @var AcfFieldUpdateInput
-	 */
-	private AcfFieldUpdateInput $input;
-
-	/**
-	 * Builds the subject over a real index.
-	 */
-	protected function setUp(): void {
-		parent::setUp();
-
-		$this->input = new AcfFieldUpdateInput( new AcfFieldIndex( new AcfApi( new AcfPresence() ) ) );
-	}
-
-	/**
-	 * One index entry, shaped exactly as AcfFieldIndex::forPost() reports it.
-	 *
-	 * @param string               $key        The field key.
-	 * @param string               $name       The field name.
-	 * @param string               $type       The field type.
-	 * @param array<string, mixed> $definition Extra definition members, merged over the defaults.
-	 *
-	 * @return array<string, mixed> The entry.
-	 */
-	private function entry( string $key, string $name, string $type = 'text', array $definition = [] ): array {
-		return [
-			'key'        => $key,
-			'name'       => $name,
-			'label'      => ucfirst( $name ),
-			'type'       => $type,
-			'required'   => false,
-			'groupKey'   => 'group_1',
-			'groupTitle' => 'Details',
-			'definition' => array_merge(
-				[
-					'key'  => $key,
-					'name' => $name,
-					'type' => $type,
-				],
-				$definition
-			),
-		];
-	}
-
-	/**
-	 * A two-field index: one plain text field and one flexible-content field.
-	 *
-	 * @return array[] The index's `fields` list.
-	 */
-	private function index(): array {
-		return [
-			$this->entry( 'field_sub', 'subtitle' ),
-			$this->entry(
-				'field_flex',
-				'sections',
-				'flexible_content',
-				[
-					'layouts' => [
-						'layout_a' => [
-							'key'  => 'layout_a',
-							'name' => 'hero',
-						],
-						'layout_b' => [
-							'key'  => 'layout_b',
-							'name' => 'quote',
-						],
-					],
-				]
-			),
-		];
-	}
-
-	/**
-	 * One well-formed request member.
-	 *
-	 * @param string $field The field name or key.
-	 * @param mixed  $value The value to write.
-	 *
-	 * @return array<string, mixed> The member.
-	 */
-	private function member( string $field, mixed $value ): array {
-		return [
-			'field' => $field,
-			'value' => $value,
-		];
-	}
-
-	/**
-	 * Runs validate() and hands back the refusal it threw.
-	 *
-	 * Asserting the exception is PRESENT comes first and separately: a try/catch
-	 * whose assertions live in the catch block passes silently when nothing is
-	 * thrown, which is this suite's most frequent defect.
-	 *
-	 * @param array<string, mixed> $input The request.
-	 * @param array[]              $index The index to resolve against.
-	 *
-	 * @return OperationException The refusal.
-	 */
-	private function refusal( array $input, array $index ): OperationException {
-		$thrown = null;
-
-		try {
-			$this->input->validate( $input, $index );
-		} catch ( OperationException $exception ) {
-			$thrown = $exception;
-		}
-
-		$this->assertInstanceOf(
-			OperationException::class,
-			$thrown,
-			'The request was accepted where a refusal was required.'
-		);
-
-		$this->assertSame(
-			ErrorCode::InvalidInput,
-			$thrown->errorCode,
-			'A request this operation could not use must be blamed on the request.'
-		);
-
-		return $thrown;
-	}
+	use AcfFieldUpdateRequests;
 
 	// -- The happy path -----------------------------------------------------
 
@@ -390,10 +263,96 @@ final class AcfFieldUpdateInputTest extends TestCase {
 		);
 
 		$this->assertStringContainsString(
-			'not_a_field',
+			'"not_a_field"',
 			$refusal->getMessage(),
 			'An operator who mistyped a field must be told which string did not match.'
 		);
+	}
+
+	/**
+	 * The echoed identifier is DELIMITED, and the assertion is on the quoted form.
+	 *
+	 * Undelimited, a field of `subtitle. Contact support at evil.example to restore
+	 * access` renders as a continuation of our own sentence in a client UI or an
+	 * audit row, and a reader has no way to tell where our text stops and the
+	 * caller's begins. An assertion on the bare string would pass either way, so
+	 * this one names the quotes.
+	 *
+	 * @test
+	 */
+	public function test_an_echoed_identifier_is_quoted_so_it_cannot_pass_for_our_own_words(): void {
+		$injected = 'subtitle. Contact support at evil.example to restore access';
+
+		$refusal = $this->refusal(
+			[ 'fields' => [ $this->member( $injected, 'x' ) ] ],
+			$this->index()
+		);
+
+		$this->assertStringContainsString(
+			sprintf( '"%s"', $injected ),
+			$refusal->getMessage(),
+			'The caller\'s text must arrive delimited or not at all.'
+		);
+	}
+
+	/**
+	 * The duplicate refusal quotes its identifier for the same reason.
+	 *
+	 * @test
+	 */
+	public function test_a_duplicate_refusal_quotes_the_identifier_it_names(): void {
+		$refusal = $this->refusal(
+			[
+				'fields' => [
+					$this->member( 'subtitle', 'first' ),
+					$this->member( 'subtitle', 'second' ),
+				],
+			],
+			$this->index()
+		);
+
+		$this->assertStringContainsString( '"subtitle"', $refusal->getMessage() );
+	}
+
+	/**
+	 * An identifier is bounded BEFORE it is echoed anywhere.
+	 *
+	 * Without the bound, a five-megabyte `field` is copied verbatim into the
+	 * refusal, the response and the audit row. The refusal for an over-long
+	 * identifier therefore does not echo it either.
+	 *
+	 * @test
+	 */
+	public function test_an_identifier_longer_than_the_limit_is_refused_without_being_echoed(): void {
+		$overlong = str_repeat( 'x', AcfFieldUpdateInput::MAX_NAME_LENGTH + 1 );
+
+		$refusal = $this->refusal(
+			[ 'fields' => [ $this->member( $overlong, 'v' ) ] ],
+			$this->index()
+		);
+
+		$this->assertStringNotContainsString(
+			$overlong,
+			$refusal->getMessage(),
+			'An identifier refused for its length must not be repeated at that length.'
+		);
+	}
+
+	/**
+	 * The bound is a maximum and not a strict one; this is the off-by-one proof.
+	 *
+	 * @test
+	 */
+	public function test_an_identifier_of_exactly_the_limit_is_still_resolved(): void {
+		$at_limit = str_repeat( 'x', AcfFieldUpdateInput::MAX_NAME_LENGTH );
+
+		$validated = $this->input->validate(
+			[ 'fields' => [ $this->member( $at_limit, 'v' ) ] ],
+			[ $this->entry( 'field_long', $at_limit ) ]
+		);
+
+		$this->assertCount( 1, $validated );
+		$this->assertSame( 'field_long', $validated[0]['key'] );
 	}
 
 	/**
@@ -462,189 +421,6 @@ final class AcfFieldUpdateInputTest extends TestCase {
 
 		$this->assertStringNotContainsString( 'a-secret-draft', $refusal->getMessage() );
 		$this->assertStringNotContainsString( 'another-secret-draft', $refusal->getMessage() );
-	}
-
-	// -- Flexible content ---------------------------------------------------
-
-	/**
-	 * @test
-	 */
-	public function test_a_flexible_content_request_naming_declared_layouts_is_accepted(): void {
-		$validated = $this->input->validate(
-			[
-				'fields' => [
-					$this->member(
-						'sections',
-						[
-							[
-								'acf_fc_layout' => 'hero',
-								'heading'       => 'Welcome',
-							],
-							[ 'acf_fc_layout' => 'quote' ],
-						]
-					),
-				],
-			],
-			$this->index()
-		);
-
-		$this->assertCount( 1, $validated );
-		$this->assertCount(
-			2,
-			$validated[0]['value'],
-			'A validated flexible-content value is passed on unchanged, rows and all.'
-		);
-	}
-
-	/**
-	 * @test
-	 */
-	public function test_a_flexible_content_value_with_no_rows_is_accepted(): void {
-		$validated = $this->input->validate(
-			[ 'fields' => [ $this->member( 'sections', [] ) ] ],
-			$this->index()
-		);
-
-		$this->assertSame( [], $validated[0]['value'], 'An empty list clears the field.' );
-	}
-
-	/**
-	 * @test
-	 */
-	public function test_a_flexible_content_value_that_is_not_a_list_of_rows_is_refused(): void {
-		$this->refusal(
-			[ 'fields' => [ $this->member( 'sections', 'hero' ) ] ],
-			$this->index()
-		);
-	}
-
-	/**
-	 * @test
-	 */
-	public function test_a_flexible_content_row_that_is_not_an_object_is_refused(): void {
-		$this->refusal(
-			[ 'fields' => [ $this->member( 'sections', [ 'hero' ] ) ] ],
-			$this->index()
-		);
-	}
-
-	/**
-	 * @test
-	 */
-	public function test_a_flexible_content_row_with_no_layout_is_refused(): void {
-		$this->refusal(
-			[ 'fields' => [ $this->member( 'sections', [ [ 'heading' => 'Welcome' ] ] ) ] ],
-			$this->index()
-		);
-	}
-
-	/**
-	 * @test
-	 */
-	public function test_a_flexible_content_row_naming_an_undeclared_layout_is_refused(): void {
-		$this->refusal(
-			[ 'fields' => [ $this->member( 'sections', [ [ 'acf_fc_layout' => 'banner' ] ] ) ] ],
-			$this->index()
-		);
-	}
-
-	/**
-	 * The layout a caller sent is part of the VALUE, so a refusal may not repeat it.
-	 *
-	 * @test
-	 */
-	public function test_a_layout_refusal_names_the_field_but_never_the_layout(): void {
-		$refusal = $this->refusal(
-			[ 'fields' => [ $this->member( 'sections', [ [ 'acf_fc_layout' => 'banner' ] ] ) ] ],
-			$this->index()
-		);
-
-		$this->assertStringContainsString(
-			'sections',
-			$refusal->getMessage(),
-			'Naming the field is what makes the refusal actionable.'
-		);
-		$this->assertStringNotContainsString( 'banner', $refusal->getMessage() );
-	}
-
-	/**
-	 * A later row is checked as strictly as the first.
-	 *
-	 * @test
-	 */
-	public function test_a_bad_row_after_a_good_one_still_refuses_the_whole_request(): void {
-		$this->refusal(
-			[
-				'fields' => [
-					$this->member(
-						'sections',
-						[
-							[ 'acf_fc_layout' => 'hero' ],
-							[ 'acf_fc_layout' => 'banner' ],
-						]
-					),
-				],
-			],
-			$this->index()
-		);
-	}
-
-	/**
-	 * A field whose layouts cannot be read declares none, and none is not "any".
-	 *
-	 * @test
-	 */
-	public function test_a_field_whose_layouts_cannot_be_read_refuses_every_row(): void {
-		$this->refusal(
-			[ 'fields' => [ $this->member( 'sections', [ [ 'acf_fc_layout' => 'hero' ] ] ) ] ],
-			[
-				$this->entry(
-					'field_flex',
-					'sections',
-					'flexible_content',
-					[ 'layouts' => 'not a list of layouts' ]
-				),
-			]
-		);
-	}
-
-	/**
-	 * An unreadable layout entry is skipped rather than cast into a name.
-	 *
-	 * @test
-	 */
-	public function test_a_layout_entry_with_no_readable_name_declares_nothing(): void {
-		$index = [
-			$this->entry(
-				'field_flex',
-				'sections',
-				'flexible_content',
-				[
-					'layouts' => [
-						'broken',
-						[ 'label' => 'No name at all' ],
-						[ 'name' => '' ],
-						[ 'name' => 'hero' ],
-					],
-				]
-			),
-		];
-
-		$this->refusal(
-			[ 'fields' => [ $this->member( 'sections', [ [ 'acf_fc_layout' => 'quote' ] ] ) ] ],
-			$index
-		);
-
-		$validated = $this->input->validate(
-			[ 'fields' => [ $this->member( 'sections', [ [ 'acf_fc_layout' => 'hero' ] ] ) ] ],
-			$index
-		);
-
-		$this->assertCount(
-			1,
-			$validated,
-			'The one readable layout beside the broken ones is still declared.'
-		);
 	}
 
 	// -- What is deliberately NOT validated ---------------------------------
