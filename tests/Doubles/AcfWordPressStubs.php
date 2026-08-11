@@ -11,6 +11,7 @@ namespace SiteHelm\Tests\Doubles;
 
 use Brain\Monkey\Functions;
 use SiteHelm\Modules\Acf\AcfPresence;
+use stdClass;
 
 /**
  * The WordPress and ACF functions the ACF operations call, doubled once.
@@ -42,10 +43,13 @@ use SiteHelm\Modules\Acf\AcfPresence;
  * them because doubling a third-party function is the one thing that cannot be
  * done through the wrapper that hides it.
  *
- * CONTRACT: the using class must declare the properties `bool $mayEdit` and
- * `array $acfCalls`. PHP 8.1 has no trait constants, and trait properties would
+ * CONTRACT: the using class must declare the properties `bool $mayEdit`,
+ * `array $capabilityChecks` and `array $acfCalls`. PHP 8.1 has no trait constants, and trait properties would
  * collide with the ones the using classes declare, so the requirement is stated
- * rather than enforced by the language.
+ * rather than enforced by the language. A class that also calls stubAcfPosts()
+ * must declare `array $posts` and `array $postCalls` in addition; those two are
+ * required only by that method, so the suites that never look a post up are not
+ * made to carry them.
  */
 trait AcfWordPressStubs {
 
@@ -60,11 +64,71 @@ trait AcfWordPressStubs {
 	 * variadic tail the real function takes, because a per-object call is a
 	 * signature error rather than a different answer and a double that could not
 	 * receive one would hide the mistake.
+	 *
+	 * IT RECORDS WHAT IT WAS ASKED, and that is not decoration. This module's
+	 * operations are split between a site-wide `edit_posts` and a target-scoped
+	 * `edit_post( ..., $post_id )`, and the two answer identically for every
+	 * administrator — so an operation that asked the site-wide question about a
+	 * post the caller may not edit would pass every assertion on its payload and
+	 * still hand a contributor the field set of a page they may not touch. The
+	 * recorded argument list is the only place that mutation is visible.
 	 */
 	private function stubAcfWordPress(): void {
 		Functions\when( 'user_can' )->alias(
-			fn( int $user_id, string $capability, mixed ...$args ): bool => $this->mayEdit
+			function ( int $user_id, string $capability, mixed ...$args ): bool {
+				$this->capabilityChecks[] = array_merge( [ $user_id, $capability ], $args );
+
+				return $this->mayEdit;
+			}
 		);
+	}
+
+	/**
+	 * Installs the post lookup the target-scoped operations make.
+	 *
+	 * SEPARATE FROM stubAcfWordPress() BECAUSE THE LOOKUP IS EVIDENCE. An operation
+	 * whose capability check is target-scoped must refuse a denied caller BEFORE it
+	 * asks whether the post exists — otherwise the caller learns from the
+	 * difference between two refusals whether a post they may not edit is there at
+	 * all. Unlike the presence gate, that lookup IS observable: `get_post` is a real
+	 * function a double can replace, so `$postCalls` turns "no post was looked up"
+	 * into an assertable fact rather than an inference from an error code.
+	 *
+	 * The post is a plain object rather than a WP_Post, which is what every other
+	 * suite in this repository doubles it with; nothing in this module reads more
+	 * than the object's existence.
+	 *
+	 * The identifier is guarded on its shape rather than cast, because a caller can
+	 * send an array and `(int)` on an array is 1 — a lookup for post 1, which on
+	 * most sites exists.
+	 */
+	private function stubAcfPosts(): void {
+		Functions\when( 'get_post' )->alias(
+			function ( mixed $id = null ): ?object {
+				$key = is_scalar( $id ) ? (int) $id : 0;
+
+				$this->postCalls[] = $key;
+
+				return $this->posts[ $key ] ?? null;
+			}
+		);
+	}
+
+	/**
+	 * One published post, in the shape the doubled lookup answers with.
+	 *
+	 * @param int $id The post identifier.
+	 *
+	 * @return object The post.
+	 */
+	private function acfPost( int $id ): object {
+		$post              = new stdClass();
+		$post->ID          = $id;
+		$post->post_type   = 'page';
+		$post->post_status = 'publish';
+		$post->post_title  = 'A page';
+
+		return $post;
 	}
 
 	/**

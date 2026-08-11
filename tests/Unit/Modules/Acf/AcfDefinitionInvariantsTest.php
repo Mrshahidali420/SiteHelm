@@ -71,6 +71,13 @@ final class AcfDefinitionInvariantsTest extends TestCase {
 	private bool $mayEdit = true;
 
 	/**
+	 * Every capability question asked, in order. Required by the double's contract.
+	 *
+	 * @var array[]
+	 */
+	private array $capabilityChecks = [];
+
+	/**
 	 * Every doubled ACF call, in the order it was made.
 	 *
 	 * @var array[]
@@ -91,6 +98,7 @@ final class AcfDefinitionInvariantsTest extends TestCase {
 	 */
 	private const OPERATION_IDS = [
 		'acf-group-list',
+		'acf-field-list',
 	];
 
 	/**
@@ -101,7 +109,7 @@ final class AcfDefinitionInvariantsTest extends TestCase {
 	 * on the read dispatcher, and this number is what that derivation is checked
 	 * against.
 	 */
-	private const ACF_READ_COUNT = 1;
+	private const ACF_READ_COUNT = 2;
 
 	/**
 	 * The ACF module's write count. Task 4 raises it to one.
@@ -131,8 +139,9 @@ final class AcfDefinitionInvariantsTest extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();
 
-		$this->mayEdit  = true;
-		$this->acfCalls = [];
+		$this->mayEdit          = true;
+		$this->acfCalls         = [];
+		$this->capabilityChecks = [];
 	}
 
 	/**

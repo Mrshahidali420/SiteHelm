@@ -81,6 +81,17 @@ final class AcfGroupListTest extends TestCase {
 	private bool $mayEdit = true;
 
 	/**
+	 * Every capability question the operation asked, in order.
+	 *
+	 * Required by the shared double's contract. This operation answers about the
+	 * site rather than about a post, so nothing here asserts on it; the trait
+	 * records it for the target-scoped operations that must.
+	 *
+	 * @var array[]
+	 */
+	private array $capabilityChecks = [];
+
+	/**
 	 * Every doubled ACF call, in the order it was made.
 	 *
 	 * @var array[]
@@ -90,8 +101,9 @@ final class AcfGroupListTest extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();
 
-		$this->mayEdit  = true;
-		$this->acfCalls = [];
+		$this->mayEdit          = true;
+		$this->acfCalls         = [];
+		$this->capabilityChecks = [];
 
 		$this->stubAcfWordPress();
 	}
