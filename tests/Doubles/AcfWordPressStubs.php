@@ -161,13 +161,31 @@ trait AcfWordPressStubs {
 	 * key-before-name lookup exists to prevent. A key with no entry answers null,
 	 * which is what ACF answers for a field an editor never filled in.
 	 *
-	 * @param mixed                $groups               What acf_get_field_groups() answers.
-	 * @param array<string, mixed> $fields_by_group      What acf_get_fields() answers, keyed by group key.
-	 *                                                   A group with no entry answers an empty list.
-	 * @param string|null          $version              The ACF version this site reports; null defines no constant.
-	 * @param bool                 $with_fields_function Whether acf_get_fields() exists on this site.
-	 * @param array<string, mixed> $values_by_key        What get_field() answers, keyed by field key.
-	 * @param bool                 $with_value_function  Whether get_field() exists on this site.
+	 * THE THREE WRITE SYMBOLS ARE GUARDED ONE FLAG EACH, for the reason the two read
+	 * symbols are: a test asking for one missing function must get one missing
+	 * function. They are also recorded with their WHOLE argument list rather than
+	 * their count, because the module's central write rule is that a write goes by
+	 * field KEY and never by name (spec Decision 8) — and `update_field()` given a
+	 * name does not fail, it silently writes nothing when the target has no stored
+	 * row yet. A count cannot see that; the recorded first argument can.
+	 *
+	 * `$stored_rows` IS KEYED BY FIELD NAME AND NOT BY KEY, and the asymmetry is the
+	 * contract rather than an oversight. `metadata_exists()` asks about a postmeta
+	 * row, and ACF stores that row under the field's NAME; a double keyed by key
+	 * would answer for a caller that asked the wrong question and hide the one
+	 * confusion this module is most likely to make. Each entry is `"$post_id:$name"`.
+	 *
+	 * @param mixed                $groups                 What acf_get_field_groups() answers.
+	 * @param array<string, mixed> $fields_by_group        What acf_get_fields() answers, keyed by group key.
+	 *                                                     A group with no entry answers an empty list.
+	 * @param string|null          $version                The ACF version this site reports; null defines no constant.
+	 * @param bool                 $with_fields_function   Whether acf_get_fields() exists on this site.
+	 * @param array<string, mixed> $values_by_key          What get_field() answers, keyed by field key.
+	 * @param bool                 $with_value_function    Whether get_field() exists on this site.
+	 * @param bool                 $with_update_function   Whether update_field() exists on this site.
+	 * @param bool                 $with_delete_function   Whether delete_field() exists on this site.
+	 * @param string[]             $stored_rows            The postmeta rows this site holds, each `"$post_id:$name"`.
+	 * @param bool                 $with_metadata_function Whether metadata_exists() exists in this process.
 	 */
 	private function installAcf(
 		mixed $groups,
@@ -175,7 +193,11 @@ trait AcfWordPressStubs {
 		?string $version = '6.2.7',
 		bool $with_fields_function = true,
 		array $values_by_key = [],
-		bool $with_value_function = true
+		bool $with_value_function = true,
+		bool $with_update_function = true,
+		bool $with_delete_function = true,
+		array $stored_rows = [],
+		bool $with_metadata_function = true
 	): void {
 		if ( null !== $version && ! defined( AcfPresence::VERSION_CONSTANT ) ) {
 			define( AcfPresence::VERSION_CONSTANT, $version );
@@ -234,6 +256,50 @@ trait AcfWordPressStubs {
 				}
 			);
 		}
+
+		// THE DOUBLE ANSWERS false, WHICH IS NOT A FAILURE AND IS THE POINT.
+		// `update_field()` answers false for a legitimate no-op as readily as for a
+		// refusal, which is exactly why AcfApi::writeValue() returns void (spec
+		// Decision 3). A double that answered true would let a wrapper that grew a
+		// bool return look correct in every test while being wrong on every real
+		// site that wrote a field its stored value already matched.
+		if ( $with_update_function ) {
+			Functions\when( 'update_field' )->alias(
+				function ( mixed $selector = null, mixed $value = null, mixed $post_id = false ): bool {
+					$this->acfCalls[] = [ 'update', [ $selector, $value, $post_id ] ];
+
+					return false;
+				}
+			);
+		}
+
+		if ( $with_delete_function ) {
+			Functions\when( 'delete_field' )->alias(
+				function ( mixed $selector = null, mixed $post_id = false ): bool {
+					$this->acfCalls[] = [ 'delete', [ $selector, $post_id ] ];
+
+					return false;
+				}
+			);
+		}
+
+		// INSTALLED HERE RATHER THAN IN stubAcfWordPress() EVEN THOUGH IT IS A
+		// WordPress FUNCTION. AcfApi::hasStoredRow() probes for it before calling it,
+		// and a suite that installed it unconditionally would have no way left to
+		// reach that probe — which is a refusal in production and a fatal without it.
+		if ( $with_metadata_function ) {
+			Functions\when( 'metadata_exists' )->alias(
+				function ( mixed $meta_type = null, mixed $object_id = null, mixed $meta_key = null ) use ( $stored_rows ): bool {
+					$this->acfCalls[] = [ 'row', [ $meta_type, $object_id, $meta_key ] ];
+
+					return in_array(
+						sprintf( '%s:%s', is_scalar( $object_id ) ? $object_id : '', is_scalar( $meta_key ) ? $meta_key : '' ),
+						$stored_rows,
+						true
+					);
+				}
+			);
+		}
 	}
 
 	/**
@@ -245,7 +311,7 @@ trait AcfWordPressStubs {
 	 * surfaces as an empty listing rather than as an error, so nothing downstream
 	 * would notice it.
 	 *
-	 * @param string $kind Either 'groups' or 'fields'.
+	 * @param string $kind One of 'groups', 'fields', 'value', 'update', 'delete' or 'row'.
 	 *
 	 * @return mixed[] The recorded argument of each call of that kind.
 	 */
@@ -264,7 +330,7 @@ trait AcfWordPressStubs {
 	/**
 	 * How many times the doubled ACF functions were called.
 	 *
-	 * @param string|null $kind Restrict the count to 'groups' or 'fields'.
+	 * @param string|null $kind Restrict the count to one recorded kind.
 	 *
 	 * @return int The recorded call count.
 	 */
