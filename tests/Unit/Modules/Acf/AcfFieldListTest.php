@@ -197,9 +197,9 @@ final class AcfFieldListTest extends TestCase {
 
 		$payload = $this->handle();
 
-		$this->assertSame( [ 'target', 'fields', 'warnings' ], array_keys( $payload ) );
+		$this->assertSame( [ 'target', 'fields', 'fieldListingNotices' ], array_keys( $payload ) );
 		$this->assertSame( self::TARGET, $payload['target'] );
-		$this->assertSame( [], $payload['warnings'] );
+		$this->assertSame( [], $payload['fieldListingNotices'] );
 		$this->assertCount( 1, $payload['fields'] );
 
 		$entry = $payload['fields'][0];
@@ -429,7 +429,7 @@ final class AcfFieldListTest extends TestCase {
 		$payload = $this->handle();
 
 		$this->assertSame( [], $payload['fields'] );
-		$this->assertSame( [], $payload['warnings'] );
+		$this->assertSame( [], $payload['fieldListingNotices'] );
 		$this->assertSame( self::TARGET, $payload['target'] );
 	}
 
@@ -460,8 +460,8 @@ final class AcfFieldListTest extends TestCase {
 		$payload = $this->handle();
 
 		$this->assertSame( [ 'field_subtitle' ], array_column( $payload['fields'], 'key' ) );
-		$this->assertCount( 1, $payload['warnings'] );
-		$this->assertStringNotContainsString( 'subtitle', $payload['warnings'][0], 'A warning names groups, never a field or its value.' );
+		$this->assertCount( 1, $payload['fieldListingNotices'] );
+		$this->assertStringNotContainsString( 'subtitle', $payload['fieldListingNotices'][0], 'A warning names groups, never a field or its value.' );
 
 		// The WHOLE string, not a substring of it. A substring assertion passes over
 		// a warning that names the group and then trails off, or that says '1 field
@@ -469,7 +469,7 @@ final class AcfFieldListTest extends TestCase {
 		$this->assertSame(
 			'The field definitions of 1 field group that applies to this post could not be read, '
 				. 'so any field in it is not listed here: group_broken.',
-			$payload['warnings'][0]
+			$payload['fieldListingNotices'][0]
 		);
 	}
 
@@ -494,12 +494,12 @@ final class AcfFieldListTest extends TestCase {
 		$payload = $this->handle();
 
 		$this->assertSame( [ 'field_subtitle' ], array_column( $payload['fields'], 'key' ) );
-		$this->assertCount( 1, $payload['warnings'] );
-		$this->assertStringNotContainsString( ':', $payload['warnings'][0], 'Nothing can be named here, so nothing is introduced.' );
+		$this->assertCount( 1, $payload['fieldListingNotices'] );
+		$this->assertStringNotContainsString( ':', $payload['fieldListingNotices'][0], 'Nothing can be named here, so nothing is introduced.' );
 		$this->assertSame(
 			'The field definitions of 1 field group that applies to this post could not be read, '
 				. 'so any field in it is not listed here.',
-			$payload['warnings'][0]
+			$payload['fieldListingNotices'][0]
 		);
 	}
 
@@ -525,11 +525,11 @@ final class AcfFieldListTest extends TestCase {
 		$payload = $this->handle();
 
 		$this->assertSame( [ 'field_subtitle' ], array_column( $payload['fields'], 'key' ) );
-		$this->assertCount( 1, $payload['warnings'] );
+		$this->assertCount( 1, $payload['fieldListingNotices'] );
 		$this->assertSame(
 			'The field definitions of 2 field groups that apply to this post could not be read, '
 				. 'so any field in them is not listed here. 1 of them could be identified: group_broken.',
-			$payload['warnings'][0]
+			$payload['fieldListingNotices'][0]
 		);
 	}
 }

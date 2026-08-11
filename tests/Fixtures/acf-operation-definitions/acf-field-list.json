@@ -67,7 +67,7 @@
                     }
                 }
             },
-            "warnings": {
+            "fieldListingNotices": {
                 "type": "array",
                 "items": {
                     "type": "string"
@@ -78,7 +78,7 @@
         "required": [
             "target",
             "fields",
-            "warnings"
+            "fieldListingNotices"
         ],
         "additionalProperties": false
     }

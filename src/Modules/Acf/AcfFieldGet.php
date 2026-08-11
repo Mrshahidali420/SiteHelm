@@ -76,9 +76,14 @@ use SiteHelm\Contracts\SnapshotPolicy;
  * shape no schema describes is one a client cannot validate at all.
  *
  * NOTHING IS SILENTLY LOST. A group whose field definitions could not be read is
- * skipped so the other groups survive, and the skip is warned about; a value that
- * nests past the depth cap is reported as null with the FIELD NAMED in the
- * warnings. THE WARNINGS NAME FIELDS AND GROUPS AND NEVER CARRY A VALUE.
+ * skipped so the other groups survive, and the skip is reported; a value that
+ * nests past the depth cap is reported as null with the FIELD NAMED in
+ * `fieldReadNotices`. THE NOTICES NAME FIELDS AND GROUPS AND NEVER CARRY A VALUE.
+ *
+ * THE CHANNEL IS NOT CALLED `warnings`, AND THAT IS THE ENVELOPE'S DOING. See the
+ * comment beside the member in the output schema. It matters most here: the
+ * truncation notice is the only thing that tells an operator a returned null is a
+ * cut-off structure rather than an empty field.
  *
  * Nothing here names an ACF symbol (spec Decision 2).
  *
@@ -156,16 +161,16 @@ final class AcfFieldGet {
 			outputSchema: [
 				'type'                 => 'object',
 				'properties'           => [
-					'provider' => [
+					'provider'         => [
 						'type'        => 'string',
 						'const'       => AcfFields::PROVIDER,
 						'description' => 'The plugin whose vocabulary these keys belong to. Always acf here: field_abc123 means one thing to ACF and nothing to another field plugin sharing this dispatcher.',
 					],
-					'target'   => [
+					'target'           => [
 						'type'        => 'integer',
 						'description' => 'The post the values were read from, echoed so a response can be matched to its request.',
 					],
-					'fields'   => [
+					'fields'           => [
 						'type'        => 'array',
 						'description' => 'One entry per field read, in the order asked about, or in the order ACF reports them when no subset was named. A list rather than a map keyed by field name, because those keys are administrator-chosen text no closed schema can declare.',
 						'items'       => [
@@ -186,18 +191,26 @@ final class AcfFieldGet {
 									'description' => 'The ACF field type, for example text, repeater, or flexible_content.',
 								],
 								'value' => [
-									'description' => 'The stored value, formatted as ACF presents it and projected into something JSON can carry: a post becomes { id, title, postType, url }, a user { id, displayName }, a term { id, name, taxonomy }, an attachment { id, url, alt, mime }, and any other structure keeps its own shape. Null where a field holds nothing — and also where a structure nested deeper than ' . AcfFields::MAX_DEPTH . ' levels was cut off, which the warnings name the field for. Its type follows the field, so none is declared here.',
+									'description' => 'The stored value, formatted as ACF presents it and projected into something JSON can carry: a post becomes { id, title, postType, url }, a user { id, displayName }, a term { id, name, taxonomy }, an attachment { id, url, alt, mime }, and any other structure keeps its own shape. Null where a field holds nothing — and also where a structure nested deeper than ' . AcfFields::MAX_DEPTH . ' levels was cut off, which fieldReadNotices names the field for. Its type follows the field, so none is declared here.',
 								],
 							],
 						],
 					],
-					'warnings' => [
+					// DELIBERATELY NOT CALLED `warnings`: THE ENVELOPE OWNS THAT NAME.
+					// Dispatcher builds every read's OperationResult with `warnings: []`
+					// and OperationResult::toArray() emits it, so a `warnings` member
+					// inside data would sit one level below an identically named empty
+					// envelope member — and a client honouring the envelope contract
+					// would report no warnings for a read whose truncation notice is the
+					// only thing distinguishing a cut-off structure from an empty field.
+					// The same trap TaxonomyList names at its own `unreadableTaxonomies`.
+					'fieldReadNotices' => [
 						'type'        => 'array',
 						'items'       => [ 'type' => 'string' ],
 						'description' => 'Anything the read could not report faithfully: a field group whose definitions could not be read, or a value that nests deeper than this response reports. Names fields and groups only, never a value.',
 					],
 				],
-				'required'             => [ 'provider', 'target', 'fields', 'warnings' ],
+				'required'             => [ 'provider', 'target', 'fields', 'fieldReadNotices' ],
 				'additionalProperties' => false,
 			],
 			schemaVersion: 1,
@@ -244,7 +257,7 @@ final class AcfFieldGet {
 	 * @param array<string, mixed> $input   Validated input carrying 'post' and optionally 'fields'.
 	 * @param OperationContext     $context The operation context.
 	 *
-	 * @return array<string, mixed> The provider, the target, the fields and the warnings.
+	 * @return array<string, mixed> The provider, the target, the fields and the notices.
 	 *
 	 * @throws OperationException With ErrorCode::Forbidden when the resolved
 	 *                            WordPress user may not edit the target post;
@@ -308,10 +321,10 @@ final class AcfFieldGet {
 		$fields    = $this->read( $this->selected( $index['fields'], $requested ), $post_id, $truncated );
 
 		return [
-			'provider' => AcfFields::PROVIDER,
-			'target'   => $post_id,
-			'fields'   => $fields,
-			'warnings' => array_merge(
+			'provider'         => AcfFields::PROVIDER,
+			'target'           => $post_id,
+			'fields'           => $fields,
+			'fieldReadNotices' => array_merge(
 				$this->omissions( $index['skippedGroups'] ),
 				$this->truncations( $truncated )
 			),
