@@ -1,0 +1,92 @@
+{
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "post": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "The post, page or custom post type entry whose field values are wanted."
+            },
+            "fields": {
+                "type": "array",
+                "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255,
+                    "description": "One field id, which in Meta Box is the meta key the value is stored under and NOT the human label. Take these from metabox-field-list."
+                },
+                "minItems": 1,
+                "maxItems": 100,
+                "description": "Restrict the read to these field ids, at most 100. An id that names no field applying to this post is refused rather than skipped. Omit this to read every field that applies to the post."
+            }
+        },
+        "required": [
+            "post"
+        ],
+        "additionalProperties": false
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "provider": {
+                "type": "string",
+                "const": "metabox",
+                "description": "Whose field vocabulary these identifiers belong to. This dispatcher also serves Advanced Custom Fields, whose keys look nothing like Meta Box meta keys, so a client has to be told which it is holding."
+            },
+            "target": {
+                "type": "integer",
+                "description": "The post the values were read from, echoed so a response can be matched to its request."
+            },
+            "fields": {
+                "type": "array",
+                "description": "One entry per field read, in the order asked about, or in the order Meta Box reports them when no subset was named. A list rather than a map keyed by field id, because those keys are administrator-chosen text no closed schema can declare.",
+                "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "id",
+                        "name",
+                        "type",
+                        "present",
+                        "value"
+                    ],
+                    "properties": {
+                        "id": {
+                            "type": "string",
+                            "description": "The field's id, WHICH IS THE META KEY the value is stored under. This is the identifier every other Meta Box operation takes."
+                        },
+                        "name": {
+                            "type": "string",
+                            "description": "The field's name, which in Meta Box is the human label shown in the editor and addresses nothing. May be empty."
+                        },
+                        "type": {
+                            "type": "string",
+                            "description": "The Meta Box field type, for example text, select, or group."
+                        },
+                        "present": {
+                            "type": "boolean",
+                            "description": "Whether this post stores a row for this field at all, asked of the meta table rather than guessed from the value. False with an empty value means nothing was ever saved; true with an empty value means an empty value was saved. The two are repaired differently, so they are reported differently."
+                        },
+                        "value": {
+                            "description": "The stored value as Meta Box presents it, projected into something JSON can carry: a post becomes { id, title, postType, url }, a user { id, displayName }, a term { id, name, taxonomy }, an image or file { id, url, alt, title, mime }, and any other structure keeps its own shape. Null where a structure nested deeper than 10 levels was cut off, which fieldReadNotices names the field for. Its type follows the field, so none is declared here. Read `present` before reading anything into an empty value."
+                        }
+                    }
+                }
+            },
+            "fieldReadNotices": {
+                "type": "array",
+                "items": {
+                    "type": "string"
+                },
+                "description": "Anything the read could not report faithfully: an applicable field group whose definitions could not all be read, or a value nesting deeper than this response reports. Names fields, groups and counts only, never a value."
+            }
+        },
+        "required": [
+            "provider",
+            "target",
+            "fields",
+            "fieldReadNotices"
+        ],
+        "additionalProperties": false
+    }
+}

@@ -199,5 +199,16 @@ final class MetaboxModule implements IntegrationModule {
 			MetaboxFieldList::definition(),
 			[ new MetaboxFieldList( $this->presence, $index ), 'handle' ]
 		);
+
+		// THE VALUE READ THIRD, because it takes as input the field ids the listing
+		// publishes and is the last read made before a write is proposed. ONE VALUE
+		// NORMALIZER FOR THE WHOLE MODULE, for the reason the index is shared: how a
+		// value is projected is what a write is planned against and what a restore is
+		// checked against, and two objects holding that rule would eventually hold two
+		// versions of it.
+		$registry->register(
+			MetaboxFieldGet::definition(),
+			[ new MetaboxFieldGet( $this->presence, $index, $api, new MetaboxValueNormalizer() ), 'handle' ]
+		);
 	}
 }
