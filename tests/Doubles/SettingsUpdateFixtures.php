@@ -58,13 +58,26 @@ trait SettingsUpdateFixtures {
 	/**
 	 * The widget every case changes: an `e-heading` carrying a stored title and
 	 * a stored tablet override.
+	 *
+	 * A static method rather than a constant because TRAITS CANNOT HAVE CONSTANTS
+	 * until PHP 8.2 and this plugin's floor is 8.1 — the same rule the CONTRACT
+	 * above states, which two constants here used to break. It is a fatal parse
+	 * error, not a warning, so the whole suite dies at file load.
+	 *
+	 * @return string The element id.
 	 */
-	private const WIDGET_ID = 'w111111';
+	private static function widgetId(): string {
+		return 'w111111';
+	}
 
 	/**
 	 * The container every "this is not a widget" case names.
+	 *
+	 * @return string The element id.
 	 */
-	private const CONTAINER_ID = 'c111111';
+	private static function containerId(): string {
+		return 'c111111';
+	}
 
 	/**
 	 * Installs the WordPress functions these operations' collaborators call.
@@ -277,12 +290,12 @@ trait SettingsUpdateFixtures {
 	private function settingsTree(): array {
 		return [
 			[
-				'id'       => self::CONTAINER_ID,
+				'id'       => self::containerId(),
 				'elType'   => 'container',
 				'settings' => [ 'content_width' => 'boxed' ],
 				'elements' => [
 					[
-						'id'         => self::WIDGET_ID,
+						'id'         => self::widgetId(),
 						'elType'     => 'widget',
 						'widgetType' => 'e-heading',
 						'settings'   => [
