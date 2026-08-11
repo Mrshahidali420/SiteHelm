@@ -290,4 +290,135 @@ final class AcfApiTest extends TestCase {
 		$this->assertNull( $this->api()->readValue( 'field_absent', 42, true ) );
 		$this->assertSame( 1, $this->acfCallCount( 'value' ), 'The wrapper asks ACF rather than guessing from a key it does not recognise.' );
 	}
+
+	// ------------------------------------------------------------- the stored row
+
+	/**
+	 * THE ASYMMETRY THIS SUITE EXISTS TO PIN. `metadata_exists()` asks about a
+	 * postmeta ROW, and ACF stores that row under the field's NAME, while every
+	 * write below goes by the field's KEY. Both spellings appear in AcfApi and
+	 * nowhere else, and passing a key here answers false for every field on a site
+	 * that stores them all — which reads downstream as "this field was never set"
+	 * and turns a restore into a delete.
+	 */
+	public function test_has_stored_row_asks_about_the_post_meta_row_under_the_field_name(): void {
+		$this->installAcf( [], [], '6.2.7', true, [], true, true, true, [ '42:subtitle' ] );
+
+		$this->assertTrue( $this->api()->hasStoredRow( 'subtitle', 42 ) );
+		$this->assertSame( [ [ 'post', 42, 'subtitle' ] ], $this->acfCallArguments( 'row' ) );
+	}
+
+	public function test_has_stored_row_is_false_for_a_field_this_post_has_no_row_for(): void {
+		$this->installAcf( [], [], '6.2.7', true, [], true, true, true, [ '42:subtitle' ] );
+
+		$this->assertFalse( $this->api()->hasStoredRow( 'subtitle', 41 ) );
+	}
+
+	public function test_has_stored_row_is_false_on_a_site_without_acf(): void {
+		$this->assertFalse( $this->api()->hasStoredRow( 'subtitle', 42 ) );
+	}
+
+	public function test_has_stored_row_is_not_attempted_on_a_half_loaded_acf(): void {
+		$this->installAcf( [], [], null, true, [], true, true, true, [ '42:subtitle' ] );
+
+		$this->assertFalse( $this->api()->hasStoredRow( 'subtitle', 42 ) );
+		$this->assertSame( 0, $this->acfCallCount( 'row' ), 'The presence gate refuses before the function is reached.' );
+	}
+
+	/**
+	 * `metadata_exists()` is core WordPress rather than ACF, but the wrapper probes
+	 * for it all the same: this file is loadable in a process that has no WordPress
+	 * at all, and an unguarded call there is a fatal in the middle of a snapshot.
+	 */
+	public function test_has_stored_row_is_false_when_the_metadata_function_is_not_defined(): void {
+		$this->installAcf( [], [], '6.2.7', true, [], true, true, true, [ '42:subtitle' ], false );
+
+		$this->assertFalse( function_exists( 'metadata_exists' ), 'The double must not have installed the function this test is about.' );
+		$this->assertFalse( $this->api()->hasStoredRow( 'subtitle', 42 ) );
+	}
+
+	// ------------------------------------------------------------------ the write
+
+	/**
+	 * THE WRITE GOES BY KEY AND THE RECORDED ARGUMENT IS THE PROOF (spec Decision
+	 * 8). `update_field()` handed a NAME does not fail — it silently writes nothing
+	 * when the target has no stored row yet, because it cannot resolve the name
+	 * without one. Nothing downstream would notice; the recorded first argument is
+	 * the only place that mutation is visible.
+	 */
+	public function test_write_value_passes_the_key_the_value_and_the_post_through(): void {
+		$this->installAcf( [] );
+
+		$this->api()->writeValue( 'field_subtitle', 'A subtitle', 42 );
+
+		$this->assertSame( [ [ 'field_subtitle', 'A subtitle', 42 ] ], $this->acfCallArguments( 'update' ) );
+	}
+
+	public function test_write_value_is_not_attempted_on_a_site_without_acf(): void {
+		$this->api()->writeValue( 'field_subtitle', 'A subtitle', 42 );
+
+		$this->assertSame( 0, $this->acfCallCount( 'update' ) );
+	}
+
+	public function test_write_value_is_not_attempted_on_a_half_loaded_acf(): void {
+		$this->installAcf( [], [], null );
+
+		$this->api()->writeValue( 'field_subtitle', 'A subtitle', 42 );
+
+		$this->assertSame( 0, $this->acfCallCount( 'update' ), 'The presence gate refuses before the function is reached.' );
+	}
+
+	/**
+	 * The third separate probe. A site whose ACF is loaded but whose `update_field`
+	 * is missing — a fork, a disturbed load order — must refuse rather than fatal
+	 * halfway through a change the operator already approved.
+	 */
+	public function test_write_value_is_not_attempted_when_acf_does_not_define_the_update_function(): void {
+		$this->installAcf( [], [], '6.2.7', true, [], true, false );
+
+		$this->assertFalse( function_exists( 'update_field' ), 'The double must not have installed the function this test is about.' );
+
+		$this->api()->writeValue( 'field_subtitle', 'A subtitle', 42 );
+
+		$this->assertSame( 0, $this->acfCallCount( 'update' ) );
+	}
+
+	/**
+	 * A null is a value an operator can write — it is how a field is cleared — and
+	 * it must reach ACF rather than being read as "nothing to do" by a wrapper
+	 * that guessed.
+	 */
+	public function test_write_value_passes_a_null_through_rather_than_skipping_the_write(): void {
+		$this->installAcf( [] );
+
+		$this->api()->writeValue( 'field_subtitle', null, 42 );
+
+		$this->assertSame( [ [ 'field_subtitle', null, 42 ] ], $this->acfCallArguments( 'update' ) );
+	}
+
+	// ----------------------------------------------------------------- the delete
+
+	public function test_delete_value_passes_the_key_and_the_post_through(): void {
+		$this->installAcf( [] );
+
+		$this->api()->deleteValue( 'field_subtitle', 42 );
+
+		$this->assertSame( [ [ 'field_subtitle', 42 ] ], $this->acfCallArguments( 'delete' ) );
+	}
+
+	public function test_delete_value_is_not_attempted_on_a_site_without_acf(): void {
+		$this->api()->deleteValue( 'field_subtitle', 42 );
+
+		$this->assertSame( 0, $this->acfCallCount( 'delete' ) );
+	}
+
+	public function test_delete_value_is_not_attempted_when_acf_does_not_define_the_delete_function(): void {
+		$this->installAcf( [], [], '6.2.7', true, [], true, true, false );
+
+		$this->assertFalse( function_exists( 'delete_field' ), 'The double must not have installed the function this test is about.' );
+
+		$this->api()->deleteValue( 'field_subtitle', 42 );
+
+		$this->assertSame( 0, $this->acfCallCount( 'delete' ) );
+	}
 }
