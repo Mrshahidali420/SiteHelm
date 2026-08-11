@@ -89,6 +89,79 @@ final class AcfFieldUpdateInput {
 	private const MEMBERS = [ 'field', 'value' ];
 
 	/**
+	 * The caller-facing schema of the request this class validates.
+	 *
+	 * IT LIVES BESIDE THE BOUNDS IT DECLARES. `maxItems` and `maxLength` are
+	 * MAX_FIELDS and MAX_NAME_LENGTH, and both are re-checked in code below,
+	 * because a schema is one contract and the code is the last line before a
+	 * caller's string is copied into a refusal. Holding the schema in the operation
+	 * and the checks here would let the two describe different limits, and the one
+	 * the caller reads would be the one that is not enforced.
+	 *
+	 * @return array<string, mixed> The input schema for acf-field-update.
+	 */
+	public static function schema(): array {
+		return [
+			'type'                 => 'object',
+			'properties'           => [
+				'post'   => [
+					'type'        => 'integer',
+					'minimum'     => 1,
+					'description' => 'The post, page or custom post type entry whose field values are being written.',
+				],
+				'fields' => [
+					'type'        => 'array',
+					'minItems'    => 1,
+					'maxItems'    => self::MAX_FIELDS,
+					'description' => 'The fields to write, at most ' . self::MAX_FIELDS . ', each named once. Every entry is validated before any of them is written: one entry this operation cannot use refuses the whole request and leaves the post untouched.',
+					'items'       => [
+						'type'                 => 'object',
+						'additionalProperties' => false,
+						'required'             => [ 'field', 'value' ],
+						'properties'           => [
+							'field' => [
+								'type'        => 'string',
+								'minLength'   => 1,
+								'maxLength'   => self::MAX_NAME_LENGTH,
+								'description' => 'One field name or ACF field key, for example subtitle or field_5f3a1b2c. Matched against the fields that apply to the post by key first and then by name.',
+							],
+							'value' => [
+								'description' => 'The value to store, in the raw form ACF stores rather than the formatted form a read returns: an attachment id rather than an attachment object, a post id rather than a post. Its type follows the field, so none is declared here. Send an empty list [] to clear a flexible content field or a repeater — every row of a flexible content field must be an object carrying an acf_fc_layout naming one of that field\'s layouts, so null is refused and [] is how every row is removed.',
+							],
+						],
+					],
+				],
+			],
+			'required'             => [ 'post', 'fields' ],
+			'additionalProperties' => false,
+		];
+	}
+
+	/**
+	 * The example request the catalog shows for acf-field-update.
+	 *
+	 * Beside the schema for the same reason the schema is here: an example that
+	 * contradicted the shape this class accepts would be a documented request the
+	 * operation refuses.
+	 *
+	 * @return array<string, mixed> The example request.
+	 */
+	public static function example(): array {
+		return [
+			'operation' => 'acf-field-update',
+			'arguments' => [
+				'post'   => 42,
+				'fields' => [
+					[
+						'field' => 'subtitle',
+						'value' => 'A new subtitle',
+					],
+				],
+			],
+		];
+	}
+
+	/**
 	 * Constructs the validator.
 	 *
 	 * @param AcfFieldIndex $index The index, used only to resolve a name or key.

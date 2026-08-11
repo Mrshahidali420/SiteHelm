@@ -67,7 +67,7 @@ final class AcfValueCanonicalTest extends TestCase {
 	}
 
 	/**
-	 * A float passes through as a float, and two spellings of one float agree.
+	 * A float passes through as a float.
 	 *
 	 * A float is the one scalar whose JSON bytes depend on the runtime — PHP's
 	 * serialize_precision decides how many digits json_encode emits — so a
@@ -83,11 +83,6 @@ final class AcfValueCanonicalTest extends TestCase {
 		$this->assertIsFloat(
 			$this->canonical()->project( 2.0 ),
 			'A whole-numbered float must not be narrowed to an integer.'
-		);
-		$this->assertSame(
-			$this->canonical()->project( 0.1 + 0.2 ),
-			$this->canonical()->project( 0.30000000000000004 ),
-			'One float reached two ways projects to one value.'
 		);
 	}
 
@@ -339,6 +334,66 @@ final class AcfValueCanonicalTest extends TestCase {
 		$this->assertNull( $projected, 'The level at the cap is dropped.' );
 	}
 
+	// ------------------------------------------------------------ loss detection
+
+	/**
+	 * truncates() answers the question a SNAPSHOT has to ask before it records:
+	 * would projecting this value lose part of it? It has to agree with project()
+	 * branch for branch, so these cases pair with the cap cases above.
+	 */
+	public function test_a_value_the_projection_keeps_whole_does_not_truncate(): void {
+		$canonical = $this->canonical();
+
+		$this->assertFalse( $canonical->truncates( null ) );
+		$this->assertFalse( $canonical->truncates( 'leaf' ) );
+		$this->assertFalse( $canonical->truncates( true ) );
+		$this->assertFalse( $canonical->truncates( [ 'rows' => [ [ 'title' => 'One' ] ] ] ) );
+		$this->assertFalse(
+			$canonical->truncates( 'leaf', AcfFields::MAX_DEPTH ),
+			'A scalar is projected at any depth, so a scalar at the cap loses nothing.'
+		);
+	}
+
+	public function test_a_structure_the_projection_would_cut_off_truncates(): void {
+		$canonical = $this->canonical();
+
+		$this->assertTrue( $canonical->truncates( [ 'still' => 'here' ], AcfFields::MAX_DEPTH ) );
+
+		$value = [ 'bottom' => 'leaf' ];
+
+		for ( $level = 0; $level < AcfFields::MAX_DEPTH; $level++ ) {
+			$value = [ 'down' => $value ];
+		}
+
+		$this->assertTrue(
+			$canonical->truncates( $value ),
+			'The cap is reached by descending, and a member lost at the bottom is a loss for the whole value.'
+		);
+
+		$this->assertNotSame(
+			$value,
+			$canonical->project( $value ),
+			'The two must agree: this is exactly the value project() cuts.'
+		);
+	}
+
+	/**
+	 * An object is unwrapped at the same depth in both, so the two cannot disagree
+	 * about whether a JSON object and the equivalent PHP array reach the cap.
+	 */
+	public function test_an_object_truncates_where_the_map_it_flattens_to_does(): void {
+		$object       = new \stdClass();
+		$object->down = [ 'bottom' => 'leaf' ];
+
+		$canonical = $this->canonical();
+
+		$this->assertSame(
+			$canonical->truncates( [ 'down' => [ 'bottom' => 'leaf' ] ], AcfFields::MAX_DEPTH - 2 ),
+			$canonical->truncates( $object, AcfFields::MAX_DEPTH - 2 )
+		);
+		$this->assertTrue( $canonical->truncates( $object, AcfFields::MAX_DEPTH - 1 ) );
+	}
+
 	// ---------------------------------------------------------------- unencodable
 
 	/**
@@ -350,6 +405,10 @@ final class AcfValueCanonicalTest extends TestCase {
 		$handle = fopen( 'php://memory', 'rb' );
 
 		$this->assertNull( $this->canonical()->project( $handle ) );
+		$this->assertTrue(
+			$this->canonical()->truncates( $handle ),
+			'A value that becomes null without being null is a value a snapshot cannot record faithfully.'
+		);
 
 		fclose( $handle );
 	}

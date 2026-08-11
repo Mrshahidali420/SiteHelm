@@ -114,6 +114,70 @@ final class AcfValueCanonical {
 	}
 
 	/**
+	 * Whether project() would answer null for something that is not null.
+	 *
+	 * THE QUESTION A SNAPSHOT HAS TO ASK BEFORE IT RECORDS. The projection is
+	 * lossy by design at the depth cap: a structure sitting at AcfFields::MAX_DEPTH
+	 * becomes null, which is indistinguishable from a field that really holds
+	 * nothing. That is an acceptable trade for a value a caller sent, which is
+	 * echoed back beside the request that produced it — and an unacceptable one for
+	 * a value being recorded to roll BACK to, because restore() would then write
+	 * null over content the operator still had and report success for doing it.
+	 *
+	 * It mirrors project() branch for branch and answers over the same walk, so the
+	 * two cannot drift into disagreeing about where the cut falls. It is pure for
+	 * the same reason project() is, and it reads no value out — only shapes.
+	 *
+	 * A resource answers true as well: project() turns it into null, and a
+	 * recording that cannot carry it is unfaithful for the same reason a capped
+	 * structure is. Nothing a post's metadata unserializes to is a resource, so
+	 * this is a closed door rather than a path.
+	 *
+	 * @param mixed $value The value to examine.
+	 * @param int   $depth How deep this value sits; 0 for the field's own value.
+	 *
+	 * @return bool True when projecting this value would lose part of it.
+	 */
+	public function truncates( mixed $value, int $depth = 0 ): bool {
+		if ( is_bool( $value ) || null === $value || is_scalar( $value ) ) {
+			return false;
+		}
+
+		if ( $depth >= AcfFields::MAX_DEPTH ) {
+			return true;
+		}
+
+		// At the same depth, for the reason project() unwraps an object there.
+		if ( is_object( $value ) ) {
+			return $this->any_member_truncates( get_object_vars( $value ), $depth );
+		}
+
+		if ( is_array( $value ) ) {
+			return $this->any_member_truncates( $value, $depth );
+		}
+
+		return true;
+	}
+
+	/**
+	 * Whether any member of an array would be lost by the projection.
+	 *
+	 * @param array<array-key, mixed> $value The array to examine.
+	 * @param int                     $depth How deep it sits.
+	 *
+	 * @return bool True when at least one member would be lost.
+	 */
+	private function any_member_truncates( array $value, int $depth ): bool {
+		foreach ( $value as $member ) {
+			if ( $this->truncates( $member, $depth + 1 ) ) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/**
 	 * The canonical spelling of an array's members, list rule or map rule.
 	 *
 	 * THE LIST TEST IS "EVERY KEY IS AN INTEGER" AND NOT array_is_list().

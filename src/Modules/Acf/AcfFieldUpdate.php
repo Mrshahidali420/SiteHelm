@@ -123,40 +123,9 @@ final class AcfFieldUpdate implements WriteOperation {
 			domain: Domain::Fields,
 			mode: Mode::Write,
 			description: 'Write the values Advanced Custom Fields stores for one post. Every named field is resolved and checked before anything is written, so a request naming one unwritable field writes none of the others. Refuses rather than writing when ACF is absent, when the post does not exist, or when a named field does not apply to it.',
-			inputSchema: [
-				'type'                 => 'object',
-				'properties'           => [
-					'post'   => [
-						'type'        => 'integer',
-						'minimum'     => 1,
-						'description' => 'The post, page or custom post type entry whose field values are being written.',
-					],
-					'fields' => [
-						'type'        => 'array',
-						'minItems'    => 1,
-						'maxItems'    => AcfFieldUpdateInput::MAX_FIELDS,
-						'description' => 'The fields to write, at most ' . AcfFieldUpdateInput::MAX_FIELDS . ', each named once. Every entry is validated before any of them is written: one entry this operation cannot use refuses the whole request and leaves the post untouched.',
-						'items'       => [
-							'type'                 => 'object',
-							'additionalProperties' => false,
-							'required'             => [ 'field', 'value' ],
-							'properties'           => [
-								'field' => [
-									'type'        => 'string',
-									'minLength'   => 1,
-									'maxLength'   => AcfFieldUpdateInput::MAX_NAME_LENGTH,
-									'description' => 'One field name or ACF field key, for example subtitle or field_5f3a1b2c. Matched against the fields that apply to the post by key first and then by name.',
-								],
-								'value' => [
-									'description' => 'The value to store, in the raw form ACF stores rather than the formatted form a read returns: an attachment id rather than an attachment object, a post id rather than a post. Its type follows the field, so none is declared here. Send an empty list [] to clear a flexible content field or a repeater — every row of a flexible content field must be an object carrying an acf_fc_layout naming one of that field\'s layouts, so null is refused and [] is how every row is removed.',
-								],
-							],
-						],
-					],
-				],
-				'required'             => [ 'post', 'fields' ],
-				'additionalProperties' => false,
-			],
+			// The request shape lives with the class that enforces it, so the bounds
+			// a caller reads and the bounds a caller meets are one declaration.
+			inputSchema: AcfFieldUpdateInput::schema(),
 			outputSchema: WriteOutputSchema::schema(),
 			schemaVersion: 1,
 			requiredCapabilities: [ 'edit_post' ],
@@ -173,18 +142,7 @@ final class AcfFieldUpdate implements WriteOperation {
 			rollbackPolicy: RollbackPolicy::Required,
 			module: ModuleId::Acf,
 			supportedVersions: AcfFields::supportedVersions(),
-			example: [
-				'operation' => 'acf-field-update',
-				'arguments' => [
-					'post'   => 42,
-					'fields' => [
-						[
-							'field' => 'subtitle',
-							'value' => 'A new subtitle',
-						],
-					],
-				],
-			],
+			example: AcfFieldUpdateInput::example(),
 		);
 	}
 
@@ -427,7 +385,8 @@ final class AcfFieldUpdate implements WriteOperation {
 	 * @return array<string, mixed>|null The restore state.
 	 *
 	 * @throws OperationException With ErrorCode::RollbackUnavailable when the
-	 *                            resolved state names no post, or when the recorded
+	 *                            resolved state names no post, when a stored value
+	 *                            cannot be recorded faithfully, or when the recorded
 	 *                            values are past AcfFields::MAX_SNAPSHOT_BYTES.
 	 */
 	public function captureSnapshot( TargetState $current, OperationContext $context ): ?array {
@@ -455,7 +414,7 @@ final class AcfFieldUpdate implements WriteOperation {
 				'key'     => $write['key'],
 				'name'    => $write['name'],
 				'present' => $present,
-				'value'   => $present ? $this->read( $write['key'], $post ) : null,
+				'value'   => $present ? $this->read( $write['key'], $post, $write['name'] ) : null,
 			];
 		}
 
@@ -721,6 +680,7 @@ final class AcfFieldUpdate implements WriteOperation {
 	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
 
+	// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The refusal names a field, never a value, and an OperationException is not output.
 	/**
 	 * One field's stored value, raw and canonically projected.
 	 *
@@ -729,14 +689,49 @@ final class AcfFieldUpdate implements WriteOperation {
 	 * projected. Two spellings of that decision is how a promise and a measurement
 	 * drift apart and every write of one field type reports as not applied.
 	 *
-	 * @param string $key     The field KEY, as ACF assigned it.
-	 * @param int    $post_id The post the value is stored against.
+	 * `$recorded_name` IS WHAT MAKES THIS ONE METHOD SERVE BOTH READS. A read-back
+	 * may be projected lossily: it is a measurement shown beside the request that
+	 * produced it, and the caller can see what they sent. A SNAPSHOT MAY NOT. The
+	 * value recorded there is what restore() writes back, so a projection that cut
+	 * a structure off at AcfFields::MAX_DEPTH would have the rollback overwrite
+	 * content the operator still had with a null, and report that it restored it.
+	 *
+	 * REFUSED AT CAPTURE, WHICH IS BEFORE ANYTHING IS WRITTEN. The alternative —
+	 * recording the truncated value and warning — leaves the operator holding a
+	 * snapshot that looks usable and is not.
+	 *
+	 * @param string      $key           The field KEY, as ACF assigned it.
+	 * @param int         $post_id       The post the value is stored against.
+	 * @param string|null $recorded_name The field name when this read is being
+	 *                                   recorded as restore state; null when it is
+	 *                                   a read-back.
 	 *
 	 * @return mixed The canonical raw value.
+	 *
+	 * @throws OperationException With ErrorCode::RollbackUnavailable when a value
+	 *                            being recorded cannot be projected faithfully.
 	 */
-	private function read( string $key, int $post_id ): mixed {
-		return $this->canonical->project( $this->api->readValue( $key, $post_id, false ) );
+	private function read( string $key, int $post_id, ?string $recorded_name = null ): mixed {
+		$raw = $this->api->readValue( $key, $post_id, false );
+
+		// THE FIELD IS NAMED AND THE VALUE IS NOT, the rule every message in this
+		// module keeps: a name is what an operator recognises, and a stored value
+		// belongs in data.state or nowhere.
+		if ( null !== $recorded_name && $this->canonical->truncates( $raw ) ) {
+			throw new OperationException(
+				ErrorCode::RollbackUnavailable,
+				sprintf(
+					'The value the field "%s" currently holds is nested more than %d levels deep, so it could not be recorded faithfully enough to roll back to and nothing was written.',
+					$recorded_name,
+					AcfFields::MAX_DEPTH
+				),
+				'Write this field with acf-field-update once its stored value is less deeply nested, or write the other fields without it.'
+			);
+		}
+
+		return $this->canonical->project( $raw );
 	}
+	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 
 	/**
 	 * Whether a canonical value is one of the forms ACF stores as nothing at all.
