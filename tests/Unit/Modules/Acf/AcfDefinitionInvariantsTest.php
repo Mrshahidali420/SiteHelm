@@ -491,13 +491,25 @@ final class AcfDefinitionInvariantsTest extends TestCase {
 		}
 	}
 
+	/**
+	 * ASSERTED AGAINST THE REGISTERED DEFINITIONS, NOT AGAINST THE LIST THIS TEST
+	 * DECLARES. Iterating OPERATION_IDS and asserting on the strings in it tests
+	 * the fixture: those slugs are written here, so they match here whatever the
+	 * operations are called. What has to hold is that the id each operation
+	 * REGISTERS is a slug of this shape.
+	 */
 	public function test_every_identifier_is_a_unique_lower_case_slug(): void {
-		foreach ( self::OPERATION_IDS as $id ) {
+		$ids = array_map(
+			static fn( OperationDefinition $definition ): string => $definition->id,
+			$this->registeredDefinitions()
+		);
+
+		foreach ( $ids as $id ) {
 			$this->assertMatchesRegularExpression( '/^[a-z0-9]+(?:-[a-z0-9]+)*$/', $id );
 			$this->assertStringStartsWith( 'acf-', $id, 'An ACF operation is named for its provider, because Meta Box will share this dispatcher.' );
 		}
 
-		$this->assertSame( self::OPERATION_IDS, array_values( array_unique( self::OPERATION_IDS ) ) );
+		$this->assertSame( $ids, array_values( array_unique( $ids ) ) );
 	}
 
 	public function test_every_operation_documents_itself_with_a_description_and_a_worked_example(): void {
