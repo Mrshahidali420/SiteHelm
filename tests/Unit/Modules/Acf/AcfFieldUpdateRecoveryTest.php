@@ -234,6 +234,67 @@ final class AcfFieldUpdateRecoveryTest extends TestCase {
 		);
 	}
 
+	/**
+	 * A snapshot is what restore() writes back, so it may not be a projection that
+	 * lost part of the value. AcfValueCanonical cuts a structure off at
+	 * AcfFields::MAX_DEPTH and answers null there — acceptable for a read-back,
+	 * which sits beside the request that produced it, and not for a recording:
+	 * restore() would write that null over content the operator still had and
+	 * report that it restored it.
+	 */
+	public function test_capture_snapshot_refuses_a_value_it_cannot_record_faithfully(): void {
+		$deep = 'unmistakable-leaf-string';
+
+		for ( $level = 0; $level <= AcfFields::MAX_DEPTH; $level++ ) {
+			$deep = [ $deep ];
+		}
+
+		$this->installFixtureSite( [], [], [ self::subtitleKey() => $deep ] );
+
+		[ $operation, $state ] = $this->resolvedWrite( [ $this->writeMember( 'subtitle', 'New subtitle' ) ] );
+
+		$refusal = $this->refusalFrom(
+			fn() => $operation->captureSnapshot( $state, $this->writeContext() ),
+			'A value the projection would truncate must be refused at capture, not recorded lossily.'
+		);
+
+		$this->assertSame(
+			ErrorCode::RollbackUnavailable,
+			$refusal->errorCode,
+			'Nothing is wrong with the request and nothing was written; what cannot be done is the recording.'
+		);
+
+		$this->assertStringContainsString(
+			'"subtitle"',
+			$refusal->getMessage(),
+			'An operator cannot act on a refusal that will not say which field could not be recorded.'
+		);
+
+		$this->assertStringNotContainsString(
+			'unmistakable-leaf-string',
+			$refusal->getMessage(),
+			'The field is NAMED and the value is not: a refusal is text a client may display and a gateway may log.'
+		);
+	}
+
+	/**
+	 * The cap bounds a WALK, not a leaf. A long string is projected whole at any
+	 * depth, so a field holding one is recorded rather than refused — otherwise
+	 * this guard would refuse writes to perfectly recordable fields.
+	 */
+	public function test_capture_snapshot_records_a_deep_but_untruncated_value(): void {
+		$nested = [ 'rows' => [ [ 'title' => str_repeat( 'x', 512 ) ] ] ];
+
+		$this->installFixtureSite( [], [], [ self::subtitleKey() => $nested ] );
+
+		[ $operation, $state ] = $this->resolvedWrite( [ $this->writeMember( 'subtitle', 'New subtitle' ) ] );
+
+		$snapshot = $operation->captureSnapshot( $state, $this->writeContext() );
+
+		$this->assertNotNull( $snapshot );
+		$this->assertSame( $nested, $snapshot['fields'][0]['value'] );
+	}
+
 	public function test_capture_snapshot_refuses_a_target_key_that_names_no_post(): void {
 		$this->installFixtureSite();
 
