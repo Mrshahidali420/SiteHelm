@@ -215,4 +215,79 @@ final class AcfApiTest extends TestCase {
 		$this->assertNull( $this->api()->fields( $this->group( 'group_page' ) ) );
 		$this->assertSame( 0, $this->acfCallCount( 'fields' ) );
 	}
+
+	// -------------------------------------------------------------- the value read
+
+	/**
+	 * WHY THE VALUE READ IS TESTED HERE AND NOT ONLY THROUGH acf-field-get. The
+	 * operation gates on presence before it reaches the wrapper, so neither of the
+	 * wrapper's own refusals is reachable from that direction — they are live code
+	 * with no caller able to exercise them, which is exactly the shape that reads
+	 * as dead code to whoever runs the coverage pass later and has none of this
+	 * context. The wrapper's contract is its own, and it is asserted directly.
+	 */
+	public function test_read_value_answers_null_on_a_site_without_acf(): void {
+		$this->assertNull( $this->api()->readValue( 'field_subtitle', 42, true ) );
+	}
+
+	public function test_read_value_is_not_attempted_on_a_half_loaded_acf(): void {
+		$this->installAcf( [ $this->group( 'group_page' ) ], [], null, true, [ 'field_subtitle' => 'A subtitle' ] );
+
+		$this->assertNull( $this->api()->readValue( 'field_subtitle', 42, true ) );
+		$this->assertSame( 0, $this->acfCallCount( 'value' ), 'The presence gate refuses before the function is reached.' );
+	}
+
+	/**
+	 * THE SECOND SEPARATE PROBE, AND THE ONLY TEST THAT CAN SEE IT. The presence
+	 * gate proves acf_get_field_groups() exists, which says nothing about
+	 * get_field() — and get_field() is the one ACF symbol with an unqualified,
+	 * extremely common name, so a theme defining its own is a real configuration
+	 * rather than a hypothetical. Delete the function_exists() check from
+	 * AcfApi::readValue() and this stops being a refusal and becomes a fatal in the
+	 * middle of a read.
+	 */
+	public function test_read_value_answers_null_when_acf_does_not_define_the_value_function(): void {
+		$this->installAcf( [ $this->group( 'group_page' ) ], [], '6.2.7', true, [], false );
+
+		$this->assertFalse( function_exists( 'get_field' ), 'The double must not have installed the function this test is about.' );
+		$this->assertNull( $this->api()->readValue( 'field_subtitle', 42, true ) );
+		$this->assertSame( 0, $this->acfCallCount( 'value' ) );
+	}
+
+	public function test_read_value_answers_what_acf_answered(): void {
+		$this->installAcf( [ $this->group( 'group_page' ) ], [], '6.2.7', true, [ 'field_subtitle' => 'A subtitle' ] );
+
+		$this->assertSame( 'A subtitle', $this->api()->readValue( 'field_subtitle', 42, true ) );
+	}
+
+	/**
+	 * THE WRAPPER PASSES ITS THREE ARGUMENTS THROUGH AND INVENTS NOTHING. The
+	 * formatting flag is the one that matters: it is the caller's decision, and a
+	 * wrapper that hardcoded either value would silently overrule the read side or
+	 * the write side depending on which it picked.
+	 */
+	public function test_read_value_passes_the_key_the_post_and_the_formatting_flag_through(): void {
+		$this->installAcf( [ $this->group( 'group_page' ) ] );
+
+		$this->api()->readValue( 'field_subtitle', 42, false );
+
+		$this->assertSame( [ [ 'field_subtitle', 42, false ] ], $this->acfCallArguments( 'value' ) );
+	}
+
+	/**
+	 * A FIELD ACF HOLDS NOTHING FOR ANSWERS null, AND SO DOES A FIELD IT CANNOT
+	 * READ. This is the one place the wrapper's null/[] contract does NOT hold, and
+	 * it is a property of get_field() rather than a choice made here: ACF answers
+	 * null for an empty field and null for an unknown one, and nothing at this
+	 * layer can separate them. The index is what tells the operation whether a
+	 * field exists, which is why acf-field-get resolves the field FIRST and only
+	 * then reads its value — a null from here means "empty", because the field was
+	 * already known to apply.
+	 */
+	public function test_read_value_answers_null_for_a_field_acf_holds_nothing_for(): void {
+		$this->installAcf( [ $this->group( 'group_page' ) ], [], '6.2.7', true, [ 'field_subtitle' => 'A subtitle' ] );
+
+		$this->assertNull( $this->api()->readValue( 'field_absent', 42, true ) );
+		$this->assertSame( 1, $this->acfCallCount( 'value' ), 'The wrapper asks ACF rather than guessing from a key it does not recognise.' );
+	}
 }

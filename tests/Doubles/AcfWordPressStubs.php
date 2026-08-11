@@ -171,7 +171,8 @@ trait AcfWordPressStubs {
 		array $fields_by_group = [],
 		?string $version = '6.2.7',
 		bool $with_fields_function = true,
-		array $values_by_key = []
+		array $values_by_key = [],
+		bool $with_value_function = true
 	): void {
 		if ( null !== $version && ! defined( AcfPresence::VERSION_CONSTANT ) ) {
 			define( AcfPresence::VERSION_CONSTANT, $version );
@@ -213,15 +214,23 @@ trait AcfWordPressStubs {
 		// on purpose, and an unformatted read answers a raw attachment id where the
 		// caller expected a file — a difference no assertion on the payload alone can
 		// see, because both are legitimate values.
-		Functions\when( 'get_field' )->alias(
-			function ( mixed $selector = null, mixed $post_id = false, mixed $format = true ) use ( $values_by_key ): mixed {
-				$key = is_scalar( $selector ) ? (string) $selector : '';
+		//
+		// GUARDED SEPARATELY FROM acf_get_fields() FOR THE SAME REASON IT IS. Each
+		// flag governs exactly one symbol, so a test asking for one missing function
+		// gets one missing function. get_field() is the ACF symbol most likely to be
+		// genuinely absent while the plugin is otherwise present: it is unqualified
+		// and common enough that a theme can define its own.
+		if ( $with_value_function ) {
+			Functions\when( 'get_field' )->alias(
+				function ( mixed $selector = null, mixed $post_id = false, mixed $format = true ) use ( $values_by_key ): mixed {
+					$key = is_scalar( $selector ) ? (string) $selector : '';
 
-				$this->acfCalls[] = [ 'value', [ $key, $post_id, $format ] ];
+					$this->acfCalls[] = [ 'value', [ $key, $post_id, $format ] ];
 
-				return $values_by_key[ $key ] ?? null;
-			}
-		);
+					return $values_by_key[ $key ] ?? null;
+				}
+			);
+		}
 	}
 
 	/**
