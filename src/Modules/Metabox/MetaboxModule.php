@@ -176,17 +176,28 @@ final class MetaboxModule implements IntegrationModule {
 	 * ONE PRESENCE GATE AND ONE API WRAPPER FOR THE WHOLE MODULE, constructed here and
 	 * shared by every operation, so that "does this site run Meta Box, and which
 	 * version" is answered by one object within a request rather than by one per
-	 * operation that could disagree mid-call.
+	 * operation that could disagree mid-call. ONE FIELD INDEX FOR THE SAME REASON, and
+	 * for a second: whether a field applies to a target is the rule the whole module
+	 * turns on, and one object holding it is what stops the read path and the write
+	 * paths from drifting into two answers.
 	 *
 	 * @param CapabilityRegistry $registry The capability registry.
 	 */
 	public function register( CapabilityRegistry $registry ): void {
 		$api    = new MetaboxApi( $this->presence );
 		$format = new MetaboxSchemaFormat();
+		$index  = new MetaboxFieldIndex( $api );
 
 		$registry->register(
 			MetaboxGroupList::definition(),
 			[ new MetaboxGroupList( $this->presence, $api, $format ), 'handle' ]
+		);
+
+		// THE TARGET-SCOPED READ SECOND, because it takes as input an identifier read
+		// out of the discovery read's response and narrows it to one post.
+		$registry->register(
+			MetaboxFieldList::definition(),
+			[ new MetaboxFieldList( $this->presence, $index ), 'handle' ]
 		);
 	}
 }

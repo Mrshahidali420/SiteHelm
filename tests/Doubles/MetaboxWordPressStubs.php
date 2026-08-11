@@ -113,16 +113,24 @@ trait MetaboxWordPressStubs {
 	/**
 	 * One published post, in the shape the doubled lookup answers with.
 	 *
-	 * @param int $id The post identifier.
+	 * THE POST TYPE IS A PARAMETER BECAUSE IT IS THE FACT THE FIELD OPERATIONS TURN
+	 * ON. A Meta Box group's assignment rules match on post type, so "only the fields
+	 * whose rules match this post" (REQ-0049) cannot be exercised at all by a helper
+	 * that builds every post the same. It defaults to `page` so that a suite which
+	 * never mentions the type gets a post of a type no unrestricted group is written
+	 * around, rather than one that happens to match everything.
+	 *
+	 * @param int    $id        The post identifier.
+	 * @param string $post_type The post type.
 	 *
 	 * @return object The post.
 	 */
-	private function metaboxPost( int $id ): object {
+	private function metaboxPost( int $id, string $post_type = 'page' ): object {
 		$post              = new stdClass();
 		$post->ID          = $id;
-		$post->post_type   = 'page';
+		$post->post_type   = $post_type;
 		$post->post_status = 'publish';
-		$post->post_title  = 'A page';
+		$post->post_title  = 'A post';
 
 		return $post;
 	}
