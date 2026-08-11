@@ -136,12 +136,19 @@ final class AcfApiTest extends TestCase {
 		$this->assertNull( $this->api()->groups() );
 	}
 
-	public function test_groups_asks_for_every_group_when_given_no_post_id(): void {
+	/**
+	 * No id means NO ARGUMENT, which is a different call from an empty filter.
+	 * The double is variadic so the two stay distinguishable; a call with no
+	 * argument records null, and `acf_get_field_groups( [] )` would record `[]`.
+	 * ACF treats a filter array as a location query, so handing it an empty one is
+	 * not obviously harmless and is not what this branch is meant to do.
+	 */
+	public function test_groups_asks_for_every_group_by_passing_no_argument_at_all(): void {
 		$this->installAcf( [] );
 
 		$this->api()->groups();
 
-		$this->assertSame( [ [] ], $this->acfCallArguments( 'groups' ), 'No id means no filter at all, not an empty post_id.' );
+		$this->assertSame( [ null ], $this->acfCallArguments( 'groups' ) );
 	}
 
 	/**
