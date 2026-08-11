@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace SiteHelm\Tests\Doubles;
 
+use SiteHelm\Change\PayloadNormalizer;
 use SiteHelm\Contracts\OperationContext;
 use SiteHelm\Contracts\PermissionMode;
 use SiteHelm\Modules\Acf\AcfApi;
@@ -113,10 +114,23 @@ trait AcfWriteFixtures {
 	 * where a write DELETES a row the field already had, which is the only site on
 	 * which the guard's "had no row before" condition decides anything at all.
 	 *
+	 * THE THIRD PARAMETER MOVES A STORED VALUE AND NEVER A STORED ROW, and the two
+	 * staying independent is what the snapshot's central case needs. `subtitle` is
+	 * the field that HAS a postmeta row; overriding its value with `''` builds the
+	 * one site where the row and the value disagree about whether the field is set,
+	 * which is precisely the state `get_post_meta( ..., true )` cannot express and
+	 * an empty-value test for presence gets wrong. Rows stay governed by
+	 * storedRows() so an override cannot accidentally make a field absent as well.
+	 *
 	 * @param array<string, string> $rows_created_by_key The postmeta NAME a write to each field KEY creates.
 	 * @param array<string, string> $rows_removed_by_key The postmeta NAME a write to each field KEY deletes.
+	 * @param array<string, mixed>  $values_by_key       Stored values to override, keyed by field KEY.
 	 */
-	private function installFixtureSite( array $rows_created_by_key = [], array $rows_removed_by_key = [] ): void {
+	private function installFixtureSite(
+		array $rows_created_by_key = [],
+		array $rows_removed_by_key = [],
+		array $values_by_key = []
+	): void {
 		$this->installAcf(
 			[ self::detailsGroup(), self::extraGroup() ],
 			[
@@ -125,7 +139,7 @@ trait AcfWriteFixtures {
 			],
 			'6.2.7',
 			true,
-			self::storedValues(),
+			array_merge( self::storedValues(), $values_by_key ),
 			true,
 			true,
 			true,
@@ -150,7 +164,8 @@ trait AcfWriteFixtures {
 			new AcfWriteTarget( $presence, $api, $index ),
 			new AcfFieldUpdateInput( $index ),
 			$api,
-			new AcfValueCanonical()
+			new AcfValueCanonical(),
+			new PayloadNormalizer()
 		);
 	}
 

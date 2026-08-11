@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace SiteHelm\Modules\Acf;
 
+use SiteHelm\Change\PayloadNormalizer;
 use SiteHelm\Change\PlannedChange;
 use SiteHelm\Change\TargetState;
 use SiteHelm\Change\WriteOperation;
@@ -192,14 +193,16 @@ final class AcfFieldUpdate implements WriteOperation {
 	 *
 	 * @param AcfWriteTarget      $targets   The one guard order every ACF write runs through.
 	 * @param AcfFieldUpdateInput $input     The caller-facing half of the validation.
-	 * @param AcfApi              $api       The one wrapper around ACF's own reads and writes.
-	 * @param AcfValueCanonical   $canonical The pure, digest-stable value projection.
+	 * @param AcfApi              $api        The one wrapper around ACF's own reads and writes.
+	 * @param AcfValueCanonical   $canonical  The pure, digest-stable value projection.
+	 * @param PayloadNormalizer   $normalizer The canonical JSON the snapshot is measured in.
 	 */
 	public function __construct(
 		private readonly AcfWriteTarget $targets,
 		private readonly AcfFieldUpdateInput $input,
 		private readonly AcfApi $api,
 		private readonly AcfValueCanonical $canonical,
+		private readonly PayloadNormalizer $normalizer,
 	) {
 	}
 
@@ -375,26 +378,111 @@ final class AcfFieldUpdate implements WriteOperation {
 	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 
-	// phpcs:disable Squiz.Commenting.FunctionComment.InvalidNoReturn -- The declared return type is the interface's; this body throws instead of reaching it, which is the point until Task 6.
+	// phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase -- TargetState::$targetKey is a contract property this module does not name.
+	// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The messages are literals written for end users and quote no stored value.
 	/**
 	 * Captures the state a rollback would put back.
 	 *
-	 * IMPLEMENTED IN TASK 6, AND IT THROWS RATHER THAN ANSWERING null UNTIL THEN.
-	 * A stub returning null would satisfy the signature, satisfy the engine's
-	 * "nothing to capture" branch, and let a suite written against a real snapshot
-	 * pass without ever reaching an implementation.
+	 * `present` IS metadata_exists() AND NEVER A TEST OF THE VALUE (spec Decision 9).
+	 * `get_post_meta( ..., true )` answers `''` for a key with no row at all, so a
+	 * field holding the empty string and a field the editor never filled in read
+	 * identically through every ACF reader on the site. A rollback has to tell them
+	 * apart: the first is written back to `''`, and the second must have its row
+	 * DELETED, because a write that created a post's first row for a field is undone
+	 * by removing that row and not by storing an empty one beside it. This snapshot
+	 * is the only place in the request where that difference still exists, which is
+	 * why the question goes to `metadata_exists()` through AcfApi::hasStoredRow() and
+	 * never to the value. `0`, `false`, `''` and `[]` are all PRESENT.
+	 *
+	 * THE NAME ASKS THE ROW QUESTION AND THE KEY ASKS EVERYTHING ELSE, the asymmetry
+	 * AcfApi documents and applyChange() already honours. A stored row is postmeta
+	 * and postmeta is keyed by the field's NAME; asking about `field_5f3a1b2c`
+	 * answers false on a site that stores the field perfectly well, and restore()
+	 * would then delete a row the operator still had.
+	 *
+	 * IT RUNS AFTER AcfWriteTarget::resolve(), AND THAT ORDERING IS THE GUARANTEE.
+	 * `hasStoredRow()` answers false both for "there is no row" and for "I could not
+	 * tell", and a bool cannot say which; what keeps them apart is that an unreachable
+	 * site is refused with IntegrationUnavailable before a change is planned.
+	 * Capturing ahead of that refusal would record `present: false` for every field on
+	 * an unreadable site and turn the rollback into a mass delete.
+	 *
+	 * SIDE-EFFECT FREE AND SAFE TO CALL TWICE. SnapshotLifecycle::eligibility()
+	 * probes it at preview and SnapshotLifecycle::capture() calls it again at apply;
+	 * a capture that wrote anything would make a preview a write.
+	 *
+	 * IT RE-READS RATHER THAN REUSING `$current->fields`, which holds the same
+	 * values: reading that map by key would leave no honest answer for a key it does
+	 * not carry, and that absent case is the `??` this method exists to avoid.
+	 * Reading from `$this->resolved`, as readBack() reads from `$this->written`,
+	 * gives every entry one source and no absent case at all.
+	 *
+	 * NEVER null, which the engine would turn into RollbackUnavailable under this
+	 * operation's required snapshot policy. A post whose named fields all lack rows
+	 * still has a position worth putting back: delete what this write creates.
 	 *
 	 * @param TargetState      $current The resolved current state.
 	 * @param OperationContext $context The request context.
 	 *
 	 * @return array<string, mixed>|null The restore state.
 	 *
-	 * @throws \LogicException Always, until Task 6 replaces this.
+	 * @throws OperationException With ErrorCode::RollbackUnavailable when the
+	 *                            resolved state names no post, or when the recorded
+	 *                            values are past AcfFields::MAX_SNAPSHOT_BYTES.
 	 */
 	public function captureSnapshot( TargetState $current, OperationContext $context ): ?array {
-		throw new \LogicException( 'Implemented in Task 6.' );
+		$post = self::postIdFromKey( $current->targetKey );
+
+		// REFUSED, NEVER SUBSTITUTED, and RollbackUnavailable rather than the
+		// TargetNotFound planChange() gives the same condition: nothing is missing from
+		// the caller's request, and what cannot be done is the recording. A null return
+		// would reach the engine's own RollbackUnavailable, whose message says the
+		// target has no recoverable prior state — a false claim about a post that has one.
+		if ( null === $post ) {
+			throw new OperationException(
+				ErrorCode::RollbackUnavailable,
+				'The resolved target does not name a post, so no state could be recorded to roll back to and nothing was written.',
+				'Preview the change again with acf-field-update, naming the post by id.'
+			);
+		}
+
+		$fields = [];
+
+		foreach ( $this->resolved as $write ) {
+			$present = $this->api->hasStoredRow( $write['name'], $post );
+
+			$fields[] = [
+				'key'     => $write['key'],
+				'name'    => $write['name'],
+				'present' => $present,
+				'value'   => $present ? $this->read( $write['key'], $post ) : null,
+			];
+		}
+
+		$snapshot = [
+			'fields' => $fields,
+			'post'   => $post,
+		];
+
+		// MEASURED IN THE ENCODING THE STORE WILL ACTUALLY USE.
+		// SnapshotLifecycle::capture() persists this through the same PayloadNormalizer,
+		// so a bound measured any other way would bound something other than the row
+		// that has to fit.
+		if ( strlen( $this->normalizer->canonicalJson( $snapshot ) ) > AcfFields::MAX_SNAPSHOT_BYTES ) {
+			throw new OperationException(
+				ErrorCode::RollbackUnavailable,
+				sprintf(
+					'The values these fields currently hold are larger than the %d MB a rollback snapshot may record, so this change cannot be made reversible and nothing was written.',
+					AcfFields::MAX_SNAPSHOT_MEGABYTES
+				),
+				'Write fewer fields in one request, or reduce the amount of content those fields hold before changing them.'
+			);
+		}
+
+		return $snapshot;
 	}
-	// phpcs:enable Squiz.Commenting.FunctionComment.InvalidNoReturn
+	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 
 	// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The message is written for end users and names a field, never a value.
 	/**
@@ -537,23 +625,100 @@ final class AcfFieldUpdate implements WriteOperation {
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
 
 	// phpcs:disable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase -- $restoreState matches the recorded-state vocabulary used across the change engine.
-	// phpcs:disable Squiz.Commenting.FunctionComment.InvalidNoReturn -- The declared return type is the interface's; this body throws instead of reaching it, which is the point until Task 6.
+	// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The messages are literals written for end users and quote no recorded value.
 	/**
 	 * Puts a recorded snapshot back.
 	 *
-	 * IMPLEMENTED IN TASK 6, AND IT THROWS. See captureSnapshot().
+	 * IT BRANCHES ON `present` AND NEVER ON `??` (spec Decision 9). Three write paths
+	 * on this branch have shipped the coalescing version: `$entry['value'] ?? null`
+	 * reads a recorded `null` as "nothing was recorded", so a `null` this snapshot
+	 * recorded on purpose — the value of a field that HAD a row holding null — is
+	 * skipped or deleted rather than written back. The recorded flag says which of the
+	 * two operations undoes the write, and nothing else is consulted:
+	 *
+	 *   - `present === true`  → writeValue( key, value ), including when the value
+	 *                           is `''`, `0`, `false` or `[]`. All four are values a
+	 *                           row held, and putting a row back holding one of them
+	 *                           is the restore.
+	 *   - `present === false` → deleteValue( key ). The write created this post's
+	 *                           first row for the field, and undoing it means the
+	 *                           row is gone again. Writing the recorded `null` here
+	 *                           instead would leave a row the operator never had,
+	 *                           which every later read reports as a set field.
+	 *
+	 * EVERY ENTRY IS GATED ON array_key_exists( 'present', ... ) AND NOTHING IS
+	 * GUESSED. An entry carrying no flag records neither state, and both available
+	 * actions are destructive in the case it is not: write invents a row, delete
+	 * removes one. ExecutionFailed, because the recorded state is unusable rather
+	 * than the caller's request being wrong, and a fresh preview cannot repair a row
+	 * that was already stored.
+	 *
+	 * A RESTORE IS ADDRESSED BY KEY THROUGHOUT, matching applyChange(). The `name`
+	 * each entry carries is what the row question was asked about when the snapshot
+	 * was taken, recorded so the snapshot says which postmeta row `present`
+	 * describes; it never addresses a write.
 	 *
 	 * @param array<string, mixed> $restoreState The recorded restore state.
 	 * @param OperationContext     $context      The request context.
 	 *
 	 * @return string The concrete target key that was restored.
 	 *
-	 * @throws \LogicException Always, until Task 6 replaces this.
+	 * @throws OperationException With ErrorCode::ExecutionFailed when the recorded
+	 *                            state is not one this operation wrote.
 	 */
 	public function restore( array $restoreState, OperationContext $context ): string {
-		throw new \LogicException( 'Implemented in Task 6.' );
+		$post   = $restoreState['post'] ?? null;
+		$fields = $restoreState['fields'] ?? null;
+
+		// The `??` HERE IS ABOUT THE ENVELOPE AND NOT ABOUT A FIELD, and the
+		// difference is the whole rule above. An absent `post` and an absent `fields`
+		// have exactly one meaning — this is not a snapshot this operation recorded —
+		// and both are refused rather than defaulted. `(int) null` is 0, and
+		// `delete_field( $key, 0 )` removes a row from whatever post the request made
+		// global.
+		if ( ! is_int( $post ) || $post < 1 || ! is_array( $fields ) ) {
+			throw new OperationException(
+				ErrorCode::ExecutionFailed,
+				'The recorded state does not describe the post and the fields to put back, so nothing was restored.',
+				'Read the post with acf-field-get to confirm what its fields now hold, and correct them with acf-field-update.'
+			);
+		}
+
+		$completed = [];
+
+		foreach ( $fields as $entry ) {
+			if ( ! is_array( $entry )
+				|| ! is_string( $entry['key'] ?? null )
+				|| '' === $entry['key']
+				|| ! array_key_exists( 'present', $entry )
+				|| ! is_bool( $entry['present'] )
+				|| ! array_key_exists( 'value', $entry ) ) {
+				throw new OperationException(
+					ErrorCode::ExecutionFailed,
+					'One entry in the recorded state does not say whether that field had a stored value, so it could not be put back and the restore stopped there.',
+					'Read the post with acf-field-get to confirm what its fields now hold, and correct them with acf-field-update.',
+					$completed
+				);
+			}
+
+			if ( $entry['present'] ) {
+				$this->api->writeValue( $entry['key'], $entry['value'], $post );
+			} else {
+				$this->api->deleteValue( $entry['key'], $post );
+			}
+
+			// The NAME, because it is what an operator recognises, and a name is
+			// permitted in an operator-facing message where a value is not.
+			$completed[] = sprintf(
+				'%s %s',
+				$entry['present'] ? 'restored' : 'cleared',
+				is_string( $entry['name'] ?? null ) && '' !== $entry['name'] ? $entry['name'] : $entry['key']
+			);
+		}
+
+		return self::targetKey( $post );
 	}
-	// phpcs:enable Squiz.Commenting.FunctionComment.InvalidNoReturn
+	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
 
 	/**

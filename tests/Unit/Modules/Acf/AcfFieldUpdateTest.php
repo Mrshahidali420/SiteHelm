@@ -628,23 +628,6 @@ final class AcfFieldUpdateTest extends TestCase {
 		);
 	}
 
-	// ------------------------------------------------------------- the Task 6 stubs
-
-	public function test_capture_snapshot_throws_until_it_is_implemented(): void {
-		$this->expectException( \LogicException::class );
-
-		$this->writeOperation()->captureSnapshot(
-			new TargetState( 'acf-post:42', true, [] ),
-			$this->writeContext()
-		);
-	}
-
-	public function test_restore_throws_until_it_is_implemented(): void {
-		$this->expectException( \LogicException::class );
-
-		$this->writeOperation()->restore( [], $this->writeContext() );
-	}
-
 	// --------------------------------------------------------------------- helpers
 
 	/**
