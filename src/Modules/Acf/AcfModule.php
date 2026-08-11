@@ -177,5 +177,10 @@ final class AcfModule implements IntegrationModule {
 			AcfFieldList::definition(),
 			[ new AcfFieldList( $this->presence, $index ), 'handle' ]
 		);
+
+		$registry->register(
+			AcfFieldGet::definition(),
+			[ new AcfFieldGet( $this->presence, $index, $api, new AcfValueNormalizer() ), 'handle' ]
+		);
 	}
 }
