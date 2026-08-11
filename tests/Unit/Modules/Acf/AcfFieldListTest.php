@@ -269,12 +269,9 @@ final class AcfFieldListTest extends TestCase {
 			$this->handle();
 			$this->fail( 'A caller without edit_post on the target must be refused.' );
 		} catch ( OperationException $e ) {
+			// Both refusal conditions hold here, so only the guard order decides which
+			// one answers; presence answering first is the mutation this catches.
 			$this->assertSame( ErrorCode::Forbidden, $e->errorCode );
-			$this->assertNotSame(
-				ErrorCode::IntegrationUnavailable,
-				$e->errorCode,
-				'Both refusal conditions hold here, so only the guard order decides; presence must not answer first.'
-			);
 		}
 
 		$this->assertSame( [], $this->postCalls, 'The capability check must run BEFORE the post is looked up.' );
@@ -316,12 +313,9 @@ final class AcfFieldListTest extends TestCase {
 			$this->handle();
 			$this->fail( 'A site whose ACF does not declare a version must refuse.' );
 		} catch ( OperationException $e ) {
+			// Without the presence guard the read fails instead, and the operator is
+			// told to retry a call that cannot succeed.
 			$this->assertSame( ErrorCode::IntegrationUnavailable, $e->errorCode );
-			$this->assertNotSame(
-				ErrorCode::ExecutionFailed,
-				$e->errorCode,
-				'Without the presence guard the read would fail instead, and the operator would be told to retry a call that cannot succeed.'
-			);
 		}
 	}
 
@@ -389,12 +383,8 @@ final class AcfFieldListTest extends TestCase {
 			$this->handle();
 			$this->fail( 'An index that could not be built must refuse.' );
 		} catch ( OperationException $e ) {
+			// ACF is installed here; the plugin is not what is missing.
 			$this->assertSame( ErrorCode::ExecutionFailed, $e->errorCode );
-			$this->assertNotSame(
-				ErrorCode::IntegrationUnavailable,
-				$e->errorCode,
-				'ACF is installed here; the plugin is not what is missing.'
-			);
 		}
 	}
 
@@ -440,14 +430,26 @@ final class AcfFieldListTest extends TestCase {
 
 		$this->assertSame( [ 'field_subtitle' ], array_column( $payload['fields'], 'key' ) );
 		$this->assertCount( 1, $payload['warnings'] );
-		$this->assertStringContainsString( 'group_broken', $payload['warnings'][0] );
 		$this->assertStringNotContainsString( 'subtitle', $payload['warnings'][0], 'A warning names groups, never a field or its value.' );
+
+		// The WHOLE string, not a substring of it. A substring assertion passes over
+		// a warning that names the group and then trails off, or that says '1 field
+		// group' while listing none — the two defects most easily introduced here.
+		$this->assertSame(
+			'The field definitions of 1 field group that applies to this post could not be read, '
+				. 'so any field in it is not listed here: group_broken.',
+			$payload['warnings'][0]
+		);
 	}
 
 	/**
 	 * A group ACF answered with that is not an array has no key to name, and the
 	 * warning counts it instead of printing an empty identifier. Saying nothing at
 	 * all would be the silence the second channel exists to prevent.
+	 *
+	 * ASSERTED WHOLE, AND ASSERTED TO CARRY NO COLON. Drop the filter that removes
+	 * unnameable keys and the warning ends '… not listed here: .' — a count and a
+	 * substring assertion both still pass over that, which is why neither is used.
 	 */
 	public function test_a_group_with_no_readable_key_is_counted_rather_than_named(): void {
 		$this->installAcf(
@@ -462,6 +464,41 @@ final class AcfFieldListTest extends TestCase {
 
 		$this->assertSame( [ 'field_subtitle' ], array_column( $payload['fields'], 'key' ) );
 		$this->assertCount( 1, $payload['warnings'] );
-		$this->assertStringContainsString( '1', $payload['warnings'][0] );
+		$this->assertStringNotContainsString( ':', $payload['warnings'][0], 'Nothing can be named here, so nothing is introduced.' );
+		$this->assertSame(
+			'The field definitions of 1 field group that applies to this post could not be read, '
+				. 'so any field in it is not listed here.',
+			$payload['warnings'][0]
+		);
+	}
+
+	/**
+	 * THE MIXED CASE: two groups fail, one of them can be named. Counting both while
+	 * naming one reads as though the single key were the whole list, so the size of
+	 * the named subset is stated. Delete that clause and this warning claims two
+	 * groups and shows one with nothing to say the list is partial.
+	 */
+	public function test_a_partly_nameable_set_of_skipped_groups_says_how_many_it_named(): void {
+		$this->installAcf(
+			[
+				'not a group',
+				$this->group( 'group_broken', 'Broken' ),
+				$this->group( 'group_page', 'Page settings' ),
+			],
+			[
+				'group_broken' => 'not a list of fields',
+				'group_page'   => [ $this->field( 'field_subtitle', 'subtitle' ) ],
+			]
+		);
+
+		$payload = $this->handle();
+
+		$this->assertSame( [ 'field_subtitle' ], array_column( $payload['fields'], 'key' ) );
+		$this->assertCount( 1, $payload['warnings'] );
+		$this->assertSame(
+			'The field definitions of 2 field groups that apply to this post could not be read, '
+				. 'so any field in them is not listed here. 1 of them could be identified: group_broken.',
+			$payload['warnings'][0]
+		);
 	}
 }

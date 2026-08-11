@@ -298,6 +298,7 @@ final class AcfFieldList {
 	}
 	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 
+	// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The message is a literal written for end users and echoes no caller input.
 	/**
 	 * Projects the index entries down to the members this operation reports.
 	 *
@@ -306,9 +307,18 @@ final class AcfFieldList {
 	 * response unannounced and fail the closed output schema at the boundary rather
 	 * than here.
 	 *
+	 * THE MEMBER IS CHECKED BEFORE IT IS READ. AcfFieldIndex sets all seven on every
+	 * entry it builds, so a missing one means that invariant has broken; reading it
+	 * unguarded would raise a PHP warning, substitute null, and fail at the schema
+	 * boundary with an error naming the response rather than the cause. Refusing here
+	 * puts the failure in this module's own vocabulary at the point it happened.
+	 *
 	 * @param array[] $fields The index's entries.
 	 *
 	 * @return array[] The reported entries.
+	 *
+	 * @throws OperationException With ErrorCode::ExecutionFailed when an index entry
+	 *                            is missing a member this operation must report.
 	 */
 	private function reported( array $fields ): array {
 		$reported = [];
@@ -317,6 +327,14 @@ final class AcfFieldList {
 			$row = [];
 
 			foreach ( self::REPORTED_MEMBERS as $member ) {
+				if ( ! array_key_exists( $member, $entry ) ) {
+					throw new OperationException(
+						ErrorCode::ExecutionFailed,
+						'The custom fields that apply to this post could not be described completely.',
+						'Check the site for an error log entry from Advanced Custom Fields, then try again.'
+					);
+				}
+
 				$row[ $member ] = $entry[ $member ];
 			}
 
@@ -325,6 +343,7 @@ final class AcfFieldList {
 
 		return $reported;
 	}
+	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 
 	/**
 	 * What the listing could not report faithfully.
@@ -336,6 +355,11 @@ final class AcfFieldList {
 	 * give, and it is counted instead of being printed as an empty identifier —
 	 * saying nothing at all would be the silence the second channel exists to
 	 * prevent.
+	 *
+	 * THE MIXED CASE SAYS SO EXPLICITLY. When some of the skipped groups can be
+	 * named and some cannot, a bare `N groups … : one-key` reads as though that one
+	 * key were the whole list, so the count of the named subset is stated. The
+	 * warning stays a single string either way; no new shape is introduced.
 	 *
 	 * @param string[] $skipped The keys of the groups whose fields could not be read.
 	 *
@@ -357,10 +381,21 @@ final class AcfFieldList {
 			1 === $count ? 'it is' : 'them is'
 		);
 
-		if ( [] !== $named ) {
-			$warning .= ': ' . implode( ', ', $named );
+		if ( [] === $named ) {
+			return [ $warning . '.' ];
 		}
 
-		return [ $warning . '.' ];
+		if ( count( $named ) === $count ) {
+			return [ $warning . ': ' . implode( ', ', $named ) . '.' ];
+		}
+
+		return [
+			sprintf(
+				'%s. %d of them could be identified: %s.',
+				$warning,
+				count( $named ),
+				implode( ', ', $named )
+			),
+		];
 	}
 }
