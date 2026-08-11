@@ -184,8 +184,19 @@ trait AcfWordPressStubs {
 	 * @param bool                 $with_value_function    Whether get_field() exists on this site.
 	 * @param bool                 $with_update_function   Whether update_field() exists on this site.
 	 * @param bool                 $with_delete_function   Whether delete_field() exists on this site.
+	 * A WRITE MOVES THIS SITE, AND ONLY AS FAR AS THE CALLER SAYS IT DOES. A double
+	 * whose `update_field()` recorded the call and changed nothing is faithful right
+	 * up to the rule the write path is specified on: ACF resolving a key to nothing
+	 * and storing nothing is a real failure, and a double that behaves that way for
+	 * EVERY write cannot tell a dropped write from a successful one. So a write here
+	 * updates the value get_field() answers with, and creates a postmeta row only for
+	 * the keys `$rows_created_by_key` names. The default names none, which is the
+	 * no-op site the dropped-write guard has to be proven against; naming a key gives
+	 * the ordinary site where the guard must stay silent.
+	 *
 	 * @param string[]             $stored_rows            The postmeta rows this site holds, each `"$post_id:$name"`.
 	 * @param bool                 $with_metadata_function Whether metadata_exists() exists in this process.
+	 * @param array<string, string> $rows_created_by_key   The postmeta NAME a write to each field KEY creates a row under.
 	 */
 	private function installAcf(
 		mixed $groups,
@@ -197,8 +208,16 @@ trait AcfWordPressStubs {
 		bool $with_update_function = true,
 		bool $with_delete_function = true,
 		array $stored_rows = [],
-		bool $with_metadata_function = true
+		bool $with_metadata_function = true,
+		array $rows_created_by_key = []
 	): void {
+		// THE TWO MUTABLE SETS BOTH CLOSURES SHARE. They are locals captured by
+		// reference rather than test properties so that a suite installing this
+		// double inherits the behaviour without being made to declare two more
+		// properties it never reads.
+		$values = $values_by_key;
+		$rows   = $stored_rows;
+
 		if ( null !== $version && ! defined( AcfPresence::VERSION_CONSTANT ) ) {
 			define( AcfPresence::VERSION_CONSTANT, $version );
 		}
@@ -247,12 +266,12 @@ trait AcfWordPressStubs {
 		// and common enough that a theme can define its own.
 		if ( $with_value_function ) {
 			Functions\when( 'get_field' )->alias(
-				function ( mixed $selector = null, mixed $post_id = false, mixed $format = true ) use ( $values_by_key ): mixed {
+				function ( mixed $selector = null, mixed $post_id = false, mixed $format = true ) use ( &$values ): mixed {
 					$key = is_scalar( $selector ) ? (string) $selector : '';
 
 					$this->acfCalls[] = [ 'value', [ $key, $post_id, $format ] ];
 
-					return $values_by_key[ $key ] ?? null;
+					return $values[ $key ] ?? null;
 				}
 			);
 		}
@@ -265,8 +284,20 @@ trait AcfWordPressStubs {
 		// site that wrote a field its stored value already matched.
 		if ( $with_update_function ) {
 			Functions\when( 'update_field' )->alias(
-				function ( mixed $selector = null, mixed $value = null, mixed $post_id = false ): bool {
+				function ( mixed $selector = null, mixed $value = null, mixed $post_id = false ) use ( &$values, &$rows, $rows_created_by_key ): bool {
 					$this->acfCalls[] = [ 'update', [ $selector, $value, $post_id ] ];
+
+					$key = is_scalar( $selector ) ? (string) $selector : '';
+
+					$values[ $key ] = $value;
+
+					if ( isset( $rows_created_by_key[ $key ] ) ) {
+						$row = sprintf( '%s:%s', is_scalar( $post_id ) ? $post_id : '', $rows_created_by_key[ $key ] );
+
+						if ( ! in_array( $row, $rows, true ) ) {
+							$rows[] = $row;
+						}
+					}
 
 					return false;
 				}
@@ -289,12 +320,12 @@ trait AcfWordPressStubs {
 		// reach that probe — which is a refusal in production and a fatal without it.
 		if ( $with_metadata_function ) {
 			Functions\when( 'metadata_exists' )->alias(
-				function ( mixed $meta_type = null, mixed $object_id = null, mixed $meta_key = null ) use ( $stored_rows ): bool {
+				function ( mixed $meta_type = null, mixed $object_id = null, mixed $meta_key = null ) use ( &$rows ): bool {
 					$this->acfCalls[] = [ 'row', [ $meta_type, $object_id, $meta_key ] ];
 
 					return in_array(
 						sprintf( '%s:%s', is_scalar( $object_id ) ? $object_id : '', is_scalar( $meta_key ) ? $meta_key : '' ),
-						$stored_rows,
+						$rows,
 						true
 					);
 				}
