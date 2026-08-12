@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace SiteHelm\Tests\Unit\Modules\Media;
 
+use Brain\Monkey\Functions;
 use SiteHelm\Contracts\ErrorCode;
 
 /**
@@ -104,6 +105,35 @@ final class MediaFetchRedirectTest extends MediaFetchTestCase {
 		// One directive per hop, each naming ONLY that hop's host: the second
 		// pin is not the first pin with something added to it, which is what a
 		// stale CURLOPT_RESOLVE entry would look like.
+		$this->assertSame(
+			[
+				'cdn.example.com:443:93.184.216.34',
+				'images.example.net:443:93.184.216.35',
+			],
+			$this->pinnedDirectives()
+		);
+	}
+
+	public function test_a_hop_whose_location_names_an_uppercase_scheme_is_still_pinned(): void {
+		// THE ATTACKER WRITES THE `Location`, so the spelling of the next hop is
+		// entirely theirs to choose. `HTTPS://` is a legal, equivalent spelling
+		// that core lower-cases on its way to the transport, and against the
+		// previous raw-string match that difference was enough to make the class
+		// fail to recognise its own request, apply no CURLOPT_RESOLVE, and let the
+		// attacker's resolver answer the second lookup — with no refusal and no log
+		// line. The hop must be pinned exactly as the lower-case spelling is.
+		$this->dns['images.example.net'] = [ '93.184.216.35' ];
+
+		$this->respondWith(
+			$this->redirectTo( 'HTTPS://images.example.net/a.png' ),
+			$this->responseWith( 200, 'PNGBYTES' )
+		);
+
+		$fetch = $this->fetcher();
+		$this->recordPins( $fetch );
+
+		$this->assertSame( 'PNGBYTES', $fetch->fetch( $this->validated(), 'corr-1' ) );
+
 		$this->assertSame(
 			[
 				'cdn.example.com:443:93.184.216.34',
@@ -326,6 +356,64 @@ final class MediaFetchRedirectTest extends MediaFetchTestCase {
 
 		$this->assertNotSame( [], $this->added, 'The class registered no hooks at all.' );
 		$this->assertSame( [], $this->leakedHooks() );
+	}
+
+	/**
+	 * The other half of the envelope-discipline rule, for all three redirect
+	 * refusals. Each of them says nothing about the destination BY DESIGN, so if
+	 * nothing were written server-side there would be no way at all to find out why
+	 * a real import failed — the refusal would be correct and useless at once.
+	 *
+	 * @dataProvider redirectRefusalsThatMustBeLogged
+	 */
+	public function test_a_redirect_refusal_is_logged_under_the_correlation_id( array $responses, string $expected ): void {
+		$logged = [];
+
+		Functions\when( 'error_log' )->alias(
+			function ( string $line ) use ( &$logged ): bool {
+				$logged[] = $line;
+
+				return true;
+			}
+		);
+
+		$this->dns['images.example.net'] = [ '93.184.216.35' ];
+		$this->dns['assets.example.org'] = [ '93.184.216.36' ];
+
+		$this->respondWith( ...$responses );
+
+		$this->refusal(
+			ErrorCode::ExecutionFailed,
+			fn() => $this->fetcher()->fetch( $this->validated(), 'corr-1' )
+		);
+
+		$this->assertCount( 1, $logged );
+		$this->assertStringContainsString( 'corr-1', $logged[0] );
+		$this->assertStringContainsString( $expected, $logged[0] );
+	}
+
+	/**
+	 * @return array<string, array{0: array<int, mixed>, 1: string}>
+	 */
+	public function redirectRefusalsThatMustBeLogged(): array {
+		return [
+			'no location'   => [
+				[ $this->redirectTo( null ) ],
+				'no single usable Location',
+			],
+			'path relative' => [
+				[ $this->redirectTo( '../elsewhere/b.png' ) ],
+				'unresolvable Location',
+			],
+			'over the cap'  => [
+				[
+					$this->redirectTo( 'https://images.example.net/a.png' ),
+					$this->redirectTo( 'https://assets.example.org/a.png' ),
+					$this->redirectTo( 'https://cdn.example.com/b.png' ),
+				],
+				'redirect chain exceeded',
+			],
+		];
 	}
 
 	public function test_no_redirect_refusal_names_the_destination(): void {

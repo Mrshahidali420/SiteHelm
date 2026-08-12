@@ -44,9 +44,23 @@ final class MediaUrlGuardTest extends TestCase {
 		// Core's own baseline gate. Faked as "accepts everything" by default so
 		// that each test below exercises THIS class's policy rather than core's;
 		// one test flips it to false to pin the gate itself.
+		//
+		// IT RETURNS THE NORMALISED URL, NOT THE INPUT, because that is what core
+		// does: `wp_http_validate_url()` hands back the string
+		// `wp_kses_bad_protocol()` produced, and `wp_kses_bad_protocol_once2()`
+		// lower-cases the scheme. A fake that echoed its argument would model the
+		// one property this guard's caller depends on as absent, and MediaFetch's
+		// address pin was silently disabled by exactly that difference.
 		Functions\when( 'wp_http_validate_url' )->alias(
 			static function ( string $url ) {
-				return $url;
+				return preg_replace_callback(
+					'#\A[a-zA-Z][a-zA-Z0-9+.\-]*:#',
+					static function ( array $matches ): string {
+						return strtolower( $matches[0] );
+					},
+					$url,
+					1
+				);
 			}
 		);
 
@@ -134,6 +148,21 @@ final class MediaUrlGuardTest extends TestCase {
 		$this->assertSame( 'cdn.example.com', $validated['host'] );
 		$this->assertSame( 443, $validated['port'] );
 		$this->assertSame( '93.184.216.34', $validated['ip'] );
+	}
+
+	public function test_the_returned_url_is_cores_normalised_form_not_the_input(): void {
+		// The caller's spelling is NOT what comes back. `WP_Http::request()`
+		// rewrites the request to this same normalised string before the
+		// transport sees it, so a guard that returned the raw input would hand
+		// MediaFetch one spelling while the transport hooks were handed another —
+		// and an attacker picks the difference by typing `HTTPS://`. MediaFetch's
+		// address pin then silently does not apply.
+		$validated = $this->guard( [ '93.184.216.34' ] )->validate( 'HTTPS://cdn.example.com/a.png' );
+
+		$this->assertSame( 'https://cdn.example.com/a.png', $validated['url'] );
+		$this->assertSame( 'https', $validated['scheme'] );
+		$this->assertSame( 'cdn.example.com', $validated['host'] );
+		$this->assertSame( 443, $validated['port'] );
 	}
 
 	public function test_a_url_core_rejects_is_refused(): void {

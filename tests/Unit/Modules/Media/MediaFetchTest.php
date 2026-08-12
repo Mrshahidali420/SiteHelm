@@ -42,6 +42,7 @@ final class MediaFetchTest extends MediaFetchTestCase {
 	 * project's toolchain PHP, which has no ext-curl. See the fix-round-1 notes
 	 * in the task report.
 	 *
+	 * @group curl-must-be-absent
 	 * @runInSeparateProcess
 	 * @preserveGlobalState disabled
 	 */
@@ -420,6 +421,228 @@ final class MediaFetchTest extends MediaFetchTestCase {
 
 		$this->assertNull( $stranger );
 		$this->assertSame( 'cdn.example.com:443:93.184.216.34', $mine );
+	}
+
+	public function test_the_pin_recognises_every_equivalent_spelling_of_its_own_url(): void {
+		// THE ATTACKER PICKS THE SPELLING. WordPress hands `http_request_args` the
+		// url as supplied and `http_api_curl` the url after core has rewritten it
+		// through wp_kses_bad_protocol(), which lower-cases the scheme — and on a
+		// redirect the whole string comes from the remote server. A comparison by
+		// raw string identity therefore had a silent off switch: one capital letter
+		// and the class stopped recognising its own request, applied no
+		// CURLOPT_RESOLVE, and let the transport resolve the name for itself. Every
+		// spelling below addresses the same host and port and must be recognised;
+		// every spelling in the second group addresses something else and must not.
+		$fetch  = $this->fetcher();
+		$asked  = [];
+		$expect = 'cdn.example.com:443:93.184.216.34';
+
+		add_action(
+			'http_api_curl',
+			function () use ( $fetch, &$asked ): void {
+				foreach (
+					[
+						'same'          => 'https://cdn.example.com/a.png',
+						'scheme case'   => 'HTTPS://cdn.example.com/a.png',
+						'host case'     => 'https://CDN.Example.COM/a.png',
+						'trailing dot'  => 'https://cdn.example.com./a.png',
+						'default port'  => 'https://cdn.example.com:443/a.png',
+						'other path'    => 'https://cdn.example.com/other%2Fpath.png',
+						'other port'    => 'https://cdn.example.com:80/a.png',
+						'other scheme'  => 'http://cdn.example.com/a.png',
+						// Scheme differing while host AND port still agree, so the
+						// scheme comparison is the only thing that can reject it.
+						'scheme alone'  => 'http://cdn.example.com:443/a.png',
+						'other host'    => 'https://other.example.com/a.png',
+						'not a url'     => 'not a url at all',
+						// parse_url() refuses this outright. A url this class could
+						// not parse must never be taken for the one in flight.
+						'unparsable'    => 'https://cdn.example.com:port/a.png',
+					] as $label => $url
+				) {
+					$asked[ $label ] = $fetch->pinDirectiveFor( $url );
+				}
+			},
+			1,
+			3
+		);
+
+		$fetch->fetch( $this->validated(), 'corr-1' );
+
+		$this->assertSame( $expect, $asked['same'] );
+		$this->assertSame( $expect, $asked['scheme case'] );
+		$this->assertSame( $expect, $asked['host case'] );
+		$this->assertSame( $expect, $asked['trailing dot'] );
+		$this->assertSame( $expect, $asked['default port'] );
+		$this->assertSame( $expect, $asked['other path'] );
+
+		$this->assertNull( $asked['other port'] );
+		$this->assertNull( $asked['other scheme'] );
+		$this->assertNull( $asked['scheme alone'] );
+		$this->assertNull( $asked['other host'] );
+		$this->assertNull( $asked['not a url'] );
+		$this->assertNull( $asked['unparsable'] );
+	}
+
+	public function test_an_http_target_recognises_its_own_default_port(): void {
+		// The other half of the default-port rule. Reading an absent port as 443
+		// unconditionally would leave every plain-http import unrecognised at the
+		// pinning hook and therefore unpinned — and, now, refused outright.
+		$this->dns['plain.example.com'] = [ '93.184.216.37' ];
+
+		$target = [
+			'url'    => 'http://plain.example.com/a.png',
+			'scheme' => 'http',
+			'host'   => 'plain.example.com',
+			'port'   => 80,
+			'ip'     => '93.184.216.37',
+		];
+
+		$fetch = $this->fetcher();
+
+		$this->recordPins( $fetch );
+
+		$this->assertSame( 'PNGBYTES', $fetch->fetch( $target, 'corr-1' ) );
+		$this->assertSame( [ 'plain.example.com:80:93.184.216.37' ], $this->pinnedDirectives() );
+	}
+
+	public function test_a_later_hop_that_goes_out_unpinned_is_refused(): void {
+		// The per-hop half of the fail-closed check. Carrying the first hop's
+		// "yes, pinned" verdict into the second would make the check pass for a
+		// chain whose LAST request — the one that actually returns the bytes —
+		// went out with no address pin at all, which is the exact shape of the
+		// stale-pin bug this class was rewritten to close.
+		$this->dns['images.example.net'] = [ '93.184.216.35' ];
+
+		$this->respondWith(
+			$this->redirectTo( 'https://images.example.net/a.png' ),
+			$this->responseWith( 200, 'PNGBYTES' )
+		);
+
+		$this->rewriteCurlUrl = static function ( string $url ): string {
+			return false === strpos( $url, 'images.example.net' ) ? $url : 'https://somewhere-else.example.org/a.png';
+		};
+
+		$refusal = $this->refusal(
+			ErrorCode::ExecutionFailed,
+			fn() => $this->fetcher()->fetch( $this->validated(), 'corr-1' )
+		);
+
+		$this->assertStringContainsString( 'pinned', $refusal->getMessage() );
+		$this->assertRefusalLeaksNothing( $refusal );
+	}
+
+	public function test_a_target_spelt_with_an_uppercase_scheme_is_still_pinned(): void {
+		// Defence in depth against the same defect. MediaUrlGuard now hands back
+		// core's normalised url, so in the assembled feature the two hook points
+		// see the same string — but this class must not be left depending on that,
+		// because the guard's normalisation is one edit away from being lost and
+		// the failure it would cause here is silent. The fixture applies core's
+		// scheme rewrite between the two hooks, exactly as WP_Http does, so the
+		// filter sees `HTTPS://` and the pinning action sees `https://`.
+		$target        = $this->validated();
+		$target['url'] = 'HTTPS://cdn.example.com/a.png';
+
+		$fetch = $this->fetcher();
+
+		$this->recordPins( $fetch );
+
+		$this->assertSame( 'PNGBYTES', $fetch->fetch( $target, 'corr-1' ) );
+		$this->assertSame( [ 'cdn.example.com:443:93.184.216.34' ], $this->pinnedDirectives() );
+	}
+
+	public function test_a_fetch_whose_connection_was_not_pinned_is_refused(): void {
+		// THE FAIL-CLOSED HALF. "This url is not mine, leave it alone" and "this
+		// url IS mine and I did not recognise it, so it went out unpinned" are the
+		// same silence at the hook. The first is correct and constant; the second
+		// is the DNS-rebinding hole reopened. Here the pinning hook is fired with a
+		// url the class cannot match — which is what any future gap in the matching
+		// rule would look like from inside — and the fetch must refuse rather than
+		// hand back bytes it cannot vouch for.
+		$this->rewriteCurlUrl = static function (): string {
+			return 'https://somewhere-else.example.org/a.png';
+		};
+
+		$refusal = $this->assertFetchRefused( ErrorCode::ExecutionFailed );
+
+		$this->assertStringContainsString( 'pinned', $refusal->getMessage() );
+		$this->assertRefusalLeaksNothing( $refusal );
+	}
+
+	public function test_the_failed_pin_refusal_is_logged_under_the_correlation_id(): void {
+		// The refusal above says nothing about the address by design, so the
+		// diagnosis has to exist server-side or the most security-relevant failure
+		// in this class would be the least debuggable one.
+		$logged = [];
+
+		Functions\when( 'error_log' )->alias(
+			function ( string $line ) use ( &$logged ): bool {
+				$logged[] = $line;
+
+				return true;
+			}
+		);
+
+		$this->rewriteCurlUrl = static function (): string {
+			return 'https://somewhere-else.example.org/a.png';
+		};
+
+		$this->assertFetchRefused( ErrorCode::ExecutionFailed );
+
+		$this->assertCount( 1, $logged );
+		$this->assertStringContainsString( 'corr-1', $logged[0] );
+		$this->assertStringContainsString( 'not pinned', $logged[0] );
+	}
+
+	public function test_a_streams_transport_fetch_is_not_refused_for_want_of_a_pin(): void {
+		// The fail-closed check must not become an outage on every site whose HTTP
+		// transport is not curl. Such a site never fires `http_api_curl`, has no
+		// CURLOPT_RESOLVE to apply and never did — the accepted cost in spec §7
+		// item 3 — so the absence of a pin there is not a failure to detect.
+		$this->curlTransport = false;
+
+		$this->assertSame( 'PNGBYTES', $this->fetcher()->fetch( $this->validated(), 'corr-1' ) );
+		$this->assertSame( [], $this->pinDecisions );
+	}
+
+	public function test_an_ipv6_address_is_bracketed_in_the_directive(): void {
+		// curl documents the bracketed form for IPv6 in --resolve, and the
+		// unbracketed one is only unambiguous by accident of where curl's parser
+		// stops splitting on colons. HostResolver returns AAAA answers, so this is
+		// a live case.
+		$target = [
+			'url'    => 'https://cdn6.example.com/a.png',
+			'scheme' => 'https',
+			'host'   => 'cdn6.example.com',
+			'port'   => 443,
+			'ip'     => '2606:4700::1111',
+		];
+
+		$this->assertSame(
+			'cdn6.example.com:443:[2606:4700::1111]',
+			$this->fetcher()->resolveDirective( $target )
+		);
+	}
+
+	public function test_an_ipv6_target_is_pinned_under_its_bracketed_address(): void {
+		// And the same through the hook, so the bracketing is proven on the path
+		// the pin actually takes rather than only on the helper.
+		$this->dns = [ 'cdn6.example.com' => [ '2606:4700::1111' ] ];
+
+		$target = [
+			'url'    => 'https://cdn6.example.com/a.png',
+			'scheme' => 'https',
+			'host'   => 'cdn6.example.com',
+			'port'   => 443,
+			'ip'     => '2606:4700::1111',
+		];
+
+		$fetch = $this->fetcher();
+
+		$this->recordPins( $fetch );
+
+		$this->assertSame( 'PNGBYTES', $fetch->fetch( $target, 'corr-1' ) );
+		$this->assertSame( [ 'cdn6.example.com:443:[2606:4700::1111]' ], $this->pinnedDirectives() );
 	}
 
 	public function test_the_pin_is_cleared_after_a_fetch(): void {
