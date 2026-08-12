@@ -126,18 +126,37 @@ uncovered code this component contributes and is declared as such.
 `fetch( array $validated, string $correlationId ): string` returns raw bytes.
 
 - Uses `wp_safe_remote_get()`, never `wp_remote_get()`.
-- Forces, via a scoped `http_request_args` filter: `reject_unsafe_urls => true`,
-  `redirection => 2`, `timeout => 15`, `httpversion => '1.1'`,
+- Forces, via a scoped `http_request_args` filter registered at `PHP_INT_MAX`:
+  `reject_unsafe_urls => true`, `redirection => 0`, `timeout => 15`,
+  `httpversion => '1.1'`,
   `limit_response_size => MediaMimeGuard::MAX_DECODED_BYTES + 1`, and a
   `user-agent` naming the plugin. `limit_response_size` is the response-size cap
   and is enforced by `WP_Http` during the transfer, so an endless response is cut
-  off rather than buffered.
-- **Re-validates every redirect hop through `MediaUrlGuard`.** The
-  `http_request_args` filter receives the URL of each hop, including redirect
-  targets, so a 302 to `http://127.0.0.1:8080/` is refused at the hop rather than
-  followed. This is why redirects are capped at 2 rather than disabled: the CDN
-  redirects that make imports work in practice remain possible, and each one
+  off rather than buffered. The priority is `PHP_INT_MAX` because WordPress
+  applies this filter to the arguments SiteHelm itself passes: at priority 10,
+  any third-party filter registered at 11 or later could relax a safety value on
+  SiteHelm's own request.
+- **Re-validates every redirect hop through `MediaUrlGuard`, by following
+  redirects itself.** `redirection => 0` makes WordPress return the 3xx rather
+  than follow it, and `MediaFetch` runs its own hop loop: read `Location`,
+  resolve it against the current URL if relative, validate it as a fresh URL,
+  remove the previous hop's pin, register a pin for the new hop's approved
+  address, and issue a new request. A 302 to `http://127.0.0.1:8080/` is
+  refused at the hop rather than followed; a 3xx with no `Location`, or an
+  unresolvable one, is refused. The loop is bounded at 2 hops, so the CDN
+  redirects that make imports work in practice remain possible and each one
   passes the same guard the original URL passed.
+
+  **This corrects an earlier version of this section, which claimed the
+  `http_request_args` filter receives the URL of each hop.** It does not:
+  `http_request_args` fires exactly once per `WP_Http::request()` call
+  (WP 6.8.1, `class-wp-http.php:252`), and redirects are followed inside
+  Requests (`Requests.php:809`) without re-entering `WP_Http::request()`. Under
+  the original design hop 2 would have been neither re-validated nor re-pinned —
+  it would have carried hop 1's stale `CURLOPT_RESOLVE` entry, which is
+  precisely the DNS-rebinding hole the pin exists to close. Following redirects
+  in `MediaFetch` is the only way to get a fresh validation and a fresh pin per
+  hop.
 - **Pins the connection to the validated IP** via `CURLOPT_RESOLVE`, set through
   WordPress's `http_api_curl` action, re-pinned per hop. This is what closes DNS
   rebinding: without it, an attacker's resolver can answer the guard's lookup
