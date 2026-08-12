@@ -391,10 +391,14 @@ final class MetaboxFieldUpdate implements WriteOperation {
 	 * '5', and a strict comparison would refuse almost every correct write. The two
 	 * tolerances it allows — the three empty forms are one value, and scalars are
 	 * compared by their string spelling — are exactly the coercions the storage
-	 * performs, and nothing wider. A dropped write leaves the field answering `''`,
-	 * which fails the comparison for every promise that was not itself empty, and
-	 * legitimately passes it for a request that asked to clear a field that was
-	 * already clear.
+	 * performs, and nothing wider. A DROPPED WRITE LEAVES THE FIELD'S PREVIOUS ROWS, not
+	 * an empty answer: the re-read goes through the raw rows rather than Meta Box's own
+	 * accessor, so a write that stored nothing is measured as whatever the field held
+	 * before it. That fails the comparison for every promise the field did not already
+	 * satisfy — a stronger guarantee than an empty answer would give, since a promise of
+	 * `''` against a field still holding content is caught too. It legitimately passes
+	 * only where the requested post-condition already held: a request to clear a field
+	 * that was already clear.
 	 *
 	 * VerificationFailed AND NOT ExecutionFailed. The call was made and did not
 	 * error; what failed is the proof that it landed.

@@ -243,10 +243,15 @@ trait MetaboxWordPressStubs {
 		$raw  = [];
 		$rows = $stored_rows;
 
+		// THE STARTING ROWS GO THROUGH THE SAME COERCION A WRITTEN ROW DOES. A site's
+		// initial state arrived in its postmeta table by being written to it, so a
+		// fixture whose starting rows were the PHP values while its written rows were
+		// the stored spellings would be two different databases in one process — and
+		// every read of an untouched field would answer something no site answers.
 		foreach ( $values_by_field_id as $field_id => $stored ) {
 			$raw[ $field_id ] = in_array( $field_id, $formatting_fields, true )
-				? array_values( (array) $stored )
-				: [ $stored ];
+				? array_map( self::metaboxStoredRow( ... ), array_values( (array) $stored ) )
+				: [ self::metaboxStoredRow( $stored ) ];
 		}
 
 		if ( null !== $version && ! defined( MetaboxPresence::VERSION_CONSTANT ) ) {
@@ -395,13 +400,19 @@ trait MetaboxWordPressStubs {
 
 					$row = sprintf( '%s:%s', is_scalar( $object_id ) ? $object_id : '', $id );
 
+					// `$single` IS TESTED FOR TRUTH AND NOT FOR `true`, because core tests
+					// it for truth. A caller passing `1` gets the single value on a real
+					// site, and a double that answered the row list there would let a
+					// wrapper that passed the wrong spelling look correct here.
+					$one = (bool) $single;
+
 					if ( ! in_array( $row, $rows, true ) ) {
-						return true === $single ? '' : [];
+						return $one ? '' : [];
 					}
 
 					$held = $raw[ $id ] ?? [];
 
-					return true === $single ? ( $held[0] ?? '' ) : $held;
+					return $one ? ( $held[0] ?? '' ) : $held;
 				}
 			);
 
@@ -450,12 +461,22 @@ trait MetaboxWordPressStubs {
 	/**
 	 * What a postmeta row actually holds once the database has taken the value.
 	 *
-	 * POSTMETA IS A TEXT COLUMN AND `null` IS NOT A VALUE IT CAN HOLD. Core writes the
-	 * empty string for `null` and for `false`, and `'1'` for `true`; the row then reads
-	 * back as that text and never as the PHP value that was handed in. A double that
-	 * echoed the value back would let a write path promising `null` verify against a
-	 * `null` no site ever stores, and the same code would refuse itself in production
-	 * where the answer is `''` — which is a verification failure on a write that landed.
+	 * POSTMETA IS A TEXT COLUMN AND EVERY SCALAR COMES BACK OUT OF IT AS TEXT. It is
+	 * not only `null` and the booleans: the integer 9 is stored as `9` and read back as
+	 * the string `'9'`, and so is every float and every number an operator sends. Core
+	 * writes the empty string for `null` and for `false` and `'1'` for `true` because
+	 * that is what casting those three to text produces, so the rule is one rule and not
+	 * a list of special cases.
+	 *
+	 * A DOUBLE THAT ECHOED THE PHP VALUE BACK WOULD HIDE THE RULE THE WRITE PATH IS
+	 * BUILT ON. `MetaboxValueCanonical::settle()` exists to spell both the promise and
+	 * the re-read the way the column does (spec §5) so that the change engine's digest
+	 * comparison sees one currency. With an int-in/int-out double the promise `[ 9, 10 ]`
+	 * and the re-read `[ 9, 10 ]` are already identical before anything settles them, so
+	 * every test of that settlement passes whether the settlement runs or not — while on
+	 * a real site the rows read back `[ '9', '10' ]`, the digests diverge, and an
+	 * idempotent write is refused and rolled back. The tests cannot see the defect they
+	 * were written for unless this function tells the truth about the column.
 	 *
 	 * A STRUCTURE IS LEFT ALONE, because core serializes it and hands it back
 	 * unserialized: an array really does survive the round trip with its members' own
@@ -466,11 +487,11 @@ trait MetaboxWordPressStubs {
 	 * @return mixed The value the row then holds.
 	 */
 	private static function metaboxStoredRow( mixed $value ): mixed {
-		if ( null === $value || false === $value ) {
+		if ( null === $value ) {
 			return '';
 		}
 
-		return true === $value ? '1' : $value;
+		return is_scalar( $value ) ? (string) $value : $value;
 	}
 
 	/**

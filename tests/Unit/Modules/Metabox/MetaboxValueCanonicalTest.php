@@ -219,6 +219,16 @@ final class MetaboxValueCanonicalTest extends TestCase {
 	public function test_zero_is_a_value_and_not_an_empty_form(): void {
 		$this->assertFalse( $this->canonical->matches( 0, '' ), 'A promised 0 that stored nothing did not land.' );
 		$this->assertTrue( $this->canonical->matches( 0, '0' ), 'A promised 0 stored as text 0 did land.' );
+
+		// THE SETTLEMENT MUST NOT WIDEN THE EMPTY-FORM RULE, and this is the pairing that
+		// would show it if it had. A field holding one row containing the empty string
+		// settles to `''` and a promised 0 settles to `'0'`, so the dropped write the
+		// pair describes is still refused AFTER both sides have been through the
+		// boundary — the place the tolerance now lives.
+		$this->assertFalse(
+			$this->canonical->matches( $this->canonical->settle( 0 ), $this->canonical->settle( [ '' ] ) ),
+			'A promised 0 against a field holding one empty row is still a dropped write once both sides are settled.'
+		);
 	}
 
 	/**
