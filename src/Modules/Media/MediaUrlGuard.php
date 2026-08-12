@@ -414,7 +414,6 @@ final class MediaUrlGuard {
 		return $this->resolver->resolve( $host );
 	}
 
-	// phpcs:disable WordPress.PHP.NoSilencedErrors.Discouraged -- inet_pton() and inet_ntop() are deliberately fed strings that may not be addresses at all, since judging a hostile resolver's answer is this class's job; their diagnostic warning carries that answer into the site's error log, and the false return is already handled on the line below every silenced call.
 	/**
 	 * Refuses any address that is not one this site will fetch from.
 	 *
@@ -447,6 +446,7 @@ final class MediaUrlGuard {
 		}
 	}
 
+	// phpcs:disable WordPress.PHP.NoSilencedErrors.Discouraged -- inet_pton() and inet_ntop() are deliberately fed strings that may not be addresses at all, since judging a hostile resolver's answer is this class's job; their diagnostic warning carries that answer into the site's error log, and the false return is handled on the line below every silenced call.
 	/**
 	 * Extracts the IPv4 address embedded in a mapped IPv6 address.
 	 *
@@ -478,7 +478,9 @@ final class MediaUrlGuard {
 
 		return $address;
 	}
+	// phpcs:enable WordPress.PHP.NoSilencedErrors.Discouraged
 
+	// phpcs:disable WordPress.PHP.NoSilencedErrors.Discouraged -- inet_pton() is deliberately fed a string that may not be an address at all; the false return is handled on the line below the silenced call.
 	/**
 	 * Whether an address falls in any explicitly blocked range.
 	 *
@@ -513,7 +515,9 @@ final class MediaUrlGuard {
 
 		return false;
 	}
+	// phpcs:enable WordPress.PHP.NoSilencedErrors.Discouraged
 
+	// phpcs:disable WordPress.PHP.NoSilencedErrors.Discouraged -- inet_pton() is deliberately fed a network base address from this class's own tables; the false return is handled on the line below the silenced call, so a mistyped row fails closed rather than warning on every request.
 	/**
 	 * Whether an address falls inside a network, compared bit by bit on PACKED
 	 * BINARY.
