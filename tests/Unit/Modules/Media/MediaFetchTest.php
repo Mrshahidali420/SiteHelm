@@ -1,6 +1,6 @@
 <?php
 /**
- * Tests for MediaFetch (REQ-0052).
+ * Tests for MediaFetch (REQ-0052): pinning, hooks, statuses and body limits.
  *
  * @package SiteHelm
  */
@@ -11,408 +11,69 @@ namespace SiteHelm\Tests\Unit\Modules\Media;
 
 use Brain\Monkey\Functions;
 use SiteHelm\Contracts\ErrorCode;
-use SiteHelm\Contracts\OperationException;
-use SiteHelm\Modules\Media\HostResolver;
-use SiteHelm\Modules\Media\MediaFetch;
 use SiteHelm\Modules\Media\MediaMimeGuard;
-use SiteHelm\Modules\Media\MediaUrlGuard;
-use SiteHelm\Tests\TestCase;
 
 /**
  * MediaUrlGuard decides WHETHER an address may be fetched. This class tests the
  * transport that makes sure the request actually goes to the address the guard
- * approved — and to nothing else, on any redirect hop.
+ * approved.
  *
- * THE FAKES HERE ARE FAITHFUL ABOUT THE ARGUMENTS THEY RECEIVE, not merely about
- * the responses they return. `wp_safe_remote_get()` is faked as a miniature
- * WP_Http: it applies every registered `http_request_args` filter to the request
- * arguments, for the primary request AND for each queued redirect hop, exactly as
- * core's redirect loop does. A fake that skipped that would return the right
- * bytes while proving nothing about the hop revalidation, which is the whole
- * security property of this class.
- *
- * Every refusal is asserted on its specific ErrorCode inside a try/catch. Every
- * refusal in this codebase is OperationException, so a bare expectException()
- * would pass on a completely different refusal than the one the test aimed at.
+ * The redirect hop loop — the part of that promise that survives a `3xx` — is
+ * tested in MediaFetchRedirectTest. See MediaFetchTestCase for the WordPress
+ * stand-in both files share, and for why it is deliberately unhelpful.
  */
-final class MediaFetchTest extends TestCase {
-
-	/**
-	 * Every add_filter/add_action call the class made, as [ hook, priority ].
-	 *
-	 * @var array<int, array{0: string, 1: int}>
-	 */
-	private array $added = [];
-
-	/**
-	 * Every remove_filter/remove_action call the class made, as [ hook, priority ].
-	 *
-	 * @var array<int, array{0: string, 1: int}>
-	 */
-	private array $removed = [];
-
-	/**
-	 * The `http_request_args` callbacks currently registered.
-	 *
-	 * @var array<int, callable>
-	 */
-	private array $requestArgFilters = [];
-
-	/**
-	 * The `http_api_curl` callbacks currently registered.
-	 *
-	 * @var array<int, callable>
-	 */
-	private array $curlActions = [];
-
-	/**
-	 * Every curl option the class set, as [ option, value ], newest last.
-	 *
-	 * @var array<int, array{0: int, 1: mixed}>
-	 */
-	private array $curlOptions = [];
-
-	/**
-	 * The response the faked transport hands back.
-	 *
-	 * @var mixed
-	 */
-	private mixed $response = null;
-
-	/**
-	 * Redirect targets the faked transport walks after the primary URL, which is
-	 * how a 302 is modelled: core re-applies `http_request_args` per hop.
-	 *
-	 * @var array<int, string>
-	 */
-	private array $hops = [];
-
-	/**
-	 * The request arguments the faked transport ended up with, post-filter.
-	 *
-	 * @var array<string, mixed>
-	 */
-	private array $sentArgs = [];
-
-	/**
-	 * What DNS is made to say, per host. A host absent from this map resolves to
-	 * nothing, which MediaUrlGuard refuses.
-	 *
-	 * @var array<string, array<int, string>>
-	 */
-	private array $dns = [ 'cdn.example.com' => [ '93.184.216.34' ] ];
-
-	protected function setUp(): void {
-		parent::setUp();
-
-		$this->added             = [];
-		$this->removed           = [];
-		$this->requestArgFilters = [];
-		$this->curlActions       = [];
-		$this->curlOptions       = [];
-		$this->hops              = [];
-		$this->sentArgs          = [];
-		$this->dns               = [ 'cdn.example.com' => [ '93.184.216.34' ] ];
-		$this->response          = $this->responseWith( 200, 'PNGBYTES' );
-
-		// MediaUrlGuard's own dependencies. Faked exactly as MediaUrlGuardTest
-		// fakes them, because the guard is exercised for real here rather than
-		// mocked: the hop revalidation IS the guard running.
-		Functions\when( 'wp_http_validate_url' )->alias(
-			static function ( string $url ) {
-				return $url;
-			}
-		);
-
-		Functions\when( 'wp_parse_url' )->alias(
-			static function ( string $url, int $component = -1 ) {
-				return parse_url( $url, $component );
-			}
-		);
-
-		// Brain Monkey does not run a hook system, so the hooks are recorded
-		// here and the transport fake below replays them. Recording both the
-		// hook name and the priority is what lets the removal tests assert that
-		// what was added is what was taken away.
-		Functions\when( 'add_filter' )->alias(
-			function ( string $hook, $callback, int $priority = 10 ) {
-				$this->added[] = [ $hook, $priority ];
-
-				if ( 'http_request_args' === $hook ) {
-					$this->requestArgFilters[] = $callback;
-				}
-
-				return true;
-			}
-		);
-
-		Functions\when( 'remove_filter' )->alias(
-			function ( string $hook, $callback, int $priority = 10 ) {
-				unset( $callback );
-
-				$this->removed[] = [ $hook, $priority ];
-
-				if ( 'http_request_args' === $hook ) {
-					$this->requestArgFilters = [];
-				}
-
-				return true;
-			}
-		);
-
-		Functions\when( 'add_action' )->alias(
-			function ( string $hook, $callback, int $priority = 10 ) {
-				$this->added[] = [ $hook, $priority ];
-
-				if ( 'http_api_curl' === $hook ) {
-					$this->curlActions[] = $callback;
-				}
-
-				return true;
-			}
-		);
-
-		Functions\when( 'remove_action' )->alias(
-			function ( string $hook, $callback, int $priority = 10 ) {
-				unset( $callback );
-
-				$this->removed[] = [ $hook, $priority ];
-
-				if ( 'http_api_curl' === $hook ) {
-					$this->curlActions = [];
-				}
-
-				return true;
-			}
-		);
-
-		// A miniature WP_Http. For the primary URL and then for every queued
-		// redirect hop it applies the registered http_request_args filters and
-		// then fires http_api_curl, in that order, which is what core's curl
-		// transport does per request and per redirect. Firing the action is the
-		// part that makes the pin observable at all: a fake that only returned
-		// bytes would leave the entire DNS-rebinding defence unexercised.
-		Functions\when( 'wp_safe_remote_get' )->alias(
-			function ( string $url, array $args = [] ) {
-				$handle = 'curl-handle';
-
-				foreach ( array_merge( [ $url ], $this->hops ) as $hop ) {
-					foreach ( $this->requestArgFilters as $filter ) {
-						$args = $filter( $args, $hop );
-					}
-
-					$this->sentArgs = $args;
-
-					foreach ( $this->curlActions as $action ) {
-						$action( $handle, $args, $hop );
-					}
-				}
-
-				return $this->response;
-			}
-		);
-
-		// There is no WP_Error class in this test suite, so a transport failure
-		// is modelled by any object that answers get_error_message() — the one
-		// member of WP_Error's surface this class must be proven NOT to read
-		// into an envelope.
-		Functions\when( 'is_wp_error' )->alias(
-			static function ( $thing ): bool {
-				return is_object( $thing ) && method_exists( $thing, 'get_error_message' );
-			}
-		);
-
-		Functions\when( 'wp_remote_retrieve_response_code' )->alias(
-			static function ( $response ) {
-				return $response['response']['code'] ?? '';
-			}
-		);
-
-		Functions\when( 'wp_remote_retrieve_body' )->alias(
-			static function ( $response ): string {
-				return (string) ( $response['body'] ?? '' );
-			}
-		);
-
-		// Installed for every test but one, and installed HERE rather than in
-		// the tests that read it, because Brain Monkey leaks a fake's
-		// DEFINITION to every later test in the process while resetting its
-		// BEHAVIOUR. Installed per-test, the first test to call fakeCurl() would
-		// leave `function_exists( 'curl_setopt' )` true for every test after it
-		// with no expectation behind it, and each of those would die on a
-		// missing expectation rather than on anything it was testing.
-		//
-		// The one exception needs the function genuinely absent and says so by
-		// name; it runs in its own process, so the exclusion cannot leak either.
-		if ( 'test_the_fetch_proceeds_when_curl_is_unavailable' !== $this->getName() ) {
-			$this->fakeCurl();
-		}
-	}
-
-	/**
-	 * One canned HTTP response in core's array shape.
-	 *
-	 * @param int    $code The status code.
-	 * @param string $body The response body.
-	 *
-	 * @return array<string, mixed> The response.
-	 */
-	private function responseWith( int $code, string $body ): array {
-		return [
-			'response' => [
-				'code'    => $code,
-				'message' => 'canned',
-			],
-			'headers'  => [ 'content-type' => 'image/png' ],
-			'body'     => $body,
-		];
-	}
-
-	/**
-	 * A fetcher wired to a real MediaUrlGuard over a resolver that answers from
-	 * $this->dns.
-	 *
-	 * The guard is real rather than doubled on purpose: "every redirect hop
-	 * passes the same policy the original URL passed" is only true if the same
-	 * policy object runs, and a doubled guard would assert the design instead of
-	 * testing it.
-	 */
-	private function fetcher(): MediaFetch {
-		return new MediaFetch(
-			new MediaUrlGuard(
-				new class( $this->dns ) implements HostResolver {
-					/**
-					 * @param array<string, array<int, string>> $dns The canned zone.
-					 */
-					public function __construct( private array $dns ) {}
-
-					/**
-					 * @param string $host The host to resolve.
-					 *
-					 * @return array<int, string> The canned answer.
-					 */
-					public function resolve( string $host ): array {
-						return $this->dns[ $host ] ?? [];
-					}
-				}
-			)
-		);
-	}
-
-	/**
-	 * The validated-target shape MediaUrlGuard hands MediaFetch.
-	 *
-	 * @return array{url: string, scheme: string, host: string, port: int, ip: string}
-	 */
-	private function validated(): array {
-		return [
-			'url'    => 'https://cdn.example.com/a.png',
-			'scheme' => 'https',
-			'host'   => 'cdn.example.com',
-			'port'   => 443,
-			'ip'     => '93.184.216.34',
-		];
-	}
-
-	/**
-	 * Runs $act, asserts it refused with $expected, and hands back the exception
-	 * so a caller can read its message.
-	 */
-	private function refusal( ErrorCode $expected, callable $act ): OperationException {
-		try {
-			$act();
-		} catch ( OperationException $refusal ) {
-			$this->assertSame( $expected, $refusal->errorCode );
-
-			return $refusal;
-		}
-
-		$this->fail( 'MediaFetch accepted a response it must refuse.' );
-	}
-
-	/**
-	 * Fetches the standard target and expects a refusal with $expected.
-	 */
-	private function assertFetchRefused( ErrorCode $expected ): OperationException {
-		return $this->refusal(
-			$expected,
-			fn() => $this->fetcher()->fetch( $this->validated(), 'corr-1' )
-		);
-	}
-
-	/**
-	 * Every hook this class added, minus every hook it removed.
-	 *
-	 * @return array<int, array{0: string, 1: int}> The leaked registrations.
-	 */
-	private function leakedHooks(): array {
-		$leaked = $this->added;
-
-		foreach ( $this->removed as $gone ) {
-			$at = array_search( $gone, $leaked, true );
-
-			if ( false !== $at ) {
-				unset( $leaked[ $at ] );
-			}
-		}
-
-		return array_values( $leaked );
-	}
-
-	/**
-	 * Installs a `curl_setopt` fake that records what the pin sets.
-	 *
-	 * The curl extension is NOT loaded in this suite's PHP, so
-	 * `function_exists( 'curl_setopt' )` is false by default and the pin would
-	 * be dead code under test — leaving the single line that closes DNS
-	 * rebinding unexercised. Brain Monkey can define a function that does not
-	 * exist, which both flips the guard true and records the call, so the pin is
-	 * proven rather than declared.
-	 *
-	 * CURLOPT_RESOLVE comes from the same missing extension and is defined here
-	 * for the same reason, at its real value.
-	 */
-	private function fakeCurl(): void {
-		if ( ! defined( 'CURLOPT_RESOLVE' ) ) {
-			define( 'CURLOPT_RESOLVE', 203 );
-		}
-
-		Functions\when( 'curl_setopt' )->alias(
-			function ( $handle, int $option, $value ): bool {
-				unset( $handle );
-
-				$this->curlOptions[] = [ $option, $value ];
-
-				return true;
-			}
-		);
-	}
+final class MediaFetchTest extends MediaFetchTestCase {
 
 	/**
 	 * Declared FIRST and process-isolated on purpose. It is the only test in
-	 * this file that needs `function_exists( 'curl_setopt' )` to be FALSE, and
-	 * Brain Monkey leaks a fake's definition — though not its behaviour — to
-	 * every later test in the same process, so any ordering that let fakeCurl()
-	 * run first would silently invert what this test asserts.
+	 * either MediaFetch file that needs `function_exists( 'curl_setopt' )` to be
+	 * FALSE, and Brain Monkey leaks a fake's definition — though not its
+	 * behaviour — to every later test in the same process.
 	 *
 	 * What it pins: a site on WordPress's streams transport has no
 	 * CURLOPT_RESOLVE. Delete the function_exists guard and the fetch dies on an
 	 * undefined function instead of proceeding under the other guards, which is
 	 * the accepted cost in spec §7 item 3 turning into an outage.
 	 *
+	 * IT SKIPS WHERE ext-curl IS PRESENT, and that is a genuine gap rather than
+	 * a convenience. `function_exists()` is a fact about the running PHP, not a
+	 * value a test can arrange, so the branch is unreachable on any interpreter
+	 * that has the extension — which includes CI. It is exercised on this
+	 * project's toolchain PHP, which has no ext-curl. See the fix-round-1 notes
+	 * in the task report.
+	 *
 	 * @runInSeparateProcess
 	 * @preserveGlobalState disabled
 	 */
 	public function test_the_fetch_proceeds_when_curl_is_unavailable(): void {
-		$this->assertFalse( function_exists( 'curl_setopt' ), 'This test is only meaningful without ext-curl.' );
+		if ( function_exists( 'curl_setopt' ) ) {
+			$this->markTestSkipped( 'ext-curl is loaded in this PHP, so the streams-transport branch cannot be reached here.' );
+		}
 
 		$this->assertSame( 'PNGBYTES', $this->fetcher()->fetch( $this->validated(), 'corr-1' ) );
 	}
 
-	public function test_the_fetch_pins_the_curl_handle_to_the_validated_address(): void {
-		// THE DNS-rebinding defence, end to end: the action fires mid-request
-		// and the directive handed to curl must name the address the guard
-		// approved, so the address that was validated is the address dialled.
+	public function test_the_fetch_pins_the_request_to_the_validated_address(): void {
+		// THE DNS-rebinding defence, end to end: the decision is read mid-request
+		// from the hook core would apply it on, and the directive must name the
+		// address the guard approved — so the address that was validated is the
+		// address dialled.
+		$fetch = $this->fetcher();
+
+		$this->recordPins( $fetch );
+
+		$fetch->fetch( $this->validated(), 'corr-1' );
+
+		$this->assertSame( [ 'cdn.example.com:443:93.184.216.34' ], $this->pinnedDirectives() );
+	}
+
+	public function test_the_pin_reaches_curl_setopt(): void {
+		// The last link: that the decision above is actually handed to curl,
+		// under CURLOPT_RESOLVE, as a one-element list. Only observable on a PHP
+		// without ext-curl — see requireObservableCurl() for why that cannot be
+		// arranged on one that has it.
+		$this->requireObservableCurl();
+
 		$this->fetcher()->fetch( $this->validated(), 'corr-1' );
 
 		$this->assertSame(
@@ -421,27 +82,44 @@ final class MediaFetchTest extends TestCase {
 		);
 	}
 
-	public function test_a_public_redirect_hop_re_pins_the_curl_handle(): void {
-		// A hop that is validated but not RE-PINNED is the rebinding hole
-		// reopening one level down: the handle would still carry the first
-		// hop's directive while dialling the second hop's host, and curl would
-		// fall back to a resolver for the name it has no directive for.
-		$this->dns['images.example.net'] = [ '93.184.216.35' ];
-		$this->hops                      = [ 'https://images.example.net/a.png' ];
+	public function test_the_faked_curl_constant_matches_the_extensions_own(): void {
+		// The fake defines CURLOPT_RESOLVE itself, so a wrong value there would
+		// make every pin assertion agree with itself and with nothing else.
+		if ( ! extension_loaded( 'curl' ) ) {
+			$this->markTestSkipped( 'No ext-curl here to check the constant against.' );
+		}
 
-		$this->fetcher()->fetch( $this->validated(), 'corr-1' );
+		$this->assertSame( 10203, CURLOPT_RESOLVE );
+	}
 
-		$this->assertSame(
-			[
-				[ CURLOPT_RESOLVE, [ 'cdn.example.com:443:93.184.216.34' ] ],
-				[ CURLOPT_RESOLVE, [ 'images.example.net:443:93.184.216.35' ] ],
-			],
-			$this->curlOptions
-		);
+	public function test_an_ip_literal_target_is_not_pinned(): void {
+		// A literal is its own resolution, so there is no name lookup for an
+		// attacker to rebind and a CURLOPT_RESOLVE directive would be inert.
+		// That is only safe because since 9e3801f MediaUrlGuard refuses octal,
+		// hex, decimal-integer and non-ASCII hosts outright — so a literal that
+		// reaches here is one curl will parse the same way this class did.
+		// Delete the branch and the pin becomes a silently useless directive
+		// that reads like a working defence.
+		$target = [
+			'url'    => 'https://93.184.216.34/a.png',
+			'scheme' => 'https',
+			'host'   => '93.184.216.34',
+			'port'   => 443,
+			'ip'     => '93.184.216.34',
+		];
+
+		$fetch = $this->fetcher();
+
+		$this->recordPins( $fetch );
+
+		$this->assertSame( 'PNGBYTES', $fetch->fetch( $target, 'corr-1' ) );
+
+		// Reached the hook, and declined — not "never got there".
+		$this->assertSame( [ null ], $this->pinDecisions );
 	}
 
 	public function test_a_successful_fetch_returns_the_body_bytes(): void {
-		$this->response = $this->responseWith( 200, 'PNGBYTES' );
+		$this->respondWith( $this->responseWith( 200, 'PNGBYTES' ) );
 
 		$this->assertSame( 'PNGBYTES', $this->fetcher()->fetch( $this->validated(), 'corr-1' ) );
 	}
@@ -457,11 +135,13 @@ final class MediaFetchTest extends TestCase {
 	}
 
 	public function test_a_transport_error_is_refused_without_naming_it(): void {
-		$this->response = new class() {
-			public function get_error_message(): string {
-				return 'cURL error 7: Failed to connect to 127.0.0.1 port 8080';
+		$this->respondWith(
+			new class() {
+				public function get_error_message(): string {
+					return 'cURL error 7: Failed to connect to 127.0.0.1 port 8080';
+				}
 			}
-		};
+		);
 
 		$refusal = $this->assertFetchRefused( ErrorCode::ExecutionFailed );
 
@@ -475,19 +155,47 @@ final class MediaFetchTest extends TestCase {
 		$this->assertStringNotContainsString( 'Failed to connect', $refusal->getMessage() );
 	}
 
+	public function test_a_transport_error_is_logged_under_the_correlation_id(): void {
+		// The other half of the same rule. Detail that must not reach the
+		// envelope must still reach SOMEWHERE, or a refused import becomes
+		// undiagnosable — and it has to carry the correlation id or it cannot be
+		// tied back to the request that produced it.
+		$logged = [];
+
+		Functions\when( 'error_log' )->alias(
+			function ( string $line ) use ( &$logged ): bool {
+				$logged[] = $line;
+
+				return true;
+			}
+		);
+
+		$this->respondWith(
+			new class() {
+				public function get_error_message(): string {
+					return 'cURL error 7: Failed to connect to 127.0.0.1 port 8080';
+				}
+			}
+		);
+
+		$this->assertFetchRefused( ErrorCode::ExecutionFailed );
+
+		$this->assertCount( 1, $logged );
+		$this->assertStringContainsString( 'corr-1', $logged[0] );
+		$this->assertStringContainsString( '127.0.0.1', $logged[0] );
+	}
+
 	public function test_a_404_is_refused_naming_only_the_status(): void {
-		$this->response = $this->responseWith( 404, 'Not Found' );
+		$this->respondWith( $this->responseWith( 404, 'Not Found' ) );
 
 		$refusal = $this->assertFetchRefused( ErrorCode::ExecutionFailed );
 
 		$this->assertStringContainsString( '404', $refusal->getMessage() );
-		$this->assertStringNotContainsString( 'content-type', strtolower( $refusal->getMessage() ) );
-		$this->assertStringNotContainsString( '/a.png', $refusal->getMessage() );
-		$this->assertStringNotContainsString( 'cdn.example.com', $refusal->getMessage() );
+		$this->assertRefusalLeaksNothing( $refusal );
 	}
 
 	public function test_a_500_is_refused(): void {
-		$this->response = $this->responseWith( 500, 'boom' );
+		$this->respondWith( $this->responseWith( 500, 'boom' ) );
 
 		$this->assertStringContainsString(
 			'500',
@@ -499,10 +207,22 @@ final class MediaFetchTest extends TestCase {
 		// A 204 is not an error to a naive `>= 400` check, and it carries no
 		// body. Refusing anything other than 200 is what makes it fail here
 		// rather than three lines later with a confusing empty-body diagnosis.
-		$this->response = $this->responseWith( 204, '' );
+		$this->respondWith( $this->responseWith( 204, '' ) );
 
 		$this->assertStringContainsString(
 			'204',
+			$this->assertFetchRefused( ErrorCode::ExecutionFailed )->getMessage()
+		);
+	}
+
+	public function test_a_304_is_refused_rather_than_followed(): void {
+		// A 304 looks like a 3xx and is not a redirect: it is a cache response
+		// with no Location. Treating it as one would produce a "redirect with no
+		// destination" diagnosis for something that is simply not the asset.
+		$this->respondWith( $this->responseWith( 304, '' ) );
+
+		$this->assertStringContainsString(
+			'304',
 			$this->assertFetchRefused( ErrorCode::ExecutionFailed )->getMessage()
 		);
 	}
@@ -511,7 +231,7 @@ final class MediaFetchTest extends TestCase {
 		// A 200 with nothing in it. MediaMimeGuard would refuse the empty string
 		// later, but the diagnosis belongs here where the remote server's
 		// behaviour is what went wrong.
-		$this->response = $this->responseWith( 200, '' );
+		$this->respondWith( $this->responseWith( 200, '' ) );
 
 		$this->assertFetchRefused( ErrorCode::ExecutionFailed );
 	}
@@ -521,7 +241,7 @@ final class MediaFetchTest extends TestCase {
 		// over-cap response arrives one byte over and is recognisable here,
 		// rather than arriving truncated to exactly the cap and being accepted
 		// as a valid, silently corrupted file.
-		$this->response = $this->responseWith( 200, str_repeat( 'a', MediaMimeGuard::MAX_DECODED_BYTES + 1 ) );
+		$this->respondWith( $this->responseWith( 200, str_repeat( 'a', MediaMimeGuard::MAX_DECODED_BYTES + 1 ) ) );
 
 		$this->assertFetchRefused( ErrorCode::InvalidInput );
 	}
@@ -531,19 +251,20 @@ final class MediaFetchTest extends TestCase {
 		// refuses everything at the cap would pass every other test in this file.
 		$bytes = str_repeat( 'a', MediaMimeGuard::MAX_DECODED_BYTES );
 
-		$this->response = $this->responseWith( 200, $bytes );
+		$this->respondWith( $this->responseWith( 200, $bytes ) );
 
 		$this->assertSame( $bytes, $this->fetcher()->fetch( $this->validated(), 'corr-1' ) );
 	}
 
-	public function test_both_hooks_are_registered_for_the_fetch(): void {
-		// Named rather than counted. The removal tests below compare added
+	public function test_both_hooks_are_registered_at_the_last_word_priority(): void {
+		// Named AND at a stated priority. The removal tests below compare added
 		// against removed, so they stay green if a hook is never added at all —
-		// this is what pins each registration by name.
+		// this is what pins each registration, and PHP_INT_MAX is what makes the
+		// forcing filter the last one to run.
 		$this->fetcher()->fetch( $this->validated(), 'corr-1' );
 
-		$this->assertContains( [ 'http_request_args', 10 ], $this->added );
-		$this->assertContains( [ 'http_api_curl', 10 ], $this->added );
+		$this->assertContains( [ 'http_request_args', PHP_INT_MAX ], $this->added );
+		$this->assertContains( [ 'http_api_curl', PHP_INT_MAX ], $this->added );
 	}
 
 	public function test_the_hooks_are_removed_after_a_successful_fetch(): void {
@@ -559,37 +280,20 @@ final class MediaFetchTest extends TestCase {
 		// refused import would turn into a defect in every other plugin on the
 		// site. Delete the `finally` and this fails while every happy-path test
 		// still passes.
-		$this->response = $this->responseWith( 500, 'boom' );
+		$this->respondWith( $this->responseWith( 500, 'boom' ) );
 
-		$this->refusal(
-			ErrorCode::ExecutionFailed,
-			fn() => $this->fetcher()->fetch( $this->validated(), 'corr-1' )
-		);
+		$this->assertFetchRefused( ErrorCode::ExecutionFailed );
 
 		$this->assertNotSame( [], $this->added, 'The class registered no hooks at all.' );
 		$this->assertSame( [], $this->leakedHooks() );
 	}
 
-	public function test_the_hooks_are_removed_when_a_redirect_hop_is_refused(): void {
-		// The second throwing path, and the one that throws from INSIDE the
-		// filter callback rather than from the fetch body. A `finally` catches
-		// both; a removal placed after the checks catches neither.
-		$this->dns['evil.example.com'] = [ '127.0.0.1' ];
-		$this->hops                    = [ 'https://evil.example.com/a.png' ];
-
-		$this->refusal(
-			ErrorCode::InvalidInput,
-			fn() => $this->fetcher()->fetch( $this->validated(), 'corr-1' )
-		);
-
-		$this->assertSame( [], $this->leakedHooks() );
-	}
-
 	public function test_the_request_arguments_force_the_safe_settings(): void {
-		$args = $this->fetcher()->filterRequestArgs( [], 'https://cdn.example.com/a.png' );
+		$this->fetcher()->fetch( $this->validated(), 'corr-1' );
+
+		$args = $this->sentArgs[0];
 
 		$this->assertTrue( $args['reject_unsafe_urls'] );
-		$this->assertSame( 2, $args['redirection'] );
 		$this->assertSame( MediaMimeGuard::MAX_DECODED_BYTES + 1, $args['limit_response_size'] );
 		$this->assertIsInt( $args['timeout'] );
 		$this->assertGreaterThan( 0, $args['timeout'] );
@@ -597,24 +301,48 @@ final class MediaFetchTest extends TestCase {
 		$this->assertFalse( $args['stream'] );
 	}
 
-	public function test_a_hostile_filter_cannot_relax_a_forced_argument(): void {
-		// Another plugin's http_request_args filter runs alongside this one, and
-		// whichever set of values comes SECOND in the array_merge wins. The
-		// forced values come second deliberately: a safety setting a third party
-		// can switch off is not a safety setting.
-		$args = $this->fetcher()->filterRequestArgs(
-			[
-				'reject_unsafe_urls'  => false,
-				'redirection'         => 20,
-				'limit_response_size' => PHP_INT_MAX,
-				'timeout'             => 600,
-				'stream'              => true,
-			],
-			'https://cdn.example.com/a.png'
+	public function test_the_transport_is_told_not_to_follow_redirects_itself(): void {
+		// The keystone of the whole redirect design. `http_request_args` fires
+		// once per WP_Http::request() and redirects are followed below it, inside
+		// Requests — so a hop WordPress follows is a hop this class never sees,
+		// never re-validates and never re-pins. Zero here is what forces the 3xx
+		// back up to fetch()'s loop, where it can be.
+		$this->fetcher()->fetch( $this->validated(), 'corr-1' );
+
+		$this->assertSame( 0, $this->sentArgs[0]['redirection'] );
+	}
+
+	public function test_a_competing_filter_at_a_high_priority_does_not_win(): void {
+		// Another plugin's http_request_args filter runs alongside this one.
+		// Registering at PHP_INT_MAX and re-forcing unconditionally is what
+		// makes this class the last word: a safety setting a third party can
+		// switch off is not a safety setting. The competing filter here is
+		// registered at a priority far above the WordPress default and still
+		// loses, because the fake runs filters in priority order like core.
+		add_filter(
+			'http_request_args',
+			static function ( array $args ): array {
+				return array_merge(
+					$args,
+					[
+						'reject_unsafe_urls'  => false,
+						'redirection'         => 20,
+						'limit_response_size' => PHP_INT_MAX,
+						'timeout'             => 600,
+						'stream'              => true,
+					]
+				);
+			},
+			9999,
+			2
 		);
 
+		$this->fetcher()->fetch( $this->validated(), 'corr-1' );
+
+		$args = $this->sentArgs[0];
+
 		$this->assertTrue( $args['reject_unsafe_urls'] );
-		$this->assertSame( 2, $args['redirection'] );
+		$this->assertSame( 0, $args['redirection'] );
 		$this->assertSame( MediaMimeGuard::MAX_DECODED_BYTES + 1, $args['limit_response_size'] );
 		$this->assertLessThan( 600, $args['timeout'] );
 		$this->assertFalse( $args['stream'] );
@@ -624,74 +352,74 @@ final class MediaFetchTest extends TestCase {
 		// The merge must FORCE the safety arguments, not replace the whole
 		// argument set: a cookie or header another plugin added has nothing to
 		// do with this policy and must still be there.
-		$args = $this->fetcher()->filterRequestArgs(
-			[ 'headers' => [ 'X-Trace' => 'abc' ] ],
-			'https://cdn.example.com/a.png'
+		add_filter(
+			'http_request_args',
+			static function ( array $args ): array {
+				$args['headers'] = [ 'X-Trace' => 'abc' ];
+
+				return $args;
+			},
+			10,
+			2
 		);
 
-		$this->assertSame( [ 'X-Trace' => 'abc' ], $args['headers'] );
+		$this->fetcher()->fetch( $this->validated(), 'corr-1' );
+
+		$this->assertSame( [ 'X-Trace' => 'abc' ], $this->sentArgs[0]['headers'] );
 	}
 
-	public function test_a_redirect_hop_to_a_private_address_is_refused(): void {
-		// The DNS-rebinding-via-redirect case. Without the hop revalidation the
-		// original URL passes every check and a 302 walks the site straight into
-		// loopback.
-		$this->dns['evil.example.com'] = [ '127.0.0.1' ];
-
-		$this->refusal(
-			ErrorCode::InvalidInput,
-			fn() => $this->fetcher()->filterRequestArgs( [], 'https://evil.example.com/a.png' )
-		);
-	}
-
-	public function test_a_redirect_hop_to_the_metadata_endpoint_is_refused(): void {
-		$this->dns['meta.example.com'] = [ '169.254.169.254' ];
-
-		$this->refusal(
-			ErrorCode::InvalidInput,
-			fn() => $this->fetcher()->filterRequestArgs( [], 'https://meta.example.com/latest/meta-data/' )
-		);
-	}
-
-	public function test_a_redirect_hop_to_a_public_address_is_allowed(): void {
-		// Redirects are capped at two rather than disabled because the CDN
-		// redirects that make imports work in practice are ordinary. This is the
-		// test that fails if hop revalidation is tightened into hop refusal.
-		$this->dns['images.example.net'] = [ '93.184.216.35' ];
-
-		$args = $this->fetcher()->filterRequestArgs( [], 'https://images.example.net/a.png' );
-
-		$this->assertTrue( $args['reject_unsafe_urls'] );
-	}
-
-	public function test_a_redirect_hop_to_a_private_address_fails_the_whole_fetch(): void {
-		// End to end through the faked transport rather than by calling the
-		// filter directly: the outer fetch must report a refusal, not a success
-		// with whatever bytes the hop returned.
-		$this->dns['evil.example.com'] = [ '127.0.0.1' ];
-		$this->hops                    = [ 'https://evil.example.com/a.png' ];
-
-		$this->refusal(
-			ErrorCode::InvalidInput,
-			fn() => $this->fetcher()->fetch( $this->validated(), 'corr-1' )
-		);
-	}
-
-	public function test_a_public_redirect_hop_re_pins_the_connection(): void {
-		// A hop that is validated but not RE-PINNED is the DNS-rebinding hole
-		// reopening one level down: the connection would still be pinned to the
-		// first hop's address while dialling the second hop's host. The pin
-		// directive is read back after the hop to prove it moved.
-		$this->dns['images.example.net'] = [ '93.184.216.35' ];
-
+	public function test_the_forcing_filter_ignores_a_request_this_class_did_not_make(): void {
+		// WordPress hooks are global. While a fetch is in flight, an update
+		// check or another plugin's API call passes through this same filter,
+		// and forcing this import's timeout, user-agent and redirect ban onto it
+		// would make this feature a defect in unrelated code.
 		$fetch = $this->fetcher();
 
-		$fetch->filterRequestArgs( [], 'https://images.example.net/a.png' );
+		$stranger = [ 'timeout' => 600 ];
 
-		$this->assertSame(
-			'images.example.net:443:93.184.216.35',
-			$fetch->resolveDirective( $fetch->pinnedTarget() ?? [] )
+		$this->respondWith( $this->responseWith( 200, 'PNGBYTES' ) );
+
+		add_filter(
+			'http_request_args',
+			function ( array $args, string $url ) use ( $fetch, &$stranger ): array {
+				unset( $url );
+
+				$stranger = $fetch->filterRequestArgs( $stranger, 'https://elsewhere.example.org/ping' );
+
+				return $args;
+			},
+			1,
+			2
 		);
+
+		$fetch->fetch( $this->validated(), 'corr-1' );
+
+		$this->assertSame( [ 'timeout' => 600 ], $stranger );
+	}
+
+	public function test_the_curl_pin_ignores_a_request_this_class_did_not_make(): void {
+		// The same hazard on the more dangerous hook: pinning somebody else's
+		// handle re-points THEIR connection at THIS import's address. Asked
+		// mid-fetch, while a pin genuinely is in force, because asking when
+		// nothing is pinned would pass on the null-pin branch instead.
+		$fetch    = $this->fetcher();
+		$stranger = 'unset';
+		$mine     = 'unset';
+
+		add_action(
+			'http_api_curl',
+			function () use ( $fetch, &$stranger, &$mine ): void {
+				$stranger = $fetch->pinDirectiveFor( 'https://elsewhere.example.org/ping' );
+				$mine     = $fetch->pinDirectiveFor( 'https://cdn.example.com/a.png' );
+			},
+			1,
+			3
+		);
+
+		$fetch->fetch( $this->validated(), 'corr-1' );
+
+		$this->assertNull( $stranger );
+		$this->assertSame( 'cdn.example.com:443:93.184.216.34', $mine );
 	}
 
 	public function test_the_pin_is_cleared_after_a_fetch(): void {
@@ -701,7 +429,7 @@ final class MediaFetchTest extends TestCase {
 
 		$fetch->fetch( $this->validated(), 'corr-1' );
 
-		$this->assertNull( $fetch->pinnedTarget() );
+		$this->assertNull( $fetch->pinDirectiveFor( 'https://cdn.example.com/a.png' ) );
 	}
 
 	public function test_the_curl_pin_is_a_no_op_when_nothing_is_pinned(): void {
@@ -713,70 +441,42 @@ final class MediaFetchTest extends TestCase {
 
 		$fetch->pinCurlHandle( $handle, [], 'https://cdn.example.com/a.png' );
 
+		$this->assertNull( $fetch->pinDirectiveFor( 'https://cdn.example.com/a.png' ) );
 		$this->assertSame( [], $this->curlOptions );
 	}
 
 	/**
-	 * The envelope-discipline invariant, read from every refusal this class can
-	 * produce rather than sampled.
-	 *
-	 * The four things an attacker harvests from a blind SSRF probe are a
-	 * resolved IP address, a redirect target URL, a response header, and a
-	 * transport error string. Leaking any one of them turns a refused fetch into
-	 * an internal port scanner, so all four are swept here.
-	 *
-	 * Digits are NOT banned outright, unlike MediaUrlGuard: a status number is
-	 * the one number a caller genuinely needs and cannot use as an oracle for
-	 * anything about this site's network.
+	 * The envelope-discipline invariant, read from every refusal this file can
+	 * produce rather than sampled. See assertRefusalLeaksNothing() for the four
+	 * oracles being swept for and why each one matters.
 	 */
 	public function test_no_refusal_message_contains_an_ip_address(): void {
 		$refusals = [];
 
-		$this->response = new class() {
-			public function get_error_message(): string {
-				return 'cURL error 7: Failed to connect to 169.254.169.254 port 80';
+		$this->respondWith(
+			new class() {
+				public function get_error_message(): string {
+					return 'cURL error 7: Failed to connect to 169.254.169.254 port 80';
+				}
 			}
-		};
+		);
 
 		$refusals[] = $this->assertFetchRefused( ErrorCode::ExecutionFailed );
 
-		foreach ( [ 204, 302, 404, 500 ] as $code ) {
-			$this->response = $this->responseWith( $code, '' );
+		foreach ( [ 204, 304, 404, 500 ] as $code ) {
+			$this->respondWith( $this->responseWith( $code, '' ) );
 
 			$refusals[] = $this->assertFetchRefused( ErrorCode::ExecutionFailed );
 		}
 
-		$this->response = $this->responseWith( 200, '' );
-		$refusals[]     = $this->assertFetchRefused( ErrorCode::ExecutionFailed );
+		$this->respondWith( $this->responseWith( 200, '' ) );
+		$refusals[] = $this->assertFetchRefused( ErrorCode::ExecutionFailed );
 
-		$this->response = $this->responseWith( 200, str_repeat( 'a', MediaMimeGuard::MAX_DECODED_BYTES + 1 ) );
-		$refusals[]     = $this->assertFetchRefused( ErrorCode::InvalidInput );
-
-		$forbidden = [
-			'93.184.216.34',
-			'169.254.169.254',
-			'127.0.0.1',
-			'curl',
-			'content-type',
-			'location',
-			'cdn.example.com',
-			'/a.png',
-			'https://',
-			'failed to connect',
-		];
+		$this->respondWith( $this->responseWith( 200, str_repeat( 'a', MediaMimeGuard::MAX_DECODED_BYTES + 1 ) ) );
+		$refusals[] = $this->assertFetchRefused( ErrorCode::InvalidInput );
 
 		foreach ( $refusals as $refusal ) {
-			foreach ( [ $refusal->getMessage(), (string) $refusal->remediation ] as $text ) {
-				$this->assertDoesNotMatchRegularExpression(
-					'/\b\d{1,3}(?:\.\d{1,3}){3}\b/',
-					$text,
-					'A refusal from MediaFetch carries an IP address.'
-				);
-
-				foreach ( $forbidden as $needle ) {
-					$this->assertStringNotContainsString( $needle, strtolower( $text ) );
-				}
-			}
+			$this->assertRefusalLeaksNothing( $refusal );
 		}
 	}
 }
