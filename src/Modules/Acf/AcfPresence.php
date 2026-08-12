@@ -85,6 +85,42 @@ final class AcfPresence {
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- The module vocabulary is camelCase across every class.
+	/**
+	 * Whether the installed ACF is at or above this module's floor.
+	 *
+	 * SEPARATE FROM isLoaded() BECAUSE "ABSENT" AND "TOO OLD" ARE DIFFERENT
+	 * ANSWERS AND LEAD AN OPERATOR TO DIFFERENT ACTIONS — install ACF, or update
+	 * it. The operations refuse the first with `IntegrationUnavailable` and the
+	 * second with `UnsupportedVersion`, and an operator who reads the wrong one
+	 * of those goes looking in the plugin installer for something their site
+	 * already has.
+	 *
+	 * MIN_VERSION is the floor at which `ACF_VERSION`, `acf_get_field_groups()`
+	 * location matching and `acf_get_setting( 'pro' )` are all present, which is
+	 * to say the floor below which this module's reads do not merely report less
+	 * — they report a field schema assembled from an API that answers
+	 * differently. Refusing is the honest answer.
+	 *
+	 * AN UNREADABLE VERSION IS NOT TREATED AS AN OLD ONE. version() answers null
+	 * when `ACF_VERSION` holds something that is not a scalar, and that is a
+	 * claim this gate cannot substantiate in either direction; refusing on it
+	 * would block a working site over a constant another plugin mangled. A
+	 * version this code cannot read is not evidence of an unsupported one.
+	 *
+	 * @return bool True when ACF is loaded and not known to be below the floor.
+	 */
+	public function isSupported(): bool {
+		if ( ! $this->isLoaded() ) {
+			return false;
+		}
+
+		$version = $this->version();
+
+		return null === $version || version_compare( $version, self::MIN_VERSION, '>=' );
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+
 	/**
 	 * The installed ACF version, or null when ACF is absent.
 	 *

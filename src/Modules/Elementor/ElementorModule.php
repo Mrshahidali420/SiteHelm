@@ -89,7 +89,7 @@ final class ElementorModule implements IntegrationModule {
 	/**
 	 * The detected version and health status.
 	 *
-	 * THREE STATES, TWO OF WHICH REPORT INACTIVE:
+	 * FOUR STATES, TWO OF WHICH REPORT INACTIVE:
 	 *
 	 * 1. Storage unavailable — the change engine's local tables are a dependency
 	 *    exactly like a plugin, so their absence is reported the way CoreModule,
@@ -103,10 +103,20 @@ final class ElementorModule implements IntegrationModule {
 	 *    with a null version because there is no Elementor to detect. It is not an
 	 *    error state and must not raise one.
 	 *
-	 * 3. Both present — active, carrying the installed Elementor version. That
-	 *    version is the module's dependency version, so an Elementor upgrade
-	 *    between preview and apply invalidates a plan, which is exactly what a
-	 *    page-builder upgrade should do.
+	 * 3. Storage ready, Elementor present but below the floor this module
+	 *    advertises — version-blocked. The dispatcher refuses every operation on
+	 *    this module with `UnsupportedVersion` rather than running it against a
+	 *    document and element API this module cannot address, which on an older
+	 *    Elementor would answer from a data layout the reads were not written
+	 *    for. THE INSTALLED VERSION IS REPORTED RATHER THAN NULLED: an operator
+	 *    told to update needs to see the version they are updating from, and a
+	 *    null here would read as "no version could be detected", which is a
+	 *    different diagnosis with a different fix.
+	 *
+	 * 4. Both present and in range — active, carrying the installed Elementor
+	 *    version. That version is the module's dependency version, so an
+	 *    Elementor upgrade between preview and apply invalidates a plan, which is
+	 *    exactly what a page-builder upgrade should do.
 	 *
 	 * The version comes back as a string or null and is passed through unchanged:
 	 * casting null to '' here would turn "not installed" into "installed, version
@@ -126,6 +136,13 @@ final class ElementorModule implements IntegrationModule {
 
 		if ( ! $this->presence->isLoaded() ) {
 			return $inactive;
+		}
+
+		if ( ! $this->presence->isSupported() ) {
+			return [
+				'version' => $this->presence->version(),
+				'health'  => ModuleHealth::VersionBlocked->value,
+			];
 		}
 
 		return [
