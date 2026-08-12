@@ -87,7 +87,7 @@ final class AcfModule implements IntegrationModule {
 	/**
 	 * The detected version and health status.
 	 *
-	 * THREE STATES, TWO OF WHICH REPORT INACTIVE, in the order ElementorModule
+	 * FOUR STATES, TWO OF WHICH REPORT INACTIVE, in the order ElementorModule
 	 * established:
 	 *
 	 * 1. Storage unavailable — the change engine's local tables are a dependency
@@ -99,9 +99,20 @@ final class AcfModule implements IntegrationModule {
 	 *    no ACF to detect. This is the ordinary condition of most WordPress sites
 	 *    and must not raise an error.
 	 *
-	 * 3. Both present — active, carrying the installed ACF version. That version is
-	 *    the module's dependency version, so an ACF upgrade between preview and
-	 *    apply invalidates a plan, which is what a field-schema upgrade should do.
+	 * 3. Storage ready, ACF present but below the floor this module advertises —
+	 *    version-blocked. The dispatcher refuses every operation on this module
+	 *    with `UnsupportedVersion` rather than running it against a field-group
+	 *    API this module cannot address, which on an older ACF would answer a
+	 *    schema assembled differently from the one these reads describe. THE
+	 *    INSTALLED VERSION IS REPORTED RATHER THAN NULLED: an operator told to
+	 *    update needs to see the version they are updating from, and a null here
+	 *    would read as "no version could be detected", a different diagnosis with
+	 *    a different fix.
+	 *
+	 * 4. Both present and in range — active, carrying the installed ACF version.
+	 *    That version is the module's dependency version, so an ACF upgrade
+	 *    between preview and apply invalidates a plan, which is what a
+	 *    field-schema upgrade should do.
 	 *
 	 * The version is passed through unchanged: casting null to '' would turn "not
 	 * installed" into "installed, version unknown", a different claim.
@@ -120,6 +131,13 @@ final class AcfModule implements IntegrationModule {
 
 		if ( ! $this->presence->isLoaded() ) {
 			return $inactive;
+		}
+
+		if ( ! $this->presence->isSupported() ) {
+			return [
+				'version' => $this->presence->version(),
+				'health'  => ModuleHealth::VersionBlocked->value,
+			];
 		}
 
 		return [

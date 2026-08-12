@@ -93,7 +93,7 @@ final class MetaboxModule implements IntegrationModule {
 	/**
 	 * The detected version and health status.
 	 *
-	 * THREE STATES, TWO OF WHICH REPORT INACTIVE, in the order ElementorModule
+	 * FOUR STATES, TWO OF WHICH REPORT INACTIVE, in the order ElementorModule
 	 * established and AcfModule repeated:
 	 *
 	 * 1. Storage unavailable — the change engine's local tables are a dependency
@@ -105,10 +105,21 @@ final class MetaboxModule implements IntegrationModule {
 	 *    there is no Meta Box to detect. This is the ordinary condition of most
 	 *    WordPress sites and must not raise an error.
 	 *
-	 * 3. Both present — active, carrying the installed Meta Box version. That
-	 *    version is the module's dependency version, so a Meta Box upgrade between
-	 *    preview and apply invalidates a plan, which is what a field-schema upgrade
-	 *    should do.
+	 * 3. Storage ready, Meta Box present but below the floor this module
+	 *    advertises — version-blocked. The dispatcher refuses every operation on
+	 *    this module with `UnsupportedVersion` rather than running it against a
+	 *    registry API this module cannot address: below MIN_VERSION the symbols
+	 *    these operations call are simply absent, and the reads would degrade into
+	 *    empty lists that describe a site as defining no field groups. THE
+	 *    INSTALLED VERSION IS REPORTED RATHER THAN NULLED: an operator told to
+	 *    update needs to see the version they are updating from, and a null here
+	 *    would read as "no version could be detected", a different diagnosis with a
+	 *    different fix.
+	 *
+	 * 4. Both present and in range — active, carrying the installed Meta Box
+	 *    version. That version is the module's dependency version, so a Meta Box
+	 *    upgrade between preview and apply invalidates a plan, which is what a
+	 *    field-schema upgrade should do.
 	 *
 	 * The version is passed through unchanged: casting null to '' would turn "not
 	 * installed" into "installed, version unknown", a different claim.
@@ -127,6 +138,13 @@ final class MetaboxModule implements IntegrationModule {
 
 		if ( ! $this->presence->isLoaded() ) {
 			return $inactive;
+		}
+
+		if ( ! $this->presence->isSupported() ) {
+			return [
+				'version' => $this->presence->version(),
+				'health'  => ModuleHealth::VersionBlocked->value,
+			];
 		}
 
 		return [

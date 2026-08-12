@@ -90,6 +90,27 @@ final class ElementorPresenceTest extends TestCase {
 		return $plugin;
 	}
 
+	/**
+	 * Installs a fake Elementor at a chosen version. Permanent in the process,
+	 * so every caller runs in its own.
+	 *
+	 * The alias target is FakeElementorPlugin rather than stdClass because
+	 * class_alias() refuses an internal class outright, and because the gate
+	 * this helper feeds sits one method away from widgetTypes(), which reads
+	 * `\Elementor\Plugin::$instance`. A double that has no such property would
+	 * be faithful for isSupported() and a fatal for anything nearby.
+	 *
+	 * @param mixed $version The value ELEMENTOR_VERSION should hold.
+	 */
+	private function installElementorVersion( mixed $version ): void {
+		if ( ! class_exists( ElementorPresence::PLUGIN_CLASS, false ) ) {
+			class_alias( FakeElementorPlugin::class, ElementorPresence::PLUGIN_CLASS );
+		}
+		if ( ! defined( ElementorPresence::VERSION_CONSTANT ) ) {
+			define( ElementorPresence::VERSION_CONSTANT, $version );
+		}
+	}
+
 	public function test_a_site_without_elementor_reports_not_loaded_and_no_version(): void {
 		// No constant is defined and no alias is installed in this process, which
 		// is the ordinary state of most WordPress sites and therefore the state
@@ -216,6 +237,48 @@ final class ElementorPresenceTest extends TestCase {
 		$this->installElementor( $this->pluginWithRegistry( 'heading' ) );
 
 		$this->assertNull( $this->presence->widgetTypes() );
+	}
+
+	/**
+	 * Absent is not the same answer as too old, and neither is supported.
+	 */
+	public function test_an_absent_elementor_is_not_supported(): void {
+		$this->assertFalse( ( new ElementorPresence() )->isSupported() );
+	}
+
+	/**
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_an_elementor_below_the_floor_is_not_supported(): void {
+		$this->installElementorVersion( '2.9.14' );
+
+		$this->assertFalse( ( new ElementorPresence() )->isSupported() );
+	}
+
+	/**
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_an_elementor_at_or_above_the_floor_is_supported(): void {
+		$this->installElementorVersion( ElementorPresence::MIN_VERSION );
+
+		$this->assertTrue( ( new ElementorPresence() )->isSupported() );
+	}
+
+	/**
+	 * AN UNREADABLE VERSION IS NOT TREATED AS AN OLD ONE. A constant another
+	 * plugin mangled is a claim this gate cannot substantiate in either
+	 * direction, and refusing on it would block a working site over someone
+	 * else's bug.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_an_unreadable_version_is_still_supported(): void {
+		$this->installElementorVersion( [ '2.9.14' ] );
+
+		$this->assertTrue( ( new ElementorPresence() )->isSupported() );
 	}
 
 	public function test_the_minimum_supported_version_is_frozen_at_three(): void {
