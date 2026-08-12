@@ -48,8 +48,8 @@ final class MetaboxValueCanonicalTest extends TestCase {
 	 * bool it would compare against a stored '1' or '' and refuse a correct write.
 	 */
 	public function test_booleans_project_to_one_and_zero(): void {
-		$this->assertSame( 1, $this->canonical->project( true ), 'true is the stored 1.' );
-		$this->assertSame( 0, $this->canonical->project( false ), 'false is the stored 0, not an empty string.' );
+		$this->assertSame( 1, $this->canonical->projectInbound( true ), 'true is the stored 1.' );
+		$this->assertSame( 0, $this->canonical->projectInbound( false ), 'false is the stored 0, not an empty string.' );
 	}
 
 	/**
@@ -57,13 +57,13 @@ final class MetaboxValueCanonicalTest extends TestCase {
 	 * member order produce one digest.
 	 */
 	public function test_a_map_projects_in_key_order_whatever_order_it_arrived_in(): void {
-		$one = $this->canonical->project(
+		$one = $this->canonical->projectInbound(
 			[
 				'b' => 1,
 				'a' => 2,
 			]
 		);
-		$two = $this->canonical->project(
+		$two = $this->canonical->projectInbound(
 			[
 				'a' => 2,
 				'b' => 1,
@@ -84,7 +84,7 @@ final class MetaboxValueCanonicalTest extends TestCase {
 	public function test_a_gapped_positional_array_closes_into_a_list(): void {
 		$this->assertSame(
 			[ 'a', 'b' ],
-			$this->canonical->project(
+			$this->canonical->projectInbound(
 				[
 					0 => 'a',
 					2 => 'b',
@@ -95,7 +95,7 @@ final class MetaboxValueCanonicalTest extends TestCase {
 
 		$this->assertSame(
 			[ 'a', 'b' ],
-			$this->canonical->project(
+			$this->canonical->projectInbound(
 				[
 					2 => 'b',
 					0 => 'a',
@@ -115,13 +115,13 @@ final class MetaboxValueCanonicalTest extends TestCase {
 		$object->a = 2;
 
 		$this->assertSame(
-			$this->canonical->project(
+			$this->canonical->projectInbound(
 				[
 					'a' => 2,
 					'b' => 1,
 				]
 			),
-			$this->canonical->project( $object ),
+			$this->canonical->projectInbound( $object ),
 			'Unwrapping an object is the same step expressed differently and costs no depth level.'
 		);
 	}
@@ -133,7 +133,7 @@ final class MetaboxValueCanonicalTest extends TestCase {
 	 */
 	public function test_a_structure_at_the_depth_cap_becomes_null(): void {
 		$this->assertNull(
-			$this->canonical->project( [ 'x' => 1 ], MetaboxSchemaFormat::MAX_DEPTH ),
+			$this->canonical->projectInbound( [ 'x' => 1 ], MetaboxSchemaFormat::MAX_DEPTH ),
 			'The walk stops at the cap and answers null.'
 		);
 	}
@@ -146,7 +146,7 @@ final class MetaboxValueCanonicalTest extends TestCase {
 	public function test_a_scalar_projects_at_any_depth(): void {
 		$this->assertSame(
 			'kept',
-			$this->canonical->project( 'kept', MetaboxSchemaFormat::MAX_DEPTH + 5 ),
+			$this->canonical->projectInbound( 'kept', MetaboxSchemaFormat::MAX_DEPTH + 5 ),
 			'A leaf is projected whole however deep it sits.'
 		);
 	}
@@ -289,28 +289,18 @@ final class MetaboxValueCanonicalTest extends TestCase {
 		);
 	}
 
+	// ------------------------------------------------------------ the two directions
+
 	/**
-	 * The projection drops a server path wherever it sits.
+	 * OUTBOUND DROPS A SERVER PATH WHEREVER IT SITS.
 	 *
 	 * Meta Box's formatted answer for an attachment field carries the filesystem
-	 * location of the upload; the plan and the digest are taken over this projection,
-	 * so the member is dropped by name at every depth. `url` is kept: it is the
-	 * public address the site already publishes and an operator needs to recognise
-	 * which attachment a plan refers to.
+	 * location of the upload; a before-state and a read-back are built from this
+	 * projection and go to a client, so the member is dropped by name at every depth.
+	 * `url` is kept: it is the public address the site already publishes and an
+	 * operator needs it to recognise which attachment a plan refers to.
 	 */
-	public function test_the_projection_drops_a_server_path_member_and_keeps_the_public_url(): void {
-		$projected = $this->canonical->project(
-			[
-				[
-					'ID'   => 9,
-					'path' => '/var/www/html/wp-content/uploads/2026/08/file-9.jpg',
-					'url'  => 'https://example.com/wp-content/uploads/2026/08/file-9.jpg',
-					'dir'  => '/var/www/html/wp-content/uploads/2026/08',
-					'meta' => [ 'basedir' => '/var/www/html/wp-content/uploads' ],
-				],
-			]
-		);
-
+	public function test_the_outbound_projection_drops_a_server_path_member_and_keeps_the_public_url(): void {
 		$this->assertSame(
 			[
 				[
@@ -319,7 +309,51 @@ final class MetaboxValueCanonicalTest extends TestCase {
 					'url'  => 'https://example.com/wp-content/uploads/2026/08/file-9.jpg',
 				],
 			],
-			$projected
+			$this->canonical->projectOutbound( self::attachmentAnswer() )
 		);
+	}
+
+	/**
+	 * INBOUND KEEPS EVERY MEMBER, INCLUDING THOSE NAMES.
+	 *
+	 * The prohibition is on what this plugin emits, not on what a caller may send, and
+	 * a field legitimately holding a member called `path` or `dir` is an ordinary
+	 * thing on a real site. Removing it inbound stores something other than the change
+	 * the operator approved and reports success for doing so.
+	 *
+	 * Asserted from the same fixture as the test above so the pair states the
+	 * asymmetry rather than merely coexisting with it: collapsing the two projections
+	 * into one fails one of them whichever way it is collapsed.
+	 */
+	public function test_the_inbound_projection_keeps_a_member_whose_name_resembles_a_server_path(): void {
+		$this->assertSame(
+			[
+				[
+					'ID'   => 9,
+					'dir'  => '/var/www/html/wp-content/uploads/2026/08',
+					'meta' => [ 'basedir' => '/var/www/html/wp-content/uploads' ],
+					'path' => '/var/www/html/wp-content/uploads/2026/08/file-9.jpg',
+					'url'  => 'https://example.com/wp-content/uploads/2026/08/file-9.jpg',
+				],
+			],
+			$this->canonical->projectInbound( self::attachmentAnswer() )
+		);
+	}
+
+	/**
+	 * One value carrying every member name the outbound rule removes and one it keeps.
+	 *
+	 * @return mixed[] The value both direction tests project.
+	 */
+	private static function attachmentAnswer(): array {
+		return [
+			[
+				'ID'   => 9,
+				'path' => '/var/www/html/wp-content/uploads/2026/08/file-9.jpg',
+				'url'  => 'https://example.com/wp-content/uploads/2026/08/file-9.jpg',
+				'dir'  => '/var/www/html/wp-content/uploads/2026/08',
+				'meta' => [ 'basedir' => '/var/www/html/wp-content/uploads' ],
+			],
+		];
 	}
 }

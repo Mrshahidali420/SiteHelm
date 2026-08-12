@@ -188,27 +188,6 @@ final class MetaboxDefinitionInvariantsTest extends TestCase {
 		return $ids;
 	}
 
-	/**
-	 * Skips a per-definition test while there is no definition to apply it to.
-	 *
-	 * SAID OUT LOUD RATHER THAN LEFT AS AN EMPTY LOOP. A test iterating an empty list
-	 * passes, and a passing test reads as a rule that is being enforced — which these
-	 * are not, yet. Skipping makes the state visible in the runner's own output, so
-	 * nobody mistakes this file for a net that is already catching things, and the
-	 * skips disappear on their own the moment a later task registers an operation.
-	 *
-	 * The three catalog-membership tests above do NOT call this: they assert that the
-	 * catalog is empty, which is a real claim about the production code and the one
-	 * assertion in this file that can fail today.
-	 */
-	private function skipUntilAnOperationIsRegistered(): void {
-		if ( [] !== self::OPERATION_IDS ) {
-			return;
-		}
-
-		$this->markTestSkipped( 'The Metabox module registers no operation yet; this invariant is written for the first one.' );
-	}
-
 	// ---------------------------------------------------- catalog membership
 
 	/**
@@ -259,8 +238,6 @@ final class MetaboxDefinitionInvariantsTest extends TestCase {
 	 * all.
 	 */
 	public function test_every_registered_read_is_a_read_in_every_declaration(): void {
-		$this->skipUntilAnOperationIsRegistered();
-
 		foreach ( $this->registeredDefinitions() as $definition ) {
 			if ( in_array( $definition->id, self::METABOX_WRITE_IDS, true ) ) {
 				continue;
@@ -290,8 +267,6 @@ final class MetaboxDefinitionInvariantsTest extends TestCase {
 	 * may not edit.
 	 */
 	public function test_every_registered_write_is_a_write_in_every_declaration(): void {
-		$this->skipUntilAnOperationIsRegistered();
-
 		$registry = $this->registryWithMetaboxModule();
 
 		// THE NAMED WRITES AND THE DISPATCHED WRITES ARE THE SAME SET, asserted before
@@ -325,8 +300,6 @@ final class MetaboxDefinitionInvariantsTest extends TestCase {
 	}
 
 	public function test_every_operation_belongs_to_the_fields_domain_and_the_metabox_module(): void {
-		$this->skipUntilAnOperationIsRegistered();
-
 		foreach ( $this->registeredDefinitions() as $definition ) {
 			$this->assertSame( Domain::Fields, $definition->domain, "Operation '{$definition->id}' must sit in the fields domain." );
 			$this->assertSame( ModuleId::Metabox, $definition->module, "Operation '{$definition->id}' must belong to the Metabox module." );
@@ -344,8 +317,6 @@ final class MetaboxDefinitionInvariantsTest extends TestCase {
 	 * the floor the presence gate enforces are the same number.
 	 */
 	public function test_every_operation_declares_both_the_wordpress_and_metabox_version_ranges(): void {
-		$this->skipUntilAnOperationIsRegistered();
-
 		foreach ( $this->registeredDefinitions() as $definition ) {
 			$this->assertSame(
 				[
@@ -359,8 +330,6 @@ final class MetaboxDefinitionInvariantsTest extends TestCase {
 	}
 
 	public function test_every_operation_gates_on_a_post_editing_capability_and_nothing_wider(): void {
-		$this->skipUntilAnOperationIsRegistered();
-
 		foreach ( $this->registeredDefinitions() as $definition ) {
 			$this->assertNotSame( [], $definition->requiredCapabilities, "Operation '{$definition->id}' must declare a capability." );
 
@@ -383,8 +352,6 @@ final class MetaboxDefinitionInvariantsTest extends TestCase {
 	 * makes a response carrying `plan` AND `target` at once fail both.
 	 */
 	public function test_every_operation_closes_both_of_its_schemas_to_unknown_members(): void {
-		$this->skipUntilAnOperationIsRegistered();
-
 		foreach ( $this->registeredDefinitions() as $definition ) {
 			$this->assertFalse(
 				$definition->inputSchema['additionalProperties'] ?? null,
@@ -423,8 +390,6 @@ final class MetaboxDefinitionInvariantsTest extends TestCase {
 	 * a client cannot use at all.
 	 */
 	public function test_every_output_schema_that_defines_a_pointer_target_also_declares_an_id(): void {
-		$this->skipUntilAnOperationIsRegistered();
-
 		foreach ( $this->registeredDefinitions() as $definition ) {
 			if ( ! isset( $definition->outputSchema['$defs'] ) ) {
 				continue;
@@ -447,8 +412,6 @@ final class MetaboxDefinitionInvariantsTest extends TestCase {
 	 * shares both dispatchers with ACF, so an unprefixed id would collide.
 	 */
 	public function test_every_identifier_is_a_unique_lower_case_slug(): void {
-		$this->skipUntilAnOperationIsRegistered();
-
 		$ids = array_map(
 			static fn( OperationDefinition $definition ): string => $definition->id,
 			$this->registeredDefinitions()
@@ -463,8 +426,6 @@ final class MetaboxDefinitionInvariantsTest extends TestCase {
 	}
 
 	public function test_every_operation_documents_itself_with_a_description_and_a_worked_example(): void {
-		$this->skipUntilAnOperationIsRegistered();
-
 		foreach ( $this->registeredDefinitions() as $definition ) {
 			$this->assertNotSame( '', $definition->description, "Operation '{$definition->id}' must describe itself." );
 			$this->assertSame(

@@ -431,6 +431,55 @@ final class MetaboxFieldUpdateTest extends TestCase {
 	}
 
 	/**
+	 * THE SERVER-PATH STRIP IS AN OUTBOUND RULE AND MUST NOT TOUCH THE CALLER'S VALUE.
+	 *
+	 * Spec §8 forbids a filesystem path in any envelope this plugin EMITS, because the
+	 * envelope goes to a client. It says nothing about what a caller may send, and a
+	 * custom field legitimately holding a member called `path`, `dir` or `basedir` is
+	 * an ordinary thing on a real site. Applying the strip inbound writes the value
+	 * minus that member and reports success — the operator approved one structure and
+	 * the site stores another, which is Important 2's failure arriving through the
+	 * projection instead of the depth cut.
+	 *
+	 * Paired deliberately with the before-state test below: this one fails if the
+	 * asymmetry is collapsed towards stripping everything, that one fails if it is
+	 * collapsed towards stripping nothing.
+	 */
+	public function test_a_caller_member_named_like_a_server_path_is_planned_and_written_as_sent(): void {
+		$this->installFixtureSite();
+
+		$sent = [
+			[
+				'heading' => 'Directions',
+				'path'    => 'the-woods/second-left',
+			],
+		];
+
+		$operation = $this->writeOperation();
+		$request   = $this->writeRequest( [ $this->writeMember( self::sectionsId(), $sent ) ] );
+
+		$state   = $operation->resolveTarget( $request, $this->writeContext() );
+		$planned = $operation->planChange( $state, $request, $this->writeContext() );
+
+		$this->assertSame(
+			$sent,
+			$planned->afterFields[ self::sectionsId() ],
+			'The plan promises the structure the operator sent, member for member.'
+		);
+
+		$operation->applyChange( $state, $planned, $this->writeContext() );
+
+		$written = $this->metaboxCallArguments( 'write' );
+
+		$this->assertCount( 1, $written );
+		$this->assertSame(
+			$sent,
+			$written[0][2],
+			'What reaches the site is what the operator approved, including a member whose name resembles a server path.'
+		);
+	}
+
+	/**
 	 * NO FILESYSTEM PATH REACHES THE PROJECTED BEFORE-STATE. The formatted answer for
 	 * an attachment field carries the file's absolute position on the server's disk
 	 * beside its URL, and this map is fingerprinted, previewed and returned to the
