@@ -21,6 +21,7 @@ use SiteHelm\Modules\Diagnostics\DiagnosticsModule;
 use SiteHelm\Modules\Diagnostics\IntegrationHealth;
 use SiteHelm\Modules\Metabox\MetaboxPresence;
 use SiteHelm\Registry\CapabilityRegistry;
+use SiteHelm\Storage\Installer;
 use SiteHelm\Tests\TestCase;
 
 /**
@@ -39,6 +40,33 @@ final class IntegrationHealthTest extends TestCase {
 	 * @var string[]
 	 */
 	private const BOOT_ORDER = [ 'diagnostics', 'core', 'media', 'menus', 'elementor', 'acf', 'metabox' ];
+
+	/**
+	 * Whether SiteHelm's own storage answers ready for the test at hand.
+	 *
+	 * Every test in this file sets it, if only by taking the default, because the
+	 * inactive explanation now reads differently on either side of it and a test
+	 * that left it to chance would be asserting a sentence it did not choose.
+	 */
+	private bool $storageReady = true;
+
+	protected function setUp(): void {
+		parent::setUp();
+
+		$this->storageReady = true;
+
+		// DEFINED ONCE, READING A PROPERTY, rather than re-stubbed per test: the
+		// handler asks the storage status through Installer, and a second
+		// Functions\when() for the same name inside a test would be replacing a
+		// fake that is already in place. The property lets a test choose the
+		// answer without touching the stub.
+		Functions\when( 'get_option' )->alias(
+			fn( string $key, mixed $fallback = false ): mixed =>
+				Installer::STATUS_OPTION === $key
+					? ( $this->storageReady ? Installer::STATUS_READY : Installer::STATUS_UNAVAILABLE )
+					: $fallback
+		);
+	}
 
 	/**
 	 * Creates a context whose module health map is exactly what is given.
@@ -239,6 +267,73 @@ final class IntegrationHealthTest extends TestCase {
 			$by_id['core']['explanation'],
 			'An unrecognised health string must read exactly as the inactive state does.'
 		);
+	}
+
+	/**
+	 * THE STATE THAT FOLLOWS A FAILED ACTIVATION OR UPGRADE, which is when this
+	 * report is most likely to be read. With SiteHelm's tables missing, every
+	 * module records inactive whatever its dependency is doing, so the dependency
+	 * sentence would tell the operator to install WordPress on WordPress. The
+	 * cause named must be the one that is true and the one that, fixed, changes
+	 * anything.
+	 *
+	 * `Install and activate` is asserted ABSENT rather than only the storage
+	 * sentence asserted present, because the defect was never a missing sentence:
+	 * it was a wrong instruction sitting beside a right diagnosis.
+	 *
+	 * The recorded health and version are asserted unchanged, because storage
+	 * readiness is allowed to move the prose and nothing else — those two fields
+	 * are the gateway's currency and this report only spends it.
+	 */
+	public function test_an_inactive_module_blames_sitehelms_storage_when_the_tables_are_not_ready(): void {
+		$this->storageReady = false;
+
+		$by_id = $this->reportKeyedById(
+			[
+				ModuleId::Core->value => [
+					'version' => null,
+					'health'  => ModuleHealth::Inactive->value,
+				],
+			]
+		);
+
+		$this->assertSame(
+			'WordPress Content and Change Engine is unavailable because SiteHelm\'s own storage is not ready. Every module stays disabled until SiteHelm reinstalls its tables: deactivate and reactivate the plugin, then run this diagnostic again.',
+			$by_id['core']['explanation']
+		);
+		$this->assertStringNotContainsString( 'Install and activate', $by_id['core']['explanation'] );
+		$this->assertSame( ModuleHealth::Inactive->value, $by_id['core']['health'] );
+		$this->assertNull( $by_id['core']['installedVersion'] );
+	}
+
+	/**
+	 * The sibling of the test above, differing in exactly one input.
+	 *
+	 * With the tables healthy, an inactive module has one remaining cause and the
+	 * sentence must still name it. Written as a pair, the two tests are what stops
+	 * the storage branch from being widened until it swallows the ordinary case —
+	 * a site that simply has not installed the plugin, which is most sites.
+	 */
+	public function test_an_inactive_module_still_names_its_dependency_when_the_tables_are_ready(): void {
+		$this->storageReady = true;
+
+		$by_id = $this->reportKeyedById(
+			[
+				ModuleId::Core->value => [
+					'version' => null,
+					'health'  => ModuleHealth::Inactive->value,
+				],
+			]
+		);
+
+		$this->assertSame(
+			sprintf(
+				'WordPress Content and Change Engine is unavailable: wordpress is not active on this site. Install and activate wordpress >=%s to enable this module\'s operations.',
+				SITEHELM_MIN_WP
+			),
+			$by_id['core']['explanation']
+		);
+		$this->assertStringNotContainsString( 'storage', $by_id['core']['explanation'] );
 	}
 
 	/**
