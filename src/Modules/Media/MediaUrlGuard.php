@@ -66,8 +66,14 @@ final class MediaUrlGuard {
 
 	/**
 	 * The port assumed when the URL names none.
+	 *
+	 * Public because MediaFetch decides whether a URL its hooks are handed is the
+	 * hop this guard validated, and "no port written down" has to mean the same
+	 * number on both sides of that comparison. A second copy of this table would
+	 * be a rule the two classes could come to disagree about, and a disagreement
+	 * there costs a refused import.
 	 */
-	private const DEFAULT_PORTS = [
+	public const DEFAULT_PORTS = [
 		'http'  => 80,
 		'https' => 443,
 	];
@@ -302,7 +308,7 @@ final class MediaUrlGuard {
 		}
 
 		// 5. Host must exist and must not be this machine by name.
-		$host = $this->normalise_host( (string) ( $parts['host'] ?? '' ) );
+		$host = self::normalise_host( (string) ( $parts['host'] ?? '' ) );
 
 		if ( '' === $host ) {
 			$this->refuse(
@@ -371,11 +377,19 @@ final class MediaUrlGuard {
 	 * literal and hand it to the resolver. Trailing dots go because
 	 * `localhost.` is the same name as `localhost`.
 	 *
+	 * PUBLIC AND STATIC BECAUSE MediaFetch NORMALISES THE SAME WAY, and must. Its
+	 * hook callbacks decide whether a URL WordPress hands them is the hop this
+	 * guard validated, by comparing the host it parses against the host this method
+	 * returned. Those two answers have to agree for every spelling of the same
+	 * name; a second implementation over there would be a copy of this rule that
+	 * nothing keeps in step, and the fail-closed check turns any divergence into a
+	 * refused import. One function, called from both places, cannot diverge.
+	 *
 	 * @param string $host The raw host component.
 	 *
 	 * @return string The normalised host.
 	 */
-	private function normalise_host( string $host ): string {
+	public static function normalise_host( string $host ): string {
 		return rtrim( trim( strtolower( $host ), '[]' ), '.' );
 	}
 
