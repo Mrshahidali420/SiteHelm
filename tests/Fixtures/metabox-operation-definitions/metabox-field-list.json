@@ -1,0 +1,86 @@
+{
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "post": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "The post, page or custom post type entry whose applicable fields are wanted."
+            }
+        },
+        "required": [
+            "post"
+        ],
+        "additionalProperties": false
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "provider": {
+                "type": "string",
+                "const": "metabox",
+                "description": "Whose field vocabulary these identifiers belong to. This dispatcher also serves Advanced Custom Fields, whose keys look nothing like Meta Box meta keys, so a client has to be told which it is holding."
+            },
+            "target": {
+                "type": "integer",
+                "description": "The post the fields were listed for, echoed so a response can be matched to its request."
+            },
+            "fields": {
+                "type": "array",
+                "description": "The top-level fields that apply to this post, in the order Meta Box reports them, group by group. Only fields whose group's assignment rules match this post appear. Sub-fields are not listed: they are addressed through their parent.",
+                "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "id",
+                        "name",
+                        "type",
+                        "required",
+                        "groupId",
+                        "groupTitle"
+                    ],
+                    "properties": {
+                        "id": {
+                            "type": "string",
+                            "description": "The field's id, WHICH IS THE META KEY the value is stored under. This is the identifier every other Meta Box operation takes."
+                        },
+                        "name": {
+                            "type": "string",
+                            "description": "The field's name, which in Meta Box is the human label shown in the editor and addresses nothing. May be empty."
+                        },
+                        "type": {
+                            "type": "string",
+                            "description": "The Meta Box field type, for example text, select, or group."
+                        },
+                        "required": {
+                            "type": "boolean",
+                            "description": "Whether Meta Box marks the field required in the editor."
+                        },
+                        "groupId": {
+                            "type": "string",
+                            "description": "The identifier of the field group this field belongs to, as metabox-group-list reports it."
+                        },
+                        "groupTitle": {
+                            "type": "string",
+                            "description": "That group's title, as shown in the editor. May be empty; Meta Box does not require one."
+                        }
+                    }
+                }
+            },
+            "fieldListingNotices": {
+                "type": "array",
+                "items": {
+                    "type": "string"
+                },
+                "description": "Anything the listing could not report faithfully, such as an applicable field group whose field definitions could not all be read. Names groups and counts only, never a field's value."
+            }
+        },
+        "required": [
+            "provider",
+            "target",
+            "fields",
+            "fieldListingNotices"
+        ],
+        "additionalProperties": false
+    }
+}

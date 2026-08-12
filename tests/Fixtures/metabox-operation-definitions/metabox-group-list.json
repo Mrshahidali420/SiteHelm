@@ -1,0 +1,197 @@
+{
+    "inputSchema": {
+        "type": "object",
+        "properties": [],
+        "required": [],
+        "additionalProperties": false
+    },
+    "outputSchema": {
+        "$id": "urn:sitehelm:schema:metabox-group-list:output:1",
+        "type": "object",
+        "properties": {
+            "provider": {
+                "type": "string",
+                "const": "metabox",
+                "description": "Whose field vocabulary these identifiers belong to. This dispatcher also serves Advanced Custom Fields, whose keys look nothing like Meta Box meta keys, so a client has to be told which it is holding."
+            },
+            "groups": {
+                "type": "array",
+                "description": "The field groups this site defines, at most 200 per call.",
+                "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "id",
+                        "title",
+                        "objectType",
+                        "supported",
+                        "postTypes",
+                        "appliesToAllPostTypes",
+                        "fields"
+                    ],
+                    "properties": {
+                        "id": {
+                            "type": "string",
+                            "description": "The field group identifier, as the group was registered."
+                        },
+                        "title": {
+                            "type": "string",
+                            "description": "The group title as shown in the editor. May be empty; Meta Box does not require one."
+                        },
+                        "objectType": {
+                            "type": "string",
+                            "description": "What the group attaches to: post, user, term, setting or comment."
+                        },
+                        "supported": {
+                            "type": "boolean",
+                            "description": "Whether SiteHelm serves this group. True only for post-object groups; the others are listed so that \"no such group\" is distinguishable from \"not served here\", but no other Meta Box operation addresses them."
+                        },
+                        "postTypes": {
+                            "type": "array",
+                            "description": "The post types this group is scoped to. EMPTY MEANS UNRESTRICTED rather than \"no post type\" — read appliesToAllPostTypes rather than testing this for emptiness.",
+                            "items": {
+                                "type": "string"
+                            }
+                        },
+                        "appliesToAllPostTypes": {
+                            "type": "boolean",
+                            "description": "True when the group declares no post-type restriction and therefore applies to every post type. It exists because an empty postTypes list reads naturally as the opposite claim, and the opposite claim is the narrower one."
+                        },
+                        "fields": {
+                            "type": "array",
+                            "description": "The group's field definitions. Empty when the group defines none, or when none could be read — in which case a notice says so.",
+                            "items": {
+                                "$ref": "#/$defs/metaboxFieldSchema"
+                            }
+                        }
+                    }
+                }
+            },
+            "truncated": {
+                "type": "boolean",
+                "description": "True when this site defines more field groups than one call reports. The listing stops rather than continuing, and a notice says how many were returned."
+            },
+            "groupListingNotices": {
+                "type": "array",
+                "items": {
+                    "type": "string"
+                },
+                "description": "Anything the listing could not report faithfully: a group whose field definitions could not all be read, a field tree cut at the depth limit, or a listing that reached the ceiling. Counts only; never an identifier or a value read off the site."
+            }
+        },
+        "required": [
+            "provider",
+            "groups",
+            "truncated",
+            "groupListingNotices"
+        ],
+        "additionalProperties": false,
+        "$defs": {
+            "metaboxFieldSchema": {
+                "type": "object",
+                "description": "One Meta Box field definition. Group fields carry subFields recursively, to a depth of 10.",
+                "additionalProperties": false,
+                "required": [
+                    "id",
+                    "name",
+                    "type",
+                    "required"
+                ],
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "description": "The field identifier, which is the META KEY the value is stored under and the identifier every other Meta Box operation takes as input. It is NOT the human label; that is name."
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "The HUMAN LABEL shown in the editor. It is NOT the meta key; that is id. Meta Box's naming is inverted from the usual reading."
+                    },
+                    "type": {
+                        "type": "string",
+                        "description": "The Meta Box field type, for example text, select, image_advanced, or group."
+                    },
+                    "required": {
+                        "type": "boolean",
+                        "description": "Whether Meta Box marks the field required in the editor."
+                    },
+                    "subFields": {
+                        "type": "array",
+                        "description": "Child field definitions, for the group type. Absent at the depth cap, where the children exist but are not reported — truncated says so when that happens. Meta Box stores them under `fields`; the response renames them so the member means one thing at every nesting level.",
+                        "items": {
+                            "$ref": "#/$defs/metaboxFieldSchema"
+                        }
+                    },
+                    "truncated": {
+                        "type": "boolean",
+                        "description": "Present and true only when this field has children that were not reported because the depth cap was reached. Absent otherwise, so a cut tree is distinguishable from a genuinely shallow one."
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "The editor help text Meta Box stores as desc."
+                    },
+                    "defaultValue": {
+                        "description": "The value Meta Box applies when none is stored, its std setting. Its type follows the field type, so none is declared here."
+                    },
+                    "options": {
+                        "type": "array",
+                        "description": "Selectable values, each as a stored value with the label shown beside it. A list rather than the map Meta Box stores, because the keys are administrator-chosen text no closed schema can declare, and a numeric-looking key cannot survive as an object key in PHP at all.",
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                                "value",
+                                "label"
+                            ],
+                            "properties": {
+                                "value": {
+                                    "type": "string",
+                                    "description": "The value Meta Box stores when this option is selected."
+                                },
+                                "label": {
+                                    "type": "string",
+                                    "description": "The label shown in the editor."
+                                }
+                            }
+                        }
+                    },
+                    "min": {
+                        "type": [
+                            "number",
+                            "string"
+                        ],
+                        "description": "The lower bound, as Meta Box stored it. Editor input is stored verbatim, so a string is a real answer."
+                    },
+                    "max": {
+                        "type": [
+                            "number",
+                            "string"
+                        ],
+                        "description": "The upper bound, as Meta Box stored it."
+                    },
+                    "multiple": {
+                        "type": "boolean",
+                        "description": "Present and true when the field accepts more than one value."
+                    },
+                    "clonable": {
+                        "type": "boolean",
+                        "description": "Present and true when the field is repeatable. Meta Box stores this as clone; the response renames it because clone is a PHP reserved word a generated client could not name."
+                    },
+                    "postType": {
+                        "type": "array",
+                        "description": "Post types the field selects from.",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "taxonomy": {
+                        "type": "array",
+                        "description": "Taxonomies the field selects from.",
+                        "items": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

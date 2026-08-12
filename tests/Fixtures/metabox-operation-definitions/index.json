@@ -1,0 +1,9 @@
+{
+    "operationIds": [
+        "metabox-group-list",
+        "metabox-field-list",
+        "metabox-field-get",
+        "metabox-field-update"
+    ],
+    "operationCount": 4
+}

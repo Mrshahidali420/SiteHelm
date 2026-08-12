@@ -1,0 +1,88 @@
+{
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "post": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "The post, page or custom post type entry whose Meta Box field values are being written."
+            },
+            "fields": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 50,
+                "description": "The fields to write, at most 50, each named once. Every entry is validated before any of them is written: one entry this operation cannot use refuses the whole request and leaves the post untouched.",
+                "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "field",
+                        "value"
+                    ],
+                    "properties": {
+                        "field": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 255,
+                            "description": "One Meta Box field id. In Meta Box a field's id is the meta key its value is stored under, and its name is the human label shown on the editing screen; this argument takes the id, not the label. Call metabox-field-list for the post to see the ids the fields on it carry."
+                        },
+                        "value": {
+                            "description": "The value to store, in the raw form Meta Box stores rather than a formatted one: an attachment id rather than an attachment object, a post id rather than a post. Its type follows the field, so none is declared here. Send an empty list [] to clear a clonable or group field, and an empty string to clear a text field."
+                        }
+                    }
+                }
+            }
+        },
+        "required": [
+            "post",
+            "fields"
+        ],
+        "additionalProperties": false
+    },
+    "outputSchema": {
+        "type": "object",
+        "oneOf": [
+            {
+                "title": "Plan phase",
+                "type": "object",
+                "properties": {
+                    "plan": {
+                        "type": "object",
+                        "description": "The change plan to approve, including its plan token."
+                    }
+                },
+                "required": [
+                    "plan"
+                ],
+                "additionalProperties": false
+            },
+            {
+                "title": "Apply phase",
+                "type": "object",
+                "properties": {
+                    "target": {
+                        "type": "string",
+                        "description": "The concrete target that was written."
+                    },
+                    "changed": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "description": "The fields the approved plan changed."
+                    },
+                    "state": {
+                        "type": "object",
+                        "description": "The verified persisted state of the target."
+                    }
+                },
+                "required": [
+                    "target",
+                    "changed",
+                    "state"
+                ],
+                "additionalProperties": false
+            }
+        ]
+    }
+}
