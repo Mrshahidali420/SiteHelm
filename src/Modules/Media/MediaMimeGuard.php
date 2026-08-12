@@ -70,6 +70,9 @@ final class MediaMimeGuard {
 	 * reads the bytes until they are known to be decodable and bounded, and
 	 * nothing consults an allowlist until the bytes have identified themselves.
 	 *
+	 * Steps 1 and 1b are the base64 transport's own, and are all this method
+	 * performs itself; the rest is inspectBytes(), which the import path shares.
+	 *
 	 * @param string $filename      The client-supplied filename.
 	 * @param string $contentBase64 The client-supplied base64 payload.
 	 *
@@ -115,6 +118,38 @@ final class MediaMimeGuard {
 			);
 		}
 
+		return $this->inspectBytes( $filename, $bytes );
+	}
+	// phpcs:enable WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode
+	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+
+	// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Messages are literals written for end users.
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- Pairs with inspect(); the guard's public vocabulary is camelCase like the contracts it serves.
+	/**
+	 * Validates already-decoded bytes, in memory, and reports what they are.
+	 *
+	 * Steps 2 through 7 are shared by the upload and the import paths. Only the
+	 * transport differs: inspect() decodes a base64 argument, while an import
+	 * hands over the bytes a remote fetch returned. Everything from here down
+	 * reads the bytes themselves, so it is identical whichever transport
+	 * delivered them, and both callers get exactly the same refusals.
+	 *
+	 * The steps run in this order and the order is load bearing: nothing
+	 * consults an allowlist until the bytes have identified themselves.
+	 *
+	 * @param string $filename The client-supplied filename.
+	 * @param string $bytes    The decoded payload.
+	 *
+	 * @return array{bytes: string, filename: string, mimeType: string, extension: string}
+	 *         The decoded bytes, the sanitized filename, the sniffed type, and
+	 *         the sanitized filename's extension.
+	 *
+	 * @throws OperationException With ErrorCode::InvalidInput on every failure.
+	 *                            A refused upload is a bad request, never an
+	 *                            execution failure.
+	 */
+	public function inspectBytes( string $filename, string $bytes ): array {
 		// 2. Size, against the smaller of the built-in cap and the site's own.
 		if ( strlen( $bytes ) > $this->decoded_byte_cap() ) {
 			throw new OperationException(
@@ -214,9 +249,8 @@ final class MediaMimeGuard {
 			'extension' => $extension,
 		];
 	}
-	// phpcs:enable WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
-	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
 
 	/**
 	 * The effective decoded-size ceiling.

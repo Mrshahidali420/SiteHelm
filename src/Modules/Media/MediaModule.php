@@ -121,9 +121,12 @@ final class MediaModule implements IntegrationModule {
 			new MediaAttach( $fields, $targets )
 		);
 
+		$planner  = new MediaAssetPlan();
+		$sideload = new MediaSideload( $fields );
+
 		$registry->registerWrite(
 			MediaUpload::definition(),
-			new MediaUpload( $fields, $targets, new MediaMimeGuard( $fields ) )
+			new MediaUpload( $fields, $targets, new MediaMimeGuard( $fields ), $planner, $sideload )
 		);
 	}
 }
