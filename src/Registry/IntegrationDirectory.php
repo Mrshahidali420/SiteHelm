@@ -39,13 +39,19 @@ final class IntegrationDirectory {
 	 * instances so that each construction sits inside the isolation boundary:
 	 * a throwing constructor must not be able to take down the gateway.
 	 *
-	 * PUBLIC BECAUSE THE CATALOG-WIDE TESTS MUST ENUMERATE THE REAL TABLE. When
-	 * this list lived as a local inside `register()`, the REQ-0063 absence test
-	 * — no non-Elementor page builder may appear in any V1 dispatcher catalog —
-	 * had to keep a hand-written copy of it, so a module added here and nowhere
-	 * else shipped a foreign builder into the catalog with the suite still
-	 * green. A requirement about the whole catalog has to read the whole
-	 * catalog from the single place that defines it.
+	 * PUBLIC BECAUSE TWO READERS OUTSIDE THIS CLASS DEPEND ON IT. `Plugin::MODULE_CLASSES`
+	 * is an alias of this constant, so the catalog-wide invariant tests — chief
+	 * among them the REQ-0063 absence test, which asserts that no non-Elementor
+	 * page builder appears in any V1 dispatcher catalog — keep enumerating this
+	 * real boot table through the name they were written against. And
+	 * `system-integrations` reports one entry per module by walking `describe()`,
+	 * which is built from this list. Both readings are of the whole catalog, and a
+	 * requirement about the whole catalog has to read it from the single place that
+	 * defines it rather than from a hand-written copy that a module added here and
+	 * nowhere else would silently leave behind.
+	 *
+	 * EDIT THIS CONSTANT, NOT THE ALIAS. A module appended to `Plugin` instead
+	 * would never boot, because the loader walks this one.
 	 *
 	 * @var class-string<IntegrationModule>[]
 	 */
