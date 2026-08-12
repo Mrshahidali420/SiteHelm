@@ -60,10 +60,16 @@ final class IntegrationHealth {
 		$this->directory = $directory ?? new IntegrationDirectory();
 	}
 
-	// phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
-	// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+	// phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase, WordPress.Security.EscapeOutput.ExceptionNotEscaped -- OperationContext::$userId and $moduleVersions are contract properties this module does not name, and every message here is a literal written for end users.
 	/**
 	 * Handles a system integration health operation.
+	 *
+	 * A module the directory yields but the health map does not mention reads as
+	 * inactive rather than raising. This is not the throwing-constructor case —
+	 * such a module is skipped by the directory's own isolation boundary and
+	 * never reaches this loop at all. It is the case of a map assembled from a
+	 * different table than the one the directory holds, which a report must
+	 * survive rather than fail on.
 	 *
 	 * @param array<string, mixed> $input Validated input (empty schema).
 	 * @param OperationContext     $context The operation context.
@@ -100,8 +106,7 @@ final class IntegrationHealth {
 
 		return [ 'integrations' => $integrations ];
 	}
-	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
-	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase, WordPress.Security.EscapeOutput.ExceptionNotEscaped
 
 	/**
 	 * One sentence telling an operator what this module's state means for them.

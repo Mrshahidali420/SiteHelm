@@ -99,6 +99,44 @@ final class IntegrationHealthTest extends TestCase {
 	}
 
 	/**
+	 * The sentence an operator reads for a working module, pinned in full.
+	 *
+	 * This is the branch the report takes most often and it was, briefly, the
+	 * only one nothing asserted: two tests put a module in `active` but read
+	 * only its `health`, so deleting the active branch of the explanation
+	 * builder left the suite green while every healthy module acquired the
+	 * sentence "is unavailable: … is not active on this site. Install and
+	 * activate …". That is precisely the operator-facing lie REQ-0003 exists to
+	 * prevent, and a wrong `health` value would be less damaging than a wrong
+	 * sentence, because the sentence is the part a human acts on.
+	 *
+	 * The whole string is asserted rather than a substring, and the contrasting
+	 * version-blocked entry is read from the same call, so a builder that
+	 * returned one sentence for every state cannot satisfy both assertions.
+	 */
+	public function test_an_active_module_reads_as_available_and_not_as_something_to_install(): void {
+		$by_id = $this->reportKeyedById(
+			[
+				'diagnostics' => [
+					'version' => null,
+					'health'  => ModuleHealth::Active->value,
+				],
+				'elementor'   => [
+					'version' => '2.9.14',
+					'health'  => ModuleHealth::VersionBlocked->value,
+				],
+			]
+		);
+
+		$this->assertSame(
+			'System Diagnostics is active and its operations are available.',
+			$by_id['diagnostics']['explanation']
+		);
+		$this->assertStringNotContainsString( 'unavailable', $by_id['diagnostics']['explanation'] );
+		$this->assertStringContainsString( 'unavailable', $by_id['elementor']['explanation'] );
+	}
+
+	/**
 	 * The health map is the single currency. A handler that recomputed health by
 	 * calling `$module->health()` would answer `inactive` for Elementor here —
 	 * the plugin genuinely is not installed in this process — and the gateway
@@ -162,9 +200,16 @@ final class IntegrationHealthTest extends TestCase {
 	}
 
 	/**
-	 * A module missing from the health map — its constructor threw, so the
-	 * loader never recorded it — reads as inactive rather than as a hole in
-	 * the report or an undefined-index notice.
+	 * A module that constructs but is absent from the health map reads as
+	 * inactive rather than as a hole in the report or an undefined-index notice.
+	 *
+	 * NOT the throwing-constructor case, which cannot reach this branch: a
+	 * module whose constructor throws is skipped by the directory's isolation
+	 * boundary, so `describe()` never yields it and it vanishes from the report
+	 * entirely. What does reach the branch is a module the directory built and
+	 * the gateway's health map does not mention — a map assembled from a
+	 * different table, an older map replayed, or the empty map a direct
+	 * invocation passes, as here.
 	 */
 	public function test_a_module_absent_from_the_health_map_reports_inactive(): void {
 		$by_id = $this->reportKeyedById( [] );
