@@ -217,9 +217,12 @@ final class MediaUrlGuardTest extends TestCase {
 		$this->assertSame( 80, $validated['port'] );
 	}
 
-	public function test_an_empty_host_is_refused(): void {
-		$this->assertRefused( 'https:///a.png' );
-	}
+	// A `test_an_empty_host_is_refused` case stood here and was removed in fix
+	// round one. It drove `https:///a.png`, which parse_url() refuses outright, so
+	// it never reached the empty-host guard at all: it was a duplicate of
+	// test_a_value_that_is_not_a_url_at_all_is_refused wearing a name that lied
+	// about which branch it pinned. The empty-host guard is pinned, honestly and
+	// by name, by test_a_parse_that_yields_no_host_is_refused above.
 
 	public function test_localhost_is_refused(): void {
 		// The resolver is made to answer with a PUBLIC address on purpose. A
@@ -334,6 +337,125 @@ final class MediaUrlGuardTest extends TestCase {
 		$this->assertAddressRefused( '64:ff9b::a00:5' );
 	}
 
+	public function test_an_ipv4_compatible_ipv6_loopback_is_refused(): void {
+		// `::127.0.0.1` is the deprecated IPv4-COMPATIBLE form, distinct from the
+		// IPv4-mapped `::ffff:127.0.0.1` above and reported just as public by
+		// filter_var() on PHP 8.2. Delete the `::/96` arm of MAPPED_V4_PREFIXES
+		// and loopback walks through: no IPv6 row covers it either, because the
+		// ::/128 and ::1/128 rows are exact addresses.
+		$this->assertAddressRefused( '::127.0.0.1' );
+	}
+
+	public function test_an_ipv4_compatible_ipv6_private_address_is_refused(): void {
+		// The same prefix carrying RFC1918 rather than loopback, which is what
+		// shows the arm unmaps an address rather than matching a special case.
+		// (`::0.0.0.0` needs no case of its own: it IS `::`, already covered by
+		// test_the_ipv6_unspecified_address_is_refused.)
+		$this->assertAddressRefused( '::10.0.0.5' );
+	}
+
+	public function test_a_6to4_address_embedding_loopback_is_refused(): void {
+		// 2002:7f00:1:: is 6to4 for 127.0.0.1. The embedded address sits at bytes
+		// two to five, NOT in the low thirty-two bits, so this prefix is blocked
+		// wholesale instead of unmapped. filter_var() calls it public.
+		$this->assertAddressRefused( '2002:7f00:1::' );
+	}
+
+	public function test_the_6to4_relay_anycast_address_is_refused(): void {
+		// 192.88.99.0/24 is the IPv4 side of the same tunnel and is not covered by
+		// filter_var()'s flags.
+		$this->assertAddressRefused( '192.88.99.1' );
+	}
+
+	public function test_a_teredo_address_is_refused(): void {
+		// 2001::/32. Teredo carries an obfuscated IPv4 address and a UDP port,
+		// which is why it is blocked rather than unmapped. Note the range is
+		// exactly /32: the test below proves it does not swallow 2001:4860::.
+		$this->assertAddressRefused( '2001::1' );
+	}
+
+	public function test_a_public_address_next_to_the_teredo_range_is_allowed(): void {
+		// 2001:4860:4860::8888 is a public resolver inside 2001::/16 but OUTSIDE
+		// 2001::/32. This pins the prefix length: widen the Teredo row by a byte
+		// and a large slice of the routed IPv6 internet becomes unfetchable.
+		$validated = $this->guard( [ '2001:4860:4860::8888' ] )->validate( 'https://cdn.example.com/a.png' );
+
+		$this->assertSame( '2001:4860:4860::8888', $validated['ip'] );
+	}
+
+	public function test_the_nat64_local_use_prefix_is_refused(): void {
+		// 64:ff9b:1::/48, RFC 8215. Distinct from the well-known 64:ff9b::/96
+		// above: the embedding length is an operator's choice here, so there is no
+		// fixed offset to unmap from and the whole prefix is refused.
+		$this->assertAddressRefused( '64:ff9b:1::a00:5' );
+	}
+
+	public function test_ipv6_site_local_is_refused(): void {
+		// fec0::/10 is deprecated but still routed on some networks, and
+		// filter_var()'s flags do not cover it. fe80::/10 stops at febf::, so the
+		// existing link-local row does not reach this.
+		$this->assertAddressRefused( 'fec0::1' );
+	}
+
+	public function test_a_decimal_ipv4_host_is_refused(): void {
+		// 2130706433 is 127.0.0.1 to inet_aton(), and therefore to curl — but it
+		// is NOT an address to filter_var(), so without the final-label rule it
+		// takes the hostname path, the resolver's public answer becomes the pin,
+		// and curl then ignores the pin because it parsed the host as a literal
+		// after all. The resolver is armed with a public address to model exactly
+		// that. Delete the rule and this URL is accepted.
+		$this->assertRefused( 'http://2130706433/a.png', [ '93.184.216.34' ] );
+	}
+
+	public function test_an_octal_ipv4_host_is_refused(): void {
+		$this->assertRefused( 'http://0177.0.0.1/a.png', [ '93.184.216.34' ] );
+	}
+
+	public function test_a_hexadecimal_ipv4_host_is_refused(): void {
+		$this->assertRefused( 'http://0x7f000001/a.png', [ '93.184.216.34' ] );
+	}
+
+	public function test_a_short_form_ipv4_host_is_refused(): void {
+		// 127.1 — the two-part form inet_aton() expands to 127.0.0.1.
+		$this->assertRefused( 'http://127.1/a.png', [ '93.184.216.34' ] );
+	}
+
+	public function test_a_non_ascii_host_is_refused(): void {
+		// The IDN answer: a host outside ASCII letters, digits, hyphens and dots
+		// is refused rather than converted, because converting would leave the
+		// guard judging one spelling of the host while the transport dialled
+		// another. This particular string also looks like `localhost` to a human
+		// and does not compare equal to it.
+		$refusal = $this->assertRefused( 'http://ⓛocalhost/a.png', [ '93.184.216.34' ] );
+
+		$this->assertStringContainsString( 'not a valid host name', $refusal->getMessage() );
+	}
+
+	public function test_a_host_with_an_underscore_is_refused(): void {
+		// Same shape rule, second arm: an underscore is legal in some DNS records
+		// and not in a host name, and parsers disagree about it.
+		$this->assertRefused( 'http://cdn_1.example.com/a.png', [ '93.184.216.34' ] );
+	}
+
+	public function test_an_ordinary_host_name_with_digits_and_hyphens_is_allowed(): void {
+		// The shape and final-label rules must not cost the public internet.
+		// Digits inside labels, a hyphen inside a label, and a multi-part suffix
+		// are all ordinary, and a rule written slightly too tight would refuse
+		// this while every refusal test above still passed.
+		$validated = $this->guard()->validate( 'https://cdn2.example-1.co.uk/a.png' );
+
+		$this->assertSame( 'cdn2.example-1.co.uk', $validated['host'] );
+	}
+
+	public function test_a_punycode_host_is_allowed(): void {
+		// The supported way to fetch from an internationalised domain: punycode it
+		// before sending it. This pins that the ASCII rule refuses non-ASCII input
+		// rather than refusing IDNs as such.
+		$validated = $this->guard()->validate( 'https://xn--80ak6aa92e.example.com/a.png' );
+
+		$this->assertSame( 'xn--80ak6aa92e.example.com', $validated['host'] );
+	}
+
 	public function test_a_public_ipv6_address_is_allowed(): void {
 		$validated = $this->guard( [ '2606:4700:4700::1111' ] )->validate( 'https://cdn.example.com/a.png' );
 
@@ -419,6 +541,12 @@ final class MediaUrlGuardTest extends TestCase {
 			'fe80::1',
 			'::ffff:127.0.0.1',
 			'64:ff9b::a00:5',
+			'::127.0.0.1',
+			'2002:7f00:1::',
+			'192.88.99.1',
+			'2001::1',
+			'64:ff9b:1::a00:5',
+			'fec0::1',
 			'not-an-ip',
 		];
 
@@ -435,6 +563,19 @@ final class MediaUrlGuardTest extends TestCase {
 		$refusals[] = $this->assertRefused( 'https:///a.png' );
 		$refusals[] = $this->assertRefused( 'http://localhost/a.png' );
 		$refusals[] = $this->assertRefused( 'https://cdn.example.com/a.png', [] );
+		$refusals[] = $this->assertRefused( 'http://cdn_1.example.com/a.png' );
+		$refusals[] = $this->assertRefused( 'http://2130706433/a.png' );
+
+		// Collected last, because reaching the hostless-array branch means
+		// replacing the faithful parse fake for the rest of this test.
+		Functions\when( 'wp_parse_url' )->justReturn(
+			[
+				'scheme' => 'https',
+				'path'   => '/a.png',
+			]
+		);
+
+		$refusals[] = $this->assertRefused( 'https:///a.png' );
 
 		foreach ( $refusals as $refusal ) {
 			foreach ( [ $refusal->getMessage(), (string) $refusal->remediation ] as $text ) {
