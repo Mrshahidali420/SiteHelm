@@ -302,7 +302,12 @@ final class MetaboxFieldUpdate implements WriteOperation {
 		$after  = [];
 
 		foreach ( $this->resolved as $write ) {
-			$value = $this->canonical->project( $write['value'] );
+			// THE INBOUND PROJECTION, BECAUSE THIS IS THE CALLER'S OWN VALUE. It is
+			// canonicalized so the digest is stable and nothing is removed from it: this
+			// map is both what the operator approves at preview and what applyChange()
+			// hands the site, so a member dropped here is a member the site never
+			// receives, in a request that reports success.
+			$value = $this->canonical->projectInbound( $write['value'] );
 
 			$fields[ $write['id'] ] = [
 				'id'    => $write['id'],
@@ -514,7 +519,11 @@ final class MetaboxFieldUpdate implements WriteOperation {
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
 
 	/**
-	 * One field's stored value, canonically projected.
+	 * One field's stored value, canonically projected FOR EMISSION.
+	 *
+	 * EVERY CALLER OF THIS IS AN OUTBOUND ONE — the before-state and the read-back
+	 * reported as `state` — so it takes the projection that strips a server path. The
+	 * value came off the site, not out of the request, and §8 governs what leaves.
 	 *
 	 * The one place the forward path reads a value, so the before-state, the
 	 * dropped-write comparison and the read-back cannot disagree about how a value is
@@ -531,7 +540,7 @@ final class MetaboxFieldUpdate implements WriteOperation {
 	 * @return mixed The canonical projection of the stored value.
 	 */
 	private function read( string $id, int $post_id ): mixed {
-		return $this->canonical->project( $this->api->readValue( $id, $post_id ) );
+		return $this->canonical->projectOutbound( $this->api->readValue( $id, $post_id ) );
 	}
 
 	/**
@@ -552,13 +561,18 @@ final class MetaboxFieldUpdate implements WriteOperation {
 	 * read() STAYS AS IT IS AND IS STILL RIGHT FOR THE BEFORE-STATE AND THE READ-BACK:
 	 * both are reported to the operator, who is owed the value the site presents.
 	 *
+	 * THE INBOUND PROJECTION, BECAUSE THIS ANSWER IS EVIDENCE AND NOT AN EMISSION. It
+	 * is compared against a promise spelled through the same projection and then
+	 * discarded; stripping members from one side of a comparison is how a guard stops
+	 * being able to see the difference it exists to catch.
+	 *
 	 * @param string $id      The field id, which is the meta key.
 	 * @param int    $post_id The post the value is stored against.
 	 *
 	 * @return mixed The canonical projection of the stored rows.
 	 */
 	private function stored( string $id, int $post_id ): mixed {
-		return $this->canonical->project( $this->api->readRawRows( $id, $post_id ) );
+		return $this->canonical->projectInbound( $this->api->readRawRows( $id, $post_id ) );
 	}
 
 	/**

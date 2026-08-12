@@ -17,13 +17,16 @@ namespace SiteHelm\Modules\Metabox;
  * response, redacting and truncating as a report may; this takes what a client
  * sends IN and turns it into the one spelling a digest can be taken over.
  *
- * THE TWO ARE SEPARATE, AND THE SERVER-PATH STRIP IS NOT ONE OF THE DIFFERENCES. A
- * value projected here is emitted three times over — as the write's before-state, as
- * the plan payload a preview returns, and as the read-back reported as `state` — and
- * spec §8 forbids a filesystem path in ANY envelope this plugin emits, without
- * qualification. The member names are MetaboxSchemaFormat's, asked through
- * MetaboxSchemaFormat::isServerPathMember() by this class and by the normalizer
- * alike, because a rule spelled in one projection is a rule the other leaks through.
+ * THE SERVER-PATH STRIP IS AN OUTBOUND RULE, WHICH IS WHY THIS CLASS HAS TWO
+ * PROJECTIONS AND NOT ONE. Spec §8 forbids a filesystem path in any envelope this
+ * plugin EMITS, because an envelope goes to a client; it says nothing about what a
+ * caller may send, and a custom field legitimately holding a member called `path` or
+ * `dir` is an ordinary thing on a real site. So projectOutbound() strips those
+ * members and projectInbound() does not, and the direction is named at every call
+ * site rather than inferred from it. The member names are MetaboxSchemaFormat's,
+ * asked through MetaboxSchemaFormat::isServerPathMember() by this class and by the
+ * normalizer alike, because a rule spelled in one projection is a rule the other
+ * leaks through.
  *
  * IT IS PURE, AND THAT IS THE WHOLE POINT. No clock, no globals, no Meta Box call,
  * no WordPress function. `PlanAdmission::assertPayloadMatches()` digests this
@@ -64,6 +67,46 @@ namespace SiteHelm\Modules\Metabox;
  */
 final class MetaboxValueCanonical {
 
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- The change engine's own vocabulary is camelCase, and these two names are read together at every call site.
+	/**
+	 * The canonical spelling of a value ARRIVING FROM A CALLER, member for member.
+	 *
+	 * NOTHING IS REMOVED HERE. The caller's value is theirs: it is what the operator
+	 * approved at preview, what the digest is taken over, and what the site is asked
+	 * to store, so dropping a member from it stores something other than the approved
+	 * change and reports success for doing so. The asymmetry with projectOutbound()
+	 * exists because §8's prohibition is about what this plugin EMITS to a client, not
+	 * about what a client may send it.
+	 *
+	 * @param mixed $value The value the caller sent, of any shape.
+	 * @param int   $depth How deep this value sits; 0 for the field's own value.
+	 *
+	 * @return mixed The canonical projection, with every member the caller sent.
+	 */
+	public function projectInbound( mixed $value, int $depth = 0 ): mixed {
+		return $this->walk( $value, $depth, false );
+	}
+
+	/**
+	 * The canonical spelling of a value ON ITS WAY OUT TO A CLIENT.
+	 *
+	 * THE SAME PROJECTION, PLUS THE SERVER-PATH STRIP. This is what a before-state, a
+	 * `data.state`, a `machine.changes[].before`, an audit row or any message text is
+	 * built from, and spec §8 forbids a filesystem path in any of them without
+	 * qualification. Members are removed BY NAME at every depth and never by testing
+	 * the value, and `url` is not one of the names: a path-shaped string an operator
+	 * stored on purpose is content, and a URL is what the caller came for.
+	 *
+	 * @param mixed $value The value read out of the site, of any shape.
+	 * @param int   $depth How deep this value sits; 0 for the field's own value.
+	 *
+	 * @return mixed The canonical projection, without any server-path member.
+	 */
+	public function projectOutbound( mixed $value, int $depth = 0 ): mixed {
+		return $this->walk( $value, $depth, true );
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+
 	/**
 	 * The canonical spelling of one value being written.
 	 *
@@ -81,12 +124,17 @@ final class MetaboxValueCanonical {
 	 * the normalizer records: a sentinel is indistinguishable from a string a site
 	 * really stores, and this projection is what a digest is taken over.
 	 *
-	 * @param mixed $value The value the caller sent, of any shape.
-	 * @param int   $depth How deep this value sits; 0 for the field's own value.
+	 * THE DIRECTION IS CARRIED AND NEVER DECIDED HERE. One walk serves both public
+	 * projections so the canonical rules cannot drift apart between them; the only
+	 * thing the flag changes is whether a server-path member survives it.
+	 *
+	 * @param mixed $value               The value to project, of any shape.
+	 * @param int   $depth               How deep this value sits; 0 for the field's own value.
+	 * @param bool  $strips_server_paths Whether a server-path member is dropped.
 	 *
 	 * @return mixed The canonical projection.
 	 */
-	public function project( mixed $value, int $depth = 0 ): mixed {
+	private function walk( mixed $value, int $depth, bool $strips_server_paths ): mixed {
 		if ( is_bool( $value ) ) {
 			return $value ? 1 : 0;
 		}
@@ -106,11 +154,11 @@ final class MetaboxValueCanonical {
 		// array. `get_object_vars()` called from outside a class reads public
 		// properties only.
 		if ( is_object( $value ) ) {
-			return $this->members( get_object_vars( $value ), $depth );
+			return $this->members( get_object_vars( $value ), $depth, $strips_server_paths );
 		}
 
 		if ( is_array( $value ) ) {
-			return $this->members( $value, $depth );
+			return $this->members( $value, $depth, $strips_server_paths );
 		}
 
 		// A resource, or anything else PHP can hold that JSON cannot carry. Never
@@ -315,31 +363,32 @@ final class MetaboxValueCanonical {
 	 * The sort runs AFTER the members are projected, over the keys alone, so no value
 	 * takes part in the ordering.
 	 *
-	 * @param array<array-key, mixed> $value The array to project.
-	 * @param int                     $depth How deep it sits.
+	 * @param array<array-key, mixed> $value               The array to project.
+	 * @param int                     $depth               How deep it sits.
+	 * @param bool                    $strips_server_paths Whether a server-path member is dropped.
 	 *
 	 * @return mixed[] The projected members.
 	 */
-	private function members( array $value, int $depth ): array {
+	private function members( array $value, int $depth, bool $strips_server_paths ): array {
 		$projected = [];
 
 		foreach ( $value as $key => $member ) {
-			// A MEMBER NAMING A POSITION ON THE SERVER'S DISK IS NOT PROJECTED AT ALL, at
-			// this depth or any other. Spec §8 forbids a filesystem path in any envelope
-			// this plugin emits, without qualification, and this projection is emitted
-			// three times over: as the write's before-state, as the plan payload a
-			// preview returns, and as the read-back reported as `state`. The list of
-			// names is MetaboxSchemaFormat's, shared with the read side, because two
-			// spellings of the rule is how one channel strips what the other publishes.
+			// OUTBOUND ONLY. A member naming a position on the server's disk is not
+			// projected at all, at this depth or any other, when this value is on its way
+			// to a client: spec §8 forbids a filesystem path in any envelope this plugin
+			// emits, and the read side strips the same names through the same list, since
+			// two spellings of the rule is how one channel publishes what the other
+			// strips. Inbound the member survives, because the caller's own value is not
+			// something this module may quietly edit before storing it.
 			//
 			// STRIPPED BY NAME AND NEVER BY TESTING THE VALUE, and `url` is never one of
 			// the names: a path-shaped string an operator stored on purpose is content,
 			// and a URL is what the caller came for.
-			if ( MetaboxSchemaFormat::isServerPathMember( $key ) ) {
+			if ( $strips_server_paths && MetaboxSchemaFormat::isServerPathMember( $key ) ) {
 				continue;
 			}
 
-			$projected[ $key ] = $this->project( $member, $depth + 1 );
+			$projected[ $key ] = $this->walk( $member, $depth + 1, $strips_server_paths );
 		}
 
 		if ( $this->is_positional( $value ) ) {
