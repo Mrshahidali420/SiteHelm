@@ -170,7 +170,7 @@ final class Dispatcher {
 			throw new OperationException(
 				ErrorCode::UnsupportedVersion,
 				sprintf( "The plugin backing '%s' is running an unsupported version.", $operation_id ),
-				'Update the dependency to a supported version; see system-read integration health.'
+				'Update the dependency to a supported version; run system-integrations for the details.'
 			);
 		}
 
