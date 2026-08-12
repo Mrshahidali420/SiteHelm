@@ -219,18 +219,19 @@ final class MetaboxModule implements IntegrationModule {
 		// neither. Its collaborators are the same presence gate, api wrapper and index
 		// the reads share, so "which fields apply to this post" is one answer for the
 		// read path and the write path rather than two that can drift.
-		// ONE VALUE PROJECTION SHARED BY THE FORWARD PATH AND THE RECOVERY PATH. The
-		// forward path plans and verifies against it; the recovery path consults it only
-		// to ask whether a raw value could be recorded faithfully. Two objects holding
-		// that rule would eventually hold two versions of it, and the write would then
-		// be checked against a spelling its own rollback does not use.
+		// ONE VALUE PROJECTION SHARED BY THE INPUT, THE FORWARD PATH AND THE RECOVERY
+		// PATH. The input asks whether a caller's value would survive it; the forward
+		// path plans and verifies against it; the recovery path consults it only to ask
+		// whether a raw value could be recorded faithfully. Two objects holding that
+		// rule would eventually hold two versions of it, and the write would then be
+		// checked against a spelling its own rollback does not use.
 		$canonical = new MetaboxValueCanonical();
 
 		$registry->registerWrite(
 			MetaboxFieldUpdate::definition(),
 			new MetaboxFieldUpdate(
 				new MetaboxWriteTarget( $this->presence, $index ),
-				new MetaboxFieldUpdateInput(),
+				new MetaboxFieldUpdateInput( $canonical ),
 				$api,
 				$canonical,
 				new MetaboxWriteRecovery( $api, $canonical, new PayloadNormalizer() )

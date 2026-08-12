@@ -169,7 +169,10 @@ final class MetaboxWriteTarget {
 			if ( ! isset( $fields[ $id ] ) ) {
 				throw new OperationException(
 					ErrorCode::TargetNotFound,
-					sprintf( 'No Meta Box field with the id "%s" applies to this post.', $id ),
+					// THE READ'S WORDING, WORD FOR WORD (MetaboxFieldGet). One condition
+					// refused with one code deserves one sentence; two phrasings read to an
+					// operator as two different situations.
+					sprintf( 'No Meta Box field applying to this post has the id "%s".', $id ),
 					'Call metabox-field-list for this post to see the fields it carries, and name one of them by its id, which is its meta key.'
 				);
 			}

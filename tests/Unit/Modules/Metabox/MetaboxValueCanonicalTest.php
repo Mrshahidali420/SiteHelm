@@ -249,4 +249,77 @@ final class MetaboxValueCanonicalTest extends TestCase {
 			'A structure that came back as a scalar did not land as promised.'
 		);
 	}
+
+	/**
+	 * A ONE-ELEMENT ROW LIST AND ITS SINGLE ELEMENT ARE THE SAME STORED VALUE.
+	 *
+	 * The verification re-read asks core for every postmeta row under the key, so a
+	 * single-valued field that was promised `'A subtitle'` comes back as
+	 * `[ 'A subtitle' ]` — one row, not a list the operator asked for. Refusing that
+	 * would report a dropped write on every ordinary single-value field. The
+	 * tolerance is exactly one level of positional wrapper and is symmetric, because
+	 * either side can be the wrapped one.
+	 */
+	public function test_a_single_row_list_matches_the_value_it_holds(): void {
+		$this->assertTrue(
+			$this->canonical->matches( 'A subtitle', [ 'A subtitle' ] ),
+			'One row holding the promised value is that value.'
+		);
+
+		$this->assertTrue(
+			$this->canonical->matches( [ 5 ], '5' ),
+			'The wrapper may be on either side, and the storage still returns text.'
+		);
+
+		$this->assertFalse(
+			$this->canonical->matches( 9, [ 9, 10 ] ),
+			'Two rows are not the one value that was promised.'
+		);
+
+		// THE TOLERANCE MUST NOT WIDEN THE EMPTY-FORM RULE. `[ '' ]` unwraps to `''`,
+		// and a promised 0 that stored nothing is still a dropped write.
+		$this->assertFalse(
+			$this->canonical->matches( 0, [ '' ] ),
+			'A promised 0 stored as one empty row did not land.'
+		);
+
+		$this->assertFalse(
+			$this->canonical->matches( 'kept', [ 'a' => 'kept' ] ),
+			'A keyed member is not a row list and must not be unwrapped.'
+		);
+	}
+
+	/**
+	 * The projection drops a server path wherever it sits.
+	 *
+	 * Meta Box's formatted answer for an attachment field carries the filesystem
+	 * location of the upload; the plan and the digest are taken over this projection,
+	 * so the member is dropped by name at every depth. `url` is kept: it is the
+	 * public address the site already publishes and an operator needs to recognise
+	 * which attachment a plan refers to.
+	 */
+	public function test_the_projection_drops_a_server_path_member_and_keeps_the_public_url(): void {
+		$projected = $this->canonical->project(
+			[
+				[
+					'ID'   => 9,
+					'path' => '/var/www/html/wp-content/uploads/2026/08/file-9.jpg',
+					'url'  => 'https://example.com/wp-content/uploads/2026/08/file-9.jpg',
+					'dir'  => '/var/www/html/wp-content/uploads/2026/08',
+					'meta' => [ 'basedir' => '/var/www/html/wp-content/uploads' ],
+				],
+			]
+		);
+
+		$this->assertSame(
+			[
+				[
+					'ID'   => 9,
+					'meta' => [],
+					'url'  => 'https://example.com/wp-content/uploads/2026/08/file-9.jpg',
+				],
+			],
+			$projected
+		);
+	}
 }

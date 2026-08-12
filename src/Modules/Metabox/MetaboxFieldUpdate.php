@@ -430,7 +430,7 @@ final class MetaboxFieldUpdate implements WriteOperation {
 
 			$this->api->writeValue( $write['id'], $post, $write['value'] );
 
-			if ( ! $this->canonical->matches( $write['value'], $this->read( $write['id'], $post ) ) ) {
+			if ( ! $this->canonical->matches( $write['value'], $this->stored( $write['id'], $post ) ) ) {
 				throw new OperationException(
 					ErrorCode::VerificationFailed,
 					sprintf(
@@ -532,6 +532,33 @@ final class MetaboxFieldUpdate implements WriteOperation {
 	 */
 	private function read( string $id, int $post_id ): mixed {
 		return $this->canonical->project( $this->api->readValue( $id, $post_id ) );
+	}
+
+	/**
+	 * What the site now HOLDS for one field, canonically projected.
+	 *
+	 * THE EVIDENCE THE DROPPED-WRITE GUARD MEASURES AGAINST, AND read() IS NOT IT.
+	 * Meta Box's read accessor runs a field's read pipeline: an attachment field
+	 * answers an info array per file — a filename, a URL, a server path — built from
+	 * rows that hold nothing but the ids the write stored. Measuring a promise made
+	 * in ids against an answer given in info arrays refuses every write to such a
+	 * field as dropped, which is a refusal after the value has already landed.
+	 *
+	 * THE ROWS ARE A LIST AND THE PROMISE USUALLY IS NOT, which is what
+	 * MetaboxValueCanonical::matches()' single-row tolerance is for; the projection is
+	 * the same one the promise was spelled through, so the two sides still share one
+	 * spelling of every value inside the list.
+	 *
+	 * read() STAYS AS IT IS AND IS STILL RIGHT FOR THE BEFORE-STATE AND THE READ-BACK:
+	 * both are reported to the operator, who is owed the value the site presents.
+	 *
+	 * @param string $id      The field id, which is the meta key.
+	 * @param int    $post_id The post the value is stored against.
+	 *
+	 * @return mixed The canonical projection of the stored rows.
+	 */
+	private function stored( string $id, int $post_id ): mixed {
+		return $this->canonical->project( $this->api->readRawRows( $id, $post_id ) );
 	}
 
 	/**

@@ -147,6 +147,29 @@ final class MetaboxApi {
 	private const STORED_ROW_FUNCTION = 'metadata_exists';
 
 	/**
+	 * The WordPress function that answers every stored row under one meta key.
+	 *
+	 * CORE WordPress AND NOT META BOX, BECAUSE META BOX HAS NO SUCH READER. Its own
+	 * accessor answers a FORMATTED value for several field types — an attachment
+	 * field answers an info array per file, a post field a post object — while the
+	 * rows underneath hold the bare ids. A snapshot recorded from the formatted
+	 * answer is a snapshot a restore cannot write back, and a verification measured
+	 * against it compares two different vocabularies. This is the reader that answers
+	 * what the site holds.
+	 */
+	private const RAW_READ_FUNCTION = 'get_post_meta';
+
+	/**
+	 * The WordPress function that adds one stored row under a meta key.
+	 *
+	 * PAIRED WITH DELETE_FUNCTION AND NOT WITH `update_post_meta()`. A field may hold
+	 * many rows under one key — that is how a multi-value field is stored — and
+	 * `update_post_meta()` collapses them to one. Restoring N recorded rows means
+	 * removing the key and adding each row back in the order it was recorded.
+	 */
+	private const RAW_WRITE_FUNCTION = 'add_post_meta';
+
+	/**
 	 * The one object type this module addresses.
 	 *
 	 * V1 covers post-object groups only (spec §3). It is passed to Meta Box
@@ -331,6 +354,88 @@ final class MetaboxApi {
 		}
 
 		delete_post_meta( $post_id, $field_id );
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- The module vocabulary is camelCase across every class.
+	/**
+	 * Every stored row under one field's key, in order.
+	 *
+	 * THIS IS WHAT THE SITE HOLDS, AND readValue() IS NOT. Meta Box's own accessor
+	 * runs a field's read pipeline: for `image`, `image_advanced`, `file`, `post`,
+	 * `user` and `taxonomy` fields it answers a formatted structure — an attachment
+	 * info array carrying a filename, a URL and the file's absolute position on the
+	 * server's disk — derived from rows that hold nothing but ids. The two answers
+	 * are for two different questions, and the write path needs this one twice:
+	 *
+	 *   - A ROLLBACK SNAPSHOT records what a restore will write back. Recording the
+	 *     formatted answer records info arrays into a field that holds ids, and the
+	 *     restore then destroys the attachments while reporting success.
+	 *   - A VERIFICATION compares what was promised against what was stored. The
+	 *     promise is in ids because the write took ids, so the evidence must be too.
+	 *
+	 * readValue() IS UNCHANGED AND IS STILL RIGHT FOR THE READS. A field-get exists
+	 * to show an operator the value the site presents, formatting included.
+	 *
+	 * ALWAYS AN ARRAY, INCLUDING FOR A KEY WITH NO ROWS, which answers `[]`. That is
+	 * `get_post_meta( …, false )`'s own answer and it is the one shape that can tell
+	 * a field holding one row from a field holding five — the distinction the single
+	 * form collapses. An unreachable site answers `[]` too, which is safe for the
+	 * same reason hasStoredRow()'s false is: both callers have already refused
+	 * `IntegrationUnavailable`, and the recording caller consults hasStoredRow()
+	 * before it consults this.
+	 *
+	 * @param string $field_id The field's `id`, which is the meta key.
+	 * @param int    $post_id  The post the rows are stored against.
+	 *
+	 * @return mixed[] The stored rows, in order.
+	 */
+	public function readRawRows( string $field_id, int $post_id ): array {
+		if ( ! $this->presence->isLoaded() || ! function_exists( self::RAW_READ_FUNCTION ) ) {
+			return [];
+		}
+
+		$rows = get_post_meta( $post_id, $field_id, false );
+
+		return is_array( $rows ) ? $rows : [];
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- The module vocabulary is camelCase across every class.
+	/**
+	 * Replaces every stored row under one field's key with the rows given.
+	 *
+	 * THE RESTORE HALF OF readRawRows(), AND IT MUST BE ITS EXACT INVERSE. What was
+	 * recorded is a row list, so what is written back is a row list: the key is
+	 * removed and each recorded row is added under it, in the recorded order. Writing
+	 * the list through the formatted write accessor instead would store one
+	 * serialized row where the site held N, which reads back as one attachment.
+	 *
+	 * AN EMPTY LIST IS THE DELETE ALONE and not a delete followed by an empty row. A
+	 * field recorded as holding no rows is put back by having no rows, and adding an
+	 * empty one would leave a row the operator never had — which every later read
+	 * reports as a set field.
+	 *
+	 * RETURNS void FOR THE REASON writeValue() DOES. `add_post_meta()` answers a meta
+	 * id or false, and false is also what a row that was already there answers; there
+	 * is no return value here that would mean "the restore landed".
+	 *
+	 * @param string  $field_id The field's `id`, which is the meta key.
+	 * @param int     $post_id  The post to store the rows against.
+	 * @param mixed[] $rows     The rows to store, in order.
+	 */
+	public function writeRawRows( string $field_id, int $post_id, array $rows ): void {
+		if ( ! $this->presence->isLoaded()
+			|| ! function_exists( self::DELETE_FUNCTION )
+			|| ! function_exists( self::RAW_WRITE_FUNCTION ) ) {
+			return;
+		}
+
+		delete_post_meta( $post_id, $field_id );
+
+		foreach ( $rows as $row ) {
+			add_post_meta( $post_id, $field_id, $row );
+		}
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 

@@ -15,9 +15,15 @@ namespace SiteHelm\Modules\Metabox;
  * THE MIRROR IMAGE OF MetaboxValueNormalizer, AND DELIBERATELY NOT THE SAME
  * FUNCTION. The normalizer takes what Meta Box hands BACK and shapes it for a
  * response, redacting and truncating as a report may; this takes what a client
- * sends IN and turns it into the one spelling a digest can be taken over. Merging
- * them would drag the read side's redaction into a write path, and a value that
- * was redacted on its way into a payload is a value the operator never approved.
+ * sends IN and turns it into the one spelling a digest can be taken over.
+ *
+ * THE TWO ARE SEPARATE, AND THE SERVER-PATH STRIP IS NOT ONE OF THE DIFFERENCES. A
+ * value projected here is emitted three times over — as the write's before-state, as
+ * the plan payload a preview returns, and as the read-back reported as `state` — and
+ * spec §8 forbids a filesystem path in ANY envelope this plugin emits, without
+ * qualification. The member names are MetaboxSchemaFormat's, asked through
+ * MetaboxSchemaFormat::isServerPathMember() by this class and by the normalizer
+ * alike, because a rule spelled in one projection is a rule the other leaks through.
  *
  * IT IS PURE, AND THAT IS THE WHOLE POINT. No clock, no globals, no Meta Box call,
  * no WordPress function. `PlanAdmission::assertPayloadMatches()` digests this
@@ -175,6 +181,14 @@ final class MetaboxValueCanonical {
 	 *     storage itself performs, and only after both sides have been projected — so
 	 *     a boolean is already 1 or 0 and never the empty string PHP would cast false
 	 *     to.
+	 *   - A ONE-ELEMENT ROW LIST AND ITS SINGLE ELEMENT ARE ONE VALUE. The evidence
+	 *     this guard measures against is the postmeta ROWS under the field's key, and
+	 *     a field holding one row answers a list of one where the plan promised the
+	 *     value itself. Without this, every write of an ordinary single-value field
+	 *     would be refused as dropped. It unwraps ONE element and only from a
+	 *     positional list, so a two-row answer to a one-value promise is still a
+	 *     difference, and it is the only structural tolerance here: a member on one
+	 *     side and not the other remains a refusal.
 	 *
 	 * Structures are compared member by member over BOTH canonical projections, so
 	 * key order plays no part; a member on one side and not the other is a
@@ -187,6 +201,14 @@ final class MetaboxValueCanonical {
 	 */
 	public function matches( mixed $promised, mixed $stored ): bool {
 		if ( $this->is_empty_form( $promised ) && $this->is_empty_form( $stored ) ) {
+			return true;
+		}
+
+		// THE ROW-LIST TOLERANCE, TRIED ONLY AFTER THE DIRECT READING FAILS TO APPLY.
+		// It runs before the shape test rather than after it because the pair it exists
+		// for — a promised scalar against a stored list of one row — is exactly the pair
+		// that test rejects.
+		if ( $this->unwraps_to( $promised, $stored ) || $this->unwraps_to( $stored, $promised ) ) {
 			return true;
 		}
 
@@ -213,6 +235,32 @@ final class MetaboxValueCanonical {
 		}
 
 		return true;
+	}
+
+	/**
+	 * Whether one side is a single-row list holding the other side.
+	 *
+	 * ONE ELEMENT, FROM A POSITIONAL LIST, AND NEVER MORE. A field holding one
+	 * postmeta row answers a list of one where the plan promised the value itself,
+	 * and that pair is the same value seen through two readers. Two rows against one
+	 * promised value is not: it is a field that holds something the plan did not
+	 * promise, which is what this guard exists to catch.
+	 *
+	 * A MAP IS NEVER UNWRAPPED. `[ 'heading' => 'x' ]` is a row with one member, not a
+	 * list of one row, and unwrapping it would let a promised `'x'` be satisfied by a
+	 * structure the site stored instead of it.
+	 *
+	 * @param mixed $outer The side that may be the single-row list.
+	 * @param mixed $inner The side it would hold.
+	 *
+	 * @return bool True when the outer is a list of one holding the inner.
+	 */
+	private function unwraps_to( mixed $outer, mixed $inner ): bool {
+		if ( ! is_array( $outer ) || 1 !== count( $outer ) || ! $this->is_positional( $outer ) ) {
+			return false;
+		}
+
+		return $this->matches( reset( $outer ), $inner );
 	}
 
 	/**
@@ -276,6 +324,21 @@ final class MetaboxValueCanonical {
 		$projected = [];
 
 		foreach ( $value as $key => $member ) {
+			// A MEMBER NAMING A POSITION ON THE SERVER'S DISK IS NOT PROJECTED AT ALL, at
+			// this depth or any other. Spec §8 forbids a filesystem path in any envelope
+			// this plugin emits, without qualification, and this projection is emitted
+			// three times over: as the write's before-state, as the plan payload a
+			// preview returns, and as the read-back reported as `state`. The list of
+			// names is MetaboxSchemaFormat's, shared with the read side, because two
+			// spellings of the rule is how one channel strips what the other publishes.
+			//
+			// STRIPPED BY NAME AND NEVER BY TESTING THE VALUE, and `url` is never one of
+			// the names: a path-shaped string an operator stored on purpose is content,
+			// and a URL is what the caller came for.
+			if ( MetaboxSchemaFormat::isServerPathMember( $key ) ) {
+				continue;
+			}
+
 			$projected[ $key ] = $this->project( $member, $depth + 1 );
 		}
 

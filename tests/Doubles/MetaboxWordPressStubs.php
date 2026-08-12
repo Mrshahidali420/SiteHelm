@@ -184,15 +184,39 @@ trait MetaboxWordPressStubs {
 	 * hasStoredRow() from a value comparison, and the two maps have to be settable
 	 * apart for that state to be expressible at all.
 	 *
+	 * `rwmb_meta()` IS NOT A VERBATIM ECHO OF `rwmb_set_meta()`, AND A DOUBLE THAT
+	 * MADE IT ONE WOULD ASSERT THE OPPOSITE OF THE RULE THE WRITE PATH TURNS ON. For
+	 * `image`, `image_advanced`, `file`, `post`, `user` and `taxonomy` fields Meta
+	 * Box's public read accessor answers a FORMATTED value — an info array per
+	 * attachment, a term or post structure — while the write accessor takes, and the
+	 * postmeta table holds, the bare ids. `$formatting_fields` names the field ids
+	 * that behave that way on this site, and for those three questions get three
+	 * different answers, which is the asymmetry a real site presents:
+	 *
+	 *   - `rwmb_set_meta()` stores the ids it was handed, one postmeta row each.
+	 *   - `get_post_meta()` answers those rows, in order, exactly as stored.
+	 *   - `rwmb_meta()` answers an info array per row, keyed by id, carrying the
+	 *     `path` member a real attachment info array carries.
+	 *
+	 * For every other field the three agree, which is why the plain fixture fields
+	 * were able to pass a suite built on the echo.
+	 *
+	 * `$values_by_field_id` HOLDS THE RAW ROWS FOR A FORMATTING FIELD and the single
+	 * stored value for every other field, because the raw row is the one of the two
+	 * a site actually keeps; the formatted answer is derived from it here the way
+	 * Meta Box derives it there.
+	 *
 	 * @param mixed                $registry            What rwmb_get_registry() answers.
 	 * @param string|null          $version             The Meta Box version this site reports; null defines no constant.
-	 * @param array<string, mixed> $values_by_field_id  What rwmb_meta() answers, keyed by field `id`.
+	 * @param array<string, mixed> $values_by_field_id  The stored value keyed by field `id`; the raw row list for a formatting field.
 	 * @param bool                 $with_value_function Whether rwmb_meta() exists on this site.
 	 * @param bool                 $with_write_function Whether rwmb_set_meta() exists on this site.
 	 * @param string[]             $stored_rows         The postmeta rows this site holds, each `"$post_id:$field_id"`.
 	 * @param bool                 $with_row_function   Whether metadata_exists() exists in this process.
 	 * @param bool                 $with_delete_function Whether delete_post_meta() exists in this process.
 	 * @param string[]             $dropped_writes      Field ids whose write Meta Box resolves to nothing and stores nowhere.
+	 * @param string[]             $formatting_fields   Field ids whose rwmb_meta() answer is formatted rather than the stored row.
+	 * @param bool                 $with_raw_functions  Whether get_post_meta() and add_post_meta() exist in this process.
 	 */
 	private function installMetabox(
 		mixed $registry,
@@ -203,14 +227,27 @@ trait MetaboxWordPressStubs {
 		array $stored_rows = [],
 		bool $with_row_function = true,
 		bool $with_delete_function = true,
-		array $dropped_writes = []
+		array $dropped_writes = [],
+		array $formatting_fields = [],
+		bool $with_raw_functions = true
 	): void {
 		// THE TWO MUTABLE SETS THE CLOSURES SHARE. They are locals captured by
 		// reference rather than test properties so that a suite installing this double
 		// inherits the behaviour without being made to declare two more properties it
 		// never reads.
-		$values = $values_by_field_id;
-		$rows   = $stored_rows;
+		//
+		// `$raw` IS THE POSTMETA TABLE'S VALUES, ONE ROW LIST PER FIELD, because that
+		// is the shape `get_post_meta( …, false )` answers in and the shape a
+		// multi-value field really occupies. A plain field is one row holding whatever
+		// was stored, serialization included; a formatting field is N rows of ids.
+		$raw  = [];
+		$rows = $stored_rows;
+
+		foreach ( $values_by_field_id as $field_id => $stored ) {
+			$raw[ $field_id ] = in_array( $field_id, $formatting_fields, true )
+				? array_values( (array) $stored )
+				: [ $stored ];
+		}
 
 		if ( null !== $version && ! defined( MetaboxPresence::VERSION_CONSTANT ) ) {
 			define( MetaboxPresence::VERSION_CONSTANT, $version );
@@ -235,17 +272,25 @@ trait MetaboxWordPressStubs {
 			// had defaulted to — a legitimate value from the wrong place, which no
 			// assertion on the returned value can catch.
 			Functions\when( 'rwmb_meta' )->alias(
-				function ( mixed $key = null, mixed $args = [], mixed $object_id = null ) use ( &$values ): mixed {
+				function ( mixed $key = null, mixed $args = [], mixed $object_id = null ) use ( &$raw, $formatting_fields ): mixed {
 					$id = is_scalar( $key ) ? (string) $key : '';
 
 					$this->metaboxCalls[] = [ 'value', [ $id, $args, $object_id ] ];
+
+					// THE FORMATTED ANSWER, WHICH IS NOT WHAT WAS STORED. See the
+					// docblock: this is Meta Box's own read pipeline, and the write path
+					// that consumed it inherited attachment info arrays where the site
+					// holds ids.
+					if ( in_array( $id, $formatting_fields, true ) ) {
+						return self::metaboxFormatted( $raw[ $id ] ?? [] );
+					}
 
 					// META BOX'S OWN EMPTY ANSWER, AND THE WHOLE REASON hasStoredRow()
 					// EXISTS. A field with no stored row answers `''` here, which is
 					// indistinguishable from a field storing an empty string — so a
 					// wrapper that inferred presence from this value would be wrong on
 					// every field an operator deliberately emptied.
-					return $values[ $id ] ?? '';
+					return $raw[ $id ][0] ?? '';
 				}
 			);
 		}
@@ -258,7 +303,7 @@ trait MetaboxWordPressStubs {
 			// bool return look correct in every test while being wrong on every real
 			// site whose write was dropped.
 			Functions\when( 'rwmb_set_meta' )->alias(
-				function ( mixed $object_id = null, mixed $key = null, mixed $value = null, mixed $args = [] ) use ( &$values, &$rows, $dropped_writes ): void {
+				function ( mixed $object_id = null, mixed $key = null, mixed $value = null, mixed $args = [] ) use ( &$raw, &$rows, $dropped_writes, $formatting_fields ): void {
 					$id = is_scalar( $key ) ? (string) $key : '';
 
 					$this->metaboxCalls[] = [ 'write', [ $object_id, $id, $value, $args ] ];
@@ -267,7 +312,12 @@ trait MetaboxWordPressStubs {
 						return;
 					}
 
-					$values[ $id ] = $value;
+					// A FORMATTING FIELD STORES ONE ROW PER ID AND NOT ONE SERIALIZED
+					// ROW. That is what makes the read-back of a multi-value field N
+					// rows, and it is the shape a snapshot has to record.
+					$raw[ $id ] = in_array( $id, $formatting_fields, true )
+						? array_values( (array) $value )
+						: [ $value ];
 
 					$row = sprintf( '%s:%s', is_scalar( $object_id ) ? $object_id : '', $id );
 
@@ -302,7 +352,7 @@ trait MetaboxWordPressStubs {
 		// would be faithful everywhere except the restore-to-absent path.
 		if ( $with_delete_function ) {
 			Functions\when( 'delete_post_meta' )->alias(
-				function ( mixed $object_id = null, mixed $meta_key = null, mixed ...$args ) use ( &$values, &$rows ): bool {
+				function ( mixed $object_id = null, mixed $meta_key = null, mixed ...$args ) use ( &$raw, &$rows ): bool {
 					$id = is_scalar( $meta_key ) ? (string) $meta_key : '';
 
 					$this->metaboxCalls[] = [ 'delete', array_merge( [ $object_id, $id ], $args ) ];
@@ -310,12 +360,87 @@ trait MetaboxWordPressStubs {
 					$row   = sprintf( '%s:%s', is_scalar( $object_id ) ? $object_id : '', $id );
 					$held  = in_array( $row, $rows, true );
 					$rows  = array_values( array_filter( $rows, static fn ( string $entry ): bool => $entry !== $row ) );
-					unset( $values[ $id ] );
+					unset( $raw[ $id ] );
 
 					return $held;
 				}
 			);
 		}
+
+		// THE RAW ROW PAIR, WHICH IS THE ONLY WAY TO SEE WHAT THE SITE ACTUALLY HOLDS.
+		// `get_post_meta( …, false )` answers EVERY row under the key, in order, and a
+		// field with no rows answers `[]` rather than `''` — the one reader on this
+		// site that can tell a one-row field from a five-row one. They are gated
+		// together because the write path uses them as a pair: a restore deletes the
+		// key and adds the recorded rows back.
+		if ( $with_raw_functions ) {
+			Functions\when( 'get_post_meta' )->alias(
+				function ( mixed $object_id = null, mixed $meta_key = null, mixed $single = false ) use ( &$raw, &$rows ): mixed {
+					$id = is_scalar( $meta_key ) ? (string) $meta_key : '';
+
+					$this->metaboxCalls[] = [ 'rawRead', [ $object_id, $id, $single ] ];
+
+					$row = sprintf( '%s:%s', is_scalar( $object_id ) ? $object_id : '', $id );
+
+					if ( ! in_array( $row, $rows, true ) ) {
+						return true === $single ? '' : [];
+					}
+
+					$held = $raw[ $id ] ?? [];
+
+					return true === $single ? ( $held[0] ?? '' ) : $held;
+				}
+			);
+
+			Functions\when( 'add_post_meta' )->alias(
+				function ( mixed $object_id = null, mixed $meta_key = null, mixed $meta_value = null, mixed $unique = false ) use ( &$raw, &$rows ): mixed {
+					$id = is_scalar( $meta_key ) ? (string) $meta_key : '';
+
+					$this->metaboxCalls[] = [ 'rawWrite', [ $object_id, $id, $meta_value, $unique ] ];
+
+					$raw[ $id ][] = $meta_value;
+
+					$row = sprintf( '%s:%s', is_scalar( $object_id ) ? $object_id : '', $id );
+
+					if ( ! in_array( $row, $rows, true ) ) {
+						$rows[] = $row;
+					}
+
+					return count( $raw[ $id ] );
+				}
+			);
+		}
+	}
+
+	/**
+	 * The formatted answer Meta Box derives from a formatting field's stored rows.
+	 *
+	 * KEYED BY ID AND CARRYING A `path`, because that is the shape `image_advanced`,
+	 * `image` and `file` answer with: an info array per attachment, holding the
+	 * file's absolute position on the server's disk beside its URL. It is the value
+	 * the read operation is built to project and redact, and the value no write path
+	 * may record, write back or compare against.
+	 *
+	 * @param mixed[] $rows The stored rows, each an attachment id.
+	 *
+	 * @return array<int|string, mixed> The formatted answer.
+	 */
+	private static function metaboxFormatted( array $rows ): array {
+		$formatted = [];
+
+		foreach ( $rows as $row ) {
+			$key = is_scalar( $row ) ? $row : 0;
+
+			$formatted[ $key ] = [
+				'ID'        => $row,
+				'name'      => sprintf( 'file-%s.jpg', is_scalar( $row ) ? $row : '' ),
+				'path'      => sprintf( '/var/www/html/wp-content/uploads/2026/08/file-%s.jpg', is_scalar( $row ) ? $row : '' ),
+				'url'       => sprintf( 'https://example.com/wp-content/uploads/2026/08/file-%s.jpg', is_scalar( $row ) ? $row : '' ),
+				'mime_type' => 'image/jpeg',
+			];
+		}
+
+		return $formatted;
 	}
 
 	/**
@@ -545,7 +670,7 @@ trait MetaboxWordPressStubs {
 	 * Recording the count alone proves a call did not happen; recording the argument
 	 * proves the call that did happen asked the right question.
 	 *
-	 * @param string $kind One of 'registry', 'value', 'write', 'row' or 'delete'.
+	 * @param string $kind One of 'registry', 'value', 'write', 'row', 'delete', 'rawRead' or 'rawWrite'.
 	 *
 	 * @return mixed[] The recorded argument of each call of that kind.
 	 */

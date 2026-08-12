@@ -12,6 +12,8 @@ namespace SiteHelm\Tests\Unit\Modules\Metabox;
 use SiteHelm\Contracts\ErrorCode;
 use SiteHelm\Contracts\OperationException;
 use SiteHelm\Modules\Metabox\MetaboxFieldUpdateInput;
+use SiteHelm\Modules\Metabox\MetaboxSchemaFormat;
+use SiteHelm\Modules\Metabox\MetaboxValueCanonical;
 use SiteHelm\Tests\TestCase;
 
 /**
@@ -41,7 +43,7 @@ final class MetaboxFieldUpdateInputTest extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();
 
-		$this->input = new MetaboxFieldUpdateInput();
+		$this->input = new MetaboxFieldUpdateInput( new MetaboxValueCanonical() );
 	}
 
 	// ------------------------------------------------------------ what parses
@@ -275,6 +277,78 @@ final class MetaboxFieldUpdateInputTest extends TestCase {
 			$refusal->getMessage() . (string) $refusal->remediation,
 			'The unbounded identifier must not be copied into the refusal it caused.'
 		);
+	}
+
+	/**
+	 * A VALUE NESTED PAST THE CAP IS REFUSED AND NEVER QUIETLY FLATTENED. Everything
+	 * past MetaboxSchemaFormat::MAX_DEPTH becomes null in the canonical projection,
+	 * and that projection is what the plan promises, what the digest is taken over and
+	 * what is written — so accepting it means storing a truncated value and reporting
+	 * success. InvalidInput, because the depth of the value the caller typed is a fact
+	 * about the request and not about the site, which is what lets it be asked here.
+	 */
+	public function test_a_value_nested_past_the_depth_cap_is_refused_and_never_quoted(): void {
+		$value = [ 'leaf' => 'a-secret-looking-leaf' ];
+
+		for ( $level = 0; $level <= MetaboxSchemaFormat::MAX_DEPTH; $level++ ) {
+			$value = [ 'nested' => $value ];
+		}
+
+		$refusal = $this->refusalFrom(
+			fn() => $this->input->parse(
+				[
+					'fields' => [
+						[
+							'field' => 'deep',
+							'value' => $value,
+						],
+					],
+				]
+			),
+			'A value the projection would cut at the cap must be refused rather than written truncated.'
+		);
+
+		$this->assertSame( ErrorCode::InvalidInput, $refusal->errorCode, 'The request is what cannot be used.' );
+
+		$this->assertStringContainsString( '"deep"', $refusal->getMessage(), 'The field the caller must fix is named.' );
+
+		$this->assertStringContainsString(
+			(string) MetaboxSchemaFormat::MAX_DEPTH,
+			$refusal->getMessage(),
+			'The refusal quotes the module\'s one depth cap, not a second spelling of it.'
+		);
+
+		$this->assertStringNotContainsString(
+			'a-secret-looking-leaf',
+			$refusal->getMessage() . (string) $refusal->remediation,
+			'The field is NAMED and the value is not: a refusal is text a client may display and a gateway may log.'
+		);
+	}
+
+	/**
+	 * THE CAP BOUNDS A WALK AND NOT A LEAF. A value sitting exactly at the cap is
+	 * projected whole, so refusing it here would refuse writes this module performs
+	 * correctly.
+	 */
+	public function test_a_value_nested_exactly_to_the_depth_cap_is_accepted(): void {
+		$value = 'a leaf';
+
+		for ( $level = 0; $level < MetaboxSchemaFormat::MAX_DEPTH; $level++ ) {
+			$value = [ 'nested' => $value ];
+		}
+
+		$parsed = $this->input->parse(
+			[
+				'fields' => [
+					[
+						'field' => 'deep',
+						'value' => $value,
+					],
+				],
+			]
+		);
+
+		$this->assertSame( $value, $parsed[0]['value'], 'A value the projection keeps whole is passed through untouched.' );
 	}
 
 	// ------------------------------------------------------------ the schema
