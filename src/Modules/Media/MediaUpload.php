@@ -43,20 +43,19 @@ use SiteHelm\Contracts\SnapshotPolicy;
  *    then accept ANY upload against ANY upload plan. The state fingerprint would
  *    not catch it either: a create-shaped target has no fields and a constant
  *    key. So the payload carries `contentSha256`, the fingerprint is real, and
- *    it binds the exact bytes.
+ *    it binds the exact bytes. MediaAssetPlan builds it.
  * 3. THE BYTES RIDE ON A PRIVATE PROPERTY between planChange() and applyChange(),
  *    which is safe because the engine re-runs planChange() at apply immediately
  *    before applyChange(), and is VERIFIED rather than assumed: applyChange()
  *    re-hashes what it holds and refuses if it disagrees with the plan.
- * 4. THE TEMP FILE IS REMOVED ON EVERY PATH, via try/finally. A failed sideload
- *    leaves no bytes behind.
+ * 4. THE TEMP FILE IS REMOVED ON EVERY PATH, by MediaSideload's try/finally. A
+ *    failed sideload leaves no bytes behind.
  *
  * NO SUPERGLOBAL IS READ. `$_FILES` is never consulted; the payload arrives as
  * base64 through the ordinary argument channel and is validated as such.
  *
- * NOTHING HERE FETCHES A REMOTE URL. REQ-0052, media import from a URL, is
- * deliberately absent: it is a server-side request forgery surface and is
- * blocked pending an independent review.
+ * NOTHING HERE FETCHES A REMOTE URL. Remote fetching lives in REQ-0052
+ * `media-import`, behind MediaUrlGuard; this operation still touches no network.
  *
  * WHAT IT PROMISES: `mimeType`, `title`, `alt`, `caption`, `description`.
  *
@@ -84,21 +83,6 @@ use SiteHelm\Contracts\SnapshotPolicy;
 final class MediaUpload implements WriteOperation {
 
 	/**
-	 * The presentation order of the promised fields.
-	 *
-	 * Local to this operation rather than on MediaFields, because it is the
-	 * order of what an UPLOAD promises, which is a subset of the projection and
-	 * not the projection's own order.
-	 */
-	private const FIELD_ORDER = [ 'mimeType', 'title', 'alt', 'caption', 'description' ];
-
-	/**
-	 * The optional text fields a caller may name, mapped to the projection keys
-	 * they are promised and verified under.
-	 */
-	private const TEXT_FIELDS = [ 'title', 'alt', 'caption', 'description' ];
-
-	/**
 	 * The validated bytes of the payload planChange() last inspected.
 	 *
 	 * Deliberately NOT readonly and deliberately NOT in the planned payload; see
@@ -109,6 +93,20 @@ final class MediaUpload implements WriteOperation {
 	 * @var string|null
 	 */
 	private ?string $pending_bytes = null;
+
+	/**
+	 * Builds the planned payload this operation and media-import both promise.
+	 *
+	 * @var MediaAssetPlan
+	 */
+	private readonly MediaAssetPlan $planner;
+
+	/**
+	 * Writes the bytes and creates the attachment.
+	 *
+	 * @var MediaSideload
+	 */
+	private readonly MediaSideload $sideload;
 
 	/**
 	 * The operation's registered definition.
@@ -190,15 +188,27 @@ final class MediaUpload implements WriteOperation {
 	/**
 	 * Constructs the operation.
 	 *
-	 * @param MediaFields    $fields  The attachment projection.
-	 * @param MediaTarget    $targets Shared target resolution.
-	 * @param MediaMimeGuard $guard   Upload byte validation.
+	 * The two shared collaborators are optional and default to their own plain
+	 * construction. Both are stateless value-shaped services with no
+	 * alternative implementation, so a caller that does not care gets the only
+	 * correct pair, and MediaModule still injects them explicitly so the wiring
+	 * stays visible in one place.
+	 *
+	 * @param MediaFields         $fields   The attachment projection.
+	 * @param MediaTarget         $targets  Shared target resolution.
+	 * @param MediaMimeGuard      $guard    Upload byte validation.
+	 * @param MediaAssetPlan|null $planner  Shared payload construction.
+	 * @param MediaSideload|null  $sideload Shared attachment creation.
 	 */
 	public function __construct(
 		private readonly MediaFields $fields,
 		private readonly MediaTarget $targets,
 		private readonly MediaMimeGuard $guard,
+		?MediaAssetPlan $planner = null,
+		?MediaSideload $sideload = null,
 	) {
+		$this->planner  = $planner ?? new MediaAssetPlan();
+		$this->sideload = $sideload ?? new MediaSideload( $fields );
 	}
 
 	/**
@@ -240,26 +250,7 @@ final class MediaUpload implements WriteOperation {
 
 		$this->pending_bytes = $inspected['bytes'];
 
-		$promised = [ 'mimeType' => $inspected['mimeType'] ];
-		foreach ( self::TEXT_FIELDS as $field ) {
-			if ( array_key_exists( $field, $input ) ) {
-				$promised[ $field ] = $this->sanitize_field( $field, (string) $input[ $field ] );
-			}
-		}
-
-		// The bytes are represented by their hash, never by themselves. See
-		// point 2 in the class docblock: raw bytes here would collapse every
-		// upload's payload fingerprint to the same value.
-		$payload = $promised + [
-			'contentSha256' => hash( 'sha256', $inspected['bytes'] ),
-			'byteLength'    => strlen( $inspected['bytes'] ),
-			'filename'      => $inspected['filename'],
-			'extension'     => $inspected['extension'],
-			'parent'        => (int) ( $input['parent'] ?? 0 ),
-		];
-		ksort( $payload, SORT_STRING );
-
-		return new PlannedChange( $payload, $promised, self::FIELD_ORDER );
+		return $this->planner->plan( $inspected, $input );
 	}
 
 	/**
@@ -279,19 +270,14 @@ final class MediaUpload implements WriteOperation {
 	}
 
 	// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Messages are literals written for end users.
-	// phpcs:disable WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- wp_handle_sideload() requires a real temporary file, which WP_Filesystem cannot produce for it.
-	// phpcs:disable WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Failure detail goes to the server log precisely so it never reaches the envelope.
-	// phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase -- $context->correlationId is the OperationContext contract's own property name.
 	/**
-	 * Writes the validated bytes and creates the attachment.
+	 * Hands the validated bytes to MediaSideload, having first re-checked them.
 	 *
-	 * The temp file is removed in a `finally` block, so a sideload that fails —
-	 * or a core function that throws — leaves nothing on disk. That is pinned by
-	 * test_a_failed_sideload_leaves_no_bytes_behind.
-	 *
-	 * Every failure reports execution_failed with a message that names nothing:
-	 * no path, no directory, no core error string. The detail goes to error_log,
-	 * correlated by the request's correlation id.
+	 * The re-check belongs here rather than in MediaSideload: it is this
+	 * operation asserting that the bytes IT holds are the bytes ITS OWN plan
+	 * described. MediaSideload removes the temp file on every path, so a
+	 * sideload that fails — or a core function that throws — leaves nothing on
+	 * disk. That is pinned by test_a_failed_sideload_leaves_no_bytes_behind.
 	 *
 	 * @param TargetState      $current The pending state.
 	 * @param PlannedChange    $planned The promised change.
@@ -319,117 +305,12 @@ final class MediaUpload implements WriteOperation {
 			);
 		}
 
-		$this->load_admin_upload_apis();
-
-		$temp = wp_tempnam( (string) $planned->payload['filename'] );
-		if ( ! is_string( $temp ) || '' === $temp ) {
-			$this->pending_bytes = null;
-
-			throw new OperationException(
-				ErrorCode::ExecutionFailed,
-				'This site could not prepare temporary storage for the upload.',
-				'Ask a site administrator to check the site\'s temporary directory, then request a fresh preview.',
-				[ 'plan approved' ]
-			);
-		}
-
 		try {
-			// One comparison, not two. file_put_contents() returns int|false and
-			// strlen() returns int, so `false !== strlen( $bytes )` is always
-			// true: a separate `false === $written` clause would short-circuit
-			// this one and could never change the outcome. Testing the byte count
-			// covers the outright failure and the partial write together.
-			$written = file_put_contents( $temp, $bytes );
-			if ( strlen( $bytes ) !== $written ) {
-				throw new OperationException(
-					ErrorCode::ExecutionFailed,
-					'This site could not write the uploaded content to temporary storage.',
-					'Ask a site administrator to check the site\'s available disk space, then request a fresh preview.',
-					[ 'plan approved' ]
-				);
-			}
-
-			$sideload = wp_handle_sideload(
-				[
-					'name'     => (string) $planned->payload['filename'],
-					'type'     => (string) $planned->payload['mimeType'],
-					'tmp_name' => $temp,
-					'error'    => 0,
-					'size'     => (int) $planned->payload['byteLength'],
-				],
-				[ 'test_form' => false ]
-			);
-
-			if ( ! is_array( $sideload ) || isset( $sideload['error'] ) || ! isset( $sideload['file'] ) ) {
-				error_log(
-					sprintf(
-						'SiteHelm media-upload sideload failed [%s]: %s',
-						$context->correlationId,
-						is_array( $sideload ) ? (string) ( $sideload['error'] ?? 'no file returned' ) : 'no result'
-					)
-				);
-
-				throw new OperationException(
-					ErrorCode::ExecutionFailed,
-					'WordPress refused to store the uploaded content.',
-					'Ask a site administrator to check the media library settings, then request a fresh preview.',
-					[ 'plan approved' ]
-				);
-			}
-
-			$attachment_id = wp_insert_attachment(
-				wp_slash(
-					[
-						'post_mime_type' => (string) $sideload['type'],
-						'post_title'     => (string) ( $planned->payload['title'] ?? $planned->payload['filename'] ),
-						'post_excerpt'   => (string) ( $planned->payload['caption'] ?? '' ),
-						'post_content'   => (string) ( $planned->payload['description'] ?? '' ),
-						'post_status'    => 'inherit',
-						'post_parent'    => (int) $planned->payload['parent'],
-					]
-				),
-				(string) $sideload['file'],
-				(int) $planned->payload['parent'],
-				true
-			);
-
-			if ( is_wp_error( $attachment_id ) || 0 === (int) $attachment_id ) {
-				error_log(
-					sprintf( 'SiteHelm media-upload insert failed [%s].', $context->correlationId )
-				);
-
-				throw new OperationException(
-					ErrorCode::ExecutionFailed,
-					'WordPress stored the uploaded content but refused to add it to the media library.',
-					'Ask a site administrator to check the media library, then request a fresh preview.',
-					[ 'plan approved', 'content stored' ]
-				);
-			}
-
-			$attachment_id = (int) $attachment_id;
-
-			$metadata = wp_generate_attachment_metadata( $attachment_id, (string) $sideload['file'] );
-			if ( is_array( $metadata ) ) {
-				wp_update_attachment_metadata( $attachment_id, $metadata );
-			}
-
-			if ( array_key_exists( 'alt', $planned->payload ) ) {
-				update_post_meta(
-					$attachment_id,
-					MediaFields::ALT_META_KEY,
-					wp_slash( (string) $planned->payload['alt'] )
-				);
-			}
-
-			return $this->fields->targetKey( $attachment_id );
+			return $this->sideload->store( $bytes, $planned->payload, $context, 'media-upload' );
 		} finally {
 			$this->pending_bytes = null;
-			wp_delete_file( $temp );
 		}
 	}
-	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
-	// phpcs:enable WordPress.PHP.DevelopmentFunctions.error_log_error_log
-	// phpcs:enable WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents
 	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 
 	// phpcs:disable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase -- $targetKey matches the WriteOperation contract.
@@ -478,43 +359,4 @@ final class MediaUpload implements WriteOperation {
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
 	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 	// phpcs:enable Squiz.Commenting.FunctionComment.InvalidNoReturn
-
-	/**
-	 * Sanitizes one optional text field the way it will be stored.
-	 *
-	 * The promise must equal what comes back out, or WriteVerifier reports a
-	 * routine sanitization as an adjustment. Title and alternative text are
-	 * plain text; caption and description carry the post-content HTML rules,
-	 * because that is the column each lands in.
-	 *
-	 * @param string $field The field name.
-	 * @param string $value The requested value.
-	 *
-	 * @return string The value as it will be stored.
-	 */
-	private function sanitize_field( string $field, string $value ): string {
-		return in_array( $field, [ 'title', 'alt' ], true )
-			? (string) sanitize_text_field( $value )
-			: (string) wp_kses_post( $value );
-	}
-
-	/**
-	 * Loads the administration-side upload APIs when the request has not.
-	 *
-	 * Both wp_handle_sideload() and wp_generate_attachment_metadata() live in
-	 * wp-admin includes, which a REST or front-end request does not load. The
-	 * `require_once` body below is the only part of this class that unit tests
-	 * cannot cover: Brain Monkey defines both functions, so the guard is always
-	 * satisfied and the body is never entered. It is the single uncovered
-	 * statement this class contributes, counted and declared in this task's
-	 * coverage report rather than hidden.
-	 */
-	private function load_admin_upload_apis(): void {
-		if ( function_exists( 'wp_handle_sideload' ) && function_exists( 'wp_generate_attachment_metadata' ) ) {
-			return;
-		}
-
-		require_once ABSPATH . 'wp-admin/includes/file.php';
-		require_once ABSPATH . 'wp-admin/includes/image.php';
-	}
 }
