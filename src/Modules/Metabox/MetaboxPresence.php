@@ -113,10 +113,15 @@ final class MetaboxPresence {
 	 * AND LEAD AN OPERATOR TO DIFFERENT ACTIONS — install the plugin, or update it.
 	 * The operations refuse the first with `IntegrationUnavailable` and the second
 	 * with `UnsupportedVersion`, and they ask this question for themselves rather
-	 * than assuming an upstream gate ran: the dispatcher's version block fires on
-	 * `ModuleHealth::VersionBlocked`, and no module in this plugin reports that state,
-	 * so for a Meta Box below MIN_VERSION the dispatcher waves the call straight
-	 * through. Without this method the refusal simply would not happen anywhere.
+	 * than assuming an upstream gate ran. THE DISPATCHER NOW REFUSES FIRST:
+	 * MetaboxModule::health() reads this method and reports
+	 * `ModuleHealth::VersionBlocked` for a Meta Box below MIN_VERSION, which the
+	 * dispatcher's version block turns into an `UnsupportedVersion` before any
+	 * handler is reached. The in-operation checks are therefore the second line of
+	 * defence rather than the only one, and they still earn their place: a handler
+	 * invoked directly — from a test, from another module, from any future caller
+	 * that is not the dispatcher — carries no context health to be gated on, and
+	 * must refuse correctly on its own.
 	 *
 	 * IT ALSO PREVENTS A REAL MISBEHAVIOUR RATHER THAN ONLY A MISLEADING MESSAGE.
 	 * MIN_VERSION is the ALL-SYMBOLS floor: `get_by()` arrives at 4.13.0 and

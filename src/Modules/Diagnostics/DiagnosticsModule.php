@@ -75,7 +75,7 @@ final class DiagnosticsModule implements IntegrationModule {
 	}
 
 	/**
-	 * Registers the system-environment operation.
+	 * Registers the three system read operations.
 	 *
 	 * @param CapabilityRegistry $registry The capability registry.
 	 */
@@ -126,6 +126,95 @@ final class DiagnosticsModule implements IntegrationModule {
 				],
 			),
 			[ new EnvironmentDiscovery(), 'handle' ]
+		);
+
+		$registry->register(
+			new OperationDefinition(
+				id: 'system-integrations',
+				domain: Domain::System,
+				mode: Mode::Read,
+				description: 'Report which bundled integration modules are active, inactive, or version-blocked, and what each one needs.',
+				inputSchema: [
+					'type'                 => 'object',
+					'properties'           => [],
+					'additionalProperties' => false,
+				],
+				outputSchema: [
+					'type'                 => 'object',
+					'properties'           => [
+						'integrations' => [
+							'type'  => 'array',
+							'items' => [
+								'type'       => 'object',
+								'properties' => [
+									'id'               => [ 'type' => 'string' ],
+									'displayName'      => [ 'type' => 'string' ],
+									'dependency'       => [ 'type' => 'object' ],
+									'installedVersion' => [ 'type' => [ 'string', 'null' ] ],
+									'health'           => [ 'type' => 'string' ],
+									'explanation'      => [ 'type' => 'string' ],
+								],
+							],
+						],
+					],
+					'additionalProperties' => false,
+				],
+				schemaVersion: 1,
+				requiredCapabilities: [ 'manage_options' ],
+				risk: Risk::Low,
+				isReadOnly: true,
+				isDestructive: false,
+				isIdempotent: true,
+				previewPolicy: PreviewPolicy::NotApplicable,
+				snapshotPolicy: SnapshotPolicy::NotApplicable,
+				rollbackPolicy: RollbackPolicy::NotApplicable,
+				module: ModuleId::Diagnostics,
+				supportedVersions: [ 'wordpress' => '>=' . SITEHELM_MIN_WP ],
+				example: [
+					'operation' => 'system-integrations',
+					'arguments' => [],
+				],
+			),
+			[ new IntegrationHealth(), 'handle' ]
+		);
+
+		$registry->register(
+			new OperationDefinition(
+				id: 'system-connection',
+				domain: Domain::System,
+				mode: Mode::Read,
+				description: 'Report which WordPress user this site resolved the caller as, and the transport the request arrived on.',
+				inputSchema: [
+					'type'                 => 'object',
+					'properties'           => [],
+					'additionalProperties' => false,
+				],
+				outputSchema: [
+					'type'                 => 'object',
+					'properties'           => [
+						'user'                => [ 'type' => 'object' ],
+						'transport'           => [ 'type' => 'object' ],
+						'applicationPassword' => [ 'type' => 'object' ],
+					],
+					'additionalProperties' => false,
+				],
+				schemaVersion: 1,
+				requiredCapabilities: [ 'read' ],
+				risk: Risk::Low,
+				isReadOnly: true,
+				isDestructive: false,
+				isIdempotent: true,
+				previewPolicy: PreviewPolicy::NotApplicable,
+				snapshotPolicy: SnapshotPolicy::NotApplicable,
+				rollbackPolicy: RollbackPolicy::NotApplicable,
+				module: ModuleId::Diagnostics,
+				supportedVersions: [ 'wordpress' => '>=' . SITEHELM_MIN_WP ],
+				example: [
+					'operation' => 'system-connection',
+					'arguments' => [],
+				],
+			),
+			[ new ConnectionCheck(), 'handle' ]
 		);
 	}
 }
