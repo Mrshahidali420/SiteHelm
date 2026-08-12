@@ -435,7 +435,13 @@ final class MetaboxApiTest extends TestCase {
 
 		$api = $this->api();
 
-		$this->assertNull( $api->writeValue( 'subtitle', 12, 'After' ) );
+		$api->writeValue( 'subtitle', 12, 'After' );
+
+		// THE SILENCE IS NOT ASSERTED HERE, BECAUSE IT CANNOT BE. writeValue() is
+		// declared `void`, so a call to it evaluates to null whatever it does and an
+		// assertion on that answer passes for every implementation there is. What proves
+		// the contract is the return TYPE, which the runtime enforces, and the re-read
+		// below, which is the only thing that can see a dropped write.
 		$this->assertSame( 1, $this->metaboxCallCount( 'write' ) );
 		$this->assertSame(
 			'Before',
@@ -538,7 +544,8 @@ final class MetaboxApiTest extends TestCase {
 
 		$api = $this->api();
 
-		$this->assertNull( $api->deleteValue( 'subtitle', 12 ) );
+		$api->deleteValue( 'subtitle', 12 );
+
 		$this->assertSame( [ [ 12, 'subtitle' ] ], $this->metaboxCallArguments( 'delete' ) );
 		$this->assertFalse( $api->hasStoredRow( 'subtitle', 12 ) );
 	}
@@ -634,7 +641,8 @@ final class MetaboxApiTest extends TestCase {
 
 		$api = $this->api();
 
-		$this->assertNull( $api->writeRawRows( 'hero', 12, [ 4, 5 ] ) );
+		$api->writeRawRows( 'hero', 12, [ 4, 5 ] );
+
 		$this->assertSame( [ [ 12, 'hero' ] ], $this->metaboxCallArguments( 'delete' ) );
 		$this->assertSame(
 			[ [ 12, 'hero', 4, false ], [ 12, 'hero', 5, false ] ],

@@ -109,7 +109,11 @@ final class MetaboxFieldUpdateTest extends TestCase {
 
 		$this->assertSame( MetaboxFieldUpdate::targetKey( self::fixturePost() ), $state->targetKey, 'The key names this post.' );
 		$this->assertSame( [ self::weightId() ], array_keys( $state->fields ), 'One field was named and one was read.' );
-		$this->assertSame( 0, $state->fields[ self::weightId() ], 'A stored 0 is read as 0 and not as nothing.' );
+		// THE TEXT COLUMN'S OWN SPELLING, WHICH IS WHAT THE PROMISE IS MEASURED AGAINST.
+		// A stored 0 is a value and not nothing — that is the fixture's point — and it
+		// comes out of postmeta as text, so the before-state, the promise and the
+		// read-back all say '0' and the engine's digest comparison sees one value.
+		$this->assertSame( '0', $state->fields[ self::weightId() ], 'A stored 0 is read as the text 0 and not as nothing.' );
 	}
 
 	// -------------------------------------------- INVARIANT 1: determinism
@@ -461,8 +465,13 @@ final class MetaboxFieldUpdateTest extends TestCase {
 		$state   = $operation->resolveTarget( $request, $this->writeContext() );
 		$planned = $operation->planChange( $state, $request, $this->writeContext() );
 
+		// THE PROMISE IS THE SENT STRUCTURE IN THE SPELLING THE STORAGE ANSWERS IN. A
+		// clone list of one is one row, and the row is what comes back out, so
+		// MetaboxValueCanonical::settle() takes the wrapper off both the promise and the
+		// re-read. What is settled is the WRAPPING and never the members: the member
+		// named like a server path is still there, which is what this test is about.
 		$this->assertSame(
-			$sent,
+			$sent[0],
 			$planned->afterFields[ self::sectionsId() ],
 			'The plan promises the structure the operator sent, member for member.'
 		);
@@ -480,19 +489,30 @@ final class MetaboxFieldUpdateTest extends TestCase {
 	}
 
 	/**
-	 * NO FILESYSTEM PATH REACHES THE PROJECTED BEFORE-STATE. The formatted answer for
-	 * an attachment field carries the file's absolute position on the server's disk
-	 * beside its URL, and this map is fingerprinted, previewed and returned to the
-	 * caller. The read side strips those members by name at every depth; the write
-	 * side spells the same rule through the same list, so a path cannot leak through
-	 * the channel that skipped it.
+	 * THE WHOLE WRITE PATH SPEAKS RAW, AND THE BEFORE-STATE IS PART OF THE WRITE PATH.
+	 *
+	 * The engine digests the before-state, the promise and the read-back and compares
+	 * them as opaque fingerprints. Meta Box's read accessor answers an attachment field
+	 * with an info array per file where the site holds ids, so a before-state built from
+	 * it is measured in a currency the promise is never spelled in — and on an
+	 * idempotent write the after-state then matches the BEFORE branch, which the engine
+	 * reads as a write that did not take and rolls back. Reading the rows makes the
+	 * three one currency by construction, and it closes the §8 disclosure at the same
+	 * time: an id list has no filesystem path in it to strip. The formatted answer is
+	 * metabox-field-get's to report, and it is unaffected.
 	 */
-	public function test_the_before_state_carries_no_server_path_for_a_formatted_field(): void {
+	public function test_the_before_state_of_a_formatted_field_is_the_rows_and_not_the_formatted_answer(): void {
 		$this->installFixtureSite();
 
 		$state = $this->writeOperation()->resolveTarget(
 			$this->writeRequest( [ $this->writeMember( self::heroId(), [ 10 ] ) ] ),
 			$this->writeContext()
+		);
+
+		$this->assertSame(
+			[ '9', '10' ],
+			$state->fields[ self::heroId() ],
+			'The before-state is the ids the site holds, in the spelling a text column answers in.'
 		);
 
 		$encoded = (string) json_encode( $state->fields, JSON_UNESCAPED_SLASHES );
@@ -503,17 +523,17 @@ final class MetaboxFieldUpdateTest extends TestCase {
 			'A server path in the before-state is a disclosure the read side already refuses to make.'
 		);
 
-		$this->assertStringNotContainsString(
-			'path',
-			$encoded,
-			'The member is stripped by NAME, so neither the key nor a path-shaped value survives it.'
-		);
-
-		$this->assertStringContainsString(
-			'https://example.com',
-			$encoded,
-			'A URL is not a server path and is not stripped; a rule that took both would empty the field.'
-		);
+		// NAMED MEMBERS, NOT A PATH TEST. The outbound projection still runs over this
+		// value and still strips by name — it simply has nothing left to strip — so what
+		// is proven here is that the formatted answer never entered the write path at
+		// all, which is the guarantee that does not depend on the strip list.
+		foreach ( [ 'path', 'url', 'mime_type' ] as $member ) {
+			$this->assertStringNotContainsString(
+				$member,
+				$encoded,
+				'No member of Meta Box\'s formatted answer reaches a state the write path measures.'
+			);
+		}
 	}
 
 	/**

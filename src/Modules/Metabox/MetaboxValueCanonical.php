@@ -108,6 +108,104 @@ final class MetaboxValueCanonical {
 	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 
 	/**
+	 * The spelling a value has once it has crossed the postmeta boundary.
+	 *
+	 * THE PROMISE AND THE MEASUREMENT MUST BE ONE CURRENCY, AND THIS IS WHERE THEY
+	 * BECOME ONE. The change engine fingerprints the promised after-state and the
+	 * measured after-state through PayloadNormalizer and compares the two digests as
+	 * opaque strings: it has no tolerance, no unwrap and no coercion. So a promise of
+	 * `42` measured as the row list `[ 42 ]` is two values to it, and on an idempotent
+	 * write — where the measurement also equals the before-state — that is not a
+	 * cosmetic difference but a write that landed being reported as one that did not,
+	 * and rolled back. Every value on the write path is therefore settled here, on both
+	 * sides, before either is digested.
+	 *
+	 * IT IS APPLIED TO A CANONICAL PROJECTION AND NEVER TO A RAW VALUE, so a boolean
+	 * has already become 1 or 0 and a gapped row list has already been re-indexed.
+	 *
+	 * THREE RULES, AND THEY ARE THE THREE THINGS THE STORAGE ITSELF DOES:
+	 *
+	 *   - A LIST OF ONE IS THE THING IT HOLDS, AT THE TOP AND NOWHERE ELSE. A field
+	 *     holding one row answers a list of one where the operator promised the value
+	 *     itself, so the wrapper has to come off — and it has to come off until there is
+	 *     none left, because how MANY wrappers a value acquires on its way into the
+	 *     table is exactly what this module refuses to decide. A field storing one row
+	 *     per value gives `[ 9 ]` for a promised `[ 9 ]`; a field serializing its whole
+	 *     value into one row gives `[ [ $row ] ]` for a promised `[ $row ]`. Those are
+	 *     the same two shapes with the wrappers counted differently, and the arity that
+	 *     tells them apart is the field TYPE, which nothing on this path dispatches on
+	 *     (see the class docblock). Stripping to a fixpoint is what makes both pairs one
+	 *     currency; stripping once would keep one of them and break the other. The price
+	 *     is that a value stored one wrapper deeper than promised verifies, and it is a
+	 *     price rather than an oversight: the pair that would catch it is the same pair
+	 *     a correctly stored serialized field presents.
+	 *   - IT IS THE TOP-LEVEL ROW LIST AND NOT EVERY DEPTH. Only a field's own rows
+	 *     are wrapped by the storage; a member INSIDE a row was put there by the
+	 *     operator, so `[ 'ids' => [ 9 ] ]` keeps its list of one. A settlement applied
+	 *     at every depth would let a row whose members were re-shaped verify as the row
+	 *     that was promised. A map is never unwrapped at all: it is a row's members and
+	 *     never a row list.
+	 *   - THE EMPTY FORMS BECOME ONE. `null`, `''` and `[]` are the three spellings of
+	 *     "this field holds nothing", and a field with no row at all reads as the last
+	 *     of them. A request to clear a field would otherwise promise one spelling and
+	 *     measure another.
+	 *   - A ROW IS TEXT. Postmeta is a text column, so an integer 5 written in is read
+	 *     back as the string '5'. Only a row is spelled that way: the members INSIDE a
+	 *     row survive serialization with their own types and are left exactly as the
+	 *     projection made them.
+	 *
+	 * @param mixed $value The canonical projection of a promise or of a field's rows.
+	 *
+	 * @return mixed The settled spelling both sides of the comparison share.
+	 */
+	public function settle( mixed $value ): mixed {
+		while ( $this->wraps_one_row( $value ) ) {
+			$value = reset( $value );
+		}
+
+		if ( ! is_array( $value ) || [] === $value || ! $this->is_positional( $value ) ) {
+			return $this->column( $value );
+		}
+
+		return array_map( fn ( mixed $row ): mixed => $this->column( $row ), array_values( $value ) );
+	}
+
+	/**
+	 * Whether a value is a positional list carrying exactly one row.
+	 *
+	 * A MAP IS NOT ONE, however many members it has: `[ 'heading' => 'x' ]` is a row's
+	 * members and never a list of rows, and taking the wrapper off it would let a
+	 * promised `'x'` be satisfied by a structure the site stored instead of it.
+	 *
+	 * @param mixed $value The value to classify.
+	 *
+	 * @return bool True when the value is a list of exactly one element.
+	 */
+	private function wraps_one_row( mixed $value ): bool {
+		return is_array( $value ) && 1 === count( $value ) && $this->is_positional( $value );
+	}
+
+	/**
+	 * The spelling one row has in a text column.
+	 *
+	 * A STRUCTURE IS RETURNED UNTOUCHED. A row holding a group or a clone list is
+	 * serialized by the storage and comes back with its members' own types intact, so
+	 * coercing them would make the promise and the measurement disagree in the one
+	 * direction this settlement exists to close.
+	 *
+	 * @param mixed $value The row's value.
+	 *
+	 * @return mixed The settled row.
+	 */
+	private function column( mixed $value ): mixed {
+		if ( $this->is_empty_form( $value ) ) {
+			return '';
+		}
+
+		return is_scalar( $value ) ? (string) $value : $value;
+	}
+
+	/**
 	 * The canonical spelling of one value being written.
 	 *
 	 * THE DEPTH CAP IS MetaboxSchemaFormat::MAX_DEPTH, the same bound the read side
@@ -168,7 +266,7 @@ final class MetaboxValueCanonical {
 	}
 
 	/**
-	 * Whether project() would answer null for something that is not null.
+	 * Whether either projection would answer null for something that is not null.
 	 *
 	 * THE QUESTION A SNAPSHOT HAS TO ASK BEFORE IT RECORDS. The projection is lossy
 	 * by design at the depth cap: a structure sitting at MetaboxSchemaFormat::MAX_DEPTH
@@ -178,11 +276,12 @@ final class MetaboxValueCanonical {
 	 * recorded to roll BACK to, because restore() would then write null over content
 	 * the operator still had and report success for doing it.
 	 *
-	 * It mirrors project() branch for branch and answers over the same walk, so the
-	 * two cannot drift into disagreeing about where the cut falls. It is pure for the
-	 * same reason project() is, and it reads no value out — only shapes.
+	 * It mirrors walk() branch for branch — the one walk both projections answer over,
+	 * so the direction plays no part in where the cut falls and the two cannot drift
+	 * into disagreeing about it. It is pure for the same reason the projections are,
+	 * and it reads no value out — only shapes.
 	 *
-	 * A resource answers true as well: project() turns it into null, and a recording
+	 * A resource answers true as well: the walk turns it into null, and a recording
 	 * that cannot carry it is unfaithful for the same reason a capped structure is.
 	 *
 	 * @param mixed $value The value to examine.
@@ -199,7 +298,7 @@ final class MetaboxValueCanonical {
 			return true;
 		}
 
-		// At the same depth, for the reason project() unwraps an object there.
+		// At the same depth, for the reason walk() unwraps an object there.
 		if ( is_object( $value ) ) {
 			return $this->any_member_truncates( get_object_vars( $value ), $depth );
 		}
@@ -229,34 +328,28 @@ final class MetaboxValueCanonical {
 	 *     storage itself performs, and only after both sides have been projected — so
 	 *     a boolean is already 1 or 0 and never the empty string PHP would cast false
 	 *     to.
-	 *   - A ONE-ELEMENT ROW LIST AND ITS SINGLE ELEMENT ARE ONE VALUE. The evidence
-	 *     this guard measures against is the postmeta ROWS under the field's key, and
-	 *     a field holding one row answers a list of one where the plan promised the
-	 *     value itself. Without this, every write of an ordinary single-value field
-	 *     would be refused as dropped. It unwraps ONE element and only from a
-	 *     positional list, so a two-row answer to a one-value promise is still a
-	 *     difference, and it is the only structural tolerance here: a member on one
-	 *     side and not the other remains a refusal.
+	 *
+	 * THERE IS NO STRUCTURAL TOLERANCE, AND THERE MUST NOT BE ONE. The row-list
+	 * question — a field holding one row against a promise spelled as the value itself
+	 * — is settled by settle() at the boundary, on both sides, before either side
+	 * reaches this comparison; the engine's own verification digests those same settled
+	 * values and has no tolerance at all, so a difference forgiven only here would be
+	 * refused one layer up. Both sides arriving settled, an unwrap here could only
+	 * reach INSIDE a row, where the storage wraps nothing: `[ 'ids' => [ 9 ] ]` against
+	 * a promised `[ 'ids' => 9 ]` is a member the site re-shaped, which is exactly the
+	 * difference this guard exists to catch.
 	 *
 	 * Structures are compared member by member over BOTH canonical projections, so
 	 * key order plays no part; a member on one side and not the other is a
 	 * difference, which is what catches a write that stored a truncated structure.
 	 *
-	 * @param mixed $promised The canonical value the approved plan promised.
-	 * @param mixed $stored   The canonical projection of what was read back.
+	 * @param mixed $promised The settled value the approved plan promised.
+	 * @param mixed $stored   The settled projection of what was read back.
 	 *
 	 * @return bool True when the stored value is the promised one.
 	 */
 	public function matches( mixed $promised, mixed $stored ): bool {
 		if ( $this->is_empty_form( $promised ) && $this->is_empty_form( $stored ) ) {
-			return true;
-		}
-
-		// THE ROW-LIST TOLERANCE, TRIED ONLY AFTER THE DIRECT READING FAILS TO APPLY.
-		// It runs before the shape test rather than after it because the pair it exists
-		// for — a promised scalar against a stored list of one row — is exactly the pair
-		// that test rejects.
-		if ( $this->unwraps_to( $promised, $stored ) || $this->unwraps_to( $stored, $promised ) ) {
 			return true;
 		}
 
@@ -283,32 +376,6 @@ final class MetaboxValueCanonical {
 		}
 
 		return true;
-	}
-
-	/**
-	 * Whether one side is a single-row list holding the other side.
-	 *
-	 * ONE ELEMENT, FROM A POSITIONAL LIST, AND NEVER MORE. A field holding one
-	 * postmeta row answers a list of one where the plan promised the value itself,
-	 * and that pair is the same value seen through two readers. Two rows against one
-	 * promised value is not: it is a field that holds something the plan did not
-	 * promise, which is what this guard exists to catch.
-	 *
-	 * A MAP IS NEVER UNWRAPPED. `[ 'heading' => 'x' ]` is a row with one member, not a
-	 * list of one row, and unwrapping it would let a promised `'x'` be satisfied by a
-	 * structure the site stored instead of it.
-	 *
-	 * @param mixed $outer The side that may be the single-row list.
-	 * @param mixed $inner The side it would hold.
-	 *
-	 * @return bool True when the outer is a list of one holding the inner.
-	 */
-	private function unwraps_to( mixed $outer, mixed $inner ): bool {
-		if ( ! is_array( $outer ) || 1 !== count( $outer ) || ! $this->is_positional( $outer ) ) {
-			return false;
-		}
-
-		return $this->matches( reset( $outer ), $inner );
 	}
 
 	/**

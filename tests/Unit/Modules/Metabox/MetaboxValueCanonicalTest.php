@@ -154,8 +154,8 @@ final class MetaboxValueCanonicalTest extends TestCase {
 	// ---------------------------------------------------------- the truncation
 
 	/**
-	 * The question a snapshot has to ask before it records, mirroring project()
-	 * branch for branch.
+	 * The question a snapshot has to ask before it records, mirroring the one walk both
+	 * projections answer over, branch for branch.
 	 */
 	public function test_truncates_answers_for_the_shapes_the_projection_would_lose(): void {
 		$deep = [ 'leaf' => 'x' ];
@@ -251,24 +251,19 @@ final class MetaboxValueCanonicalTest extends TestCase {
 	}
 
 	/**
-	 * A ONE-ELEMENT ROW LIST AND ITS SINGLE ELEMENT ARE THE SAME STORED VALUE.
+	 * MATCHES HAS NO STRUCTURAL TOLERANCE, AND THAT IS THE FIX AND NOT AN OVERSIGHT.
 	 *
-	 * The verification re-read asks core for every postmeta row under the key, so a
-	 * single-valued field that was promised `'A subtitle'` comes back as
-	 * `[ 'A subtitle' ]` — one row, not a list the operator asked for. Refusing that
-	 * would report a dropped write on every ordinary single-value field. The
-	 * tolerance is exactly one level of positional wrapper and is symmetric, because
-	 * either side can be the wrapped one.
+	 * The row-list question is settled at the boundary, on both sides, before either
+	 * reaches this comparison — and it has to be, because the change engine digests
+	 * those same settled values with no tolerance whatever, so a difference forgiven
+	 * only here would be refused one layer up on a write that had already landed. What
+	 * is left for this comparison is a member the site re-shaped, which is the
+	 * difference the guard exists to catch and which an unwrap at depth would hide.
 	 */
-	public function test_a_single_row_list_matches_the_value_it_holds(): void {
-		$this->assertTrue(
+	public function test_matching_forgives_no_difference_in_shape(): void {
+		$this->assertFalse(
 			$this->canonical->matches( 'A subtitle', [ 'A subtitle' ] ),
-			'One row holding the promised value is that value.'
-		);
-
-		$this->assertTrue(
-			$this->canonical->matches( [ 5 ], '5' ),
-			'The wrapper may be on either side, and the storage still returns text.'
+			'Both sides arrive settled, so a wrapper here is a shape the storage did not produce.'
 		);
 
 		$this->assertFalse(
@@ -276,17 +271,85 @@ final class MetaboxValueCanonicalTest extends TestCase {
 			'Two rows are not the one value that was promised.'
 		);
 
-		// THE TOLERANCE MUST NOT WIDEN THE EMPTY-FORM RULE. `[ '' ]` unwraps to `''`,
-		// and a promised 0 that stored nothing is still a dropped write.
 		$this->assertFalse(
-			$this->canonical->matches( 0, [ '' ] ),
-			'A promised 0 stored as one empty row did not land.'
+			$this->canonical->matches( [ 'ids' => 9 ], [ 'ids' => [ 9 ] ] ),
+			'A member the site wrapped is a re-shaped row, not the row that was promised.'
 		);
 
 		$this->assertFalse(
 			$this->canonical->matches( 'kept', [ 'a' => 'kept' ] ),
-			'A keyed member is not a row list and must not be unwrapped.'
+			'A keyed member is not a row list and is never unwrapped.'
 		);
+	}
+
+	// ---------------------------------------------------------- the settlement
+
+	/**
+	 * THE PROMISE AND THE RE-READ MUST BE ONE CURRENCY, AND THIS IS WHERE THEY BECOME
+	 * ONE.
+	 *
+	 * A field's rows are a list and a promise usually is not, and the wrapper count
+	 * depends on the field's storage arity — one row per value, or the whole value
+	 * serialized into one row — which nothing on the write path dispatches on. Both
+	 * spellings therefore strip to a fixpoint, and both sides are settled the same way
+	 * so the engine's digest comparison sees one value.
+	 */
+	public function test_the_row_wrapper_is_settled_away_on_whichever_side_carries_it(): void {
+		$this->assertSame( 'A subtitle', $this->canonical->settle( [ 'A subtitle' ] ), 'One row is the value it holds.' );
+		$this->assertSame( 'A subtitle', $this->canonical->settle( 'A subtitle' ), 'A promise made as the value stays it.' );
+
+		$row = [
+			'heading' => 'First',
+			'body'    => 'One',
+		];
+
+		$this->assertSame(
+			$row,
+			$this->canonical->settle( [ [ $row ] ] ),
+			'A one-clone group serialized into one row settles to the same value its promise does.'
+		);
+		$this->assertSame( $row, $this->canonical->settle( [ $row ] ), 'The promise it is measured against.' );
+
+		$this->assertSame(
+			[ '9', '10' ],
+			$this->canonical->settle( [ 9, 10 ] ),
+			'Two rows stay two rows, spelled as the text column answers.'
+		);
+	}
+
+	/**
+	 * THE SETTLEMENT IS THE TOP-LEVEL ROW LIST AND NOTHING BELOW IT. Only a field's own
+	 * rows are wrapped by the storage; a member inside a row was put there by the
+	 * operator, and folding it away would verify a row the site re-shaped as the row
+	 * that was promised.
+	 */
+	public function test_the_settlement_does_not_reach_inside_a_row(): void {
+		$this->assertSame(
+			[ 'ids' => [ 9 ] ],
+			$this->canonical->settle( [ [ 'ids' => [ 9 ] ] ] ),
+			'The row comes out of its list; its own list of one is the operator\'s.'
+		);
+
+		$this->assertSame(
+			[ [ 'a' ], [ 'b' ] ],
+			$this->canonical->settle( [ [ 'a' ], [ 'b' ] ] ),
+			'Two rows each holding a list of one keep both lists.'
+		);
+	}
+
+	/**
+	 * THE EMPTY FORMS BECOME ONE AND `0` IS NOT ONE OF THEM. A field with no row at all
+	 * reads as `[]` where a cleared field reads as one row holding `''`, and a request
+	 * to clear a field would otherwise promise one spelling and measure another. `0` is
+	 * a value an operator can see on the editing screen, and it survives as text.
+	 */
+	public function test_the_empty_forms_settle_together_and_zero_does_not_join_them(): void {
+		foreach ( [ null, '', [], [ '' ], [ null ], [ [] ] ] as $nothing ) {
+			$this->assertSame( '', $this->canonical->settle( $nothing ), 'Every spelling of nothing settles alike.' );
+		}
+
+		$this->assertSame( '0', $this->canonical->settle( 0 ), 'A promised 0 is the text a row holds.' );
+		$this->assertSame( '0', $this->canonical->settle( [ 0 ] ), 'And the row holding it settles to the same text.' );
 	}
 
 	// ------------------------------------------------------------ the two directions
