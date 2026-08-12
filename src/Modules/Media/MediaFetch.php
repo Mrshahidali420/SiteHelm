@@ -50,8 +50,19 @@ use SiteHelm\Contracts\OperationException;
  * BOTH HOOKS ALSO CHECK THAT THE REQUEST IS THIS CLASS'S OWN. WordPress hooks
  * are process-global, and any other code that makes an HTTP request while a
  * fetch is in flight would otherwise be handed this fetch's `CURLOPT_RESOLVE`
- * pin and this fetch's forced arguments. Both callbacks compare the url they
- * are given against the url being fetched and do nothing when it differs.
+ * pin and this fetch's forced arguments. Both callbacks put the url they are
+ * given through matches_pinned_request() and do nothing when it is somebody
+ * else's. That test compares NORMALISED SCHEME, HOST AND PORT rather than whole
+ * strings, because core hands the two hooks different spellings of the same url
+ * and the difference is attacker-choosable — see there for the hole that a raw
+ * comparison left open.
+ *
+ * AND THE MATCH FAILS CLOSED. A callback that declines is silent, and "not my
+ * request" and "my request, unrecognised, therefore dialled with no pin" are the
+ * same silence — the second being the rebinding defence switched off without a
+ * trace. So each request records whether the pin actually went on, and fetch()
+ * refuses rather than return bytes from a curl connection it cannot prove it
+ * pinned. See assert_connection_was_pinned().
  *
  * THE PIN IS CURL-ONLY, and that cost is accepted rather than hidden (spec §7
  * item 3). `CURLOPT_RESOLVE` has no equivalent in WordPress's streams transport,
@@ -144,6 +155,35 @@ final class MediaFetch {
 	private ?array $pinned = null;
 
 	/**
+	 * Whether `http_api_curl` fired at all for the request just issued.
+	 *
+	 * Core fires that action only from the curl transport, so this is how the
+	 * class tells "the connection was made by curl" from "WordPress is using its
+	 * streams transport, where no pin exists to apply" — two situations that must
+	 * not be treated alike, because only the first is a failure when no pin went
+	 * on.
+	 *
+	 * @var bool
+	 */
+	private bool $curl_transport_used = false;
+
+	/**
+	 * Whether the pin was actually applied to the request just issued.
+	 *
+	 * THIS IS THE FAIL-CLOSED HALF OF THE MATCHING RULE, and it exists because
+	 * the predicate that recognises this class's own request has exactly one
+	 * dangerous failure mode. "This url is not mine, leave it alone" and "this url
+	 * IS mine but I did not recognise it, so I dialled it with no pin" are the
+	 * same silence. The first is correct behaviour; the second is the whole
+	 * DNS-rebinding hole, reopened, with no refusal, no log line and no test
+	 * failure. Recording whether the pin went on lets fetch() tell them apart
+	 * afterwards and refuse rather than return bytes it cannot vouch for.
+	 *
+	 * @var bool
+	 */
+	private bool $pin_applied = false;
+
+	/**
 	 * Constructs the fetcher.
 	 *
 	 * @param MediaUrlGuard $guard The address policy every hop is re-validated through.
@@ -189,12 +229,16 @@ final class MediaFetch {
 			while ( true ) {
 				// Assigned HERE, inside the loop, so the pin in force is always
 				// the hop about to be dialled and never the one before it.
-				$this->pinned = $target;
+				$this->pinned              = $target;
+				$this->curl_transport_used = false;
+				$this->pin_applied         = false;
 
 				// wp_safe_remote_get(), never wp_remote_get(): core's own SSRF
 				// baseline is kept underneath this class's policy so the plugin
 				// can only ever be stricter than the platform, never weaker.
 				$response = wp_safe_remote_get( $target['url'] );
+
+				$this->assert_connection_was_pinned( $correlationId );
 
 				if ( is_wp_error( $response ) ) {
 					$this->log( $correlationId, 'transport failure: ' . $response->get_error_message() );
@@ -212,6 +256,8 @@ final class MediaFetch {
 					++$hops;
 
 					if ( $hops > self::MAX_REDIRECTS ) {
+						$this->log( $correlationId, sprintf( 'redirect chain exceeded %d hops at: %s', self::MAX_REDIRECTS, $target['url'] ) );
+
 						$this->refuse(
 							ErrorCode::ExecutionFailed,
 							sprintf( 'The remote server redirected more than %d times.', self::MAX_REDIRECTS ),
@@ -219,7 +265,7 @@ final class MediaFetch {
 						);
 					}
 
-					$target = $this->next_hop( $response, $target );
+					$target = $this->next_hop( $response, $target, $correlationId );
 
 					continue;
 				}
@@ -273,14 +319,29 @@ final class MediaFetch {
 	 * The three parts are the whole of the pin: for THIS host on THIS port, use
 	 * THIS address and do not ask a resolver at all.
 	 *
+	 * AN IPv6 ADDRESS IS BRACKETED. curl's `--resolve` parser takes everything
+	 * after the second colon as the address list, so a bare `2606:4700::1111`
+	 * happens to work — but the bracketed form is the one curl documents, and it
+	 * is the only form that stays unambiguous if that parser is ever tightened or
+	 * a second address is appended. `HostResolver` returns AAAA answers, so this
+	 * is a live case rather than a hypothetical one.
+	 *
 	 * @param array{url: string, scheme: string, host: string, port: int, ip: string} $validated The guard's approved target.
 	 *
 	 * @return string The directive, as `host:port:address`.
 	 */
 	public function resolveDirective( array $validated ): string {
-		return sprintf( '%s:%d:%s', $validated['host'], $validated['port'], $validated['ip'] );
-	}
+		$address = $validated['ip'];
 
+		if ( str_contains( $address, ':' ) ) {
+			$address = '[' . $address . ']';
+		}
+
+		return sprintf( '%s:%d:%s', $validated['host'], $validated['port'], $address );
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- this class's public surface is camelCase because it is called from camelCase collaborators, and the ruleset's snake_case rule is a WordPress-core convention this plugin's own classes do not follow.
 	/**
 	 * Forces the safe request arguments on this class's own request.
 	 *
@@ -311,7 +372,7 @@ final class MediaFetch {
 	 * @return array<string, mixed> The arguments, with the safety settings forced when the request is this class's own.
 	 */
 	public function filterRequestArgs( array $args, string $url ): array {
-		if ( null === $this->pinned || $url !== $this->pinned['url'] ) {
+		if ( ! $this->matches_pinned_request( $url ) ) {
 			return $args;
 		}
 
@@ -328,7 +389,77 @@ final class MediaFetch {
 			]
 		);
 	}
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 
+	/**
+	 * Whether a URL handed to one of this class's hook callbacks is the request
+	 * this class currently has in flight.
+	 *
+	 * IT COMPARES NORMALISED COMPONENTS, NEVER WHOLE STRINGS, and the previous
+	 * draft's `$url !== $this->pinned['url']` was a security defect rather than a
+	 * style one. WordPress does not hand the same string to both hook points:
+	 * `http_request_args` receives the URL as given (`class-wp-http.php:252`),
+	 * then `class-wp-http.php:283-289` rewrites it through
+	 * `wp_http_validate_url()` and `wp_kses_bad_protocol()` — which lower-cases
+	 * the scheme — and it is that REWRITTEN string which reaches `http_api_curl`
+	 * (`class-wp-http-requests-hooks.php:58`). A single capital letter in
+	 * `HTTPS://` therefore made the two strings differ, and a raw comparison then
+	 * failed to recognise the class's own request, applied no `CURLOPT_RESOLVE`,
+	 * and let the transport resolve the name for itself — the whole rebinding
+	 * defence disabled, silently, by a spelling the attacker chooses. An
+	 * attacker-supplied `Location` on any hop could do the same.
+	 *
+	 * Scheme, host and port are the only things compared because they are the only
+	 * things the pin is about: `CURLOPT_RESOLVE` is a `host:port:address` triplet
+	 * and knows nothing of paths. Leaving the path out also means percent-encoding
+	 * and query-string rewriting cannot produce a mismatch. Each component is
+	 * normalised the way MediaUrlGuard normalises it — scheme and host
+	 * lower-cased, IPv6 brackets and a trailing dot stripped from the host, an
+	 * absent port read as the scheme's default — so that every legal spelling of
+	 * the address in flight is recognised as the address in flight.
+	 *
+	 * THE ACCEPTED OVER-REACH: another plugin requesting the same host and port
+	 * while a fetch is in flight would match. The pin it would receive is the
+	 * address this site's own guard validated for that very host, so it is not a
+	 * mis-direction; the forced arguments are a real but mild over-reach on a
+	 * request that is, by construction, to the same origin. Narrowing further would
+	 * mean comparing paths, and comparing paths is what reopens the hole above.
+	 *
+	 * @param string $url The URL the hook was fired with.
+	 *
+	 * @return bool True when the URL addresses the target currently pinned.
+	 */
+	private function matches_pinned_request( string $url ): bool {
+		if ( null === $this->pinned ) {
+			return false;
+		}
+
+		// A url core cannot parse comes back as `false`, and needs no guard of its
+		// own: every read below is null-coalesced, so a `false` here yields an
+		// empty scheme, and an empty scheme can never equal the pinned one — which
+		// is only ever `http` or `https`, MediaUrlGuard having refused everything
+		// else. An explicit `is_array()` test was tried here and deleted again for
+		// being provably unable to change any answer.
+		$parts = wp_parse_url( $url );
+
+		$scheme = strtolower( (string) ( $parts['scheme'] ?? '' ) );
+
+		if ( $scheme !== $this->pinned['scheme'] ) {
+			return false;
+		}
+
+		$host = rtrim( trim( strtolower( (string) ( $parts['host'] ?? '' ) ), '[]' ), '.' );
+
+		if ( $host !== $this->pinned['host'] ) {
+			return false;
+		}
+
+		$port = isset( $parts['port'] ) ? (int) $parts['port'] : ( 'https' === $scheme ? 443 : 80 );
+
+		return $port === $this->pinned['port'];
+	}
+
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- this class's public surface is camelCase because it is called from camelCase collaborators, and the ruleset's snake_case rule is a WordPress-core convention this plugin's own classes do not follow.
 	/**
 	 * The `CURLOPT_RESOLVE` directive a given request should be pinned to, or
 	 * null when it should not be pinned at all.
@@ -359,7 +490,7 @@ final class MediaFetch {
 	 * @return string|null The directive, or null when this request must not be pinned.
 	 */
 	public function pinDirectiveFor( string $url ): ?string {
-		if ( null === $this->pinned || $url !== $this->pinned['url'] ) {
+		if ( ! $this->matches_pinned_request( $url ) ) {
 			return null;
 		}
 
@@ -369,7 +500,9 @@ final class MediaFetch {
 
 		return $this->resolveDirective( $this->pinned );
 	}
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- this class's public surface is camelCase because it is called from camelCase collaborators, and the ruleset's snake_case rule is a WordPress-core convention this plugin's own classes do not follow.
 	/**
 	 * Pins the curl handle to the address the guard validated for this hop.
 	 *
@@ -396,6 +529,25 @@ final class MediaFetch {
 	public function pinCurlHandle( &$handle, array $args, string $url ): void {
 		unset( $args );
 
+		// Recorded before anything else, and for every url including a stranger's:
+		// core fires this action only from the curl transport, so reaching this
+		// line at all is the proof that the request in flight is a curl request and
+		// that a missing pin would therefore be a failure rather than a streams
+		// site's accepted limitation.
+		$this->curl_transport_used = true;
+
+		if ( ! $this->matches_pinned_request( $url ) ) {
+			return;
+		}
+
+		// Set here rather than after the `curl_setopt()` call, because both
+		// remaining ways out are cases where NO pin is the correct outcome: an IP
+		// literal needs no pin, and no `curl_setopt()` means no curl (unreachable
+		// from this action in practice, since the curl transport is what fires it).
+		// Neither is the failure the assertion downstream is looking for, which is
+		// "this was my request and I did not recognise it".
+		$this->pin_applied = true;
+
 		$directive = $this->pinDirectiveFor( $url );
 
 		if ( null === $directive || ! function_exists( 'curl_setopt' ) ) {
@@ -407,6 +559,47 @@ final class MediaFetch {
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 
+	// phpcs:disable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase -- $correlationId is the parameter name this operation's collaborators already use, and renaming it here alone would make the call sites disagree.
+	/**
+	 * Refuses the fetch unless the connection just made was actually pinned.
+	 *
+	 * THIS IS THE FAIL-CLOSED HALF OF THE PIN, and it exists because the previous
+	 * design could not tell its two silences apart. When a hook callback declines
+	 * to act, that is either "this url is not mine" — correct, and constant — or
+	 * "this url IS mine and I failed to recognise it", which means the request went
+	 * out with no `CURLOPT_RESOLVE` at all and the transport resolved the name for
+	 * itself. The second is the entire DNS-rebinding hole, and in the previous
+	 * design it produced no refusal, no log line and no test failure. A MediaFetch
+	 * that cannot prove it pinned the connection must not return bytes, so this
+	 * runs after every request, on every hop.
+	 *
+	 * IT FIRES ONLY WHEN CURL WAS USED. A site on WordPress's streams transport
+	 * never fires `http_api_curl`, has no pin to apply and never did — the accepted
+	 * cost in spec §7 item 3 — so `$curl_transport_used` stays false and the fetch
+	 * proceeds under every other guard, exactly as before. What is refused is only
+	 * the case where curl WAS the transport and the pin still did not go on.
+	 *
+	 * The refusal names nothing about the address, the response or the network.
+	 *
+	 * @param string $correlationId The id detail is logged under.
+	 *
+	 * @throws OperationException When curl made the request and no pin was applied.
+	 */
+	private function assert_connection_was_pinned( string $correlationId ): void {
+		if ( ! $this->curl_transport_used || $this->pin_applied ) {
+			return;
+		}
+
+		$this->log( $correlationId, 'connection was not pinned to the validated address for: ' . ( $this->pinned['url'] ?? '' ) );
+
+		$this->refuse(
+			ErrorCode::ExecutionFailed,
+			'The connection to the remote server could not be pinned to the address that was checked.',
+			'Request a fresh preview and try the import again.'
+		);
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+
 	/**
 	 * Validates the destination of a redirect and returns it as the next target.
 	 *
@@ -416,20 +609,23 @@ final class MediaFetch {
 	 * every resolved address being public — is exactly what must be checked for
 	 * an address an attacker's server supplied, and rather more urgently.
 	 *
-	 * @param mixed                                                                   $response The 3xx response.
-	 * @param array{url: string, scheme: string, host: string, port: int, ip: string} $from     The hop that produced it.
+	 * @param mixed                                                                   $response    The 3xx response.
+	 * @param array{url: string, scheme: string, host: string, port: int, ip: string} $from        The hop that produced it.
+	 * @param string                                                                  $correlation The id detail is logged under.
 	 *
 	 * @return array{url: string, scheme: string, host: string, port: int, ip: string} The validated next hop.
 	 *
 	 * @throws OperationException When there is no destination, or the guard refuses it.
 	 */
-	private function next_hop( $response, array $from ): array {
+	private function next_hop( $response, array $from, string $correlation ): array {
 		$location = wp_remote_retrieve_header( $response, 'location' );
 
 		// Not a string when the header repeated, in which case core hands back
 		// an array and there is no single destination to follow. Empty when it
 		// was absent. Neither is followed, and neither is guessed at.
 		if ( ! is_string( $location ) || '' === trim( $location ) ) {
+			$this->log( $correlation, sprintf( 'redirect with no single usable Location from: %s', $from['url'] ) );
+
 			$this->refuse(
 				ErrorCode::ExecutionFailed,
 				'The remote server sent a redirect with no destination.',
@@ -437,7 +633,7 @@ final class MediaFetch {
 			);
 		}
 
-		return $this->guard->validate( $this->absolute_hop( trim( $location ), $from ) );
+		return $this->guard->validate( $this->absolute_hop( trim( $location ), $from, $correlation ) );
 	}
 
 	/**
@@ -457,14 +653,21 @@ final class MediaFetch {
 	 * failure is a refused import, not a request to an address this class
 	 * computed differently from the transport that dials it.
 	 *
-	 * @param string                                                                  $location The `Location` value, trimmed and non-empty.
-	 * @param array{url: string, scheme: string, host: string, port: int, ip: string} $from     The hop that produced it.
+	 * IT IS LOGGED WHEN IT REFUSES. A path-relative `Location` is rare enough to
+	 * have been accepted as a non-gap in review, but "rare" is not "never", and a
+	 * refusal whose cause is invisible on the envelope by design must be visible
+	 * somewhere. The server-side line is what makes a real-world occurrence
+	 * diagnosable instead of a mystery.
+	 *
+	 * @param string                                                                  $location    The `Location` value, trimmed and non-empty.
+	 * @param array{url: string, scheme: string, host: string, port: int, ip: string} $from        The hop that produced it.
+	 * @param string                                                                  $correlation The id detail is logged under.
 	 *
 	 * @return string The absolute URL.
 	 *
 	 * @throws OperationException When the form is not one this class resolves.
 	 */
-	private function absolute_hop( string $location, array $from ): string {
+	private function absolute_hop( string $location, array $from, string $correlation ): string {
 		if ( 1 === preg_match( '#\A[a-z][a-z0-9+.\-]*:#i', $location ) ) {
 			return $location;
 		}
@@ -476,6 +679,8 @@ final class MediaFetch {
 		if ( str_starts_with( $location, '/' ) ) {
 			return sprintf( '%s://%s:%d%s', $from['scheme'], $from['host'], $from['port'], $location );
 		}
+
+		$this->log( $correlation, sprintf( 'unresolvable Location "%s" from: %s', $location, $from['url'] ) );
 
 		$this->refuse(
 			ErrorCode::ExecutionFailed,

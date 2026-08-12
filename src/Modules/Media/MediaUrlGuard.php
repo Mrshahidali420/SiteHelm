@@ -224,11 +224,22 @@ final class MediaUrlGuard {
 	 * nothing is handed to a resolver until it has been established that the
 	 * URL is one this site would fetch at all.
 	 *
+	 * THE RETURNED `url` IS CORE'S NORMALISED FORM, NOT THE CALLER'S STRING.
+	 * `wp_http_validate_url()` returns the URL after `wp_kses_bad_protocol()` has
+	 * been over it, which lower-cases the scheme, and that normalised string is
+	 * the one `WP_Http::request()` will rewrite the request to before the
+	 * transport ever sees it (`class-wp-http.php:283-289`). Returning the raw
+	 * input instead meant MediaFetch held one spelling while the transport hooks
+	 * were handed another, and an attacker could choose the difference: a single
+	 * uppercase letter in `HTTPS://` was enough to make the address pin silently
+	 * not apply. Handing back the string core will actually use removes the
+	 * divergence at its source.
+	 *
 	 * @param string $url The caller-supplied URL.
 	 *
 	 * @return array{url: string, scheme: string, host: string, port: int, ip: string}
-	 *         The validated URL, its normalised host, its effective port, and the
-	 *         address the transport must be pinned to.
+	 *         The validated URL in core's normalised form, its normalised host,
+	 *         its effective port, and the address the transport must be pinned to.
 	 *
 	 * @throws OperationException With ErrorCode::InvalidInput on every refusal.
 	 */
@@ -237,12 +248,18 @@ final class MediaUrlGuard {
 		// STRICTER than the platform. It is not kept as the only gate: it misses
 		// link-local (the cloud metadata range on AWS, GCP and Azure) and does
 		// not consider IPv6 at all.
-		if ( ! wp_http_validate_url( $url ) ) {
+		$validated = wp_http_validate_url( $url );
+
+		if ( ! is_string( $validated ) || '' === $validated ) {
 			$this->refuse(
 				'The supplied address was refused by this site before it was examined.',
 				'Supply a complete, publicly reachable http or https URL to the asset.'
 			);
 		}
+
+		// Every check from here on reads the NORMALISED string, so that what was
+		// examined and what is returned are the same URL.
+		$url = $validated;
 
 		$parts = wp_parse_url( $url );
 
