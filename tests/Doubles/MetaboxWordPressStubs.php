@@ -285,12 +285,25 @@ trait MetaboxWordPressStubs {
 						return self::metaboxFormatted( $raw[ $id ] ?? [] );
 					}
 
+					$held = array_values( $raw[ $id ] ?? [] );
+
 					// META BOX'S OWN EMPTY ANSWER, AND THE WHOLE REASON hasStoredRow()
 					// EXISTS. A field with no stored row answers `''` here, which is
 					// indistinguishable from a field storing an empty string — so a
 					// wrapper that inferred presence from this value would be wrong on
 					// every field an operator deliberately emptied.
-					return $raw[ $id ][0] ?? '';
+					if ( [] === $held ) {
+						return '';
+					}
+
+					// A FIELD HOLDING MORE THAN ONE ROW ANSWERS ALL OF THEM. Meta Box's
+					// accessor answers a single-valued field with its one value and a
+					// multi-valued one with the list; a double that answered row 0 for
+					// both would report a five-row field as holding its first row only —
+					// so a read path that lost every row but the first, or a write that
+					// left four rows behind, would pass here and lose four values on a
+					// real site.
+					return 1 === count( $held ) ? $held[0] : $held;
 				}
 			);
 		}
@@ -316,8 +329,8 @@ trait MetaboxWordPressStubs {
 					// ROW. That is what makes the read-back of a multi-value field N
 					// rows, and it is the shape a snapshot has to record.
 					$raw[ $id ] = in_array( $id, $formatting_fields, true )
-						? array_values( (array) $value )
-						: [ $value ];
+						? array_map( self::metaboxStoredRow( ... ), array_values( (array) $value ) )
+						: [ self::metaboxStoredRow( $value ) ];
 
 					$row = sprintf( '%s:%s', is_scalar( $object_id ) ? $object_id : '', $id );
 
@@ -392,13 +405,28 @@ trait MetaboxWordPressStubs {
 				}
 			);
 
+			// THE META ID COUNTER IS THE DOUBLE'S OWN, and it never restarts. Core
+			// answers a NEW row's identifier, which is unique across the table and
+			// unrelated to how many rows the key now holds; a counter per key would give
+			// two different fields the same id and let a caller that keyed anything by
+			// the answer look correct.
+			$next_meta_id = 1000;
+
 			Functions\when( 'add_post_meta' )->alias(
-				function ( mixed $object_id = null, mixed $meta_key = null, mixed $meta_value = null, mixed $unique = false ) use ( &$raw, &$rows ): mixed {
+				function ( mixed $object_id = null, mixed $meta_key = null, mixed $meta_value = null, mixed $unique = false ) use ( &$raw, &$rows, &$next_meta_id ): mixed {
 					$id = is_scalar( $meta_key ) ? (string) $meta_key : '';
 
 					$this->metaboxCalls[] = [ 'rawWrite', [ $object_id, $id, $meta_value, $unique ] ];
 
-					$raw[ $id ][] = $meta_value;
+					// `$unique` IS A REFUSAL AND NOT A NO-OP. Core adds nothing and
+					// answers false when the key already holds a row and the caller asked
+					// for uniqueness, which is the one add_post_meta() failure a restore
+					// can actually meet.
+					if ( true === $unique && [] !== ( $raw[ $id ] ?? [] ) ) {
+						return false;
+					}
+
+					$raw[ $id ][] = self::metaboxStoredRow( $meta_value );
 
 					$row = sprintf( '%s:%s', is_scalar( $object_id ) ? $object_id : '', $id );
 
@@ -406,10 +434,43 @@ trait MetaboxWordPressStubs {
 						$rows[] = $row;
 					}
 
-					return count( $raw[ $id ] );
+					// THE NEW ROW'S META ID, WHICH IS NOT A COUNT. Core answers an
+					// identifier on success and false on failure, so a caller testing the
+					// answer for truth is right and a caller reading it as "how many rows
+					// there are now" is wrong — and a double answering a count makes the
+					// second look correct, right up to the first row that fails to add.
+					++$next_meta_id;
+
+					return $next_meta_id;
 				}
 			);
 		}
+	}
+
+	/**
+	 * What a postmeta row actually holds once the database has taken the value.
+	 *
+	 * POSTMETA IS A TEXT COLUMN AND `null` IS NOT A VALUE IT CAN HOLD. Core writes the
+	 * empty string for `null` and for `false`, and `'1'` for `true`; the row then reads
+	 * back as that text and never as the PHP value that was handed in. A double that
+	 * echoed the value back would let a write path promising `null` verify against a
+	 * `null` no site ever stores, and the same code would refuse itself in production
+	 * where the answer is `''` — which is a verification failure on a write that landed.
+	 *
+	 * A STRUCTURE IS LEFT ALONE, because core serializes it and hands it back
+	 * unserialized: an array really does survive the round trip with its members' own
+	 * types, and coercing here would double-punish a value the storage keeps.
+	 *
+	 * @param mixed $value The value handed to the write.
+	 *
+	 * @return mixed The value the row then holds.
+	 */
+	private static function metaboxStoredRow( mixed $value ): mixed {
+		if ( null === $value || false === $value ) {
+			return '';
+		}
+
+		return true === $value ? '1' : $value;
 	}
 
 	/**

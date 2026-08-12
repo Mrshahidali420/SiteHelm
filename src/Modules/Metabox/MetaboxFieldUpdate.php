@@ -45,13 +45,15 @@ use SiteHelm\Contracts\SnapshotPolicy;
  * delete, goes by id. The `name` appears in exactly one place: the operator-facing
  * text of a refusal, where it is what a person recognises.
  *
- * THE NOTICES RIDE THE ENVELOPE'S OWN `warnings` CHANNEL, AND `data` GAINS NO
- * MEMBER FOR THEM. Spec §8's rule is that no `data` member may be called
+ * THE SKIPPED-GROUP WARNINGS RIDE THE ENVELOPE'S OWN `warnings` CHANNEL, AND `data`
+ * GAINS NO MEMBER FOR THEM. Spec §8's rule is that no `data` member may be called
  * `warnings`, because the envelope emits a top-level one and a client honouring the
  * envelope would report zero warnings for a degraded call. A write's `data` is
- * WriteOutputSchema's two closed branches and carries no notices member at all, so
- * the skipped-group notices are handed to PlannedChange, which is the engine's own
- * documented channel for them. There is nothing here to collide.
+ * WriteOutputSchema's two closed branches and carries no member for them at all, so
+ * they are handed to PlannedChange, which is the engine's own documented channel.
+ * They are called warnings here from the moment they are built, because that is the
+ * channel they leave by; the module's READ operations call their equivalents notices
+ * because there it is the closed schema name of a `data` member they publish.
  *
  * THREE PIECES OF PER-REQUEST STATE, AND THEY ARE NOT AVOIDABLE. `WriteOperation`
  * hands planChange() a TargetState and the input, and a TargetState carries values
@@ -89,16 +91,24 @@ final class MetaboxFieldUpdate implements WriteOperation {
 	private array $resolved = [];
 
 	/**
-	 * The skipped-group notices resolveTarget() built, carried into the preview.
+	 * The skipped-group warnings resolveTarget() built, carried into the preview.
+	 *
+	 * NAMED FOR THE CHANNEL IT LEAVES BY. PlannedChange's fourth argument is
+	 * `warnings` and the envelope emits a top-level `warnings` member, so this is a
+	 * warning from the moment it is built; the module's READ operations call their
+	 * equivalents notices because that is the closed schema name of a `data` member
+	 * they publish, which is a different thing with a different name for a reason.
+	 * Two words for one value on one path is how a channel comes to be reported twice
+	 * or not at all.
 	 *
 	 * They ride here rather than on the TargetState because a TargetState's fields
-	 * are fingerprinted and diffed, and a notice is neither. They are not part of the
+	 * are fingerprinted and diffed, and a warning is neither. They are not part of the
 	 * planned payload either, so a group that became unreadable between preview and
 	 * apply changes what the operator is told and never whether the plan is admitted.
 	 *
 	 * @var string[]
 	 */
-	private array $notices = [];
+	private array $warnings = [];
 
 	/**
 	 * The field ids applyChange() wrote, in plan order, for readBack() to re-read.
@@ -234,7 +244,7 @@ final class MetaboxFieldUpdate implements WriteOperation {
 		$post   = (int) $target['post'];
 
 		$this->resolved = $target['writes'];
-		$this->notices  = $this->omissions( $target['groups'] );
+		$this->warnings = $this->omissions( $target['groups'] );
 
 		$fields = [];
 
@@ -315,7 +325,13 @@ final class MetaboxFieldUpdate implements WriteOperation {
 				'value' => $value,
 			];
 
-			$after[ $write['id'] ] = $value;
+			// THE PROMISE IS SETTLED AND THE PAYLOAD IS NOT, and the two members are
+			// different things. `fields[].value` is what applyChange() hands the site, so
+			// it stays the caller's own value: settling it would store the string '0'
+			// where the operator asked for the number. `after` is what the change engine
+			// DIGESTS against the re-read, and the re-read comes out of a text column, so
+			// it is measured in the spelling the storage answers in.
+			$after[ $write['id'] ] = $this->canonical->settle( $value );
 		}
 
 		ksort( $fields, SORT_STRING );
@@ -328,7 +344,7 @@ final class MetaboxFieldUpdate implements WriteOperation {
 			],
 			$after,
 			array_keys( $after ),
-			$this->notices
+			$this->warnings
 		);
 	}
 	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
@@ -435,7 +451,15 @@ final class MetaboxFieldUpdate implements WriteOperation {
 
 			$this->api->writeValue( $write['id'], $post, $write['value'] );
 
-			if ( ! $this->canonical->matches( $write['value'], $this->stored( $write['id'], $post ) ) ) {
+			// BOTH SIDES SETTLED, WHICH IS WHAT MAKES THIS GUARD AGREE WITH THE ENGINE'S.
+			// The plan carries the caller's own value because that is what was written;
+			// the evidence comes out of a text column as rows. Measuring one against the
+			// other unsettled is how a module-level check can pass a write the engine's
+			// own digest comparison then reads as never applied.
+			if ( ! $this->canonical->matches(
+				$this->canonical->settle( $write['value'] ),
+				$this->stored( $write['id'], $post )
+			) ) {
 				throw new OperationException(
 					ErrorCode::VerificationFailed,
 					sprintf(
@@ -519,16 +543,30 @@ final class MetaboxFieldUpdate implements WriteOperation {
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
 
 	/**
-	 * One field's stored value, canonically projected FOR EMISSION.
+	 * One field's stored rows, settled and projected FOR EMISSION.
 	 *
-	 * EVERY CALLER OF THIS IS AN OUTBOUND ONE — the before-state and the read-back
-	 * reported as `state` — so it takes the projection that strips a server path. The
-	 * value came off the site, not out of the request, and §8 governs what leaves.
+	 * THE WHOLE WRITE PATH SPEAKS RAW, AND THE FORMATTED ANSWER BELONGS TO THE READ
+	 * OPERATION ALONE. Meta Box's read accessor runs a field's read pipeline: an
+	 * attachment field answers an info array per file — a filename, a URL, a server
+	 * path — built from rows that hold nothing but the ids the write stored. This
+	 * operation's before-state and read-back are measured against a promise spelled in
+	 * what the caller sent, and the change engine compares those two as digests without
+	 * any tolerance of its own, so a state built from the formatted answer makes the
+	 * after-state differ from the promise on every field of that kind: an idempotent
+	 * write then matches the BEFORE branch instead, and a write that landed is reported
+	 * as dropped and rolled back. Reading the rows here makes the promise, the
+	 * before-state and the after-state one currency by construction. metabox-field-get
+	 * is where an operator asks what a field PRESENTS, and it is unaffected.
 	 *
-	 * The one place the forward path reads a value, so the before-state, the
-	 * dropped-write comparison and the read-back cannot disagree about how a value is
-	 * spelled. Two spellings of that decision is how a promise and a measurement
-	 * drift apart and every write of one field type reports as not applied.
+	 * THE SETTLEMENT IS APPLIED TO BOTH SIDES OR TO NEITHER. See
+	 * MetaboxValueCanonical::settle(): a field's rows are a list and a promise usually
+	 * is not, and the row-list question has to be answered identically wherever a value
+	 * is measured or promised.
+	 *
+	 * THE OUTBOUND PROJECTION STAYS, EVEN THOUGH THE ROWS CARRY NO SERVER PATH TO
+	 * STRIP. This value is reported to a client as `state`, §8 governs what leaves, and
+	 * a rule that holds only because of what the reader happens to answer today is a
+	 * rule the next reader change removes.
 	 *
 	 * IT IS NOT ON THE CAPTURE PATH. A snapshot records the RAW value (spec §7), and
 	 * a projection here would cut a structure off at the depth cap and have the
@@ -537,42 +575,28 @@ final class MetaboxFieldUpdate implements WriteOperation {
 	 * @param string $id      The field id, which is the meta key.
 	 * @param int    $post_id The post the value is stored against.
 	 *
-	 * @return mixed The canonical projection of the stored value.
+	 * @return mixed The settled projection of the stored rows.
 	 */
 	private function read( string $id, int $post_id ): mixed {
-		return $this->canonical->projectOutbound( $this->api->readValue( $id, $post_id ) );
+		return $this->canonical->settle( $this->canonical->projectOutbound( $this->api->readRawRows( $id, $post_id ) ) );
 	}
 
 	/**
-	 * What the site now HOLDS for one field, canonically projected.
+	 * What the site now HOLDS for one field, settled as evidence.
 	 *
-	 * THE EVIDENCE THE DROPPED-WRITE GUARD MEASURES AGAINST, AND read() IS NOT IT.
-	 * Meta Box's read accessor runs a field's read pipeline: an attachment field
-	 * answers an info array per file — a filename, a URL, a server path — built from
-	 * rows that hold nothing but the ids the write stored. Measuring a promise made
-	 * in ids against an answer given in info arrays refuses every write to such a
-	 * field as dropped, which is a refusal after the value has already landed.
-	 *
-	 * THE ROWS ARE A LIST AND THE PROMISE USUALLY IS NOT, which is what
-	 * MetaboxValueCanonical::matches()' single-row tolerance is for; the projection is
-	 * the same one the promise was spelled through, so the two sides still share one
-	 * spelling of every value inside the list.
-	 *
-	 * read() STAYS AS IT IS AND IS STILL RIGHT FOR THE BEFORE-STATE AND THE READ-BACK:
-	 * both are reported to the operator, who is owed the value the site presents.
-	 *
-	 * THE INBOUND PROJECTION, BECAUSE THIS ANSWER IS EVIDENCE AND NOT AN EMISSION. It
-	 * is compared against a promise spelled through the same projection and then
-	 * discarded; stripping members from one side of a comparison is how a guard stops
-	 * being able to see the difference it exists to catch.
+	 * THE SAME ROWS read() MEASURES, THROUGH THE INBOUND PROJECTION, BECAUSE THIS
+	 * ANSWER IS EVIDENCE AND NOT AN EMISSION. It is compared against a promise spelled
+	 * through that same projection and then discarded; stripping members from one side
+	 * of a comparison is how a guard stops being able to see the difference it exists
+	 * to catch.
 	 *
 	 * @param string $id      The field id, which is the meta key.
 	 * @param int    $post_id The post the value is stored against.
 	 *
-	 * @return mixed The canonical projection of the stored rows.
+	 * @return mixed The settled projection of the stored rows.
 	 */
 	private function stored( string $id, int $post_id ): mixed {
-		return $this->canonical->projectInbound( $this->api->readRawRows( $id, $post_id ) );
+		return $this->canonical->settle( $this->canonical->projectInbound( $this->api->readRawRows( $id, $post_id ) ) );
 	}
 
 	/**
@@ -604,7 +628,7 @@ final class MetaboxFieldUpdate implements WriteOperation {
 	}
 
 	/**
-	 * The notices for the field groups whose definitions could not be read.
+	 * The warnings for the field groups whose definitions could not be read.
 	 *
 	 * A SKIPPED GROUP IS A CHANNEL AND NOT A SILENCE, the rule MetaboxFieldIndex sets
 	 * and metabox-field-get already reports on. Here it matters more than on a read: a
@@ -617,7 +641,7 @@ final class MetaboxFieldUpdate implements WriteOperation {
 	 *
 	 * @param array[] $groups The applicable groups, each carrying a `readable` flag.
 	 *
-	 * @return string[] The notices, or an empty list when nothing was skipped.
+	 * @return string[] The warnings, or an empty list when nothing was skipped.
 	 */
 	private function omissions( array $groups ): array {
 		$count = 0;
