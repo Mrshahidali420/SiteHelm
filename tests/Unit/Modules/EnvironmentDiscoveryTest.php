@@ -11,6 +11,7 @@ namespace SiteHelm\Tests\Unit\Modules;
 
 use Brain\Monkey\Functions;
 use SiteHelm\Contracts\OperationContext;
+use SiteHelm\Contracts\OperationDefinition;
 use SiteHelm\Contracts\PermissionMode;
 use SiteHelm\Modules\Diagnostics\DiagnosticsModule;
 use SiteHelm\Modules\Diagnostics\EnvironmentDiscovery;
@@ -102,6 +103,55 @@ final class EnvironmentDiscoveryTest extends TestCase {
 		$this->assertSame( 'system-read', $definition->dispatcherName() );
 		$this->assertSame( [ 'manage_options' ], $definition->requiredCapabilities );
 		$this->assertSame( 'low', $definition->risk->value );
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+
+	// phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+	/**
+	 * Both Diagnostics operations reach the system-read catalog, and nothing
+	 * else does.
+	 *
+	 * The catalog is asserted as a whole list rather than by two `has()` calls,
+	 * because a registered operation that never reaches a dispatcher catalog is
+	 * an operation no client can see: `has()` would be satisfied by a Domain
+	 * typo that parked `system-integrations` on the content catalog. Asserting
+	 * the identifiers in registration order also fails when a third operation
+	 * arrives unannounced, which is what makes this a net rather than a pair of
+	 * existence checks.
+	 */
+	public function test_module_registers_both_system_reads_and_nothing_else(): void {
+		$registry = new CapabilityRegistry();
+		( new DiagnosticsModule() )->register( $registry );
+
+		$this->assertSame(
+			[ 'system-environment', 'system-integrations' ],
+			array_map(
+				static fn( OperationDefinition $d ): string => $d->id,
+				$registry->forDispatcher( 'system-read' )
+			)
+		);
+
+		foreach ( CapabilityRegistry::DISPATCHERS as $dispatcher ) {
+			if ( 'system-read' === $dispatcher ) {
+				continue;
+			}
+
+			$this->assertSame(
+				[],
+				$registry->forDispatcher( $dispatcher ),
+				"The Diagnostics module must register nothing on '{$dispatcher}'."
+			);
+		}
+
+		$integrations = $registry->definition( 'system-integrations' );
+
+		$this->assertSame( 'system-read', $integrations->dispatcherName() );
+		$this->assertSame( [ 'manage_options' ], $integrations->requiredCapabilities );
+		$this->assertSame( 'low', $integrations->risk->value );
+		$this->assertTrue( $integrations->isReadOnly );
+		$this->assertFalse( $registry->hasWriteOperation( 'system-integrations' ) );
+		$this->assertSame( false, $integrations->inputSchema['additionalProperties'] ?? null );
+		$this->assertSame( [ 'wordpress' => '>=' . SITEHELM_MIN_WP ], $integrations->supportedVersions );
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 }
