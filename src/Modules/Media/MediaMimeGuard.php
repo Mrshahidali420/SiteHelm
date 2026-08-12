@@ -66,12 +66,11 @@ final class MediaMimeGuard {
 	/**
 	 * Validates one upload payload, in memory, and reports what it is.
 	 *
-	 * The seven steps run in this order and the order is load bearing: nothing
-	 * reads the bytes until they are known to be decodable and bounded, and
-	 * nothing consults an allowlist until the bytes have identified themselves.
-	 *
-	 * Steps 1 and 1b are the base64 transport's own, and are all this method
-	 * performs itself; the rest is inspectBytes(), which the import path shares.
+	 * This method performs steps 1 and 1b, the base64 transport's own, and then
+	 * delegates steps 2 through 7 to inspectBytes(), which the import path
+	 * shares. Across both, the order is load bearing: nothing reads the bytes
+	 * until they are known to be decodable and bounded, and nothing consults an
+	 * allowlist until the bytes have identified themselves.
 	 *
 	 * @param string $filename      The client-supplied filename.
 	 * @param string $contentBase64 The client-supplied base64 payload.
@@ -146,8 +145,8 @@ final class MediaMimeGuard {
 	 *         the sanitized filename's extension.
 	 *
 	 * @throws OperationException With ErrorCode::InvalidInput on every failure.
-	 *                            A refused upload is a bad request, never an
-	 *                            execution failure.
+	 *                            Refused content is a bad request on either
+	 *                            transport, never an execution failure.
 	 */
 	public function inspectBytes( string $filename, string $bytes ): array {
 		// 2. Size, against the smaller of the built-in cap and the site's own.

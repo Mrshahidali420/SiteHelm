@@ -194,14 +194,15 @@ final class MediaUpload implements WriteOperation {
 	 * correct pair, and MediaModule still injects them explicitly so the wiring
 	 * stays visible in one place.
 	 *
-	 * @param MediaFields         $fields   The attachment projection.
+	 * @param MediaFields         $fields   The attachment projection, used only to
+	 *                                      construct the default sideload.
 	 * @param MediaTarget         $targets  Shared target resolution.
 	 * @param MediaMimeGuard      $guard    Upload byte validation.
 	 * @param MediaAssetPlan|null $planner  Shared payload construction.
 	 * @param MediaSideload|null  $sideload Shared attachment creation.
 	 */
 	public function __construct(
-		private readonly MediaFields $fields,
+		MediaFields $fields,
 		private readonly MediaTarget $targets,
 		private readonly MediaMimeGuard $guard,
 		?MediaAssetPlan $planner = null,
