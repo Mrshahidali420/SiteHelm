@@ -407,6 +407,67 @@ final class MetaboxFieldUpdateTest extends TestCase {
 	}
 
 	/**
+	 * INVARIANT 5, ON THE FIELD THE GUARD WAS NEVER SHOWN. Meta Box's read accessor
+	 * answers a FORMATTED value for an attachment field — an info array per id — while
+	 * the write accessor takes, and postmeta holds, the bare ids. A guard that compares
+	 * what it promised against that formatted answer compares a list of ids against a
+	 * list of info arrays, and refuses VerificationFailed for a write that landed
+	 * perfectly. The verification re-read is therefore the RAW rows.
+	 */
+	public function test_the_dropped_write_guard_accepts_a_write_to_a_formatted_field(): void {
+		$this->installFixtureSite();
+
+		$operation = $this->writeOperation();
+		$request   = $this->writeRequest( [ $this->writeMember( self::heroId(), [ 10 ] ) ] );
+
+		$state   = $operation->resolveTarget( $request, $this->writeContext() );
+		$planned = $operation->planChange( $state, $request, $this->writeContext() );
+
+		$this->assertSame(
+			MetaboxFieldUpdate::targetKey( self::fixturePost() ),
+			$operation->applyChange( $state, $planned, $this->writeContext() ),
+			'The ids the site now holds are the ids that were promised; the formatted answer is not the evidence.'
+		);
+	}
+
+	/**
+	 * NO FILESYSTEM PATH REACHES THE PROJECTED BEFORE-STATE. The formatted answer for
+	 * an attachment field carries the file's absolute position on the server's disk
+	 * beside its URL, and this map is fingerprinted, previewed and returned to the
+	 * caller. The read side strips those members by name at every depth; the write
+	 * side spells the same rule through the same list, so a path cannot leak through
+	 * the channel that skipped it.
+	 */
+	public function test_the_before_state_carries_no_server_path_for_a_formatted_field(): void {
+		$this->installFixtureSite();
+
+		$state = $this->writeOperation()->resolveTarget(
+			$this->writeRequest( [ $this->writeMember( self::heroId(), [ 10 ] ) ] ),
+			$this->writeContext()
+		);
+
+		$encoded = (string) json_encode( $state->fields, JSON_UNESCAPED_SLASHES );
+
+		$this->assertStringNotContainsString(
+			'/var/www',
+			$encoded,
+			'A server path in the before-state is a disclosure the read side already refuses to make.'
+		);
+
+		$this->assertStringNotContainsString(
+			'path',
+			$encoded,
+			'The member is stripped by NAME, so neither the key nor a path-shaped value survives it.'
+		);
+
+		$this->assertStringContainsString(
+			'https://example.com',
+			$encoded,
+			'A URL is not a server path and is not stripped; a rule that took both would empty the field.'
+		);
+	}
+
+	/**
 	 * The plan is re-planned in this process before it is applied, so this reads the
 	 * member planChange() just refused to leave null rather than trusting it. `(int)
 	 * null` is 0 and a write against post 0 lands on the wrong post entirely.

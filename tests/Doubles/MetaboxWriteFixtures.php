@@ -49,6 +49,13 @@ use SiteHelm\Modules\Metabox\MetaboxWriteTarget;
  *   - `deep` holds a structure nested past MetaboxSchemaFormat::MAX_DEPTH. It is the
  *     one field on this site whose raw value cannot be recorded faithfully, so it is
  *     where the capture-time RollbackUnavailable is proven.
+ *   - `hero` is an `image_advanced` field, and it is the one field here where Meta
+ *     Box's read accessor and its write accessor DISAGREE. The site holds attachment
+ *     ids as postmeta rows; `rwmb_meta()` answers an info array per id, carrying a
+ *     `path`. Every rule the write path is specified on — the snapshot records what
+ *     the site holds, the verification compares like with like, no filesystem path
+ *     reaches an envelope — is invisible on the five plain fields above, because for
+ *     those three the reader, the writer and the row agree.
  *
  * A SHARED IDENTIFIER IS A PRIVATE STATIC METHOD AND NOT A CONSTANT. PHP 8.1 has no
  * trait constants, and this repository's floor is 8.1 — a constant here is a fatal
@@ -183,6 +190,28 @@ trait MetaboxWriteFixtures {
 	}
 
 	/**
+	 * The id of the attachment field whose read answer is formatted.
+	 *
+	 * @return string The field id, which is the meta key.
+	 */
+	private static function heroId(): string {
+		return 'hero';
+	}
+
+	/**
+	 * The attachment ids the fixture post's `hero` field holds, one postmeta row each.
+	 *
+	 * TWO ROWS AND NOT ONE, because a single-row read and a multi-row read are the
+	 * two cases the raw reader has to answer the same way, and a fixture holding one
+	 * row could not tell a row list from the row itself.
+	 *
+	 * @return int[] The stored rows.
+	 */
+	private static function heroRows(): array {
+		return [ 9, 10 ];
+	}
+
+	/**
 	 * Makes this process the fixture site.
 	 *
 	 * ONLY EVER FROM A TEST RUNNING IN ITS OWN PROCESS: it defines RWMB_VER.
@@ -222,7 +251,8 @@ trait MetaboxWriteFixtures {
 			self::storedRows(),
 			true,
 			true,
-			$dropped
+			$dropped,
+			[ self::heroId() ]
 		);
 	}
 
@@ -240,7 +270,7 @@ trait MetaboxWriteFixtures {
 
 		return new MetaboxFieldUpdate(
 			new MetaboxWriteTarget( $presence, $index ),
-			new MetaboxFieldUpdateInput(),
+			new MetaboxFieldUpdateInput( $canonical ),
 			$api,
 			$canonical,
 			new MetaboxWriteRecovery( $api, $canonical, new PayloadNormalizer() )
@@ -322,6 +352,7 @@ trait MetaboxWriteFixtures {
 			sprintf( '%d:%s', self::fixturePost(), self::weightId() ),
 			sprintf( '%d:%s', self::fixturePost(), self::sectionsId() ),
 			sprintf( '%d:%s', self::fixturePost(), self::deepId() ),
+			sprintf( '%d:%s', self::fixturePost(), self::heroId() ),
 		];
 	}
 
@@ -353,6 +384,7 @@ trait MetaboxWriteFixtures {
 				],
 			],
 			self::deepId()     => self::nestedPastCap(),
+			self::heroId()     => self::heroRows(),
 		];
 	}
 
@@ -407,7 +439,7 @@ trait MetaboxWriteFixtures {
 			[
 				'title'      => 'Extra',
 				'post_types' => [ self::fixturePostType() ],
-				'fields'     => [ self::sectionsField(), self::deepField() ],
+				'fields'     => [ self::sectionsField(), self::deepField(), self::heroField() ],
 			]
 		);
 	}
@@ -506,6 +538,24 @@ trait MetaboxWriteFixtures {
 			'id'   => self::deepId(),
 			'name' => 'Deep',
 			'type' => 'group',
+		];
+	}
+
+	/**
+	 * The attachment field whose read answer is formatted and whose storage is rows.
+	 *
+	 * THE ASYMMETRY IS THE POINT. Meta Box answers a field of this type with an info
+	 * array per attachment — carrying a server path among the members — while the
+	 * rows underneath it hold nothing but the attachment ids. A fixture whose read
+	 * and write channels agreed could not tell a raw snapshot from a formatted one.
+	 *
+	 * @return array<string, mixed> The definition.
+	 */
+	private static function heroField(): array {
+		return [
+			'id'   => self::heroId(),
+			'name' => 'Hero',
+			'type' => 'image_advanced',
 		];
 	}
 }

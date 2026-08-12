@@ -79,6 +79,24 @@ final class MetaboxFieldUpdateInput {
 	private const MEMBERS = [ 'field', 'value' ];
 
 	/**
+	 * Constructs the validator.
+	 *
+	 * THE PROJECTION IS INJECTED SO THAT THE DEPTH BOUND IS ASKED OF THE THING THAT
+	 * ENFORCES IT. MetaboxValueCanonical answers null for a structure sitting at
+	 * MetaboxSchemaFormat::MAX_DEPTH, and this class refuses a caller value that would
+	 * be cut there. Reimplementing the walk here would produce a second answer that
+	 * disagrees with the projection's the moment either changes, and the disagreement
+	 * surfaces as a write that reports success having silently dropped part of what
+	 * the caller sent.
+	 *
+	 * @param MetaboxValueCanonical $canonical The pure value projection, consulted here only to ask a question.
+	 */
+	public function __construct(
+		private readonly MetaboxValueCanonical $canonical,
+	) {
+	}
+
+	/**
 	 * The caller-facing schema of the request this class validates.
 	 *
 	 * IT LIVES BESIDE THE BOUNDS IT DECLARES. `maxItems` and `maxLength` are
@@ -210,6 +228,29 @@ final class MetaboxFieldUpdateInput {
 			}
 
 			$seen[ $id ] = true;
+
+			// REFUSED AT INPUT RATHER THAN PROJECTED AWAY. Everything past
+			// MetaboxSchemaFormat::MAX_DEPTH becomes null in the canonical projection, and
+			// that projection is what the plan promises, what the digest is taken over
+			// and what is written — so a caller who sends a structure nested past the cap
+			// gets a write that stores a truncated value and a response that reports
+			// success. The bound is the caller's to know about: it is a fact about the
+			// request, not about the site, which is why it is InvalidInput and why it can
+			// be asked here, ahead of the capability gate.
+			//
+			// THE FIELD IS NAMED AND THE VALUE IS NOT, the rule every message in this
+			// module keeps. The id is already bounded and quoted above.
+			if ( $this->canonical->truncates( $member['value'] ) ) {
+				throw new OperationException(
+					ErrorCode::InvalidInput,
+					sprintf(
+						'The value sent for the field "%s" is nested more than %d levels deep.',
+						$id,
+						MetaboxSchemaFormat::MAX_DEPTH
+					),
+					sprintf( 'Send a value nested at most %d levels deep.', MetaboxSchemaFormat::MAX_DEPTH )
+				);
+			}
 
 			$parsed[] = [
 				'field' => $id,

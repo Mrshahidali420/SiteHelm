@@ -100,10 +100,43 @@ final class MetaboxFieldUpdateRecoveryTest extends TestCase {
 			$this->writeContext()
 		);
 
+		$this->assertCount(
+			1,
+			$snapshot['fields'][0]['value'],
+			'A field holding one row is recorded as a list of one row, not as the row itself.'
+		);
+
 		$this->assertSame(
 			[ 0, 2 ],
-			array_keys( $snapshot['fields'][0]['value'] ),
+			array_keys( $snapshot['fields'][0]['value'][0] ),
 			'The raw stored keys are recorded; the canonical projection would have closed the gap.'
+		);
+	}
+
+	/**
+	 * INVARIANT 3, ON THE FIELD WHERE RAW AND READ REALLY DIFFER. For an attachment
+	 * field Meta Box's read accessor answers a FORMATTED value — an info array per
+	 * attachment, carrying the file's name, its URL and its absolute position on the
+	 * server's disk — while the postmeta rows underneath hold nothing but the ids. A
+	 * snapshot built from the read accessor records those info arrays, and restoring
+	 * it writes info arrays into a field that holds ids: the attachments are lost and
+	 * the rollback reports success. The recorded value is the ROWS.
+	 */
+	public function test_the_snapshot_records_the_stored_rows_and_not_the_formatted_answer(): void {
+		$this->installFixtureSite();
+
+		$operation = $this->writeOperation();
+		$request   = $this->writeRequest( [ $this->writeMember( self::heroId(), [ 11 ] ) ] );
+
+		$snapshot = $operation->captureSnapshot(
+			$operation->resolveTarget( $request, $this->writeContext() ),
+			$this->writeContext()
+		);
+
+		$this->assertSame(
+			[ 9, 10 ],
+			$snapshot['fields'][0]['value'],
+			'Both rows are recorded, in order, exactly as the site holds them.'
 		);
 	}
 
@@ -141,8 +174,8 @@ final class MetaboxFieldUpdateRecoveryTest extends TestCase {
 			'A field holding the empty string HAS a row; a field the editor never filled in does not.'
 		);
 
-		$this->assertSame( '', $snapshot['fields'][0]['value'], 'The empty string a row really holds is recorded.' );
-		$this->assertSame( 0, $snapshot['fields'][2]['value'], 'A stored 0 is a value, not an absence.' );
+		$this->assertSame( [ '' ], $snapshot['fields'][0]['value'], 'The empty string a row really holds is recorded, as the row that holds it.' );
+		$this->assertSame( [ 0 ], $snapshot['fields'][2]['value'], 'A stored 0 is a value, not an absence.' );
 
 		$this->assertSame(
 			[ 'post', self::fixturePost(), self::subtitleId() ],
@@ -253,7 +286,7 @@ final class MetaboxFieldUpdateRecoveryTest extends TestCase {
 
 		$this->assertSame(
 			100000,
-			strlen( $snapshot['fields'][0]['value'] ),
+			strlen( (string) $snapshot['fields'][0]['value'][0] ),
 			'A long leaf survives the projection whole and is recorded whole.'
 		);
 	}
@@ -350,19 +383,19 @@ final class MetaboxFieldUpdateRecoveryTest extends TestCase {
 						'id'      => self::subtitleId(),
 						'name'    => 'Subtitle',
 						'present' => true,
-						'value'   => '',
+						'value'   => [ '' ],
 					],
 					[
 						'id'      => self::weightId(),
 						'name'    => 'Weight',
 						'present' => true,
-						'value'   => 0,
+						'value'   => [ 0 ],
 					],
 					[
 						'id'      => self::deepId(),
 						'name'    => 'Deep',
 						'present' => true,
-						'value'   => null,
+						'value'   => [ null ],
 					],
 					[
 						'id'      => self::taglineId(),
@@ -385,15 +418,67 @@ final class MetaboxFieldUpdateRecoveryTest extends TestCase {
 			],
 			array_map(
 				static fn( array $call ): array => [ $call[1], $call[2] ],
-				$this->metaboxCallArguments( 'write' )
+				$this->metaboxCallArguments( 'rawWrite' )
 			),
-			'Every present field is written back exactly as recorded, including the three values a `??` would drop.'
+			'Every present field has its recorded rows put back exactly as recorded, including the three values a `??` would drop.'
+		);
+
+		$this->assertSame(
+			[
+				[ self::fixturePost(), self::subtitleId() ],
+				[ self::fixturePost(), self::weightId() ],
+				[ self::fixturePost(), self::deepId() ],
+				[ self::fixturePost(), self::taglineId() ],
+			],
+			$this->metaboxCallArguments( 'delete' ),
+			'A present field is put back by replacing its rows, and the one field that had no row is left with none rather than an empty one written beside it.'
+		);
+
+		$this->assertSame( 0, $this->metaboxCallCount( 'write' ), 'A row list is put back through postmeta and never through the formatted write.' );
+	}
+
+	/**
+	 * INVARIANT 4, THE OTHER DIRECTION. The flag decides even when the value disagrees.
+	 *
+	 * The test above pins one half: a present field whose recorded value is falsy is
+	 * still written back. Since every present field is now recorded as a ROW LIST, and
+	 * a list holding a falsy row is itself truthy, that half alone is satisfied by an
+	 * implementation that branched on the VALUE instead of the flag — the two agree on
+	 * every state capture() produces.
+	 *
+	 * They part on a state capture() does not produce and restore() is still handed:
+	 * an entry recorded absent that carries a value anyway, which an older snapshot
+	 * row or a hand-built state can be. Branching on the value there writes a row the
+	 * operator never had, and every later read reports the field as set. The flag is
+	 * the recorded fact; the value is only what to put back if it is true.
+	 */
+	public function test_restore_deletes_a_field_recorded_absent_even_when_the_entry_carries_a_value(): void {
+		$this->installFixtureSite();
+
+		$this->writeOperation()->restore(
+			[
+				'post'   => self::fixturePost(),
+				'fields' => [
+					[
+						'id'      => self::taglineId(),
+						'name'    => 'Tagline',
+						'present' => false,
+						'value'   => [ 'A tagline' ],
+					],
+				],
+			],
+			$this->writeContext()
 		);
 
 		$this->assertSame(
 			[ [ self::fixturePost(), self::taglineId() ] ],
-			$this->metaboxCallArguments( 'delete' ),
-			'The one field that had no row has its row removed rather than an empty one written beside it.'
+			$this->metaboxCallArguments( 'delete' )
+		);
+
+		$this->assertSame(
+			0,
+			$this->metaboxCallCount( 'rawWrite' ),
+			'A field recorded as having had no row is put back as having none.'
 		);
 	}
 
@@ -514,9 +599,18 @@ final class MetaboxFieldUpdateRecoveryTest extends TestCase {
 		);
 
 		$this->assertSame(
-			[ [ self::fixturePost(), self::taglineId() ] ],
+			[
+				[ self::fixturePost(), self::subtitleId() ],
+				[ self::fixturePost(), self::taglineId() ],
+			],
 			$this->metaboxCallArguments( 'delete' ),
-			'The field that had no row before the write has no row after the restore.'
+			'The field that held a row has it replaced by the recorded one; the field that had none before the write has none after the restore.'
+		);
+
+		$this->assertSame(
+			[ [ self::fixturePost(), self::subtitleId(), '', false ] ],
+			$this->metaboxCallArguments( 'rawWrite' ),
+			'The one row the post held is the one row put back.'
 		);
 	}
 

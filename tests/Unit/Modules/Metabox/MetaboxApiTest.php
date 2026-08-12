@@ -560,4 +560,115 @@ final class MetaboxApiTest extends TestCase {
 		$this->assertSame( 0, $this->metaboxCallCount( 'delete' ) );
 		$this->assertTrue( $this->api()->hasStoredRow( 'subtitle', 12 ) );
 	}
+
+	/**
+	 * The raw read answers the rows the site holds, not Meta Box's formatted answer.
+	 *
+	 * `rwmb_meta()` is the FORMATTED accessor: for an attachment field it answers an
+	 * info array per id, carrying a server path the site never stored. A snapshot
+	 * built on that records something that cannot be written back, so the recovery
+	 * path reads the postmeta rows through core instead — all of them, which is what
+	 * `$single = false` asks for and the only way a multi-row field is legible.
+	 */
+	public function test_a_raw_read_answers_every_stored_row_and_never_the_formatted_value(): void {
+		$this->installMetabox(
+			$this->metaboxRegistry( [] ),
+			'5.9.4',
+			[ 'hero' => [ 9, 10 ] ],
+			true,
+			true,
+			[ '12:hero' ],
+			true,
+			true,
+			[],
+			[ 'hero' ]
+		);
+
+		$this->assertSame( [ 9, 10 ], $this->api()->readRawRows( 'hero', 12 ) );
+		$this->assertSame( [ [ 12, 'hero', false ] ], $this->metaboxCallArguments( 'rawRead' ) );
+		$this->assertSame(
+			0,
+			$this->metaboxCallCount( 'value' ),
+			'The raw read must not go near the formatted accessor.'
+		);
+	}
+
+	public function test_a_raw_read_on_a_process_without_the_core_function_answers_no_rows(): void {
+		$this->installMetabox(
+			$this->metaboxRegistry( [] ),
+			'5.9.4',
+			[ 'subtitle' => 'A subtitle' ],
+			true,
+			true,
+			[ '12:subtitle' ],
+			true,
+			true,
+			[],
+			[],
+			false
+		);
+
+		$this->assertSame( [], $this->api()->readRawRows( 'subtitle', 12 ) );
+	}
+
+	/**
+	 * The raw write replaces the key's rows rather than adding to them.
+	 *
+	 * `add_post_meta()` appends, so writing three rows onto a key that already holds
+	 * two leaves five. A restore is a replacement, not an addition, and the delete is
+	 * what makes it one — which is why the two core functions are gated together.
+	 */
+	public function test_a_raw_write_clears_the_key_and_then_adds_one_row_per_element(): void {
+		$this->installMetabox(
+			$this->metaboxRegistry( [] ),
+			'5.9.4',
+			[ 'hero' => [ 9 ] ],
+			true,
+			true,
+			[ '12:hero' ],
+			true,
+			true,
+			[],
+			[ 'hero' ]
+		);
+
+		$api = $this->api();
+
+		$this->assertNull( $api->writeRawRows( 'hero', 12, [ 4, 5 ] ) );
+		$this->assertSame( [ [ 12, 'hero' ] ], $this->metaboxCallArguments( 'delete' ) );
+		$this->assertSame(
+			[ [ 12, 'hero', 4, false ], [ 12, 'hero', 5, false ] ],
+			$this->metaboxCallArguments( 'rawWrite' )
+		);
+		$this->assertSame( [ 4, 5 ], $api->readRawRows( 'hero', 12 ) );
+		$this->assertSame(
+			0,
+			$this->metaboxCallCount( 'write' ),
+			'The recovery path restores through core and never through the plugin accessor.'
+		);
+	}
+
+	public function test_a_raw_write_on_a_process_without_the_core_functions_changes_nothing(): void {
+		$this->installMetabox(
+			$this->metaboxRegistry( [] ),
+			'5.9.4',
+			[ 'subtitle' => 'Before' ],
+			true,
+			true,
+			[ '12:subtitle' ],
+			true,
+			true,
+			[],
+			[],
+			false
+		);
+
+		$this->api()->writeRawRows( 'subtitle', 12, [ 'After' ] );
+
+		// THE DELETE MUST NOT HAPPEN EITHER. A guard that ran the delete and then
+		// found it could not add the rows back would turn an unavailable restore into
+		// a destroyed value.
+		$this->assertSame( 0, $this->metaboxCallCount( 'delete' ) );
+		$this->assertTrue( $this->api()->hasStoredRow( 'subtitle', 12 ) );
+	}
 }

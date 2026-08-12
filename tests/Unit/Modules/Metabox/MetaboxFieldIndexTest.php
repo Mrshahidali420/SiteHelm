@@ -609,9 +609,33 @@ final class MetaboxFieldIndexTest extends TestCase {
 
 		$index = $this->index();
 
+		// ASSERTED AGAINST A WRITTEN-OUT EXPECTATION AND NOT AGAINST THE OTHER METHOD.
+		// Comparing fieldsForPost() with fieldsInGroups( applicableGroups() ) is true by
+		// construction — the first is defined as the second — so it would pass whatever
+		// either of them answered, including `[]` on a site whose registry could not be
+		// read at all.
+		$expected = [
+			'byline' => [
+				'id'         => 'byline',
+				'name'       => 'Byline',
+				'type'       => 'text',
+				'required'   => false,
+				'groupId'    => 'group-post',
+				'groupTitle' => 'Post settings',
+				'definition' => $this->field( 'byline', 'Byline' ),
+			],
+		];
+
 		$this->assertSame(
+			$expected,
+			$index->fieldsInGroups( $index->applicableGroups( 42 ) ),
+			'The flattening carries each field\'s own members and the group it came from.'
+		);
+
+		$this->assertSame(
+			$expected,
 			$index->fieldsForPost( 42 ),
-			$index->fieldsInGroups( $index->applicableGroups( 42 ) )
+			'The one-pass reading answers the same map, which is what lets an operation take one registry pass instead of two.'
 		);
 	}
 

@@ -354,4 +354,40 @@ final class MetaboxSchemaFormatTest extends TestCase {
 		$this->assertTrue( MetaboxSchemaFormat::containsTruncation( [ $shallow, $deep ] ) );
 		$this->assertFalse( MetaboxSchemaFormat::containsTruncation( [ $shallow ] ) );
 	}
+
+	/**
+	 * ONE LIST OF SERVER-PATH MEMBER NAMES FOR THE WHOLE MODULE.
+	 *
+	 * Both value projections strip the filesystem location out of a formatted
+	 * attachment answer, and two copies of the list would eventually be two lists —
+	 * one of which would keep publishing a path after the other stopped. The
+	 * predicate lives here, beside the other rules about the shape of a Meta Box
+	 * answer, and both callers ask it.
+	 *
+	 * `url` AND `full_url` ARE NOT ON IT. They are the public address the site
+	 * already serves, and an operator needs one to recognise which attachment a plan
+	 * refers to.
+	 */
+	public function test_the_server_path_members_are_named_and_the_public_ones_are_not(): void {
+		foreach ( [ 'path', 'full_path', 'file_path', 'dir', 'basedir', 'basepath' ] as $member ) {
+			$this->assertTrue(
+				MetaboxSchemaFormat::isServerPathMember( $member ),
+				sprintf( 'The member "%s" locates the file on the server.', $member )
+			);
+		}
+
+		foreach ( [ 'url', 'full_url', 'ID', 'name', 'mime_type', 'pathological' ] as $member ) {
+			$this->assertFalse(
+				MetaboxSchemaFormat::isServerPathMember( $member ),
+				sprintf( 'The member "%s" is not a server path and must survive the projection.', $member )
+			);
+		}
+
+		// A POSITIONAL KEY IS NOT A MEMBER NAME. Row lists are integer-keyed, and an
+		// integer key must never be read as a name.
+		$this->assertFalse( MetaboxSchemaFormat::isServerPathMember( 0 ) );
+
+		// The match is on the name however Meta Box or a field plugin spelled it.
+		$this->assertTrue( MetaboxSchemaFormat::isServerPathMember( 'Path' ) );
+	}
 }

@@ -111,6 +111,13 @@ final class MetaboxWriteRecovery {
 	 * forward path bounds a caller-supplied value through the input schema, while
 	 * this handles a pre-existing, site-derived value nobody bounded.
 	 *
+	 * AND RAW MEANS THE POSTMETA ROWS, NOT META BOX'S ANSWER. Its read accessor runs
+	 * a field's read pipeline — an attachment field answers an info array per file,
+	 * built from rows holding nothing but ids — so a snapshot taken from it records
+	 * a value the site never stored and restore() cannot write back. Every present
+	 * field is recorded as the ROW LIST under its key, in order, including a field
+	 * holding a single row.
+	 *
 	 * AND WHEN THE RAW VALUE CANNOT BE RECORDED FAITHFULLY, IT REFUSES. A value that
 	 * would not survive being written back — nested past MetaboxSchemaFormat::MAX_DEPTH,
 	 * or past the byte ceiling above — is refused RollbackUnavailable here, before
@@ -206,10 +213,18 @@ final class MetaboxWriteRecovery {
 	 * deleted rather than written back. The recorded flag says which of the two
 	 * operations undoes the write, and nothing else is consulted:
 	 *
-	 *   - `present === true`  → writeValue( id, post, value ), including when the
-	 *                           value is `''`, `0`, `false` or `[]`. All four are
-	 *                           values a row held, and putting a row back holding one
-	 *                           of them is the restore.
+	 *   - `present === true`  → writeRawRows( id, post, rows ), including when a row
+	 *                           holds `''`, `0`, `false` or `[]`. All four are values
+	 *                           a row held, and putting a row back holding one of them
+	 *                           is the restore.
+	 *   - `present === true`  → THROUGH THE ROW WRITER AND NOT THROUGH Meta Box's own,
+	 *                           because what was recorded is a row list. A field may
+	 *                           hold many rows under one key, and Meta Box's write
+	 *                           accessor runs the field's write pipeline over the
+	 *                           value it is handed — which for an attachment field
+	 *                           would store one serialized row where the site held N.
+	 *                           The recording and the restore address postmeta, and
+	 *                           they address it the same way.
 	 *   - `present === false` → deleteValue( id, post ). The write created this post's
 	 *                           first row for the field, and undoing it means the row
 	 *                           is gone again. Writing the recorded `null` here
@@ -267,7 +282,7 @@ final class MetaboxWriteRecovery {
 			// faithfully recorded null — a real stored state — as "there was no row" and
 			// deletes the row instead of putting the value back.
 			if ( $entry['present'] ) {
-				$this->api->writeValue( $entry['id'], $post, $entry['value'] );
+				$this->api->writeRawRows( $entry['id'], $post, self::rowsOf( $entry['value'] ) );
 			} else {
 				$this->api->deleteValue( $entry['id'], $post );
 			}
@@ -284,6 +299,28 @@ final class MetaboxWriteRecovery {
 	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
 
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- The change engine's own vocabulary is camelCase, and a private helper of it follows the class it lives in.
+	/**
+	 * The row list a recorded value stands for.
+	 *
+	 * A ROW LIST IS RECORDED FOR EVERY PRESENT FIELD by capture(), so an array is read as
+	 * the rows themselves and written back one row each. `[]` is therefore the empty
+	 * row list — the key removed and nothing added — which is what a field recorded
+	 * as holding no rows is put back as.
+	 *
+	 * A NON-ARRAY IS READ AS A SINGLE ROW rather than refused, because a scalar is the
+	 * one row it can be and refusing it would fail a restore this module can perform
+	 * correctly. It is not a shape capture() produces.
+	 *
+	 * @param mixed $recorded The recorded value.
+	 *
+	 * @return mixed[] The rows to write back.
+	 */
+	private static function rowsOf( mixed $recorded ): array {
+		return is_array( $recorded ) ? array_values( $recorded ) : [ $recorded ];
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+
 	// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The refusal names a field, never a value, and an OperationException is not output.
 	/**
 	 * One field's RAW stored value, or a refusal when it cannot be recorded.
@@ -297,18 +334,56 @@ final class MetaboxWriteRecovery {
 	 * @param string $name    The field's human label, for the refusal.
 	 * @param int    $post_id The post the value is stored against.
 	 *
-	 * @return mixed The raw stored value.
+	 * @return mixed[] The raw stored rows, in order.
 	 *
 	 * @throws OperationException With ErrorCode::RollbackUnavailable when the value
 	 *                            cannot be recorded faithfully.
 	 */
-	private function recordable( string $id, string $name, int $post_id ): mixed {
-		$raw = $this->api->readValue( $id, $post_id );
+	private function recordable( string $id, string $name, int $post_id ): array {
+		$raw = $this->api->readRawRows( $id, $post_id );
 
+		// THE ROWS AND NOT META BOX'S ANSWER, WHICH IS NOT THE SAME VALUE. For an
+		// attachment, post, user or taxonomy field Meta Box's read accessor answers a
+		// FORMATTED structure — an info array per attachment, carrying a filename, a URL
+		// and the file's absolute position on the server's disk — derived from rows
+		// holding nothing but ids. Recording that answer records info arrays into a
+		// field that holds ids: restore() writes them back, the attachments are lost,
+		// and the rollback reports that it put the post back. The rows are what a
+		// restore can write, so the rows are what is recorded.
+		//
+		// EVERY FIELD IS RECORDED AS A ROW LIST, INCLUDING A SINGLE-ROW ONE, because a
+		// field holding one row and a field holding five are the same field to postmeta
+		// and the list is the only shape that can express both.
+		foreach ( $raw as $row ) {
+			$this->refuseUnrecordable( $row, $id, $name );
+		}
+
+		return $raw;
+	}
+	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- The change engine's own vocabulary is camelCase, and a private helper of it follows the class it lives in.
+	// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The refusal names a field, never a value, and an OperationException is not output.
+	/**
+	 * Refuses one stored row that could not be recorded faithfully.
+	 *
+	 * MEASURED PER ROW AND NOT ON THE LIST, so that the depth a value is allowed to
+	 * reach is the depth of the value itself. Measuring the list would spend one level
+	 * of the cap on the list wrapper and refuse a value that was recordable before
+	 * this module read rows at all.
+	 *
+	 * @param mixed  $row  The stored row.
+	 * @param string $id   The field id, which is the meta key.
+	 * @param string $name The field's human label, for the refusal.
+	 *
+	 * @throws OperationException With ErrorCode::RollbackUnavailable when the row
+	 *                            cannot be recorded faithfully.
+	 */
+	private function refuseUnrecordable( mixed $row, string $id, string $name ): void {
 		// THE FIELD IS NAMED AND THE VALUE IS NOT, the rule every message in this
 		// module keeps: an identifier is what an operator recognises, and a stored
 		// value belongs in data.state or nowhere.
-		if ( $this->canonical->truncates( $raw ) ) {
+		if ( $this->canonical->truncates( $row ) ) {
 			throw new OperationException(
 				ErrorCode::RollbackUnavailable,
 				sprintf(
@@ -319,8 +394,7 @@ final class MetaboxWriteRecovery {
 				'Write this field with metabox-field-update once its stored value is less deeply nested, or write the other fields without it.'
 			);
 		}
-
-		return $raw;
 	}
 	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 }

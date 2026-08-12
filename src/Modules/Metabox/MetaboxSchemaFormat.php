@@ -168,6 +168,61 @@ final class MetaboxSchemaFormat {
 	 */
 	private const CHILDREN_MEMBER = 'fields';
 
+	/**
+	 * The members that carry a position on the server's disk, in lower case.
+	 *
+	 * DECLARED HERE BECAUSE MORE THAN ONE PATH EMITS A VALUE. Spec §8 forbids a
+	 * filesystem path in ANY envelope this plugin emits, and the module has two value
+	 * projections: MetaboxValueNormalizer, which shapes what a read returns, and
+	 * MetaboxValueCanonical, which shapes the before-state, the plan payload and the
+	 * read-back of a write. A rule spelled in one of them is a rule the other leaks
+	 * through, and this module already shipped exactly that: an attachment field's
+	 * `path` reached the write's projected before-state, which is fingerprinted,
+	 * previewed and returned to the caller.
+	 *
+	 * IT IS A LIST OF MEMBER NAMES AND NOT A TEST OF THE VALUE. A string that looks
+	 * like a path is data an operator may have stored on purpose; the member name is
+	 * what says the site put a server location there. `url` and `full_url` are
+	 * deliberately absent: a URL is the addressable half of an attachment and is what
+	 * the caller came for.
+	 *
+	 * `path` is what Meta Box's own file and image info arrays publish. `full_path`
+	 * and `file_path` are the spellings that travel beside `full_url` in the values
+	 * custom field classes and `rwmb_*_value` filters assemble, and `dir`, `basedir`
+	 * and `basepath` are the upload-directory members such a value is built from.
+	 *
+	 * @var string[]
+	 */
+	private const SERVER_PATH_MEMBERS = [
+		'path',
+		'full_path',
+		'file_path',
+		'dir',
+		'basedir',
+		'basepath',
+	];
+
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- The module vocabulary is camelCase across every class.
+	/**
+	 * Whether a member name carries a position on the server's disk.
+	 *
+	 * THE ONE PREDICATE BOTH VALUE PROJECTIONS ASK. Neither of them may answer this
+	 * question itself: two spellings of "which members are a disclosure" is how one
+	 * channel comes to strip a member the other publishes.
+	 *
+	 * COMPARED IN LOWER CASE AND ONLY FOR STRING KEYS, at every depth. A numeric key
+	 * is a row index and can never be one of these names; a `Path` written by a filter
+	 * that capitalises its members is the same disclosure as a `path`.
+	 *
+	 * @param int|string $key The member name.
+	 *
+	 * @return bool True when the member must not be emitted.
+	 */
+	public static function isServerPathMember( int|string $key ): bool {
+		return is_string( $key ) && in_array( strtolower( $key ), self::SERVER_PATH_MEMBERS, true );
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+
 	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- The module vocabulary is camelCase across every class.
 	/**
 	 * Projects one field definition, recursing into its children.

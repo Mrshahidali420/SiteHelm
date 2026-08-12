@@ -153,39 +153,6 @@ final class MetaboxValueNormalizer {
 	 */
 	private const ATTACHMENT_CORROBORATORS = [ 'full_url', 'path', 'mime_type' ];
 
-	/**
-	 * The members that carry a position on the server's disk, stripped wherever they
-	 * appear, in lower case.
-	 *
-	 * THE STRIP IS UNCONDITIONAL AND DOES NOT DEPEND ON THE ATTACHMENT PROJECTION. Spec
-	 * §8 forbids a filesystem path in any envelope this plugin emits and forbids it
-	 * without qualification, so tying the guard to a detection rule leaves the leak open
-	 * for every shape the rule does not recognise — an array carrying a `path` and no
-	 * `ID`, which is what a `save_field` filter or a custom field class assembles, is
-	 * not an attachment by any rule here and reached the generic array rule intact.
-	 *
-	 * IT IS A LIST OF MEMBER NAMES AND NOT A TEST OF THE VALUE. A string that looks like
-	 * a path is data an operator may have stored on purpose; the member name is what
-	 * says the site put a server location there. `url` and `full_url` are deliberately
-	 * absent: a URL is the addressable half of an attachment and is what the caller came
-	 * for.
-	 *
-	 * `path` is what Meta Box's own file and image info arrays publish. `full_path` and
-	 * `file_path` are the spellings that travel beside `full_url` in the values custom
-	 * field classes and `rwmb_*_value` filters assemble, and `dir`, `basedir` and
-	 * `basepath` are the upload-directory members such a value is built from.
-	 *
-	 * @var string[]
-	 */
-	private const SERVER_PATH_MEMBERS = [
-		'path',
-		'full_path',
-		'file_path',
-		'dir',
-		'basedir',
-		'basepath',
-	];
-
 	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- The module vocabulary is camelCase across every class.
 	/**
 	 * The reportable form of one Meta Box value.
@@ -337,16 +304,25 @@ final class MetaboxValueNormalizer {
 	/**
 	 * Whether a member name is one this class refuses to publish.
 	 *
-	 * COMPARED IN LOWER CASE AND ONLY FOR STRING KEYS. A numeric key is a clone row's
-	 * index and can never be one of these names; a `Path` written by a filter that
-	 * capitalises its members is the same disclosure as a `path`.
+	 * THE LIST IS MetaboxSchemaFormat'S AND NOT THIS CLASS'S. The write path's own
+	 * projection asks the same question of the same names, and a module that spelled
+	 * "which members are a server path" twice would strip a member on one channel and
+	 * publish it on the other — which is the leak this module already shipped.
+	 *
+	 * THE STRIP IS UNCONDITIONAL AND DOES NOT DEPEND ON THE ATTACHMENT PROJECTION.
+	 * Spec §8 forbids a filesystem path in any envelope this plugin emits and forbids
+	 * it without qualification, so tying the guard to a detection rule leaves the leak
+	 * open for every shape the rule does not recognise — an array carrying a `path`
+	 * and no `ID`, which is what a `save_field` filter or a custom field class
+	 * assembles, is not an attachment by any rule here and would reach the generic
+	 * array rule intact.
 	 *
 	 * @param int|string $key The member name.
 	 *
 	 * @return bool True when the member must be stripped.
 	 */
 	private function stripped( int|string $key ): bool {
-		return is_string( $key ) && in_array( strtolower( $key ), self::SERVER_PATH_MEMBERS, true );
+		return MetaboxSchemaFormat::isServerPathMember( $key );
 	}
 
 	/**
