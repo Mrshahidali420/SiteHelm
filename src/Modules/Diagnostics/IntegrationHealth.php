@@ -14,6 +14,7 @@ use SiteHelm\Contracts\ModuleHealth;
 use SiteHelm\Contracts\OperationContext;
 use SiteHelm\Contracts\OperationException;
 use SiteHelm\Registry\IntegrationDirectory;
+use SiteHelm\Storage\Installer;
 
 /**
  * REQ-0003: which bundled integration modules are active, inactive, or blocked
@@ -71,6 +72,14 @@ final class IntegrationHealth {
 	 * different table than the one the directory holds, which a report must
 	 * survive rather than fail on.
 	 *
+	 * STORAGE READINESS IS READ ONCE, HERE, AND NEVER INSIDE THE LOOP. It is the
+	 * same answer for every module — a single stored status flag rather than a
+	 * table probe — so asking it per module would multiply one cheap question by
+	 * the size of the boot table for an answer that cannot vary between two
+	 * iterations of the same call. It feeds the explanation only; `health` and
+	 * `installedVersion` stay exactly as the health map recorded them, because
+	 * this report exists to agree with the gateway rather than to second-guess it.
+	 *
 	 * @param array<string, mixed> $input Validated input (empty schema).
 	 * @param OperationContext     $context The operation context.
 	 *
@@ -87,7 +96,8 @@ final class IntegrationHealth {
 			);
 		}
 
-		$integrations = [];
+		$integrations  = [];
+		$storage_ready = ( new Installer() )->isAvailable();
 
 		foreach ( $this->directory->describe() as $module_id => $descriptor ) {
 			$recorded = $context->moduleVersions[ $module_id ] ?? [];
@@ -100,7 +110,7 @@ final class IntegrationHealth {
 				'dependency'       => $descriptor['dependency'],
 				'installedVersion' => $version,
 				'health'           => $health,
-				'explanation'      => $this->explain( $descriptor, $health, $version ),
+				'explanation'      => $this->explain( $descriptor, $health, $version, $storage_ready ),
 			];
 		}
 
@@ -117,17 +127,37 @@ final class IntegrationHealth {
 	 * drift it exists to surface reports nothing at all. The unrecognised value
 	 * itself is still returned verbatim in `health`, so the drift stays visible.
 	 *
+	 * THE INACTIVE STATE HAS TWO CAUSES AND STORAGE IS TESTED FIRST, because it is
+	 * the one that explains all of them at once. Every module in this plugin
+	 * reports inactive when SiteHelm's own tables are not ready, whatever its
+	 * third-party dependency is doing, so on a site whose install failed the
+	 * dependency sentence would tell an operator to install WordPress on
+	 * WordPress, or to install an ACF that is already there and healthy. That is a
+	 * wrong instruction issued by the one operation whose whole purpose is to say
+	 * what is wrong, on the state that follows a failed activation or upgrade —
+	 * exactly when the report is most likely to be read. When storage is down the
+	 * dependency is not merely a lesser cause, it is not a cause at all: fixing it
+	 * changes nothing until the tables exist.
+	 *
+	 * Storage readiness reaches this method as an argument rather than being read
+	 * here, so that one status read serves the whole report and this method stays
+	 * a pure function of what it is handed.
+	 *
 	 * Nothing about the server may appear here — no path, no directory, no
 	 * runtime version — because the sentence is the widest free text this
 	 * operation returns and the response envelope prohibition covers all of it.
+	 * The storage sentence names the remedy as a plugin deactivate-and-reactivate
+	 * for that reason: it is an instruction an operator can follow from the
+	 * administration screens, and it describes no table and no filesystem.
 	 *
-	 * @param array{displayName: string, dependency: array<string, string>} $descriptor The module's own declaration.
-	 * @param string                                                        $health     The recorded health string.
-	 * @param string|null                                                   $version    The recorded installed version.
+	 * @param array{displayName: string, dependency: array<string, string>} $descriptor    The module's own declaration.
+	 * @param string                                                        $health        The recorded health string.
+	 * @param string|null                                                   $version       The recorded installed version.
+	 * @param bool                                                          $storage_ready Whether SiteHelm's own tables are usable.
 	 *
 	 * @return string The operator-facing explanation.
 	 */
-	private function explain( array $descriptor, string $health, ?string $version ): string {
+	private function explain( array $descriptor, string $health, ?string $version, bool $storage_ready ): string {
 		$name  = $descriptor['displayName'];
 		$dep   = $descriptor['dependency']['name'];
 		$range = $descriptor['dependency']['versionRange'];
@@ -144,6 +174,13 @@ final class IntegrationHealth {
 				$version ?? 'an undetected version',
 				$range,
 				$dep
+			);
+		}
+
+		if ( ! $storage_ready ) {
+			return sprintf(
+				'%s is unavailable because SiteHelm\'s own storage is not ready. Every module stays disabled until SiteHelm reinstalls its tables: deactivate and reactivate the plugin, then run this diagnostic again.',
+				$name
 			);
 		}
 
