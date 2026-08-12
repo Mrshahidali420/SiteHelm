@@ -79,6 +79,19 @@ final class AcfPresenceTest extends TestCase {
 		Functions\when( AcfPresence::PROBE_FUNCTION )->justReturn( [] );
 	}
 
+	/**
+	 * Installs a fake ACF at a chosen version. Permanent in the process, so
+	 * every caller runs in its own.
+	 *
+	 * @param mixed $version The value ACF_VERSION should hold.
+	 */
+	private function installAcfVersion( mixed $version ): void {
+		Functions\when( AcfPresence::PROBE_FUNCTION )->justReturn( [] );
+		if ( ! defined( AcfPresence::VERSION_CONSTANT ) ) {
+			define( AcfPresence::VERSION_CONSTANT, $version );
+		}
+	}
+
 	public function test_a_site_without_acf_reports_not_loaded_and_no_version(): void {
 		// Neither signal is installed in this process, which is the ordinary state
 		// of most WordPress sites and therefore the state the module has to survive
@@ -173,6 +186,48 @@ final class AcfPresenceTest extends TestCase {
 			$this->presence->version(),
 			'A non-scalar ACF_VERSION must answer null; casting it is a fatal.'
 		);
+	}
+
+	/**
+	 * Absent is not the same answer as too old, and neither is supported.
+	 */
+	public function test_an_absent_acf_is_not_supported(): void {
+		$this->assertFalse( ( new AcfPresence() )->isSupported() );
+	}
+
+	/**
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_an_acf_below_the_floor_is_not_supported(): void {
+		$this->installAcfVersion( '5.8.0' );
+
+		$this->assertFalse( ( new AcfPresence() )->isSupported() );
+	}
+
+	/**
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_an_acf_at_or_above_the_floor_is_supported(): void {
+		$this->installAcfVersion( AcfPresence::MIN_VERSION );
+
+		$this->assertTrue( ( new AcfPresence() )->isSupported() );
+	}
+
+	/**
+	 * AN UNREADABLE VERSION IS NOT TREATED AS AN OLD ONE. A constant another
+	 * plugin mangled is a claim this gate cannot substantiate in either
+	 * direction, and refusing on it would block a working site over someone
+	 * else's bug.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_an_unreadable_version_is_still_supported(): void {
+		$this->installAcfVersion( [ '5.8.0' ] );
+
+		$this->assertTrue( ( new AcfPresence() )->isSupported() );
 	}
 
 	public function test_the_declared_symbol_names_are_the_ones_acf_publishes(): void {

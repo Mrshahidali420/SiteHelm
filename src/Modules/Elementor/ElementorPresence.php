@@ -73,6 +73,41 @@ final class ElementorPresence {
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- The module vocabulary is camelCase across every class.
+	/**
+	 * Whether the installed Elementor is at or above this module's floor.
+	 *
+	 * SEPARATE FROM isLoaded() BECAUSE "ABSENT" AND "TOO OLD" ARE DIFFERENT
+	 * ANSWERS AND LEAD AN OPERATOR TO DIFFERENT ACTIONS — install Elementor, or
+	 * update it. The operations refuse the first with `IntegrationUnavailable`
+	 * and the second with `UnsupportedVersion`, and an operator who reads the
+	 * wrong one of those goes looking in the plugin installer for something
+	 * their site already has.
+	 *
+	 * MIN_VERSION is the release at which the document and element APIs this
+	 * module addresses settled into their current shape, so below it the module
+	 * is not merely untested: its reads answer from a data layout that is not
+	 * the one they were written against. Refusing is the honest answer.
+	 *
+	 * AN UNREADABLE VERSION IS NOT TREATED AS AN OLD ONE. version() answers null
+	 * when `ELEMENTOR_VERSION` holds something that is not a scalar, and that is
+	 * a claim this gate cannot substantiate in either direction; refusing on it
+	 * would block a working site over a constant another plugin mangled. A
+	 * version this code cannot read is not evidence of an unsupported one.
+	 *
+	 * @return bool True when Elementor is loaded and not known to be below the floor.
+	 */
+	public function isSupported(): bool {
+		if ( ! $this->isLoaded() ) {
+			return false;
+		}
+
+		$version = $this->version();
+
+		return null === $version || version_compare( $version, self::MIN_VERSION, '>=' );
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+
 	/**
 	 * The installed Elementor version, or null when Elementor is absent.
 	 *
