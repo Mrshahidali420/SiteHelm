@@ -133,8 +133,11 @@ final class MetaboxFieldUpdateRecoveryTest extends TestCase {
 			$this->writeContext()
 		);
 
+		// RECORDED AS THE COLUMN SPELLS THEM, which is the point of recording rows at
+		// all: a snapshot is what restore() writes back, so it has to be what the site
+		// held and not a prettier rendering of it. Postmeta is text, so the ids are text.
 		$this->assertSame(
-			[ 9, 10 ],
+			[ '9', '10' ],
 			$snapshot['fields'][0]['value'],
 			'Both rows are recorded, in order, exactly as the site holds them.'
 		);
@@ -175,7 +178,11 @@ final class MetaboxFieldUpdateRecoveryTest extends TestCase {
 		);
 
 		$this->assertSame( [ '' ], $snapshot['fields'][0]['value'], 'The empty string a row really holds is recorded, as the row that holds it.' );
-		$this->assertSame( [ 0 ], $snapshot['fields'][2]['value'], 'A stored 0 is a value, not an absence.' );
+		// `'0'` AND NOT `0`, AND IT LOSES THE FIXTURE NOTHING. The column spells the
+		// stored zero as text, and `'0'` is still not one of the three empty forms — so
+		// the case this field exists for, a value every truthiness test gets wrong,
+		// survives the coercion intact.
+		$this->assertSame( [ '0' ], $snapshot['fields'][2]['value'], 'A stored 0 is a value, not an absence.' );
 
 		$this->assertSame(
 			[ 'post', self::fixturePost(), self::subtitleId() ],

@@ -591,7 +591,10 @@ final class MetaboxApiTest extends TestCase {
 			[ 'hero' ]
 		);
 
-		$this->assertSame( [ 9, 10 ], $this->api()->readRawRows( 'hero', 12 ) );
+		// THE ROWS COME BACK AS TEXT, which is not this reader's doing: postmeta is a
+		// text column and `get_post_meta()` answers what the column holds. The ids the
+		// site was given were integers and every one of them reads back a string.
+		$this->assertSame( [ '9', '10' ], $this->api()->readRawRows( 'hero', 12 ) );
 		$this->assertSame( [ [ 12, 'hero', false ] ], $this->metaboxCallArguments( 'rawRead' ) );
 		$this->assertSame(
 			0,
@@ -648,7 +651,10 @@ final class MetaboxApiTest extends TestCase {
 			[ [ 12, 'hero', 4, false ], [ 12, 'hero', 5, false ] ],
 			$this->metaboxCallArguments( 'rawWrite' )
 		);
-		$this->assertSame( [ 4, 5 ], $api->readRawRows( 'hero', 12 ) );
+		// THE INTEGERS WENT IN AND THE STRINGS COME BACK, and the two assertions above
+		// and below are deliberately different because the site is: core is handed the
+		// caller's own `4` and `5`, and the column answers `'4'` and `'5'`.
+		$this->assertSame( [ '4', '5' ], $api->readRawRows( 'hero', 12 ) );
 		$this->assertSame(
 			0,
 			$this->metaboxCallCount( 'write' ),

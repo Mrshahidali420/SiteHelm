@@ -135,10 +135,16 @@ final class MetaboxValueCanonical {
 	 *     the same two shapes with the wrappers counted differently, and the arity that
 	 *     tells them apart is the field TYPE, which nothing on this path dispatches on
 	 *     (see the class docblock). Stripping to a fixpoint is what makes both pairs one
-	 *     currency; stripping once would keep one of them and break the other. The price
-	 *     is that a value stored one wrapper deeper than promised verifies, and it is a
-	 *     price rather than an oversight: the pair that would catch it is the same pair
-	 *     a correctly stored serialized field presents.
+	 *     currency; stripping once would keep one of them and break the other. THE PRICE
+	 *     IS THE WHOLE AXIS AND NOT ONE STEP ALONG IT: the loop runs to a fixpoint, so
+	 *     `9`, `[ 9 ]` and `[ [ 9 ] ]` all settle to the same value and a promise of any
+	 *     of them is satisfied by a site holding any other. Wrapper depth is therefore
+	 *     not checked at all on this path, at one level or at ten. That is a price rather
+	 *     than an oversight: the pair that would catch it is the same pair a correctly
+	 *     stored serialized field presents, and nothing here can tell the two apart
+	 *     without the field's own type. Every other difference still refuses — two rows
+	 *     against one promised value, a member added or dropped inside a row, a map
+	 *     against a scalar, and a differing scalar.
 	 *   - IT IS THE TOP-LEVEL ROW LIST AND NOT EVERY DEPTH. Only a field's own rows
 	 *     are wrapped by the storage; a member INSIDE a row was put there by the
 	 *     operator, so `[ 'ids' => [ 9 ] ]` keeps its list of one. A settlement applied
