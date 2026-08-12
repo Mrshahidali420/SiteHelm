@@ -66,6 +66,13 @@ final class ContextFactoryTest extends TestCase {
 	/**
 	 * Test that unauthenticated requests are rejected.
 	 *
+	 * ALSO REQ-0004's second half. That requirement's acceptance evidence asks
+	 * for `authentication_failed` on an invalid credential, and this is where
+	 * that is proven — not in ConnectionCheckTest. The refusal happens here, in
+	 * ContextFactory, and in the route's permission callback, both upstream of
+	 * dispatch, so `system-connection` never sees a failed authentication and
+	 * has no code that claims to detect one.
+	 *
 	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 	 */
 	public function test_unauthenticated_request_is_rejected(): void {
