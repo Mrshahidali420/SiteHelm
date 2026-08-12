@@ -19,8 +19,10 @@ use SiteHelm\Modules\Media\MediaMimeGuard;
  * approved.
  *
  * The redirect hop loop — the part of that promise that survives a `3xx` — is
- * tested in MediaFetchRedirectTest. See MediaFetchTestCase for the WordPress
- * stand-in both files share, and for why it is deliberately unhelpful.
+ * tested in MediaFetchRedirectTest, and "is this request even mine?", the
+ * question both hook callbacks ask before anything else, in
+ * MediaFetchOwnershipTest. See MediaFetchTestCase for the WordPress stand-in all
+ * three files share, and for why it is deliberately unhelpful.
  */
 final class MediaFetchTest extends MediaFetchTestCase {
 
@@ -30,10 +32,21 @@ final class MediaFetchTest extends MediaFetchTestCase {
 	 * FALSE, and Brain Monkey leaks a fake's definition — though not its
 	 * behaviour — to every later test in the same process.
 	 *
-	 * What it pins: a site on WordPress's streams transport has no
-	 * CURLOPT_RESOLVE. Delete the function_exists guard and the fetch dies on an
-	 * undefined function instead of proceeding under the other guards, which is
-	 * the accepted cost in spec §7 item 3 turning into an outage.
+	 * What it pins: `curl_setopt()` is called unguarded nowhere. Delete the
+	 * function_exists() test and this dies on an undefined function — a fatal, not
+	 * a refusal, and one raised from inside a WordPress hook callback where nothing
+	 * above it can turn it back into an envelope.
+	 *
+	 * IT IS A REFUSAL, NOT A FETCH, and that changed with the fail-closed
+	 * assertion. `http_api_curl` firing means core chose the curl transport, so a
+	 * PHP that fires it while having no curl functions is a contradiction: there is
+	 * nothing to pin with, and returning bytes from a connection that could not be
+	 * pinned is the DNS-rebinding hole this class exists to close. The state is
+	 * unreachable in production — core fires this action from the curl transport
+	 * only, and that transport requires the extension — so what is being pinned
+	 * here is that the impossible case fails closed rather than fatally. A streams
+	 * site, which is the reachable case, never fires the action at all and is
+	 * covered by test_a_streams_transport_fetch_is_not_refused_for_want_of_a_pin().
 	 *
 	 * IT SKIPS WHERE ext-curl IS PRESENT, and that is a genuine gap rather than
 	 * a convenience. `function_exists()` is a fact about the running PHP, not a
@@ -46,12 +59,22 @@ final class MediaFetchTest extends MediaFetchTestCase {
 	 * @runInSeparateProcess
 	 * @preserveGlobalState disabled
 	 */
-	public function test_the_fetch_proceeds_when_curl_is_unavailable(): void {
+	public function test_a_fetch_that_cannot_call_curl_setopt_is_refused_not_fatal(): void {
 		if ( function_exists( 'curl_setopt' ) ) {
-			$this->markTestSkipped( 'ext-curl is loaded in this PHP, so the streams-transport branch cannot be reached here.' );
+			$this->markTestSkipped( 'ext-curl is loaded in this PHP, so the missing-curl branch cannot be reached here.' );
 		}
 
-		$this->assertSame( 'PNGBYTES', $this->fetcher()->fetch( $this->validated(), 'corr-1' ) );
+		// Swallowed, and only in this test. A refusal logs its detail, and this is
+		// the one test that runs in a child process, where PHPUnit reads the result
+		// back off that process's own stdout — an unfaked error_log() writes into
+		// the middle of it and the run dies on a result it cannot parse, naming
+		// neither the test nor the reason.
+		Functions\when( 'error_log' )->justReturn( true );
+
+		$refusal = $this->assertFetchRefused( ErrorCode::ExecutionFailed );
+
+		$this->assertStringContainsString( 'pinned', $refusal->getMessage() );
+		$this->assertRefusalLeaksNothing( $refusal );
 	}
 
 	public function test_the_fetch_pins_the_request_to_the_validated_address(): void {
@@ -59,12 +82,18 @@ final class MediaFetchTest extends MediaFetchTestCase {
 		// from the hook core would apply it on, and the directive must name the
 		// address the guard approved — so the address that was validated is the
 		// address dialled.
+		//
+		// IT ASSERTS THE RETURNED BYTES AS WELL, and that is not padding. Since
+		// `$pin_applied` became `curl_setopt()`'s own return value, deleting the
+		// `curl_setopt()` call leaves the flag false and every pinned fetch refuses
+		// — so this line is what kills that deletion on an interpreter WITH
+		// ext-curl, where the call itself cannot be observed and
+		// test_the_pin_reaches_curl_setopt() is skipped.
 		$fetch = $this->fetcher();
 
 		$this->recordPins( $fetch );
 
-		$fetch->fetch( $this->validated(), 'corr-1' );
-
+		$this->assertSame( 'PNGBYTES', $fetch->fetch( $this->validated(), 'corr-1' ) );
 		$this->assertSame( [ 'cdn.example.com:443:93.184.216.34' ], $this->pinnedDirectives() );
 	}
 
@@ -81,6 +110,24 @@ final class MediaFetchTest extends MediaFetchTestCase {
 			[ [ CURLOPT_RESOLVE, [ 'cdn.example.com:443:93.184.216.34' ] ] ],
 			$this->curlOptions
 		);
+	}
+
+	public function test_a_directive_curl_would_not_take_is_not_counted_as_a_pin(): void {
+		// The reason `$pin_applied` is `curl_setopt()`'s RETURN VALUE rather than a
+		// flag set beside the call. curl_setopt() answers false when it will not
+		// take the option — a malformed directive, an option this build does not
+		// know — and a fetch that read "I called it" instead of "it took it" would
+		// hand back bytes from a connection resolved by whatever the transport
+		// asked, which is the whole of the hole. Only stageable where the function
+		// is faked, but the coupling it pins holds everywhere.
+		$this->requireObservableCurl();
+
+		$this->curlSetoptSucceeds = false;
+
+		$refusal = $this->assertFetchRefused( ErrorCode::ExecutionFailed );
+
+		$this->assertStringContainsString( 'pinned', $refusal->getMessage() );
+		$this->assertRefusalLeaksNothing( $refusal );
 	}
 
 	public function test_the_faked_curl_constant_matches_the_extensions_own(): void {
@@ -115,7 +162,11 @@ final class MediaFetchTest extends MediaFetchTestCase {
 
 		$this->assertSame( 'PNGBYTES', $fetch->fetch( $target, 'corr-1' ) );
 
-		// Reached the hook, and declined — not "never got there".
+		// Reached the hook, and declined — not "never got there". The returned
+		// bytes are the other half: the IP-literal branch has to record the pin as
+		// APPLIED, because "correctly nothing to pin" and "failed to pin" are the
+		// same silence to the fail-closed assertion. Delete that one line and this
+		// fetch is refused.
 		$this->assertSame( [ null ], $this->pinDecisions );
 	}
 
@@ -367,121 +418,6 @@ final class MediaFetchTest extends MediaFetchTestCase {
 		$this->fetcher()->fetch( $this->validated(), 'corr-1' );
 
 		$this->assertSame( [ 'X-Trace' => 'abc' ], $this->sentArgs[0]['headers'] );
-	}
-
-	public function test_the_forcing_filter_ignores_a_request_this_class_did_not_make(): void {
-		// WordPress hooks are global. While a fetch is in flight, an update
-		// check or another plugin's API call passes through this same filter,
-		// and forcing this import's timeout, user-agent and redirect ban onto it
-		// would make this feature a defect in unrelated code.
-		$fetch = $this->fetcher();
-
-		$stranger = [ 'timeout' => 600 ];
-
-		$this->respondWith( $this->responseWith( 200, 'PNGBYTES' ) );
-
-		add_filter(
-			'http_request_args',
-			function ( array $args, string $url ) use ( $fetch, &$stranger ): array {
-				unset( $url );
-
-				$stranger = $fetch->filterRequestArgs( $stranger, 'https://elsewhere.example.org/ping' );
-
-				return $args;
-			},
-			1,
-			2
-		);
-
-		$fetch->fetch( $this->validated(), 'corr-1' );
-
-		$this->assertSame( [ 'timeout' => 600 ], $stranger );
-	}
-
-	public function test_the_curl_pin_ignores_a_request_this_class_did_not_make(): void {
-		// The same hazard on the more dangerous hook: pinning somebody else's
-		// handle re-points THEIR connection at THIS import's address. Asked
-		// mid-fetch, while a pin genuinely is in force, because asking when
-		// nothing is pinned would pass on the null-pin branch instead.
-		$fetch    = $this->fetcher();
-		$stranger = 'unset';
-		$mine     = 'unset';
-
-		add_action(
-			'http_api_curl',
-			function () use ( $fetch, &$stranger, &$mine ): void {
-				$stranger = $fetch->pinDirectiveFor( 'https://elsewhere.example.org/ping' );
-				$mine     = $fetch->pinDirectiveFor( 'https://cdn.example.com/a.png' );
-			},
-			1,
-			3
-		);
-
-		$fetch->fetch( $this->validated(), 'corr-1' );
-
-		$this->assertNull( $stranger );
-		$this->assertSame( 'cdn.example.com:443:93.184.216.34', $mine );
-	}
-
-	public function test_the_pin_recognises_every_equivalent_spelling_of_its_own_url(): void {
-		// THE ATTACKER PICKS THE SPELLING. WordPress hands `http_request_args` the
-		// url as supplied and `http_api_curl` the url after core has rewritten it
-		// through wp_kses_bad_protocol(), which lower-cases the scheme — and on a
-		// redirect the whole string comes from the remote server. A comparison by
-		// raw string identity therefore had a silent off switch: one capital letter
-		// and the class stopped recognising its own request, applied no
-		// CURLOPT_RESOLVE, and let the transport resolve the name for itself. Every
-		// spelling below addresses the same host and port and must be recognised;
-		// every spelling in the second group addresses something else and must not.
-		$fetch  = $this->fetcher();
-		$asked  = [];
-		$expect = 'cdn.example.com:443:93.184.216.34';
-
-		add_action(
-			'http_api_curl',
-			function () use ( $fetch, &$asked ): void {
-				foreach (
-					[
-						'same'          => 'https://cdn.example.com/a.png',
-						'scheme case'   => 'HTTPS://cdn.example.com/a.png',
-						'host case'     => 'https://CDN.Example.COM/a.png',
-						'trailing dot'  => 'https://cdn.example.com./a.png',
-						'default port'  => 'https://cdn.example.com:443/a.png',
-						'other path'    => 'https://cdn.example.com/other%2Fpath.png',
-						'other port'    => 'https://cdn.example.com:80/a.png',
-						'other scheme'  => 'http://cdn.example.com/a.png',
-						// Scheme differing while host AND port still agree, so the
-						// scheme comparison is the only thing that can reject it.
-						'scheme alone'  => 'http://cdn.example.com:443/a.png',
-						'other host'    => 'https://other.example.com/a.png',
-						'not a url'     => 'not a url at all',
-						// parse_url() refuses this outright. A url this class could
-						// not parse must never be taken for the one in flight.
-						'unparsable'    => 'https://cdn.example.com:port/a.png',
-					] as $label => $url
-				) {
-					$asked[ $label ] = $fetch->pinDirectiveFor( $url );
-				}
-			},
-			1,
-			3
-		);
-
-		$fetch->fetch( $this->validated(), 'corr-1' );
-
-		$this->assertSame( $expect, $asked['same'] );
-		$this->assertSame( $expect, $asked['scheme case'] );
-		$this->assertSame( $expect, $asked['host case'] );
-		$this->assertSame( $expect, $asked['trailing dot'] );
-		$this->assertSame( $expect, $asked['default port'] );
-		$this->assertSame( $expect, $asked['other path'] );
-
-		$this->assertNull( $asked['other port'] );
-		$this->assertNull( $asked['other scheme'] );
-		$this->assertNull( $asked['scheme alone'] );
-		$this->assertNull( $asked['other host'] );
-		$this->assertNull( $asked['not a url'] );
-		$this->assertNull( $asked['unparsable'] );
 	}
 
 	public function test_an_http_target_recognises_its_own_default_port(): void {

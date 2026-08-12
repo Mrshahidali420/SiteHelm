@@ -58,6 +58,8 @@ use SiteHelm\Tests\TestCase;
  */
 abstract class MediaFetchTestCase extends TestCase {
 
+	use FakesWordPressHooks;
+
 	/**
 	 * The `@group` a test annotates itself with to be run with no curl fake.
 	 *
@@ -67,32 +69,15 @@ abstract class MediaFetchTestCase extends TestCase {
 	protected const CURL_MUST_BE_ABSENT = 'curl-must-be-absent';
 
 	/**
-	 * Every add_filter/add_action call the class made, as [ hook, priority ].
+	 * The request argument this fetch's identifying token travels in.
 	 *
-	 * @var array<int, array{0: string, 1: int}>
+	 * Spelt out here rather than read from the class under test, deliberately. It
+	 * is a contract with WordPress's own `$parsed_args` array — the key survives
+	 * `wp_parse_args()` and reaches both hook points under this exact name — so a
+	 * test that took the constant from the class would agree with any rename,
+	 * including one that collided with a key core or another plugin already uses.
 	 */
-	protected array $added = [];
-
-	/**
-	 * Every remove_filter/remove_action call the class made, as [ hook, priority ].
-	 *
-	 * @var array<int, array{0: string, 1: int}>
-	 */
-	protected array $removed = [];
-
-	/**
-	 * The `http_request_args` callbacks registered, as [ priority, callback ].
-	 *
-	 * @var array<int, array{0: int, 1: callable}>
-	 */
-	protected array $requestArgFilters = [];
-
-	/**
-	 * The `http_api_curl` callbacks registered, as [ priority, callback ].
-	 *
-	 * @var array<int, array{0: int, 1: callable}>
-	 */
-	protected array $curlActions = [];
+	protected const TOKEN_ARG = 'sitehelm_fetch_token';
 
 	/**
 	 * Every curl option the class set, as [ option, value ], newest last.
@@ -176,22 +161,46 @@ abstract class MediaFetchTestCase extends TestCase {
 	 */
 	protected $rewriteCurlUrl = null;
 
+	/**
+	 * An optional rewrite applied to the request ARGUMENTS `http_api_curl` is
+	 * fired with, on top of what the filters returned.
+	 *
+	 * The counterpart of $rewriteCurlUrl for the other half of the ownership test:
+	 * it stages a request that IS this class's own but reaches the pinning hook
+	 * with its token missing or altered, which is the only way a test can tell a
+	 * token check that works from one that is not there.
+	 *
+	 * @var callable|null
+	 */
+	protected $rewriteCurlArgs = null;
+
+	/**
+	 * What the faked `curl_setopt()` reports back about the directive.
+	 *
+	 * False models the one thing the real function can say that the class must act
+	 * on: it would not take the option. Only settable where curl is faked — see
+	 * requireObservableCurl() — which is also the only place the call is visible at
+	 * all.
+	 */
+	protected bool $curlSetoptSucceeds = true;
+
 	protected function setUp(): void {
 		parent::setUp();
 
-		$this->added             = [];
-		$this->removed           = [];
-		$this->requestArgFilters = [];
-		$this->curlActions       = [];
-		$this->curlOptions       = [];
-		$this->pinDecisions      = [];
-		$this->handles           = [];
-		$this->requestedUrls     = [];
-		$this->sentArgs          = [];
-		$this->curlTransport     = true;
-		$this->rewriteCurlUrl    = null;
-		$this->dns               = [ 'cdn.example.com' => [ '93.184.216.34' ] ];
-		$this->responses         = [ $this->responseWith( 200, 'PNGBYTES' ) ];
+		$this->fakeHookRegistration();
+
+		$this->curlOptions        = [];
+		$this->curlSetoptSucceeds = true;
+
+		$this->pinDecisions    = [];
+		$this->handles         = [];
+		$this->requestedUrls   = [];
+		$this->sentArgs        = [];
+		$this->curlTransport   = true;
+		$this->rewriteCurlUrl  = null;
+		$this->rewriteCurlArgs = null;
+		$this->dns             = [ 'cdn.example.com' => [ '93.184.216.34' ] ];
+		$this->responses       = [ $this->responseWith( 200, 'PNGBYTES' ) ];
 
 		// MediaUrlGuard's own dependencies. Faked exactly as MediaUrlGuardTest
 		// fakes them, because the guard is exercised for real here rather than
@@ -210,79 +219,6 @@ abstract class MediaFetchTestCase extends TestCase {
 		Functions\when( 'wp_parse_url' )->alias(
 			static function ( string $url, int $component = -1 ) {
 				return parse_url( $url, $component );
-			}
-		);
-
-		// Brain Monkey does not run a hook system, so the hooks are recorded
-		// here and the transport fake below replays them. Recording both the
-		// hook name and the priority is what lets the removal tests assert that
-		// what was added is what was taken away, and what lets the priority of
-		// the forcing filter be tested at all.
-		// Only registrations made as [ $object, 'method' ] are booked into
-		// $added/$removed, and that filter is the leak assertion's whole meaning.
-		// Tests register their own spies as closures; counting those would make
-		// leakedHooks() report a "leak" for every test that watched anything, so
-		// the assertion would have to be loosened to tolerate it and would then no
-		// longer be an assertion about the class under test at all. The class only
-		// ever registers [ $this, 'method' ], so this leaves exactly its own
-		// registrations in view.
-		$isOwn = static function ( $callback ): bool {
-			return is_array( $callback );
-		};
-
-		Functions\when( 'add_filter' )->alias(
-			function ( string $hook, $callback, int $priority = 10 ) use ( $isOwn ) {
-				if ( $isOwn( $callback ) ) {
-					$this->added[] = [ $hook, $priority ];
-				}
-
-				if ( 'http_request_args' === $hook ) {
-					$this->requestArgFilters[] = [ $priority, $callback ];
-				}
-
-				return true;
-			}
-		);
-
-		Functions\when( 'remove_filter' )->alias(
-			function ( string $hook, $callback, int $priority = 10 ) use ( $isOwn ) {
-				if ( $isOwn( $callback ) ) {
-					$this->removed[] = [ $hook, $priority ];
-				}
-
-				if ( 'http_request_args' === $hook ) {
-					$this->requestArgFilters = $this->withoutCallback( $this->requestArgFilters, $callback, $priority );
-				}
-
-				return true;
-			}
-		);
-
-		Functions\when( 'add_action' )->alias(
-			function ( string $hook, $callback, int $priority = 10 ) use ( $isOwn ) {
-				if ( $isOwn( $callback ) ) {
-					$this->added[] = [ $hook, $priority ];
-				}
-
-				if ( 'http_api_curl' === $hook ) {
-					$this->curlActions[] = [ $priority, $callback ];
-				}
-
-				return true;
-			}
-		);
-
-		Functions\when( 'remove_action' )->alias(
-			function ( string $hook, $callback, int $priority = 10 ) use ( $isOwn ) {
-				if ( $isOwn( $callback ) ) {
-					$this->removed[] = [ $hook, $priority ];
-				}
-
-				if ( 'http_api_curl' === $hook ) {
-					$this->curlActions = $this->withoutCallback( $this->curlActions, $callback, $priority );
-				}
-
-				return true;
 			}
 		);
 
@@ -306,8 +242,19 @@ abstract class MediaFetchTestCase extends TestCase {
 						$curlUrl = ( $this->rewriteCurlUrl )( $curlUrl );
 					}
 
+					// The POST-filter arguments, because that is the array core
+					// carries to this hook: `class-wp-http.php:344` builds
+					// WP_HTTP_Requests_Hooks from the array `http_request_args`
+					// returned, and `class-wp-http-requests-hooks.php:58` fires the
+					// action with it.
+					$curlArgs = $args;
+
+					if ( null !== $this->rewriteCurlArgs ) {
+						$curlArgs = ( $this->rewriteCurlArgs )( $curlArgs );
+					}
+
 					foreach ( $this->orderedByPriority( $this->curlActions ) as $action ) {
-						$action( $handle, $args, $curlUrl );
+						$action( $handle, $curlArgs, $curlUrl );
 					}
 				}
 
@@ -374,19 +321,30 @@ abstract class MediaFetchTestCase extends TestCase {
 	/**
 	 * Whether the running test declares a given `@group`.
 	 *
-	 * Read from the annotation rather than from `$this->getGroups()`, because the
-	 * groups the suite assigned do not survive into the child process a
+	 * Read from the method's own docblock rather than from `$this->getGroups()`,
+	 * because the groups the suite assigned do not survive into the child process a
 	 * `@runInSeparateProcess` test runs in — and the one test that uses this is
 	 * process-isolated, so `getGroups()` would come back empty exactly where the
 	 * answer matters. `getName( false )` is the method name as it is at runtime,
 	 * which keeps the whole mechanism rename-proof.
+	 *
+	 * READ WITH REFLECTION RATHER THAN `PHPUnit\Util\Test::getGroups()`, which is
+	 * `@internal` in PHPUnit 9 and does not exist in PHPUnit 10 — an upgrade would
+	 * have turned this into a fatal. The annotation itself is the stable thing;
+	 * `ReflectionMethod::getDocComment()` is PHP, not PHPUnit.
 	 *
 	 * @param string $group The group to look for.
 	 *
 	 * @return bool True when the running test is in that group.
 	 */
 	private function isInGroup( string $group ): bool {
-		return in_array( $group, \PHPUnit\Util\Test::getGroups( static::class, $this->getName( false ) ), true );
+		$docblock = ( new \ReflectionMethod( static::class, $this->getName( false ) ) )->getDocComment();
+
+		if ( ! is_string( $docblock ) ) {
+			return false;
+		}
+
+		return 1 === preg_match( '/^\s*\*\s*@group\s+' . preg_quote( $group, '/' ) . '\s*$/m', $docblock );
 	}
 
 	/**
@@ -433,33 +391,6 @@ abstract class MediaFetchTestCase extends TestCase {
 	}
 
 	/**
-	 * The registrations with one callback removed, the way WordPress removes it.
-	 *
-	 * ONE callback, matched on identity AND priority — not every callback on the
-	 * hook, which is what an earlier version of this fake did. Clearing the whole
-	 * list made "the class removed its hook" indistinguishable from "the class
-	 * removed SOMETHING and everything went", and left the test's own spies
-	 * silently unregistered as a side effect.
-	 *
-	 * @param array<int, array{0: int, 1: callable}> $callbacks The registrations.
-	 * @param mixed                                  $callback  The callback to remove.
-	 * @param int                                    $priority  The priority it was registered at.
-	 *
-	 * @return array<int, array{0: int, 1: callable}> The registrations that remain.
-	 */
-	private function withoutCallback( array $callbacks, $callback, int $priority ): array {
-		foreach ( $callbacks as $at => $registered ) {
-			if ( $registered[0] === $priority && $registered[1] === $callback ) {
-				unset( $callbacks[ $at ] );
-
-				break;
-			}
-		}
-
-		return array_values( $callbacks );
-	}
-
-	/**
 	 * A URL as `WP_Http::request()` rewrites it before the transport sees it.
 	 *
 	 * `class-wp-http.php:283-289` passes the URL through `wp_http_validate_url()`
@@ -480,44 +411,6 @@ abstract class MediaFetchTestCase extends TestCase {
 			$url,
 			1
 		);
-	}
-
-	/**
-	 * Applies the registered `http_request_args` filters in priority order.
-	 *
-	 * @param array<string, mixed> $args The arguments so far.
-	 * @param string               $url  The URL of the request being prepared.
-	 *
-	 * @return array<string, mixed> The filtered arguments.
-	 */
-	private function applyRequestArgFilters( array $args, string $url ): array {
-		foreach ( $this->orderedByPriority( $this->requestArgFilters ) as $filter ) {
-			$args = $filter( $args, $url );
-		}
-
-		return $args;
-	}
-
-	/**
-	 * Sorts [ priority, callback ] pairs the way apply_filters runs them.
-	 *
-	 * Ascending, and stable, so equal priorities keep registration order — which
-	 * is what WordPress does and what makes "registered at PHP_INT_MAX" mean
-	 * something.
-	 *
-	 * @param array<int, array{0: int, 1: callable}> $callbacks The registrations.
-	 *
-	 * @return array<int, callable> The callbacks, in the order they should run.
-	 */
-	private function orderedByPriority( array $callbacks ): array {
-		usort(
-			$callbacks,
-			static function ( array $a, array $b ): int {
-				return $a[0] <=> $b[0];
-			}
-		);
-
-		return array_column( $callbacks, 1 );
 	}
 
 	/**
@@ -686,25 +579,6 @@ abstract class MediaFetchTestCase extends TestCase {
 	}
 
 	/**
-	 * Every hook this class added, minus every hook it removed.
-	 *
-	 * @return array<int, array{0: string, 1: int}> The leaked registrations.
-	 */
-	protected function leakedHooks(): array {
-		$leaked = $this->added;
-
-		foreach ( $this->removed as $gone ) {
-			$at = array_search( $gone, $leaked, true );
-
-			if ( false !== $at ) {
-				unset( $leaked[ $at ] );
-			}
-		}
-
-		return array_values( $leaked );
-	}
-
-	/**
 	 * The directives actually pinned, in order, one per hop.
 	 *
 	 * @return array<int, string> The directives, with declined requests dropped.
@@ -775,7 +649,7 @@ abstract class MediaFetchTestCase extends TestCase {
 
 				$this->curlOptions[] = [ $option, $value ];
 
-				return true;
+				return $this->curlSetoptSucceeds;
 			}
 		);
 	}
