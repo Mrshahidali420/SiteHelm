@@ -433,7 +433,7 @@ Fake `wp_safe_remote_get`, `wp_remote_retrieve_response_code`, `wp_remote_retrie
 | `test_a_body_at_the_size_cap_is_allowed` | exactly `MAX_DECODED_BYTES` → returned |
 | `test_the_hooks_are_removed_after_a_successful_fetch` | every added hook removed |
 | `test_the_hooks_are_removed_after_a_failed_fetch` | same, on the throwing path — **this is the test that matters most** |
-| `test_the_request_arguments_force_the_safe_settings` | `filterRequestArgs` returns `reject_unsafe_urls` true, `redirection` 2, `limit_response_size` `MAX_DECODED_BYTES + 1`, a timeout, and a plugin user-agent |
+| `test_the_request_arguments_force_the_safe_settings` | `filterRequestArgs` returns `reject_unsafe_urls` true, `redirection` 0, `limit_response_size` `MAX_DECODED_BYTES + 1`, a timeout, and a plugin user-agent |
 | `test_a_redirect_hop_to_a_private_address_is_refused` | `filterRequestArgs` called with a private-resolving URL throws InvalidInput |
 | `test_a_redirect_hop_to_a_public_address_is_allowed` | no throw, args returned |
 | `test_no_refusal_message_contains_an_ip_address` | sweep every refusal in this class |
@@ -472,7 +472,7 @@ return array_merge(
     $args,
     [
         'reject_unsafe_urls'  => true,
-        'redirection'         => 2,
+        'redirection'         => 0,
         'timeout'             => 15,
         'httpversion'         => '1.1',
         'stream'              => false,
@@ -481,6 +481,8 @@ return array_merge(
     ]
 );
 ```
+
+`redirection` is **0**, not 2, and that correction is load bearing rather than cosmetic. `http_request_args` fires once per `WP_Http::request()`; redirects are followed beneath it, inside Requests, and never re-enter that method — so any hop after the first would be dialled without re-validation and without a fresh `CURLOPT_RESOLVE`. Core is told to follow nothing, and the class follows the hops itself, re-validating and re-pinning each one. Two hops are still permitted; the cap moved, not the allowance.
 
 Check the real version constant's name in `sitehelm.php` before using it; do not invent one. The forced values come second in the `array_merge` deliberately — they must override whatever another plugin's `http_request_args` filter put there, not be overridden by it.
 
@@ -623,3 +625,5 @@ git commit -m "feat: add the media-import write operation for REQ-0052"
 ## Coverage
 
 The CI gate is a percentage floor of 80.0% and the branch currently sits at 97.55%. Each task reports its own uncovered statement count and names each one. Only three uncovered statements are sanctioned by this plan: `SystemHostResolver::resolve()`'s body, `MediaFetch::pinCurlHandle()`'s `curl_setopt` line, and `MediaSideload`'s inherited `load_admin_upload_apis()` `require_once` body. Anything else uncovered is a missing test, not a declared cost.
+
+**Superseded.** The `curl_setopt` line moved into `MediaFetch::applyResolveDirective()`, the seam a test subclass overrides so that the fail-closed pin's central property — that the pin flag is the option-set call's own return value — is provable on an interpreter that has ext-curl. Read the sanctioned list as naming that method, and read this whole section as a snapshot of the plan's intent rather than of the shipped numbers, which the task reports carry.
