@@ -456,8 +456,13 @@ final class MediaImportTest extends MediaImportTestCase {
 
 		$this->planWith( $this->pngBytes(), $this->input() );
 
+		// COMPUTED INDEPENDENTLY, from the fixture rather than from another call
+		// to the method under test. Expressed as `inspectBytes(...)['bytes']` this
+		// assertion put the same function on both sides and would have held for
+		// any guard whatsoever, including one that returned something else
+		// entirely, as long as it did so consistently.
 		$this->assertSame(
-			$guard->inspectBytes( 'holiday.png', $this->pngBytes() )['bytes'],
+			$this->pngBytes(),
 			$this->heldBytes(),
 			'What the operation holds between its phases is what the guard returned.'
 		);
