@@ -37,6 +37,8 @@ use SiteHelm\Contracts\OperationException;
  * WordPress hands the `3xx` back, and the loop in fetch() re-validates each hop
  * through the same MediaUrlGuard and MOVES the pin before the next request leaves.
  * Capped at two rather than disabled: CDN redirects are ordinary in real imports.
+ * Where a hop GOES is MediaRedirectResolver's; that the connection is re-pinned
+ * before it is dialled is this class's.
  *
  * BOTH HOOKS ARE REMOVED IN A `finally`, every path out of the hop loop included.
  * See fetch() for why that single line is the most important one in the file.
@@ -112,15 +114,6 @@ final class MediaFetch {
 	 * empty-body diagnosis that misdescribes what happened.
 	 */
 	private const REQUIRED_STATUS = 200;
-
-	/**
-	 * The statuses this class follows as a redirect.
-	 *
-	 * `304` is deliberately absent: it is a cache response, not a redirect, and
-	 * carries no `Location`. It falls through to the status check and is refused
-	 * there, which is the accurate diagnosis.
-	 */
-	private const REDIRECT_STATUSES = [ 301, 302, 303, 307, 308 ];
 
 	/**
 	 * The priority both callbacks are registered at.
@@ -216,11 +209,24 @@ final class MediaFetch {
 	private string $fetch_token = '';
 
 	/**
+	 * Where a `3xx` goes next, re-validated from scratch.
+	 *
+	 * Constructed here rather than injected because it is an implementation
+	 * detail of following a hop, not a collaborator any caller chooses: every
+	 * construction site of this class passes the guard and nothing else.
+	 *
+	 * @var MediaRedirectResolver
+	 */
+	private readonly MediaRedirectResolver $redirects;
+
+	/**
 	 * Constructs the fetcher.
 	 *
 	 * @param MediaUrlGuard $guard The address policy every hop is re-validated through.
 	 */
-	public function __construct( private readonly MediaUrlGuard $guard ) {}
+	public function __construct( MediaUrlGuard $guard ) {
+		$this->redirects = new MediaRedirectResolver( $guard );
+	}
 
 	// phpcs:disable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase -- $correlationId is the parameter name this operation's collaborators already use, and renaming it here alone would make the call sites disagree.
 	/**
@@ -290,7 +296,7 @@ final class MediaFetch {
 
 				$status = (int) wp_remote_retrieve_response_code( $response );
 
-				if ( in_array( $status, self::REDIRECT_STATUSES, true ) ) {
+				if ( $this->redirects->isRedirect( $status ) ) {
 					++$hops;
 
 					if ( $hops > self::MAX_REDIRECTS ) {
@@ -303,7 +309,7 @@ final class MediaFetch {
 						);
 					}
 
-					$target = $this->next_hop( $response, $target, $correlationId );
+					$target = $this->redirects->next( $response, $target, $correlationId );
 
 					continue;
 				}
@@ -676,93 +682,6 @@ final class MediaFetch {
 		);
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
-
-	/**
-	 * Validates the destination of a redirect and returns it as the next target.
-	 *
-	 * The destination goes through MediaUrlGuard::validate() as a brand-new URL,
-	 * not as a variation on the one that redirected. Everything the guard checks
-	 * for the address a caller supplied — scheme, port, credentials, host form,
-	 * every resolved address being public — is exactly what must be checked for
-	 * an address an attacker's server supplied, and rather more urgently.
-	 *
-	 * @param mixed                                                                   $response    The 3xx response.
-	 * @param array{url: string, scheme: string, host: string, port: int, ip: string} $from        The hop that produced it.
-	 * @param string                                                                  $correlation The id detail is logged under.
-	 *
-	 * @return array{url: string, scheme: string, host: string, port: int, ip: string} The validated next hop.
-	 *
-	 * @throws OperationException When there is no destination, or the guard refuses it.
-	 */
-	private function next_hop( $response, array $from, string $correlation ): array {
-		$location = wp_remote_retrieve_header( $response, 'location' );
-
-		// Not a string when the header repeated, in which case core hands back
-		// an array and there is no single destination to follow. Empty when it
-		// was absent. Neither is followed, and neither is guessed at.
-		if ( ! is_string( $location ) || '' === trim( $location ) ) {
-			$this->log( $correlation, sprintf( 'redirect with no single usable Location from: %s', $from['url'] ) );
-
-			$this->refuse(
-				ErrorCode::ExecutionFailed,
-				'The remote server sent a redirect with no destination.',
-				'Supply the address the file is finally served from.'
-			);
-		}
-
-		return $this->guard->validate( $this->absolute_hop( trim( $location ), $from, $correlation ) );
-	}
-
-	/**
-	 * Resolves a `Location` value against the hop that produced it.
-	 *
-	 * Against THAT hop, not against the original URL: a chain that redirects to
-	 * another host and then sends a root-relative `Location` means a path on the
-	 * second host, and resolving it against the first would dial an address
-	 * nobody chose.
-	 *
-	 * ONLY THREE FORMS ARE RESOLVED — absolute, protocol-relative and
-	 * root-relative — and anything else is refused. Path-relative and dot-segment
-	 * forms are legal in RFC 3986 and essentially absent from real asset redirects,
-	 * and implementing them would mean a home-grown path normaliser whose
-	 * disagreements with curl's would land exactly where this class's disagreements
-	 * are most expensive. Refusing is the safe direction: a refused import, not a
-	 * request to an address this class computed differently from its transport.
-	 *
-	 * IT IS LOGGED WHEN IT REFUSES. A path-relative `Location` was accepted as a
-	 * non-gap in review because it is rare, but "rare" is not "never", and a
-	 * refusal whose cause is invisible on the envelope by design must be visible
-	 * somewhere.
-	 *
-	 * @param string                                                                  $location    The `Location` value, trimmed and non-empty.
-	 * @param array{url: string, scheme: string, host: string, port: int, ip: string} $from        The hop that produced it.
-	 * @param string                                                                  $correlation The id detail is logged under.
-	 *
-	 * @return string The absolute URL.
-	 *
-	 * @throws OperationException When the form is not one this class resolves.
-	 */
-	private function absolute_hop( string $location, array $from, string $correlation ): string {
-		if ( 1 === preg_match( '#\A[a-z][a-z0-9+.\-]*:#i', $location ) ) {
-			return $location;
-		}
-
-		if ( str_starts_with( $location, '//' ) ) {
-			return $from['scheme'] . ':' . $location;
-		}
-
-		if ( str_starts_with( $location, '/' ) ) {
-			return sprintf( '%s://%s:%d%s', $from['scheme'], $from['host'], $from['port'], $location );
-		}
-
-		$this->log( $correlation, sprintf( 'unresolvable Location "%s" from: %s', $location, $from['url'] ) );
-
-		$this->refuse(
-			ErrorCode::ExecutionFailed,
-			'The remote server redirected to a destination this site cannot resolve.',
-			'Supply the address the file is finally served from.'
-		);
-	}
 
 	// phpcs:disable WordPress.PHP.DevelopmentFunctions.error_log_error_log -- error_log is the only sink available to a plugin for detail that must not reach the envelope; the alternative is losing the diagnosis entirely.
 	/**

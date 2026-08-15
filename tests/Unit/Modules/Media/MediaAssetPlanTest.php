@@ -96,7 +96,11 @@ final class MediaAssetPlanTest extends TestCase {
 	public function test_the_payload_keys_are_sorted(): void {
 		$planned = $this->planner->plan(
 			$this->inspected(),
-			[ 'title' => 'Holiday', 'alt' => 'A beach', 'caption' => 'At sunset' ]
+			[
+				'title'   => 'Holiday',
+				'alt'     => 'A beach',
+				'caption' => 'At sunset',
+			]
 		);
 
 		$keys   = array_keys( $planned->payload );
@@ -109,7 +113,10 @@ final class MediaAssetPlanTest extends TestCase {
 	public function test_the_payload_keys_are_sorted_with_a_source_url_too(): void {
 		$planned = $this->planner->plan(
 			$this->inspected(),
-			[ 'title' => 'Holiday', 'alt' => 'A beach' ],
+			[
+				'title' => 'Holiday',
+				'alt'   => 'A beach',
+			],
 			'https://example.com/assets/holiday.png'
 		);
 
