@@ -396,7 +396,7 @@ final class MediaImportTest extends MediaImportTestCase {
 			hash( 'sha256', (string) $written ),
 			'And they must be the bytes the APPROVED PLAN fingerprinted, or the review approved one file and the site stored another.'
 		);
-		$this->assertSame( strlen( (string) $written ), $planned->payload['byteLength'] );
+		$this->assertSame( $planned->payload['byteLength'], strlen( (string) $written ) );
 	}
 
 	/**

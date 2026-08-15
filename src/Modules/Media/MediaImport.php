@@ -337,11 +337,13 @@ final class MediaImport implements WriteOperation {
 	public function applyChange( TargetState $current, PlannedChange $planned, OperationContext $context ): string {
 		$bytes = (string) $this->pending_bytes;
 
-		// The empty clause is load-bearing, not decoration, and matches the same
-		// clause in MediaUpload::applyChange(). Holding nothing is the state of an
-		// instance that never planned, and a plan whose `contentSha256` is the
-		// digest of the empty string would pass the hash comparison on its own and
-		// send zero bytes to the sideload. That case is pinned by
+		// The empty clause cannot fire through ChangeEngine today: apply() re-runs
+		// planChange() and hands applyChange() THAT plan, MediaFetch refuses an
+		// empty body, and MediaAssetPlan digests only what the guard inspected, so
+		// no genuine plan carries hash('sha256',''). It is kept because nothing in
+		// the type system stops a future caller from constructing a PlannedChange
+		// directly, and matches the same clause in MediaUpload::applyChange(). The
+		// forged case is pinned at unit level by
 		// test_apply_refuses_a_plan_that_fingerprints_no_bytes_at_all.
 		if ( '' === $bytes || hash( 'sha256', $bytes ) !== (string) ( $planned->payload['contentSha256'] ?? '' ) ) {
 			$this->pending_bytes = null;
