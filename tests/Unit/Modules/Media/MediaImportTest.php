@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace SiteHelm\Tests\Unit\Modules\Media;
 
+use Brain\Monkey\Functions;
 use SiteHelm\Change\PlannedChange;
 use SiteHelm\Change\WriteOutputSchema;
 use SiteHelm\Contracts\Domain;
@@ -22,6 +23,7 @@ use SiteHelm\Contracts\RollbackPolicy;
 use SiteHelm\Contracts\SnapshotPolicy;
 use SiteHelm\Modules\Media\MediaFields;
 use SiteHelm\Modules\Media\MediaImport;
+use SiteHelm\Modules\Media\MediaMimeGuard;
 
 /**
  * What REQ-0052's write operation must do, on top of the WordPress and transport
@@ -347,6 +349,120 @@ final class MediaImportTest extends MediaImportTestCase {
 		$this->assertSame( 'A beach at sunset', $this->meta[ MediaFields::ALT_META_KEY ] );
 	}
 
+	/**
+	 * THE LAST HOP, and the one carrying the whole security premise of an import:
+	 * the file that reaches disk must hold the bytes that were fetched, inspected
+	 * and hash-pinned — not merely bytes whose hash was checked upstream of the
+	 * call that writes them.
+	 *
+	 * The content is read back out of the REAL temporary file MediaSideload wrote,
+	 * so nothing here manufactures the identity it claims to observe: the fixture
+	 * serves a body over the faked transport, MediaSideload writes whatever it was
+	 * handed, and the assertions compare what landed on disk with that body and
+	 * with the digest the approved plan carries.
+	 */
+	public function test_apply_writes_the_fetched_bytes_to_the_temporary_file(): void {
+		$input   = $this->input();
+		$context = $this->makeContext();
+		$current = $this->operation->resolveTarget( $input, $context );
+		$planned = $this->planWith( $this->pngBytes(), $input );
+
+		$written = null;
+		Functions\when( 'wp_handle_sideload' )->alias(
+			function ( array $file, array $overrides ) use ( &$written ): array {
+				$written           = (string) file_get_contents( $file['tmp_name'] );
+				$this->sideloads[] = [
+					'file'      => $file,
+					'overrides' => $overrides,
+				];
+
+				return [
+					'file' => '/var/www/html/wp-content/uploads/2026/08/holiday-1.png',
+					'url'  => 'https://example.com/wp-content/uploads/2026/08/holiday-1.png',
+					'type' => 'image/png',
+				];
+			}
+		);
+
+		$this->operation->applyChange( $current, $planned, $context );
+
+		$this->assertSame(
+			$this->pngBytes(),
+			$written,
+			'The bytes on disk must be the bytes the remote served and the guards inspected.'
+		);
+		$this->assertSame(
+			$planned->payload['contentSha256'],
+			hash( 'sha256', (string) $written ),
+			'And they must be the bytes the APPROVED PLAN fingerprinted, or the review approved one file and the site stored another.'
+		);
+		$this->assertSame( strlen( (string) $written ), $planned->payload['byteLength'] );
+	}
+
+	/**
+	 * The empty-bytes half of applyChange()'s guard, which the hash comparison
+	 * does NOT subsume. An instance that never planned holds nothing, and a plan
+	 * whose `contentSha256` is the digest of the empty string satisfies the hash
+	 * comparison against those nothing-bytes exactly.
+	 */
+	public function test_apply_refuses_a_plan_that_fingerprints_no_bytes_at_all(): void {
+		$input   = $this->input();
+		$context = $this->makeContext();
+		$current = $this->operation->resolveTarget( $input, $context );
+
+		$planned = new PlannedChange(
+			[
+				'filename'      => 'holiday.png',
+				'mimeType'      => 'image/png',
+				'byteLength'    => 0,
+				'contentSha256' => hash( 'sha256', '' ),
+				'sourceUrl'     => 'https://cdn.example.com/photos/holiday.png',
+			],
+			[ 'mimeType' => 'image/png' ],
+			[ 'mimeType' ]
+		);
+
+		try {
+			$this->operation->applyChange( $current, $planned, $context );
+			$this->fail( 'A plan describing no content must never reach the sideload.' );
+		} catch ( OperationException $refusal ) {
+			$this->assertSame( ErrorCode::ExecutionFailed, $refusal->errorCode );
+		}
+
+		$this->assertSame( [], $this->sideloads, 'An empty attachment must not be created.' );
+		$this->assertSame( [], $this->tempFiles, 'And nothing may reach disk on the way to refusing it.' );
+	}
+
+	/**
+	 * The premise behind planChange() holding `$inspected['bytes']` rather than the
+	 * fetched `$bytes`: the guard hands back the argument it was given, which is
+	 * why nothing can tell that assignment from `= $bytes` and why the mutant
+	 * swapping them is equivalent TODAY. Pinned here so the equivalence is a fact
+	 * under test rather than an assumption — a guard that starts normalising what
+	 * it validates fails this test instead of quietly leaving the operation
+	 * holding the unnormalised copy.
+	 */
+	public function test_the_content_guard_hands_back_the_bytes_it_was_given(): void {
+		$guard = new MediaMimeGuard( new MediaFields() );
+
+		$this->assertSame(
+			$this->pngBytes(),
+			$guard->inspectBytes( 'holiday.png', $this->pngBytes() )['bytes']
+		);
+		$this->assertSame(
+			$this->otherPngBytes(),
+			$guard->inspectBytes( 'other.png', $this->otherPngBytes() )['bytes']
+		);
+
+		$this->planWith( $this->pngBytes(), $this->input() );
+
+		$this->assertSame(
+			$guard->inspectBytes( 'holiday.png', $this->pngBytes() )['bytes'],
+			$this->heldBytes(),
+			'What the operation holds between its phases is what the guard returned.'
+		);
+	}
+
 	public function test_the_pending_bytes_are_cleared_after_apply(): void {
 		$input   = $this->input();
 		$context = $this->makeContext();
@@ -448,7 +564,22 @@ final class MediaImportTest extends MediaImportTestCase {
 			}
 		}
 
-		$this->assertGreaterThanOrEqual( 5, count( $refusals ), 'The sweep must actually reach every refusal path.' );
+		// The exact list, not a floor: a floor can never fail here, because a case
+		// that does not throw trips the fail() above before this line runs. Naming
+		// the paths is what makes deleting one show up as a failed assertion.
+		$this->assertSame(
+			[
+				'private address',
+				'unresolvable host',
+				'no basename',
+				'transport failure',
+				'refused content',
+				'rollback',
+				'unmatched approval',
+			],
+			array_keys( $refusals ),
+			'The sweep must cover exactly these refusal paths.'
+		);
 
 		foreach ( $refusals as $label => $text ) {
 			$this->assertDoesNotMatchRegularExpression( '/\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/', $text, "IP address in '{$label}'." );
@@ -461,7 +592,15 @@ final class MediaImportTest extends MediaImportTestCase {
 	}
 
 	/**
-	 * One closure per refusal this operation can reach, each of which must throw.
+	 * One closure per refusal this operation RAISES ITSELF, each of which must
+	 * throw.
+	 *
+	 * Not every refusal an import can end in: MediaFetch's own status-code,
+	 * redirect-limit, empty-body and over-cap refusals are reachable through this
+	 * operation but are swept for disclosure where they are written, by
+	 * MediaFetchTest::test_no_refusal_message_contains_an_ip_address. Only the
+	 * transport-failure case appears below, because it is the one whose wording
+	 * has to survive a raw transport string arriving from core.
 	 *
 	 * @return array<string, callable> The cases.
 	 */
