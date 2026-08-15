@@ -202,7 +202,17 @@ abstract class MediaImportTestCase extends TestCase {
 		Functions\when( 'wp_safe_remote_get' )->alias(
 			function ( string $url, array $args = [] ) {
 				$this->requestedUrls[] = $url;
-				$this->applyRequestArgFilters( $args, $url );
+
+				// OBSERVED, not merely run. This fake hands back exactly one
+				// response per call and models no redirect following of its own,
+				// which is a faithful stand-in for core only while the class under
+				// test has switched core's own redirect following off. Discarding
+				// the filtered arguments left that claim in the prose above and
+				// nowhere in the code: `redirection` could go back to a following
+				// value and every test in this file would still pass.
+				$filtered = $this->applyRequestArgFilters( $args, $url );
+
+				$this->assertSame( 0, $filtered['redirection'] ?? null );
 
 				if ( [] === $this->responses ) {
 					$this->fail( 'The transport was asked for more requests than the test queued responses for.' );
