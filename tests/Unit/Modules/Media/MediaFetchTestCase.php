@@ -476,24 +476,30 @@ abstract class MediaFetchTestCase extends TestCase {
 	 * testing it.
 	 */
 	protected function fetcher(): MediaFetch {
-		return new MediaFetch(
-			new MediaUrlGuard(
-				new class( $this->dns ) implements HostResolver {
-					/**
-					 * @param array<string, array<int, string>> $dns The canned zone.
-					 */
-					public function __construct( private array $dns ) {}
+		return new MediaFetch( $this->cannedGuard() );
+	}
 
-					/**
-					 * @param string $host The host to resolve.
-					 *
-					 * @return array<int, string> The canned answer.
-					 */
-					public function resolve( string $host ): array {
-						return $this->dns[ $host ] ?? [];
-					}
+	/**
+	 * The guard fetcher() wires in, on its own, for the one test that builds its
+	 * own MediaFetch subclass to override the transport seam.
+	 */
+	protected function cannedGuard(): MediaUrlGuard {
+		return new MediaUrlGuard(
+			new class( $this->dns ) implements HostResolver {
+				/**
+				 * @param array<string, array<int, string>> $dns The canned zone.
+				 */
+				public function __construct( private array $dns ) {}
+
+				/**
+				 * @param string $host The host to resolve.
+				 *
+				 * @return array<int, string> The canned answer.
+				 */
+				public function resolve( string $host ): array {
+					return $this->dns[ $host ] ?? [];
 				}
-			)
+			}
 		);
 	}
 
@@ -549,19 +555,23 @@ abstract class MediaFetchTestCase extends TestCase {
 	 * Digits are NOT banned outright, unlike MediaUrlGuard: a status number and
 	 * the redirect limit are the only numbers this class names, and neither is
 	 * an oracle for anything about this site's network.
+	 *
+	 * HOSTS ARE BANNED BY THEIR RESERVED DOMAIN, not one fixture at a time. The
+	 * needle list version of this sweep silently stopped covering hosts as tests
+	 * added them — `somewhere-else.example.org` was injected by two tests and
+	 * named in none of the needles — and every host any test here can put into a
+	 * message is under `example.` by RFC 2606. One rule cannot fall behind the
+	 * fixtures the way a list does.
 	 */
 	protected function assertRefusalLeaksNothing( OperationException $refusal ): void {
 		$forbidden = [
-			'93.184.216.34',
-			'169.254.169.254',
-			'127.0.0.1',
+			'example',
 			'curl',
 			'content-type',
-			'cdn.example.com',
-			'evil.example.com',
-			'images.example.net',
+			'location',
 			'/a.png',
 			'https://',
+			'http://',
 			'failed to connect',
 		];
 
@@ -570,6 +580,14 @@ abstract class MediaFetchTestCase extends TestCase {
 				'/\b\d{1,3}(?:\.\d{1,3}){3}\b/',
 				$text,
 				'A refusal from MediaFetch carries an IP address.'
+			);
+
+			// IPv6 too. The class pins AAAA answers and its own tests use them,
+			// so a leak in that form was previously unsearched for entirely.
+			$this->assertDoesNotMatchRegularExpression(
+				'/(?:[0-9a-f]{0,4}:){2,}[0-9a-f]{0,4}/i',
+				$text,
+				'A refusal from MediaFetch carries an IPv6 address.'
 			);
 
 			foreach ( $forbidden as $needle ) {
@@ -606,6 +624,15 @@ abstract class MediaFetchTestCase extends TestCase {
 	 * the last link in the chain is asserted where it can be and skipped where
 	 * it cannot. Everything the class DECIDES about the pin is covered
 	 * everywhere, through pinDirectiveFor().
+	 *
+	 * A SKIPPED TEST PROVES NOTHING, so nothing load bearing is left resting on
+	 * one. That `$pin_applied` is the option-set call's own return value — the
+	 * property the fail-closed pin depends on, and the only one these skipped
+	 * tests were carrying — is proved on every interpreter by
+	 * test_a_transport_that_will_not_take_the_directive_is_not_counted_as_a_pin(),
+	 * which overrides MediaFetch::applyResolveDirective() instead of the
+	 * extension function. What is skipped here is now only the narrower claim
+	 * that the directive reaches `curl_setopt()` under CURLOPT_RESOLVE.
 	 */
 	protected function requireObservableCurl(): void {
 		if ( ! defined( 'SITEHELM_CURL_IS_FAKE' ) ) {

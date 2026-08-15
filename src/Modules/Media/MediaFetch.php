@@ -88,9 +88,15 @@ use SiteHelm\Contracts\OperationException;
  * because a redirect cannot be followed without it — and what it names is
  * re-validated from scratch before it is dialled.
  *
+ * NOT FINAL, FOR ONE REASON ONLY: applyResolveDirective() is a seam a test
+ * subclass overrides to make the option-set fail, which is the only way to prove
+ * on an interpreter with ext-curl loaded that the pin flag is that call's return
+ * value. See that method. Nothing else here is designed to be extended, and the
+ * pin's decisions are deliberately not reachable from a subclass.
+ *
  * @package SiteHelm
  */
-final class MediaFetch {
+class MediaFetch {
 
 	/**
 	 * The number of redirect hops permitted.
@@ -535,9 +541,11 @@ final class MediaFetch {
 	 *
 	 * SPLIT OUT FROM pinCurlHandle() DELIBERATELY, so that every decision about the
 	 * pin is an ordinary return value here rather than a branch inside the effect.
-	 * `curl_setopt()` can only be observed in a test on a PHP with no ext-curl —
-	 * Brain Monkey can define a missing function but cannot redefine a loaded
-	 * extension's — so anything decided in there would be untestable where CI runs.
+	 * The call to `curl_setopt()` itself cannot be watched by a test double where
+	 * ext-curl is loaded — a double can define a missing function, not redefine a
+	 * loaded extension's — so a decision made inside it would be unreadable on the
+	 * interpreters this plugin is checked on. What that call DOES is observable
+	 * even there, through the applyResolveDirective() seam.
 	 *
 	 * IT REFUSES TO PIN A REQUEST THAT IS NOT THIS FETCH'S HOP, because a pin
 	 * applied to somebody else's request would re-point THEIR connection at THIS
@@ -635,8 +643,38 @@ final class MediaFetch {
 			return;
 		}
 
+		$this->pin_applied = $this->applyResolveDirective( $handle, $directive );
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- this class's public surface is camelCase because it is called from camelCase collaborators, and the ruleset's snake_case rule is a WordPress-core convention this plugin's own classes do not follow.
+	/**
+	 * Hands the directive to curl and reports whether curl took it.
+	 *
+	 * THE ONLY REASON THIS IS A METHOD RATHER THAN A LINE is that it is the seam
+	 * a test overrides to make the option-set FAIL. `curl_setopt()` is an
+	 * extension function: a test double can define it where ext-curl is absent,
+	 * but nothing can make the loaded one return false — and ext-curl is loaded
+	 * on every interpreter this plugin is checked on. Without the seam, the one
+	 * property the fail-closed pin rests on, that `$pin_applied` is this call's
+	 * own return value and not a `true` written above it, is unprovable exactly
+	 * where it is most load bearing. Overriding this method is the only reason
+	 * the class is not final.
+	 *
+	 * It contains the call and nothing else on purpose. Every decision about the
+	 * pin is made in pinCurlHandle() and pinDirectiveFor(), where a test can read
+	 * it without overriding anything at all; an override that could change a
+	 * DECISION rather than only the outcome of the effect would be a way for a
+	 * subclass to weaken the pin.
+	 *
+	 * @param mixed  $handle    The curl handle, by reference.
+	 * @param string $directive The `CURLOPT_RESOLVE` directive for this hop.
+	 *
+	 * @return bool Whether curl accepted the directive.
+	 */
+	protected function applyResolveDirective( &$handle, string $directive ): bool {
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.curl_curl_setopt -- CURLOPT_RESOLVE has no WordPress API equivalent; it is the whole DNS-rebinding defence.
-		$this->pin_applied = curl_setopt( $handle, CURLOPT_RESOLVE, [ $directive ] );
+		return curl_setopt( $handle, CURLOPT_RESOLVE, [ $directive ] );
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 
