@@ -107,7 +107,7 @@ final class MediaRedirectResolver {
 			);
 		}
 
-		return $this->guard->validate( $this->absolute_hop( trim( $location ), $from, $correlation ) );
+		return $this->guard->validate( $this->absolute_hop( trim( $location ), $from, $correlation ), $correlation );
 	}
 
 	/**

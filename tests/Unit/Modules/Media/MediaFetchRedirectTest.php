@@ -114,6 +114,33 @@ final class MediaFetchRedirectTest extends MediaFetchTestCase {
 		);
 	}
 
+	public function test_a_hop_whose_location_carries_a_trailing_dot_is_refused(): void {
+		// THE ATTACKER WRITES THE `Location`, so the second entry point into the
+		// trailing-dot pin hole is this one, and it is the more dangerous of the
+		// two: the site has already been persuaded to make one request. The dotted
+		// spelling is what curl keys its resolve cache on, while the directive
+		// would name the undotted one — a hop dialled unpinned, its name resolved
+		// by whoever answers for it, and no refusal anywhere, because applying the
+		// directive succeeded. Everything else about this hop is public and
+		// ordinary, so nothing but the guard's dot rule stops it.
+		$this->dns['images.example.net'] = [ '93.184.216.35' ];
+
+		$this->respondWith(
+			$this->redirectTo( 'https://images.example.net./a.png' ),
+			$this->responseWith( 200, 'PNGBYTES' )
+		);
+
+		$refusal = $this->refusal(
+			ErrorCode::InvalidInput,
+			fn() => $this->fetcher()->fetch( $this->validated(), 'corr-1' )
+		);
+
+		$this->assertStringContainsString( 'ends in a dot', $refusal->getMessage() );
+
+		// And refused before the second request left, not after it came back.
+		$this->assertSame( [ 'https://cdn.example.com/a.png' ], $this->requestedUrls );
+	}
+
 	public function test_a_hop_whose_location_names_an_uppercase_scheme_is_still_pinned(): void {
 		// THE ATTACKER WRITES THE `Location`, so the spelling of the next hop is
 		// entirely theirs to choose. `HTTPS://` is a legal, equivalent spelling

@@ -271,7 +271,7 @@ final class MediaImport implements WriteOperation {
 	 *                           fails.
 	 */
 	public function planChange( TargetState $current, array $input, OperationContext $context ): PlannedChange {
-		$validated = $this->urls->validate( (string) ( $input['url'] ?? '' ) );
+		$validated = $this->urls->validate( (string) ( $input['url'] ?? '' ), $context->correlationId );
 
 		// Read from the address the GUARD RETURNED rather than from the raw
 		// argument, so the name and the checks that approved it are taken from one
