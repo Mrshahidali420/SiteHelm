@@ -11,7 +11,9 @@ namespace SiteHelm\Tests\Unit\Modules\Media;
 
 use Brain\Monkey\Functions;
 use SiteHelm\Contracts\ErrorCode;
+use SiteHelm\Modules\Media\MediaFetch;
 use SiteHelm\Modules\Media\MediaMimeGuard;
+use SiteHelm\Modules\Media\MediaUrlGuard;
 
 /**
  * MediaUrlGuard decides WHETHER an address may be fetched. This class tests the
@@ -128,6 +130,55 @@ final class MediaFetchTest extends MediaFetchTestCase {
 
 		$this->assertStringContainsString( 'pinned', $refusal->getMessage() );
 		$this->assertRefusalLeaksNothing( $refusal );
+	}
+
+	public function test_a_transport_that_will_not_take_the_directive_is_not_counted_as_a_pin(): void {
+		// THE SAME COUPLING AS THE TEST ABOVE, PROVED WHERE EXT-CURL IS LOADED.
+		// That one can only be staged where curl_setopt() is a double, which is
+		// nowhere the extension is present — so on every interpreter this plugin
+		// is checked on it is SKIPPED, and `$pin_applied = true;` written above the
+		// call would survive the entire suite with nothing to catch it. Overriding
+		// the transport seam stages the same refusal with the extension loaded.
+		$seen = [];
+
+		$fetch = new class( $this->cannedGuard(), $seen ) extends MediaFetch {
+			/**
+			 * @param MediaUrlGuard      $guard The address policy.
+			 * @param array<int, string> $seen  Collects every directive offered, by reference.
+			 */
+			public function __construct( MediaUrlGuard $guard, private array &$seen ) {
+				parent::__construct( $guard );
+			}
+
+			/**
+			 * Refuses the directive the way curl does when it will not take one.
+			 *
+			 * @param mixed  $handle    The handle, unused: nothing is set on it.
+			 * @param string $directive The directive offered.
+			 *
+			 * @return bool Always false.
+			 */
+			protected function applyResolveDirective( &$handle, string $directive ): bool {
+				unset( $handle );
+
+				$this->seen[] = $directive;
+
+				return false;
+			}
+		};
+
+		$refusal = $this->refusal(
+			ErrorCode::ExecutionFailed,
+			fn() => $fetch->fetch( $this->validated(), 'corr-1' )
+		);
+
+		$this->assertStringContainsString( 'pinned', $refusal->getMessage() );
+		$this->assertRefusalLeaksNothing( $refusal );
+
+		// The seam was actually reached with the real directive. Without this, a
+		// fetch refused before it ever got as far as pinning would pass the
+		// assertions above while proving nothing about the coupling.
+		$this->assertSame( [ 'cdn.example.com:443:93.184.216.34' ], $seen );
 	}
 
 	public function test_the_faked_curl_constant_matches_the_extensions_own(): void {
@@ -347,10 +398,16 @@ final class MediaFetchTest extends MediaFetchTestCase {
 
 		$this->assertTrue( $args['reject_unsafe_urls'] );
 		$this->assertSame( MediaMimeGuard::MAX_DECODED_BYTES + 1, $args['limit_response_size'] );
-		$this->assertIsInt( $args['timeout'] );
-		$this->assertGreaterThan( 0, $args['timeout'] );
 		$this->assertStringContainsString( 'SiteHelm', (string) $args['user-agent'] );
 		$this->assertFalse( $args['stream'] );
+
+		// PINNED TO THEIR VALUES, not to a range. `assertIsInt` plus "greater than
+		// zero" left every timeout from one second to ten minutes passing, and
+		// `httpversion` was asserted nowhere at all — deleting the line survived
+		// the suite. Both are forced arguments the class advertises as deliberate,
+		// so both are worth exactly one equality each.
+		$this->assertSame( 15, $args['timeout'] );
+		$this->assertSame( '1.1', $args['httpversion'] );
 	}
 
 	public function test_the_transport_is_told_not_to_follow_redirects_itself(): void {
@@ -396,7 +453,7 @@ final class MediaFetchTest extends MediaFetchTestCase {
 		$this->assertTrue( $args['reject_unsafe_urls'] );
 		$this->assertSame( 0, $args['redirection'] );
 		$this->assertSame( MediaMimeGuard::MAX_DECODED_BYTES + 1, $args['limit_response_size'] );
-		$this->assertLessThan( 600, $args['timeout'] );
+		$this->assertSame( 15, $args['timeout'] );
 		$this->assertFalse( $args['stream'] );
 	}
 
@@ -535,9 +592,18 @@ final class MediaFetchTest extends MediaFetchTestCase {
 		// transport is not curl. Such a site never fires `http_api_curl`, has no
 		// CURLOPT_RESOLVE to apply and never did — the accepted cost in spec §7
 		// item 3 — so the absence of a pin there is not a failure to detect.
+		//
+		// THE SPY IS INSTALLED so that the empty list below means something. Left
+		// uninstalled, `$this->pinDecisions` is empty by construction and the
+		// assertion holds however the class behaves — including if the transport
+		// flag stopped being honoured and `http_api_curl` fired after all.
 		$this->curlTransport = false;
 
-		$this->assertSame( 'PNGBYTES', $this->fetcher()->fetch( $this->validated(), 'corr-1' ) );
+		$fetch = $this->fetcher();
+
+		$this->recordPins( $fetch );
+
+		$this->assertSame( 'PNGBYTES', $fetch->fetch( $this->validated(), 'corr-1' ) );
 		$this->assertSame( [], $this->pinDecisions );
 	}
 
@@ -595,10 +661,18 @@ final class MediaFetchTest extends MediaFetchTestCase {
 		// The action can only fire while a fetch is in flight, but WordPress
 		// hooks are global and this callback is public. With no pin set it must
 		// touch nothing rather than dereference a null target.
+		//
+		// THE ARGUMENTS CARRY THE TOKEN, and that is the whole point of the test.
+		// An empty `$args` array is rejected one line into the callback, on the
+		// ownership check, and never reaches the no-pin branch this test is named
+		// for. The token an idle fetch holds is the empty string — see
+		// carries_fetch_token() for why that is safe and why no early return
+		// guards it — so this is exactly the stranger's request the docblock
+		// there describes, arriving while nothing is in flight.
 		$fetch  = $this->fetcher();
 		$handle = 'curl-handle';
 
-		$fetch->pinCurlHandle( $handle, [], 'https://cdn.example.com/a.png' );
+		$fetch->pinCurlHandle( $handle, [ 'sitehelm_fetch_token' => '' ], 'https://cdn.example.com/a.png' );
 
 		$this->assertNull( $fetch->pinDirectiveFor( 'https://cdn.example.com/a.png' ) );
 		$this->assertSame( [], $this->curlOptions );
