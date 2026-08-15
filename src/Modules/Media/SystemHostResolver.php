@@ -25,6 +25,7 @@ namespace SiteHelm\Modules\Media;
  */
 final class SystemHostResolver implements HostResolver {
 
+	// phpcs:disable WordPress.PHP.NoSilencedErrors.Discouraged -- a host that does not resolve is an ordinary refusal on this path, not a warning for the site operator's log; the empty result is handled by the caller.
 	/**
 	 * Resolves a host to every A and AAAA address it answers with.
 	 *
@@ -37,8 +38,6 @@ final class SystemHostResolver implements HostResolver {
 	 * @param string $host The host name to resolve.
 	 *
 	 * @return array<int, string> Every address, de-duplicated, in resolver order.
-	 *
-	 * phpcs:disable WordPress.PHP.NoSilencedErrors.Discouraged
 	 */
 	public function resolve( string $host ): array {
 		$records = [];
