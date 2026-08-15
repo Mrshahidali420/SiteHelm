@@ -273,12 +273,25 @@ final class MediaImport implements WriteOperation {
 	public function planChange( TargetState $current, array $input, OperationContext $context ): PlannedChange {
 		$validated = $this->urls->validate( (string) ( $input['url'] ?? '' ) );
 
-		// Derived from the NORMALISED url the guard returned, not from the raw
-		// argument, so the name comes from the address that was actually approved.
+		// Read from the address the GUARD RETURNED rather than from the raw
+		// argument, so the name and the checks that approved it are taken from one
+		// string. The two cannot be made to disagree today — core's
+		// wp_http_validate_url() refuses outright any address whose normalisation
+		// altered more than the case of its scheme, so no input produces two
+		// different basenames — which is why no test distinguishes them. The
+		// guarantee this line actually buys is forward-looking: a guard that one
+		// day rewrites more of the address does not leave the filename behind on a
+		// spelling nothing examined.
 		$filename = $this->filename_for( $validated['url'], $input );
 
 		$bytes = $this->fetch->fetch( $validated, $context->correlationId );
 
+		// The bytes held between the phases are THE GUARD'S, not the fetched ones.
+		// inspectBytes() hands back its own argument unchanged today, which is why
+		// no test can tell this assignment from `= $bytes`; the premise is pinned
+		// by test_the_content_guard_hands_back_the_bytes_it_was_given, so a guard
+		// that starts normalising what it validates cannot quietly leave this
+		// operation holding the unnormalised copy.
 		$inspected           = $this->guard->inspectBytes( $filename, $bytes );
 		$this->pending_bytes = $inspected['bytes'];
 
@@ -324,6 +337,12 @@ final class MediaImport implements WriteOperation {
 	public function applyChange( TargetState $current, PlannedChange $planned, OperationContext $context ): string {
 		$bytes = (string) $this->pending_bytes;
 
+		// The empty clause is load-bearing, not decoration, and matches the same
+		// clause in MediaUpload::applyChange(). Holding nothing is the state of an
+		// instance that never planned, and a plan whose `contentSha256` is the
+		// digest of the empty string would pass the hash comparison on its own and
+		// send zero bytes to the sideload. That case is pinned by
+		// test_apply_refuses_a_plan_that_fingerprints_no_bytes_at_all.
 		if ( '' === $bytes || hash( 'sha256', $bytes ) !== (string) ( $planned->payload['contentSha256'] ?? '' ) ) {
 			$this->pending_bytes = null;
 
@@ -405,7 +424,9 @@ final class MediaImport implements WriteOperation {
 	 * a file whose name carries a cache-buster.
 	 *
 	 * A path that yields no basename, or a basename with no extension, is
-	 * REFUSED rather than repaired. Inventing an extension would be inventing
+	 * REFUSED rather than repaired — by ONE check, because a name that is empty
+	 * has no extension either, so a separate empty-name clause would be a branch
+	 * no address could reach. Inventing an extension would be inventing
 	 * the very value MediaMimeGuard's deny list and its extension-versus-content
 	 * agreement check both key off, which is a guard being fed its own answer.
 	 * The refusal names the argument that fixes it and nothing else: not the
@@ -426,7 +447,7 @@ final class MediaImport implements WriteOperation {
 
 		$basename = basename( (string) wp_parse_url( $url, PHP_URL_PATH ) );
 
-		if ( '' === $basename || '' === (string) pathinfo( $basename, PATHINFO_EXTENSION ) ) {
+		if ( '' === (string) pathinfo( $basename, PATHINFO_EXTENSION ) ) {
 			throw new OperationException(
 				ErrorCode::InvalidInput,
 				'The supplied address does not end in a file name with an extension.',

@@ -152,10 +152,11 @@ final class MediaFetch {
 	 * callback finds nothing to act on rather than a stale target.
 	 *
 	 * THIS MAKES fetch() NON-REENTRANT, and must: a second fetch on the same
-	 * instance would overwrite the first's pin mid-flight. Nothing calls it that
-	 * way — MediaImport constructs the fetcher, calls fetch() once and discards it
-	 * — and PHP is single-threaded, so the only way in would be a hook fired from
-	 * inside the request calling fetch() again.
+	 * instance would overwrite the first's pin mid-flight. The instance IS SHARED —
+	 * one fetcher, one fetch per preview and one per apply — so the invariant is
+	 * SEQUENTIAL use, not single use: every call re-pins, regenerates the token, and
+	 * clears both in fetch()'s own `finally`, and PHP is single-threaded, so only a
+	 * hook re-entering fetch() mid-request could overlap two.
 	 *
 	 * @var array{url: string, scheme: string, host: string, port: int, ip: string}|null
 	 */
