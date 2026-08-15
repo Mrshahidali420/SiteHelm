@@ -49,7 +49,7 @@ final class MediaAssetPlan {
 	 */
 	public const TEXT_FIELDS = [ 'title', 'alt', 'caption', 'description' ];
 
-	// phpcs:disable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase -- $sourceUrl matches the declared input property name.
+	// phpcs:disable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase -- $sourceUrl matches the payload member name media-import records the reviewed source under; the payload's vocabulary is camelCase throughout the contracts.
 	/**
 	 * Builds the normalized payload and the promised after-state.
 	 *
