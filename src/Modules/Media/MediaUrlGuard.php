@@ -39,7 +39,10 @@ use SiteHelm\Contracts\OperationException;
  * a blind SSRF probe, and leaking any of them turns a refused fetch into an
  * internal port scanner. "No digits" is trivially checkable, is asserted over
  * every refusal this class can produce, and leaves no judgement call for a
- * future edit.
+ * future edit. The same reasoning collapses "the name did not resolve" and "it
+ * resolved somewhere private" into one message; see refuse_unfetchable_host().
+ * What the envelope will not carry goes to `error_log` under the correlation
+ * id, as it does elsewhere in this module.
  *
  * This class performs NO HTTP. It is pure policy plus one DNS lookup through the
  * HostResolver seam. MediaFetch owns the request, re-validates every redirect
@@ -241,7 +244,10 @@ final class MediaUrlGuard {
 	 * not apply. Handing back the string core will actually use removes the
 	 * divergence at its source.
 	 *
-	 * @param string $url The caller-supplied URL.
+	 * @param string $url         The caller-supplied URL.
+	 * @param string $correlation The id server-side detail is logged under. Defaults
+	 *                            to empty for the callers that have no operation in
+	 *                            flight, such as a test exercising the policy alone.
 	 *
 	 * @return array{url: string, scheme: string, host: string, port: int, ip: string}
 	 *         The validated URL in core's normalised form, its normalised host,
@@ -249,7 +255,7 @@ final class MediaUrlGuard {
 	 *
 	 * @throws OperationException With ErrorCode::InvalidInput on every refusal.
 	 */
-	public function validate( string $url ): array {
+	public function validate( string $url, string $correlation = '' ): array {
 		// 1. Core's own baseline, first, so this plugin can only ever be
 		// STRICTER than the platform. It is not kept as the only gate: it misses
 		// link-local (the cloud metadata range on AWS, GCP and Azure) and does
@@ -307,8 +313,32 @@ final class MediaUrlGuard {
 			);
 		}
 
-		// 5. Host must exist and must not be this machine by name.
-		$host = self::normalise_host( (string) ( $parts['host'] ?? '' ) );
+		// 5. A host written with a trailing dot is refused OUTRIGHT, before it is
+		// normalised, resolved or dialled, so that one name has exactly one
+		// spelling everywhere in this module.
+		//
+		// `cdn.example.com.` and `cdn.example.com` are the same name to DNS and
+		// two different strings to curl, which keys its resolve cache on the host
+		// AS WRITTEN. Pin the normalised spelling and the transport, handed the
+		// dotted one, finds no entry and resolves the name itself — the pin is
+		// inert, the rebinding window is open again, and nothing downstream can
+		// see it, because applying the directive succeeded.
+		//
+		// KEYING THE DIRECTIVE ON THE HOST VERBATIM WAS CONSIDERED AND REJECTED.
+		// It closes the same hole, and it does so by putting two spellings of one
+		// name back into a class whose entire discipline is that there is only
+		// one. Refusing costs a caller one character they did not need to type.
+		$raw_host = (string) ( $parts['host'] ?? '' );
+
+		if ( str_ends_with( $raw_host, '.' ) ) {
+			$this->refuse(
+				'The host in the supplied address ends in a dot.',
+				'Supply the same URL with no dot at the end of the host name.'
+			);
+		}
+
+		// Host must exist and must not be this machine by name.
+		$host = self::normalise_host( $raw_host );
 
 		if ( '' === $host ) {
 			$this->refuse(
@@ -343,10 +373,9 @@ final class MediaUrlGuard {
 		$addresses = array_values( $this->addresses_for( $host ) );
 
 		if ( [] === $addresses ) {
-			$this->refuse(
-				'The host in the supplied address could not be resolved.',
-				'Check the host name and request a fresh preview.'
-			);
+			$this->log( $correlation, sprintf( 'host did not resolve: %s', $host ) );
+
+			$this->refuse_unfetchable_host();
 		}
 
 		// 8. EVERY address must be public. A host answering with one public and
@@ -354,7 +383,7 @@ final class MediaUrlGuard {
 		// would mean the address actually dialled is decided by resolver
 		// ordering, so one bad answer refuses the whole URL.
 		foreach ( $addresses as $address ) {
-			$this->assert_public_address( $address );
+			$this->assert_public_address( $address, $host, $correlation );
 		}
 
 		// 9. The first address is the pin.
@@ -374,8 +403,16 @@ final class MediaUrlGuard {
 	 * an IPv6 literal are stripped because they are URL syntax rather than part
 	 * of the address, and `filter_var()` rejects a bracketed literal outright —
 	 * a guard that forgot to strip them would fail to recognise `[::1]` as a
-	 * literal and hand it to the resolver. Trailing dots go because
-	 * `localhost.` is the same name as `localhost`.
+	 * literal and hand it to the resolver.
+	 *
+	 * THE TRAILING-DOT RTRIM IS KEPT AS DEFENCE IN DEPTH, not as live
+	 * normalisation. validate() refuses a host carrying a trailing dot before
+	 * anything is resolved or dialled, so no dotted host reaches either caller
+	 * of this method in the ordinary course; the rtrim is what makes
+	 * `localhost.` still mean `localhost` should some future path reach here
+	 * without going through that refusal first. It cannot reintroduce the two
+	 * spellings the refusal exists to prevent, because a string it would change
+	 * can no longer get this far.
 	 *
 	 * PUBLIC AND STATIC BECAUSE MediaFetch NORMALISES THE SAME WAY, and must. Its
 	 * hook callbacks decide whether a URL WordPress hands them is the hop this
@@ -456,11 +493,13 @@ final class MediaUrlGuard {
 	 * is the sole guard for the ranges the flags miss, CGNAT and multicast among
 	 * them.
 	 *
-	 * @param string $address One resolved address.
+	 * @param string $address     One resolved address.
+	 * @param string $host        The host it was resolved from, for the server-side log only.
+	 * @param string $correlation The id server-side detail is logged under.
 	 *
 	 * @throws OperationException With ErrorCode::InvalidInput when the address is not public.
 	 */
-	private function assert_public_address( string $address ): void {
+	private function assert_public_address( string $address, string $host, string $correlation ): void {
 		$candidate = $this->unmap( $address );
 
 		$public = filter_var(
@@ -470,12 +509,45 @@ final class MediaUrlGuard {
 		);
 
 		if ( false === $public || $this->is_blocked( $candidate ) ) {
-			$this->refuse(
-				'The requested address is not a public internet address this site will fetch from.',
-				'Use a URL on a publicly reachable host and request a fresh preview.'
-			);
+			$this->log( $correlation, sprintf( 'host %s resolved to a non-public address: %s', $host, $address ) );
+
+			$this->refuse_unfetchable_host();
 		}
 	}
+
+	/**
+	 * Refuses a host this site will not fetch from, saying no more than that.
+	 *
+	 * ONE MESSAGE COVERS BOTH "DID NOT RESOLVE" AND "RESOLVED SOMEWHERE
+	 * PRIVATE", deliberately. Two messages made this class a DNS-and-address
+	 * oracle: an unauthenticated caller could tell a name that does not exist
+	 * from one that does and points inside the network, and could map the
+	 * network one probe at a time without ever seeing a response body. Which of
+	 * the two it was goes to error_log under the correlation id instead, the way
+	 * every other detail in this module that must not reach the envelope does.
+	 *
+	 * @return never
+	 *
+	 * @throws OperationException Always, with ErrorCode::InvalidInput.
+	 */
+	private function refuse_unfetchable_host(): never {
+		$this->refuse(
+			'The host in the supplied address is not one this site can fetch from.',
+			'Check the host name, then request a fresh preview and try again.'
+		);
+	}
+
+	// phpcs:disable WordPress.PHP.DevelopmentFunctions.error_log_error_log -- error_log is the only sink available to a plugin for detail that must not reach the envelope; the alternative is losing the diagnosis entirely.
+	/**
+	 * Records detail server-side that must never reach the envelope.
+	 *
+	 * @param string $correlation The correlation id the detail is filed under.
+	 * @param string $detail      The unsafe detail.
+	 */
+	private function log( string $correlation, string $detail ): void {
+		error_log( sprintf( 'SiteHelm media import (%s): %s', $correlation, $detail ) );
+	}
+	// phpcs:enable WordPress.PHP.DevelopmentFunctions.error_log_error_log
 
 	// phpcs:disable WordPress.PHP.NoSilencedErrors.Discouraged -- inet_pton() and inet_ntop() are deliberately fed strings that may not be addresses at all, since judging a hostile resolver's answer is this class's job; their diagnostic warning carries that answer into the site's error log, and the false return is handled on the line below every silenced call.
 	/**

@@ -38,8 +38,28 @@ use SiteHelm\Tests\TestCase;
  */
 final class MediaUrlGuardTest extends TestCase {
 
+	/**
+	 * Everything the guard wrote to the server log during one test.
+	 *
+	 * @var array<int, string>
+	 */
+	private array $logged = [];
+
 	protected function setUp(): void {
 		parent::setUp();
+
+		// The server log is CAPTURED, not silenced. The refusal messages below are
+		// deliberately uninformative, and that is only defensible while the detail
+		// they drop is still recorded somewhere an operator can read it.
+		$this->logged = [];
+
+		Functions\when( 'error_log' )->alias(
+			function ( string $line ): bool {
+				$this->logged[] = $line;
+
+				return true;
+			}
+		);
 
 		// Core's own baseline gate. Faked as "accepts everything" by default so
 		// that each test below exercises THIS class's policy rather than core's;
@@ -261,10 +281,28 @@ final class MediaUrlGuardTest extends TestCase {
 		$this->assertRefused( 'http://localhost/a.png', [ '93.184.216.34' ] );
 	}
 
+	public function test_a_host_written_with_a_trailing_dot_is_refused(): void {
+		// THE PIN HOLE THIS CLOSES: `cdn.example.com.` and `cdn.example.com` are
+		// one name to DNS and two strings to curl, which keys its resolve cache on
+		// the host exactly as written. Pin the normalised spelling, hand the
+		// transport the dotted one, and the directive never matches — curl
+		// resolves the name itself, the rebinding window reopens, and the
+		// fail-closed check downstream still passes because applying the directive
+		// succeeded. Everything else about this URL is ordinary and public, so
+		// nothing but this refusal stops it.
+		$refusal = $this->assertRefused( 'https://cdn.example.com./a.png', [ '93.184.216.34' ] );
+
+		$this->assertStringContainsString( 'ends in a dot', $refusal->getMessage() );
+	}
+
 	public function test_a_trailing_dot_does_not_smuggle_localhost_past_the_name_check(): void {
-		// `localhost.` is the same name in DNS. Comparing the raw host string
-		// would miss it.
-		$this->assertRefused( 'http://localhost./a.png', [ '93.184.216.34' ] );
+		// `localhost.` is the same name in DNS. Refused for its dot before the
+		// name check is ever reached, which is why the message is asserted: were
+		// the dot rule deleted, normalise_host()'s rtrim would still catch this
+		// one URL and the refusal would silently change identity.
+		$refusal = $this->assertRefused( 'http://localhost./a.png', [ '93.184.216.34' ] );
+
+		$this->assertStringContainsString( 'ends in a dot', $refusal->getMessage() );
 	}
 
 	public function test_an_uppercase_localhost_is_refused(): void {
@@ -275,6 +313,45 @@ final class MediaUrlGuardTest extends TestCase {
 
 	public function test_a_host_that_resolves_to_nothing_is_refused(): void {
 		$this->assertRefused( 'https://cdn.example.com/a.png', [] );
+	}
+
+	public function test_a_name_that_does_not_resolve_and_one_that_resolves_privately_are_indistinguishable(): void {
+		// THE ENVELOPE MUST NOT BE A DNS ORACLE. Two different messages let an
+		// unauthenticated caller tell a name that does not exist from one that
+		// exists and points inside the network, and map the network one refused
+		// preview at a time without ever seeing a response body. Asserted as
+		// equality between the two refusals rather than against a literal, so the
+		// test cannot be satisfied by editing one message to match a fixture.
+		$unresolved = $this->refusal(
+			fn() => $this->guard( [] )->validate( 'https://cdn.example.com/a.png' )
+		);
+
+		$private = $this->refusal(
+			fn() => $this->guard( [ '10.0.0.5' ] )->validate( 'https://cdn.example.com/a.png' )
+		);
+
+		$this->assertSame( $unresolved->getMessage(), $private->getMessage() );
+		$this->assertSame( $unresolved->remediation, $private->remediation );
+	}
+
+	public function test_the_distinction_the_envelope_drops_is_kept_in_the_server_log(): void {
+		// The collapsed message is only defensible while the operator can still
+		// tell the two apart somewhere, under the correlation id, as everything
+		// else in this module does with detail that must not be returned.
+		$this->refusal(
+			fn() => $this->guard( [] )->validate( 'https://cdn.example.com/a.png', 'corr-unresolved' )
+		);
+
+		$this->refusal(
+			fn() => $this->guard( [ '10.0.0.5' ] )->validate( 'https://cdn.example.com/a.png', 'corr-private' )
+		);
+
+		$this->assertCount( 2, $this->logged );
+		$this->assertStringContainsString( 'corr-unresolved', $this->logged[0] );
+		$this->assertStringContainsString( 'did not resolve', $this->logged[0] );
+		$this->assertStringContainsString( 'corr-private', $this->logged[1] );
+		$this->assertStringContainsString( 'non-public address', $this->logged[1] );
+		$this->assertStringContainsString( '10.0.0.5', $this->logged[1] );
 	}
 
 	public function test_a_loopback_address_is_refused(): void {
