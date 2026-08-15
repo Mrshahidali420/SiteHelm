@@ -288,6 +288,12 @@ class MediaFetch {
 				// it. Core carries it to both hook points — see $fetch_token.
 				$response = wp_safe_remote_get( $target['url'], [ self::TOKEN_ARG => $this->fetch_token ] );
 
+				// BEFORE the is_wp_error() branch, deliberately. A request that
+				// should never have left is diagnosed as unpinned, not as whatever
+				// the transport happened to say about it: the missing pin is the
+				// cause and the transport error the symptom, and reporting the
+				// symptom would describe a connection nobody authorised as an
+				// ordinary network problem.
 				$this->assert_connection_was_pinned( $correlationId );
 
 				if ( is_wp_error( $response ) ) {
