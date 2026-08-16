@@ -17,8 +17,7 @@ use SiteHelm\Contracts\OperationException;
  * validated triple a navigation menu item may actually be stored with, and refuse
  * the request when it names content that does not exist.
  *
- * Extracted from MenuItemCreate, where it was ported from EMCP Tools'
- * `class-nav-menu-abilities.php` (GPL-2.0-or-later) `resolve_item_type()`. It is a
+ * Extracted from MenuItemCreate. It is a
  * separate class because it answers a question about the SITE'S CONTENT — does this
  * post type exist, does this term exist, does the identifier match the kind claimed
  * — while the write operation around it answers questions about the MENU and about
@@ -53,7 +52,7 @@ final class MenuItemType {
 	/**
 	 * The `type` values that name a taxonomy rather than a post type.
 	 *
-	 * Ported verbatim in meaning from EMCP's `resolve_item_type()`. `tag` is the
+	 * `tag` is the
 	 * name operators use and `post_tag` is the name WordPress registered, so both
 	 * are accepted and normalized to the latter; `taxonomy` and `term` are the
 	 * generic forms that take the concrete taxonomy from `object`.

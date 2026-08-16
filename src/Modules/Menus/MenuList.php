@@ -26,8 +26,8 @@ use SiteHelm\Contracts\SnapshotPolicy;
  * has, how large each one is, and which of the theme's locations each one fills,
  * before naming a menu in any later operation.
  *
- * This collapses EMCP's two read abilities — `list-menus` and `list-locations`
- * — into one operation. They are two halves of one question: a client that asks
+ * This answers two questions — what menus exist, and what fills each theme
+ * location — in one operation. They are two halves of one question: a client that asks
  * what menus exist almost always needs to know which one the theme is actually
  * rendering, and two round trips against a live site can disagree with each
  * other. Answering both from a single `get_nav_menu_locations()` read removes
@@ -171,8 +171,7 @@ final class MenuList {
 	 * Every menu on the site, keyed by term identifier.
 	 *
 	 * Keyed rather than listed so that the location projection can resolve an
-	 * assignment without a `wp_get_nav_menu_object()` call per location, which is
-	 * what EMCP's `op_list_locations()` costs. The keys are dropped on the way
+	 * assignment without a `wp_get_nav_menu_object()` call per location. The keys are dropped on the way
 	 * out so the payload stays a JSON array.
 	 *
 	 * `wp_get_nav_menus()` is `get_terms()` underneath and therefore filtered, so

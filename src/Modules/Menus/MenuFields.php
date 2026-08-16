@@ -17,12 +17,9 @@ namespace SiteHelm\Modules\Menus;
  * validate against it. Keeping it in one class is what makes a value read at
  * preview comparable to one read at apply.
  *
- * Ported from EMCP Tools' `class-nav-menu-abilities.php` (GPL-2.0-or-later):
- * `resolve_menu()`, `menu_id_for_item()`, `validate_parent()`,
- * `build_item_tree()`, and `build_item_branch()`. The WordPress knowledge
- * transfers; the structure does not — EMCP returns `WP_Error` from each helper,
- * while SiteHelm's helpers answer a value or null and leave every refusal
- * message to the operation that owns the envelope.
+ * These helpers answer a value or null rather than a `WP_Error`. Every refusal
+ * message belongs to the operation that owns the envelope, so a helper never
+ * decides how a failure is worded.
  *
  * Every core call below is filtered, so each answer is guarded on its shape
  * rather than cast. `(int)` on a WP_Error is a fatal and `(array)` on one is a
@@ -62,7 +59,7 @@ final class MenuFields {
 	/**
 	 * The menu one caller-supplied key names, or null when it names none.
 	 *
-	 * Ported from EMCP's `resolve_menu()`. The numeric cast is defensive rather
+	 * The numeric cast is defensive rather
 	 * than load-bearing: `wp_get_nav_menu_object()` hands the key to `get_term()`,
 	 * which casts a numeric string inside `WP_Term::get_instance()`, so `'5'` and
 	 * `5` already find the same menu. Casting at the call site says which of the
@@ -96,7 +93,7 @@ final class MenuFields {
 	/**
 	 * The menu that owns one menu item, or null when nothing owns it.
 	 *
-	 * Ported from EMCP's `menu_id_for_item()`. `wp_get_object_terms()` answers a
+	 * `wp_get_object_terms()` answers a
 	 * WP_Error when the taxonomy is unregistered, which is why the guard is on
 	 * `is_array()` rather than on `is_wp_error()`: the shape test covers the
 	 * documented error return and every other non-list a filter can substitute,
@@ -127,12 +124,11 @@ final class MenuFields {
 	/**
 	 * One menu's items as a nested tree, each node carrying `children`.
 	 *
-	 * Ported from EMCP's `build_item_tree()` / `build_item_branch()`, with the
-	 * grouping step replaced. EMCP groups on the stored `menu_item_parent` and
-	 * recurses, which loses every item whose parent row was deleted — the branch
-	 * for a dead parent is never visited — and never terminates on an item that
-	 * is its own ancestor, a state a direct database edit produces. Both are
-	 * silent on a healthy site and fatal on a damaged one.
+	 * The obvious implementation — group on the stored `menu_item_parent` and
+	 * recurse — loses every item whose parent row was deleted, because the
+	 * branch for a dead parent is never visited, and never terminates on an item
+	 * that is its own ancestor, a state a direct database edit produces. Both
+	 * are silent on a healthy site and fatal on a damaged one.
 	 *
 	 * So rows without a usable identifier are dropped and parents are rooted
 	 * afterwards: a parent that names no item in this menu, or that leads back to
@@ -180,9 +176,8 @@ final class MenuFields {
 	/**
 	 * Whether one parent identifier is a legal parent within one menu.
 	 *
-	 * Ported from EMCP's `validate_parent()`, which answers the resolved parent
-	 * id or a WP_Error; this answers a boolean and leaves the refusal message to
-	 * the operation. Zero is how core spells "top level", so it is valid rather
+	 * This answers a boolean and leaves the refusal message to the operation
+	 * that owns the envelope. Zero is how core spells "top level", so it is valid rather
 	 * than missing. Every other non-positive identifier is refused by
 	 * `menuTermIdForItem()`, which answers null below 1 without running a term
 	 * query, so no separate sign test is needed here.
@@ -228,7 +223,7 @@ final class MenuFields {
 	/**
 	 * The normalized record for one menu item, without its children.
 	 *
-	 * Ported from the row EMCP's `build_item_branch()` emits. Every property is
+	 * Every property is
 	 * read through `??` on an isset test rather than directly, because a menu
 	 * item row that has not been through `wp_setup_nav_menu_item()` — one served
 	 * from a partial object cache, or one a filter assembled — carries only its

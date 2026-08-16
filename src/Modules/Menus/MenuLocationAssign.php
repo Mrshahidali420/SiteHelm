@@ -30,11 +30,10 @@ use SiteHelm\Contracts\SnapshotPolicy;
  * theme's navigation locations at a menu — or clears it — so the site renders
  * the menu the client asked for in the place they asked for it.
  *
- * Ported from EMCP Tools' `op_assign_location()` and `op_unassign_location()`
- * (GPL-2.0-or-later), COLLAPSED INTO ONE OPERATION. EMCP needs two abilities
- * because it has no way to say "no menu": every argument it accepts names one.
- * Here `menu` is declared string-or-null and `null` clears the assignment, so
- * the two halves are one operation with one preview, one snapshot, and one
+ * ASSIGNING AND CLEARING ARE ONE OPERATION. Splitting them needs a second
+ * operation only because a `menu` argument that must name a menu has no way to
+ * say "no menu". Here `menu` is declared string-or-null and `null` clears the
+ * assignment, so both halves share one preview, one snapshot, and one
  * rollback — and an operator moving a location from menu A to nothing does not
  * have to know that the reverse of one operation is a different operation.
  *

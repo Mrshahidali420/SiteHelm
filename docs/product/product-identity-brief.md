@@ -25,7 +25,7 @@ Technically credible, direct, calm, and operational. The product never describes
 
 ## Naming Constraints
 
-- Do not use `WordPress`, `Elementor`, `EMCP`, another plugin trademark, or a confusing variation of a competitor.
+- Do not use `WordPress`, `Elementor`, `the reference implementation`, another plugin trademark, or a confusing variation of a competitor.
 - Do not use `WP` in a way that implies an official WordPress affiliation.
 - Prefer a name that remains credible when the product expands beyond Elementor.
 - Prefer simple English pronunciation and spelling.

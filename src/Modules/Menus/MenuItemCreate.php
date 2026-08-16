@@ -49,11 +49,8 @@ use SiteHelm\Contracts\SnapshotPolicy;
  * moved into applyChange() would pass preview and refuse at apply, which is the
  * one outcome the preview contract exists to prevent.
  *
- * Ported from EMCP Tools' `class-nav-menu-abilities.php` (GPL-2.0-or-later):
- * `resolve_item_type()` and `op_add_item()`. The WordPress knowledge transfers;
- * the structure does not. EMCP validates and writes in one pass and returns
- * WP_Error, while this splits validation from execution so a refusal happens
- * before anything is created.
+ * Validation is split from execution, rather than validating and writing in one
+ * pass, so a refusal happens before anything is created.
  *
  * @package SiteHelm
  */
@@ -574,8 +571,8 @@ final class MenuItemCreate implements WriteOperation {
 	/**
 	 * The title and address a custom link carries, or nothing for any other type.
 	 *
-	 * Both are required for a custom link and for nothing else, which is EMCP's
-	 * rule and core's behaviour: every other item type takes its label and its
+	 * Both are required for a custom link and for nothing else, which is core's
+	 * behaviour: every other item type takes its label and its
 	 * address from the content it names, so accepting a `url` for one would record
 	 * a value WordPress overwrites on the next save.
 	 *

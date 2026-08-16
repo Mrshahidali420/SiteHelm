@@ -4,7 +4,7 @@
 
 **Scope:** REQ-0032, REQ-0033, REQ-0034, plus the negative check for REQ-0063. The nine Elementor writes (REQ-0035 through REQ-0043) are Phase 6b and are **not** built here.
 
-**Source:** ported from EMCP Tools (`class-query-abilities.php`, `class-page-snapshot.php`, `class-elementor-data.php`), GPL-2.0-or-later, surveyed in full before this design. The survey found **zero test coverage** on the entire Elementor area upstream — every invariant below was learned from a production bug report, not from a test. Each one gets a regression test here.
+**Source:** ported from the reference implementation (`class-query-abilities.php`, `class-page-snapshot.php`, `class-elementor-data.php`), GPL-2.0-or-later, surveyed in full before this design. The survey found **zero test coverage** on the entire Elementor area upstream — every invariant below was learned from a production bug report, not from a test. Each one gets a regression test here.
 
 ---
 
