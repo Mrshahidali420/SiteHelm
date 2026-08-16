@@ -121,9 +121,26 @@ final class MediaModule implements IntegrationModule {
 			new MediaAttach( $fields, $targets )
 		);
 
+		$planner  = new MediaAssetPlan();
+		$sideload = new MediaSideload( $fields );
+		$guard    = new MediaMimeGuard( $fields );
+
 		$registry->registerWrite(
 			MediaUpload::definition(),
-			new MediaUpload( $fields, $targets, new MediaMimeGuard( $fields ) )
+			new MediaUpload( $fields, $targets, $guard, $planner, $sideload )
+		);
+
+		// One MediaUrlGuard, one MediaFetch, both built here: the fetcher is
+		// non-reentrant by design and takes the guard as its address policy, so
+		// the two are constructed as a pair and handed to the one operation that
+		// fetches. SystemHostResolver is the only production resolver; the seam
+		// exists so tests can decide what DNS says.
+		$urls  = new MediaUrlGuard( new SystemHostResolver() );
+		$fetch = new MediaFetch( $urls );
+
+		$registry->registerWrite(
+			MediaImport::definition(),
+			new MediaImport( $fields, $targets, $guard, $urls, $fetch, $planner, $sideload )
 		);
 	}
 }
