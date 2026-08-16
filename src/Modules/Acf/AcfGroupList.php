@@ -222,7 +222,7 @@ final class AcfGroupList {
 			throw new OperationException(
 				ErrorCode::IntegrationUnavailable,
 				'Advanced Custom Fields is not active on this site, so it registers no fields here.',
-				'Install and activate Advanced Custom Fields, then try again.'
+				'Activate Advanced Custom Fields, or install it first if it is not on this site, then try again.'
 			);
 		}
 

@@ -277,7 +277,7 @@ final class IntegrationHealthTest extends TestCase {
 	 * cause named must be the one that is true and the one that, fixed, changes
 	 * anything.
 	 *
-	 * `Install and activate` is asserted ABSENT rather than only the storage
+	 * The dependency branch's own instruction is asserted ABSENT rather than only the storage
 	 * sentence asserted present, because the defect was never a missing sentence:
 	 * it was a wrong instruction sitting beside a right diagnosis.
 	 *
@@ -301,7 +301,7 @@ final class IntegrationHealthTest extends TestCase {
 			'WordPress Content and Change Engine is unavailable because SiteHelm\'s own storage is not ready. Every module stays disabled until SiteHelm reinstalls its tables: deactivate and reactivate the plugin, then run this diagnostic again.',
 			$by_id['core']['explanation']
 		);
-		$this->assertStringNotContainsString( 'Install and activate', $by_id['core']['explanation'] );
+		$this->assertStringNotContainsString( 'Activate wordpress', $by_id['core']['explanation'] );
 		$this->assertSame( ModuleHealth::Inactive->value, $by_id['core']['health'] );
 		$this->assertNull( $by_id['core']['installedVersion'] );
 	}
@@ -328,7 +328,7 @@ final class IntegrationHealthTest extends TestCase {
 
 		$this->assertSame(
 			sprintf(
-				'WordPress Content and Change Engine is unavailable: wordpress is not active on this site. Install and activate wordpress >=%s to enable this module\'s operations.',
+				'WordPress Content and Change Engine is unavailable: wordpress is not active on this site. SiteHelm cannot tell a deactivated plugin apart from one that was never installed. Activate wordpress >=%s — installing it first if it is not present — to enable this module\'s operations.',
 				SITEHELM_MIN_WP
 			),
 			$by_id['core']['explanation']
