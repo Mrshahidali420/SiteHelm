@@ -11,6 +11,10 @@ an operation behaves.
 
 ## [Unreleased]
 
+Nothing yet. See [ROADMAP.md](ROADMAP.md) for what is next.
+
+## [0.2.0] — 2026-08-16
+
 ### Added
 
 **Admin console** — one top-level **SiteHelm** menu with four screens, replacing the
@@ -35,8 +39,6 @@ an operation behaves.
 
 The console is read-only apart from the single button that mints a credential. It adds no
 options screen, no dashboard widget and no cron jobs.
-
-See [ROADMAP.md](ROADMAP.md) for what is next.
 
 ## [0.1.0] — 2026-08-16
 
@@ -120,5 +122,6 @@ Arbitrary PHP execution, unrestricted SQL, unrestricted filesystem access, and i
 permanent deletion are out of scope by design and will not be added. See
 [ROADMAP.md](ROADMAP.md).
 
-[Unreleased]: https://github.com/Mrshahidali420/SiteHelm/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/Mrshahidali420/SiteHelm/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/Mrshahidali420/SiteHelm/releases/tag/v0.2.0
 [0.1.0]: https://github.com/Mrshahidali420/SiteHelm/releases/tag/v0.1.0
