@@ -1,0 +1,60 @@
+{
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "entries": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 50,
+                "description": "The palette entries to change. Each carries `id` — the identifier elementor-global-tokens-get reports — and at least one of `color` and `title`. An `id` the palette does not hold refuses the WHOLE request and changes nothing.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "id": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 64,
+                            "pattern": "^[A-Za-z0-9_-]{1,64}$"
+                        },
+                        "color": {
+                            "type": "string",
+                            "maxLength": 64,
+                            "description": "The new colour, as hex (`#RGB`, `#RGBA`, `#RRGGBB`, `#RRGGBBAA`) or as `rgb()`/`rgba()`. The empty string clears the entry's colour. No other form is accepted."
+                        },
+                        "title": {
+                            "type": "string",
+                            "maxLength": 128,
+                            "description": "A new display name for the entry. The identifier never changes with it."
+                        }
+                    },
+                    "required": [
+                        "id"
+                    ],
+                    "additionalProperties": false
+                }
+            }
+        },
+        "required": [
+            "entries"
+        ],
+        "additionalProperties": false
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "tokenDigest": {
+                "type": "string",
+                "description": "A digest over both colour repeater lists as stored, which is what verification compares."
+            },
+            "entryCount": {
+                "type": "integer",
+                "description": "How many addressable palette entries the site holds. This operation never changes it."
+            }
+        },
+        "required": [
+            "tokenDigest",
+            "entryCount"
+        ],
+        "additionalProperties": false
+    }
+}

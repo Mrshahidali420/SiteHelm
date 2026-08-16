@@ -1,0 +1,59 @@
+{
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "entries": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 50,
+                "description": "The typography entries to change. Each carries `id` — the identifier elementor-global-tokens-get reports — and at least one of `settings` and `title`. An `id` the site does not hold refuses the WHOLE request and changes nothing.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "id": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 64,
+                            "pattern": "^[A-Za-z0-9_-]{1,64}$"
+                        },
+                        "settings": {
+                            "type": "object",
+                            "description": "Typography settings to merge into the entry. Every key must be a `typography_` name — read the site's own vocabulary with elementor-control-schema. Values are scalars, or the `{ \"unit\": \"px\", \"size\": 16 }` form Elementor's size controls store. Settings the request does not name are left as they are."
+                        },
+                        "title": {
+                            "type": "string",
+                            "maxLength": 128,
+                            "description": "A new display name for the entry. The identifier never changes with it."
+                        }
+                    },
+                    "required": [
+                        "id"
+                    ],
+                    "additionalProperties": false
+                }
+            }
+        },
+        "required": [
+            "entries"
+        ],
+        "additionalProperties": false
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "tokenDigest": {
+                "type": "string",
+                "description": "A digest over both typography repeater lists as stored, which is what verification compares."
+            },
+            "entryCount": {
+                "type": "integer",
+                "description": "How many addressable typography entries the site holds. This operation never changes it."
+            }
+        },
+        "required": [
+            "tokenDigest",
+            "entryCount"
+        ],
+        "additionalProperties": false
+    }
+}
