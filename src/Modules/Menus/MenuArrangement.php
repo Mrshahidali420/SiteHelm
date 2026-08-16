@@ -200,8 +200,7 @@ final class MenuArrangement {
 	 * The full argument set `wp_update_nav_menu_item()` needs to reposition one
 	 * item WITHOUT losing anything else about it.
 	 *
-	 * Ported from EMCP's `merge_existing_item()`, with the source of four values
-	 * changed. `wp_update_nav_menu_item()` overwrites every field it is handed
+	 * `wp_update_nav_menu_item()` overwrites every field it is handed
 	 * and defaults every field it is not, so a partial argument set silently
 	 * blanks the item's title, url, and classes — which is why the whole record
 	 * has to travel. But the record has to be merged from the STORED columns:

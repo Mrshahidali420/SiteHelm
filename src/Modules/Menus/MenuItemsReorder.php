@@ -29,12 +29,11 @@ use SiteHelm\Contracts\SnapshotPolicy;
  * REQ-0030: menu item reordering. An agency operator restructures a client's
  * navigation in one call — new positions, new nesting, or both.
  *
- * Ported from EMCP Tools' `op_reorder_items()` (GPL-2.0-or-later) WITH ITS
- * CENTRAL BEHAVIOUR DELIBERATELY REVERSED.
+ * THE OBVIOUS IMPLEMENTATION IS DELIBERATELY REJECTED HERE.
  *
- * EMCP `continue`s past every entry it cannot use — an identifier that names no
- * menu item, one belonging to another menu, an illegal parent — writes whatever
- * is left, and returns an `updated` count. That is a partial write reported as
+ * Skipping past every entry that cannot be used — an identifier that names no
+ * menu item, one belonging to another menu, an illegal parent — writing whatever
+ * is left, and returning an `updated` count is a partial write reported as
  * success: the operator asked for one arrangement and got a different one, with
  * no signal beyond a number they would have to compare against their own request
  * to notice. Worse, the half that landed is not a state the operator ever asked

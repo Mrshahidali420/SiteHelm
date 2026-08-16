@@ -8,5 +8,6 @@ desktop.ini
 
 # SiteHelm build/tooling
 vendor/
+build/
 .phpunit.result.cache
 .superpowers/

@@ -32,7 +32,7 @@ All five validators from the Phase 1 plan were re-run from the repository root o
 
 ## Clean-Room Review
 
-A sweep of all six Phase 1 artifacts on 2026-07-24 searched for EMCP implementation identifiers (`class EMCP_`, `function execute_`, `includes/abilities/`, `pro-manifest.txt`), code excerpts, private facts, copied marketing language, and unregistered source citations. Result: no EMCP implementation identifiers, no unregistered source IDs (every cited `SRC-####` resolves in `docs/research/source-register.csv`), and no banned parity phrases. Every requirement row states an independent agency outcome; EMCP capability IDs appear only as market evidence.
+A sweep of all six Phase 1 artifacts on 2026-07-24 searched for the reference implementation implementation identifiers (`class the reference implementation_`, `function execute_`, `includes/abilities/`, `pro-manifest.txt`), code excerpts, private facts, copied marketing language, and unregistered source citations. Result: no the reference implementation implementation identifiers, no unregistered source IDs (every cited `SRC-####` resolves in `docs/research/source-register.csv`), and no banned parity phrases. Every requirement row states an independent agency outcome; the reference implementation capability IDs appear only as market evidence.
 
 ## Scope Review
 
@@ -49,7 +49,7 @@ Phase 2 is limited to the MCP gateway, authentication, capability registry, poli
 
 ## Implementation Code Statement
 
-No product implementation code was added in Phase 1. The phase produced documentation and evidence only: research protocol, source register, market scan, EMCP public feature inventory, identity brief, requirements matrix, foundation contract, and this review.
+No product implementation code was added in Phase 1. The phase produced documentation and evidence only: research protocol, source register, market scan, the reference implementation public feature inventory, identity brief, requirements matrix, foundation contract, and this review.
 
 ## User Review Status
 

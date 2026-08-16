@@ -25,8 +25,8 @@ use stdClass;
 /**
  * REQ-0026: menu listing.
  *
- * The operation collapses EMCP's two read abilities — `list-menus` and
- * `list-locations` — into one call, because a client that asks "what menus does
+ * The operation answers both the menu list and the location assignments in
+ * one call, because a client that asks "what menus does
  * this site have" almost always needs the location assignments in the same
  * breath, and two round trips can disagree with each other.
  */

@@ -10,8 +10,6 @@
 
 **Spec:** `docs/superpowers/specs/2026-08-08-menus-module-design.md` — read the *Why porting, not copying* table before writing any operation.
 
-**Reference source (port, do not copy):** `C:\Users\SHAHID ALI\Desktop\SiteHelm\elementor mcp that i want you to copy from i have permission\elementor-mcp\includes\abilities\class-nav-menu-abilities.php` (GPL-2.0-or-later, same licence as SiteHelm). Read the named `op_*` / helper method, port its WordPress logic, restructure it into SiteHelm's interface. Never copy a file.
-
 ## Global Constraints
 
 - **Eleven dispatchers and eleven error codes are FROZEN.** No new dispatcher, no new error code. Use existing `ErrorCode` cases only.
@@ -86,7 +84,7 @@ final class MenuFields {
 
 **Port from:** `resolve_menu()`, `op_list_menus()`, `op_list_locations()` in the reference file (lines ~58-61 declare them; read the method bodies).
 
-`menu-list` returns menus (id, name, slug, item count) **and** theme locations with their current assignment, collapsing EMCP's two read operations into one. Source: `wp_get_nav_menus()`, `get_nav_menu_locations()`, `get_registered_nav_menus()`.
+`menu-list` returns menus (id, name, slug, item count) **and** theme locations with their current assignment, collapsing the reference implementation's two read operations into one. Source: `wp_get_nav_menus()`, `get_nav_menu_locations()`, `get_registered_nav_menus()`.
 
 - [ ] **Step 1:** Read `src/Modules/Media/MediaModule.php`, `MediaFields.php`, `MediaList.php` and `tests/Unit/Modules/Media/MediaListTest.php`. These are the shape to mirror.
 - [ ] **Step 2:** Write `tests/Unit/Modules/Menus/MenuListTest.php` — cases: returns menus with item counts; returns locations with assigned menu id; returns a location with `null` when unassigned; returns empty arrays on a site with no menus; refuses without `edit_theme_options`.
@@ -179,7 +177,7 @@ Updatable fields: `title`, `url`, `parent`, `position`, `target`, `classes`, `de
 
 **Port from:** `op_reorder_items()` (line ~855) — **with its central behaviour deliberately changed.**
 
-EMCP `continue`s past every invalid entry and returns only an `updated` count: a partial write reported as success. SiteHelm does the opposite. `planChange()` validates EVERY entry before anything is written — each id must be a nav menu item, must belong to the named menu, any `parent` must exist in that same menu, and no entry may create a cycle. **One bad entry refuses the whole batch.**
+the reference implementation `continue`s past every invalid entry and returns only an `updated` count: a partial write reported as success. SiteHelm does the opposite. `planChange()` validates EVERY entry before anything is written — each id must be a nav menu item, must belong to the named menu, any `parent` must exist in that same menu, and no entry may create a cycle. **One bad entry refuses the whole batch.**
 
 `applyChange()` accumulates `completedSteps` as each item lands, so a mid-batch failure reports exactly what was written.
 
@@ -201,7 +199,7 @@ Input: `{ menu: string, items: [ { id: int, parent?: int, position: int } ] }`, 
 
 **Port from:** `op_assign_location()` and `op_unassign_location()` (lines ~700-722) — collapsed into ONE operation.
 
-Input `{ location: string, menu: string|null }`. A non-null `menu` assigns; `null` clears the assignment. This is why EMCP's separate `unassign-location` operation does not exist here.
+Input `{ location: string, menu: string|null }`. A non-null `menu` assigns; `null` clears the assignment. This is why the reference implementation's separate `unassign-location` operation does not exist here.
 
 Mechanics: read `get_nav_menu_locations()`, mutate the map, write it back with `set_theme_mod( 'nav_menu_locations', $locations )`. The snapshot is the ENTIRE prior map, so `restore()` writes the whole map back — including the case where the location was previously unassigned (absent from the map, which must restore as absent, not as an empty value).
 

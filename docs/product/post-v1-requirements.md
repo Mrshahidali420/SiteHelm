@@ -45,8 +45,8 @@ they carry the policies they will need.
 Every row states an independent user outcome — what an agency operator can do that they could not do
 before — and cites `source-register.csv` identifiers. Rows citing `SRC-0009` through `SRC-0012` rest
 on publicly published capability claims, and the `required_capability` column may additionally carry
-an `EMCP-CAP-0xx` marker tying the row to
-`docs/research/emcp-public-feature-inventory.md`. That marker is provenance, never justification: a
+an `REF-CAP-0xx` marker tying the row to
+`docs/research/reference-feature-inventory.md`. That marker is provenance, never justification: a
 row exists because of the outcome in its `user_outcome` column, and any row that could not state one
 was rejected rather than recorded. The behavioural design of these requirements is our own; only the
 observation that a capability is worth having is external.
