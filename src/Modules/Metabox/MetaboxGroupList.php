@@ -250,7 +250,7 @@ final class MetaboxGroupList {
 			throw new OperationException(
 				ErrorCode::IntegrationUnavailable,
 				'Meta Box is not active on this site, so it registers no field groups here.',
-				'Install and activate Meta Box, then try again.'
+				'Activate Meta Box, or install it first if it is not on this site, then try again.'
 			);
 		}
 

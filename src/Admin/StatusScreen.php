@@ -98,7 +98,7 @@ final class StatusScreen {
 		Ui::section_open(
 			__( 'Modules', 'sitehelm' ),
 			__(
-				'A module that is not active still lists its operations in the catalogue, so an agent is told the operation exists and why it cannot run it.',
+				'A module is active when the plugin behind it is running. SiteHelm cannot tell an installed but deactivated plugin apart from one that was never installed, so both read as not active. A module that is not active still lists its operations in the catalogue, so an agent is told the operation exists and why it cannot run it.',
 				'sitehelm'
 			)
 		);
@@ -269,6 +269,13 @@ final class StatusScreen {
 	 * inactive: the two have different causes, and telling an operator their
 	 * module is inactive when it never ran sends them looking in the wrong place.
 	 *
+	 * `Inactive` is reported as "Not active", NOT as "Not installed". Presence is
+	 * detected by asking whether the integration's constants and classes are
+	 * loaded, which is true only while its plugin is ACTIVE. An installed but
+	 * deactivated plugin is indistinguishable from an absent one from here, so
+	 * "Not installed" is a claim this screen has no evidence for — and it sends
+	 * an operator off to reinstall a plugin they already have.
+	 *
 	 * @param string $state The recorded health value.
 	 */
 	private static function state_label( string $state ): string {
@@ -278,7 +285,7 @@ final class StatusScreen {
 			case ModuleHealth::VersionBlocked->value:
 				return __( 'Version too old', 'sitehelm' );
 			case ModuleHealth::Inactive->value:
-				return __( 'Not installed', 'sitehelm' );
+				return __( 'Not active', 'sitehelm' );
 			default:
 				return __( 'Not loaded', 'sitehelm' );
 		}
