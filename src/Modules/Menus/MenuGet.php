@@ -27,17 +27,16 @@ use SiteHelm\Contracts\SnapshotPolicy;
  * write names an item identifier and a parent, and both are only knowable from
  * the tree.
  *
- * Ported from EMCP Tools' `op_get_menu()` and `build_item_branch()`
- * (GPL-2.0-or-later). Two things changed in the port.
+ * Two things deliberately do not happen here.
  *
- * The tree is not built here. EMCP assembles the nested rows inside the read,
- * which means the four writes that must validate a parent against the same
- * hierarchy each re-derive it; SiteHelm's grouping and rooting live in
+ * The tree is not built here. Assembling the nested rows inside the read would
+ * mean the four writes that must validate a parent against the same hierarchy
+ * each re-derive it; SiteHelm's grouping and rooting live in
  * MenuFields::itemTree(), so preview, apply, and this read all see one tree.
  *
- * The theme locations EMCP returns beside the tree are not repeated here.
- * menu-list already answers the whole location table in one call, and a second
- * copy read at a different moment is a copy that can disagree with the first.
+ * The theme locations are not returned beside the tree. menu-list already
+ * answers the whole location table in one call, and a second copy read at a
+ * different moment is a copy that can disagree with the first.
  *
  * The menu is named by identifier, slug, or name — whichever the operator
  * happens to be holding — because those are the three keys

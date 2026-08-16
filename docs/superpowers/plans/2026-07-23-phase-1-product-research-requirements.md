@@ -4,16 +4,16 @@
 
 **Goal:** Establish the product identity, auditable clean-room competitor research, and a complete V1 requirements matrix that defines the inputs to the Phase 2 foundation design without writing product code.
 
-**Architecture:** Phase 1 is a documentation and evidence package. A source register gives every competitive claim provenance; separate market and EMCP inventories turn public observations into user-outcome evidence; a machine-checkable requirements matrix converts approved V1 scope into operation requirements; and a foundation contract freezes the interfaces Phase 2 may implement.
+**Architecture:** Phase 1 is a documentation and evidence package. A source register gives every competitive claim provenance; separate market and the reference implementation inventories turn public observations into user-outcome evidence; a machine-checkable requirements matrix converts approved V1 scope into operation requirements; and a foundation contract freezes the interfaces Phase 2 may implement.
 
 **Tech Stack:** Markdown, CSV, Git, GitHub CLI (`gh`), PowerShell 7, Python 3 for read-only document validation, public GitHub data, official WordPress/Elementor/ACF/Meta Box documentation, and the public MCP specification.
 
 ## Global Constraints
 
-- The product is an independent direct competitor to EMCP.
+- The product is an independent direct competitor to the reference implementation.
 - Customers install one WordPress plugin containing every supported integration; integrations remain internal modules, not customer-facing add-ons.
-- Study public EMCP behavior and lessons, but write original code, architecture, schemas, user interface, tests, documentation, and branding.
-- Never use EMCP private material, unpublished information, source-code copying, branding, or confusingly similar identity.
+- Study public the reference implementation behavior and lessons, but write original code, architecture, schemas, user interface, tests, documentation, and branding.
+- Never use the reference implementation private material, unpublished information, source-code copying, branding, or confusingly similar identity.
 - V1 covers MCP setup, WordPress core content/media/menus, essential Elementor operations, ACF, Meta Box, discovery, permissions, preview, audit, and supported rollback.
 - All plans retain the same integration coverage; monetization must not gate connectors.
 - Phase 1 writes no WordPress plugin or other product implementation code.
@@ -29,7 +29,7 @@
 - Create `docs/research/clean-room-protocol.md` — binding rules for evidence collection and implementation isolation.
 - Create `docs/research/source-register.csv` — canonical inventory of public evidence with stable source identifiers.
 - Create `docs/research/wordpress-mcp-market-scan.md` — competing and adjacent products, positioning, distribution, and monetization evidence.
-- Create `docs/research/emcp-public-feature-inventory.md` — public, behavior-level EMCP capability inventory without implementation details.
+- Create `docs/research/reference-feature-inventory.md` — public, behavior-level the reference implementation capability inventory without implementation details.
 - Create `docs/product/product-identity-brief.md` — audience, promise, positioning, naming constraints, screened shortlist, and selected identity.
 - Create `docs/product/v1-requirements-matrix.csv` — machine-checkable V1 and roadmap operation requirements.
 - Create `docs/product/phase-2-foundation-contract.md` — documentation-level contracts Phase 2 must implement.
@@ -63,7 +63,7 @@ Create `docs/research/clean-room-protocol.md` with these exact sections and deci
 # Clean-Room Research Protocol
 
 ## Purpose
-This protocol permits public behavior and market research while preventing EMCP implementation details, private information, text, code, and identity from entering the competing product.
+This protocol permits public behavior and market research while preventing the reference implementation implementation details, private information, text, code, and identity from entering the competing product.
 
 ## Permitted Evidence
 - Official public product and developer documentation.
@@ -73,22 +73,22 @@ This protocol permits public behavior and market research while preventing EMCP 
 - Primary WordPress, Elementor, ACF, Meta Box, and MCP documentation.
 
 ## Prohibited Inputs
-- EMCP source code as an implementation reference.
+- the reference implementation source code as an implementation reference.
 - Private messages, unpublished branches, unreleased packages, private documentation, or contributor-only knowledge.
 - Copied names, descriptions, prompts, screenshots, icons, interface text, schemas, tests, or branding.
-- Requirements justified only by “EMCP has it.” Every requirement needs an independent user outcome.
+- Requirements justified only by “the reference implementation has it.” Every requirement needs an independent user outcome.
 
 ## Research-to-Requirement Rule
 Every competitive claim and requirement cites one or more source IDs from `source-register.csv`. A requirement copied from observed behavior without an independent user outcome is rejected.
 
 ## Separation Rule
-Researchers record behavior, user outcome, limitations, and public evidence. Future implementers receive the approved requirements matrix and vendor API documentation, not notes about EMCP internals.
+Researchers record behavior, user outcome, limitations, and public evidence. Future implementers receive the approved requirements matrix and vendor API documentation, not notes about the reference implementation internals.
 
 ## Source Handling
 Record URLs, access dates, publisher, evidence class, claim summary, and license when relevant. Do not store copied source files or large verbatim excerpts. Quote only the minimum words needed to identify a public claim.
 
 ## Review Gate
-Any disputed source, private-information concern, copied wording, or implementation-level EMCP detail blocks Phase 1 completion until removed or independently re-derived from primary vendor documentation.
+Any disputed source, private-information concern, copied wording, or implementation-level the reference implementation detail blocks Phase 1 completion until removed or independently re-derived from primary vendor documentation.
 ```
 
 - [ ] **Step 3: Create the source register header**
@@ -113,7 +113,7 @@ Expected: `PASS: clean-room protocol and empty source register are valid`
 
 - [ ] **Step 5: Review for prohibited material**
 
-Confirm the two files contain no EMCP implementation snippets, non-public facts, copied marketing text, or claims lacking a public URL. Remove any violation before continuing.
+Confirm the two files contain no the reference implementation implementation snippets, non-public facts, copied marketing text, or claims lacking a public URL. Remove any violation before continuing.
 
 - [ ] **Step 6: Commit the evidence protocol checkpoint**
 
@@ -121,17 +121,17 @@ Stage only the three files listed for Task 1. Commit headline: `docs: establish 
 
 ---
 
-### Task 2: Build the Public Market and EMCP Capability Inventories
+### Task 2: Build the Public Market and the reference implementation Capability Inventories
 
 **Files:**
 - Modify: `docs/research/source-register.csv`
 - Create: `docs/research/wordpress-mcp-market-scan.md`
-- Create: `docs/research/emcp-public-feature-inventory.md`
+- Create: `docs/research/reference-feature-inventory.md`
 - Modify: `tasks/todo.md`
 
 **Interfaces:**
 - Consumes: admissible evidence classes and `SRC-####` identifiers from Task 1.
-- Produces: public competitor observations and EMCP behavior-level capability IDs with format `EMCP-CAP-###`; Tasks 3 and 4 may cite these IDs but not implementation details.
+- Produces: public competitor observations and the reference implementation behavior-level capability IDs with format `REF-CAP-###`; Tasks 3 and 4 may cite these IDs but not implementation details.
 
 - [ ] **Step 1: Run GitHub repository discovery first**
 
@@ -150,9 +150,9 @@ Expected: each command exits successfully and returns a JSON array. Empty arrays
 
 Add source-register rows for the current public MCP specification and official WordPress, Elementor, ACF, and Meta Box developer documentation used to validate API-level feasibility. Use evidence class `official-doc`. Record the specific page URL rather than a documentation homepage whenever possible.
 
-- [ ] **Step 3: Register public EMCP evidence**
+- [ ] **Step 3: Register public the reference implementation evidence**
 
-Add separate source rows for the public EMCP repository metadata/README, public product page, public pricing information, public documentation, public release notes, and relevant public demonstrations or issues that are actually available. Do not infer a missing source. Mark repository license using the repository's published license metadata.
+Add separate source rows for the public the reference implementation repository metadata/README, public product page, public pricing information, public documentation, public release notes, and relevant public demonstrations or issues that are actually available. Do not infer a missing source. Mark repository license using the repository's published license metadata.
 
 - [ ] **Step 4: Write the market scan**
 
@@ -166,23 +166,23 @@ Create `docs/research/wordpress-mcp-market-scan.md` with:
 
 Every product row cites at least one `SRC-####` value.
 
-- [ ] **Step 5: Write the EMCP public feature inventory**
+- [ ] **Step 5: Write the the reference implementation public feature inventory**
 
-Create `docs/research/emcp-public-feature-inventory.md` with:
+Create `docs/research/reference-feature-inventory.md` with:
 
 1. Scope and clean-room disclaimer.
 2. A capability table with columns `Capability ID`, `Domain`, `Publicly observed outcome`, `Availability`, `Evidence`, `Independent agency need`, `Our decision`.
-3. Stable IDs beginning at `EMCP-CAP-001`.
+3. Stable IDs beginning at `REF-CAP-001`.
 4. `Availability` values limited to `free`, `paid`, `unclear`, or `historical`.
 5. `Our decision` values limited to `V1`, `roadmap`, `exclude`, or `research-more`.
-6. No function names, class names, file paths, algorithms, copied schemas, or code excerpts from EMCP.
+6. No function names, class names, file paths, algorithms, copied schemas, or code excerpts from the reference implementation.
 
 - [ ] **Step 6: Validate source traceability and prohibited-detail absence**
 
 Run:
 
 ```powershell
-python -c "from pathlib import Path; import csv,re; rows=list(csv.DictReader(Path('docs/research/source-register.csv').open(encoding='utf-8'))); ids={r['source_id'] for r in rows}; assert len(rows)>=5; assert len(ids)==len(rows); assert all(re.fullmatch(r'SRC-\d{4}',x) for x in ids); docs='\n'.join(Path(p).read_text(encoding='utf-8') for p in ['docs/research/wordpress-mcp-market-scan.md','docs/research/emcp-public-feature-inventory.md']); cited=set(re.findall(r'SRC-\d{4}',docs)); assert cited and cited<=ids; forbidden=['class EMCP_','function execute_','includes/abilities/','pro-manifest.txt']; assert not any(x in docs for x in forbidden); print(f'PASS: {len(rows)} sources registered and all cited IDs resolve')"
+python -c "from pathlib import Path; import csv,re; rows=list(csv.DictReader(Path('docs/research/source-register.csv').open(encoding='utf-8'))); ids={r['source_id'] for r in rows}; assert len(rows)>=5; assert len(ids)==len(rows); assert all(re.fullmatch(r'SRC-\d{4}',x) for x in ids); docs='\n'.join(Path(p).read_text(encoding='utf-8') for p in ['docs/research/wordpress-mcp-market-scan.md','docs/research/reference-feature-inventory.md']); cited=set(re.findall(r'SRC-\d{4}',docs)); assert cited and cited<=ids; forbidden=['class the reference implementation_','function execute_','includes/abilities/','pro-manifest.txt']; assert not any(x in docs for x in forbidden); print(f'PASS: {len(rows)} sources registered and all cited IDs resolve')"
 ```
 
 Expected: `PASS: <number> sources registered and all cited IDs resolve`, where `<number>` is at least 5.
@@ -213,7 +213,7 @@ Create `docs/product/product-identity-brief.md` with these decisions:
 - Promise: one plugin for operating WordPress and supported plugins through MCP.
 - Differentiators: modular bundled integrations, safe writes, onboarding/diagnostics, and agency operations.
 - Tone: technically credible, direct, calm, and operational; never describe the product as magical, autonomous, or risk-free.
-- Forbidden naming: names containing `WordPress`, `WP` represented as an official affiliation, `Elementor`, `EMCP`, another plugin trademark, or a confusing variation of a competitor.
+- Forbidden naming: names containing `WordPress`, `WP` represented as an official affiliation, `Elementor`, `the reference implementation`, another plugin trademark, or a confusing variation of a competitor.
 
 - [ ] **Step 2: Produce a twelve-name shortlist**
 
@@ -307,14 +307,14 @@ Add explicit rows marked `roadmap` or `excluded` for remote URL media imports, u
 
 - [ ] **Step 4: Resolve ambiguous requirements**
 
-For each row, specify one observable `acceptance_evidence`, such as a returned normalized record, verified WordPress state change, unchanged state after rejection, restored state after rollback, or compatibility warning that leaves unrelated modules active. Do not use phrases such as `works correctly`, `handled appropriately`, or `same as EMCP`.
+For each row, specify one observable `acceptance_evidence`, such as a returned normalized record, verified WordPress state change, unchanged state after rejection, restored state after rollback, or compatibility warning that leaves unrelated modules active. Do not use phrases such as `works correctly`, `handled appropriately`, or `same as the reference implementation`.
 
 - [ ] **Step 5: Validate the matrix**
 
 Run:
 
 ```powershell
-python -c "from pathlib import Path; import csv,re; rows=list(csv.DictReader(Path('docs/product/v1-requirements-matrix.csv').open(encoding='utf-8'))); expected=['requirement_id','domain','module','mode','operation','user_outcome','release','priority','risk','required_capability','preview_policy','snapshot_policy','rollback_policy','dependency','source_ids','acceptance_evidence']; assert rows and list(rows[0])==expected; ids=[r['requirement_id'] for r in rows]; assert len(ids)==len(set(ids)) and all(re.fullmatch(r'REQ-\d{4}',x) for x in ids); assert all(all(v.strip() for v in r.values()) for r in rows); v1={r['module'] for r in rows if r['release']=='V1'}; assert {'core','media','menus','elementor','acf','metabox','diagnostics'}<=v1; banned=['TBD','TODO','same as EMCP','works correctly','handled appropriately']; text=Path('docs/product/v1-requirements-matrix.csv').read_text(encoding='utf-8'); assert not any(x.lower() in text.lower() for x in banned); print(f'PASS: {len(rows)} requirements are complete and all V1 modules are covered')"
+python -c "from pathlib import Path; import csv,re; rows=list(csv.DictReader(Path('docs/product/v1-requirements-matrix.csv').open(encoding='utf-8'))); expected=['requirement_id','domain','module','mode','operation','user_outcome','release','priority','risk','required_capability','preview_policy','snapshot_policy','rollback_policy','dependency','source_ids','acceptance_evidence']; assert rows and list(rows[0])==expected; ids=[r['requirement_id'] for r in rows]; assert len(ids)==len(set(ids)) and all(re.fullmatch(r'REQ-\d{4}',x) for x in ids); assert all(all(v.strip() for v in r.values()) for r in rows); v1={r['module'] for r in rows if r['release']=='V1'}; assert {'core','media','menus','elementor','acf','metabox','diagnostics'}<=v1; banned=['TBD','TODO','same as the reference implementation','works correctly','handled appropriately']; text=Path('docs/product/v1-requirements-matrix.csv').read_text(encoding='utf-8'); assert not any(x.lower() in text.lower() for x in banned); print(f'PASS: {len(rows)} requirements are complete and all V1 modules are covered')"
 ```
 
 Expected: `PASS: <number> requirements are complete and all V1 modules are covered`.
@@ -424,7 +424,7 @@ Every row includes an exact file path and heading.
 
 - [ ] **Step 3: Run the clean-room review**
 
-Search all Phase 1 artifacts for copied EMCP implementation identifiers, code excerpts, private facts, copied marketing language, unregistered source IDs, and requirements justified only by feature parity. Remove or independently re-derive any finding before marking the gate ready.
+Search all Phase 1 artifacts for copied the reference implementation implementation identifiers, code excerpts, private facts, copied marketing language, unregistered source IDs, and requirements justified only by feature parity. Remove or independently re-derive any finding before marking the gate ready.
 
 - [ ] **Step 4: Run the scope review**
 
@@ -477,4 +477,4 @@ This plan produces documentation and evidence only. It does not implement the MC
 
 ### Placeholder and consistency check
 
-The plan contains no unresolved implementation placeholders. IDs are consistently defined as `SRC-####`, `EMCP-CAP-###`, and `REQ-####`. File paths, CSV fields, dispatcher names, contract names, allowed values, commands, expected outputs, review gates, and commit scopes are explicit.
+The plan contains no unresolved implementation placeholders. IDs are consistently defined as `SRC-####`, `REF-CAP-###`, and `REQ-####`. File paths, CSV fields, dispatcher names, contract names, allowed values, commands, expected outputs, review gates, and commit scopes are explicit.

@@ -16,7 +16,7 @@ WordPress transforms values on write. Every transformation the promise does not 
 
 This shipped in Phase 3a. WordPress registers `add_filter( 'title_save_pre', 'trim' )` in `default-filters.php`, outside `kses_init_filters()`, so it applies on every branch including a user holding `unfiltered_html`. Any title with leading or trailing whitespace — routine in language-model output, this product's primary client — stored differently than promised. Fixed in `de3fce0` by modelling the trim.
 
-That fix was correct but incomplete as a strategy. Surveying the fields Phase 3b will write, against WordPress 7.0.2 on `emcp-license-test`:
+That fix was correct but incomplete as a strategy. Surveying the fields Phase 3b will write, against WordPress 7.0.2 on `sitehelm-dev`:
 
 | Phase 3b requirement | Asked | WordPress stored | Current outcome |
 |---|---|---|---|
@@ -174,7 +174,7 @@ Two consequences to fold in:
 - an array-valued field (`terms`) adjusted → classified through the normalizer, not `===`
 - the reworded unpromised-change warning does not attribute cause
 
-**Live, against `emcp-license-test`** — the four confirmed transformations, each asserted end to end through the MCP endpoint, reading stored state from `$wpdb` rather than `get_post()` because a CLI process's object cache does not see what an HTTP request wrote:
+**Live, against `sitehelm-dev`** — the four confirmed transformations, each asserted end to end through the MCP endpoint, reading stored state from `$wpdb` rather than `get_post()` because a CLI process's object cache does not see what an HTTP request wrote:
 
 - `publish` on a future-dated post → `verified-with-adjustments`, `state.post_status` is `future`, `rollbackRef` present
 - trash → succeeds, slug warning names `post_name` without accusing a plugin
