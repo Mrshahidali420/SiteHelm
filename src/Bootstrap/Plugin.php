@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace SiteHelm\Bootstrap;
 
+use SiteHelm\Admin\AdminMenu;
 use SiteHelm\Change\ChangeEngine;
 use SiteHelm\Contracts\IntegrationModule;
 use SiteHelm\Gateway\ContextFactory;
@@ -90,6 +91,14 @@ final class Plugin {
 
 		$transport = new RestTransport( $server );
 		add_action( 'rest_api_init', [ $transport, 'registerRoute' ] );
+
+		// The console is handed the same registry and the same health map the
+		// gateway is serving from. A second registry built for the admin could
+		// disagree with the one answering requests, and a catalogue that
+		// disagrees with the server is worse than no catalogue at all.
+		if ( is_admin() ) {
+			( new AdminMenu( $registry, $module_health ) )->register();
+		}
 
 		$this->registerMaintenance();
 	}

@@ -21,12 +21,39 @@ use SiteHelm\Tests\TestCase;
 final class PluginTest extends TestCase {
 
 	public function test_register_boots_the_gateway_and_registers_the_route(): void {
+		Functions\when( 'is_admin' )->justReturn( false );
 		Actions\expectAdded( 'rest_api_init' )->once();
 
 		Plugin::instance()->register();
 
 		$this->assertTrue( true, 'Boot completed without an escaping module failure.' );
 	}
+
+	/**
+	 * The console is admin-only, and its hooks must not be added on a front-end
+	 * request. `admin_menu` never fires there, but `admin_post_*` does fire on a
+	 * plain POST to wp-admin/admin-post.php, so a console registered
+	 * unconditionally would attach a credential-minting handler to requests the
+	 * gateway alone is meant to serve.
+	 */
+	public function test_a_front_end_request_does_not_register_the_console(): void {
+		Functions\when( 'is_admin' )->justReturn( false );
+		Actions\expectAdded( 'admin_menu' )->never();
+
+		Plugin::instance()->register();
+
+		$this->assertTrue( true, 'Boot completed without registering an admin hook.' );
+	}
+
+	public function test_an_admin_request_registers_the_console(): void {
+		Functions\when( 'is_admin' )->justReturn( true );
+		Actions\expectAdded( 'admin_menu' )->once();
+
+		Plugin::instance()->register();
+
+		$this->assertTrue( true, 'Boot registered the console menu.' );
+	}
+
 	/**
 	 * Activation is the only thing that creates the three local tables.
 	 *
