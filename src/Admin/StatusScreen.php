@@ -17,11 +17,14 @@ use SiteHelm\Storage\Installer;
 /**
  * What SiteHelm can and cannot do on this particular site.
  *
- * A module is blocked far more often than it is broken: Elementor is not
- * installed, ACF is older than the version the module supports, the storage
- * tables never got created. Each of those turns into an agent being told "no"
- * for a reason it cannot explain to the person who asked. This screen states the
- * reason once, here, where it can be fixed.
+ * SiteHelm answers nothing useful if its tables are missing, if application
+ * passwords are switched off, or if every module is blocked. Each of those turns
+ * into an agent being told "no" for a reason it cannot explain to the person who
+ * asked. This screen states the reason once, here, where it can be fixed.
+ *
+ * The per-module detail lives on {@see ModulesScreen}; what this screen carries
+ * is the count, because "two modules are not active" is the part that belongs
+ * next to storage and the environment.
  *
  * Health is not recomputed. It is the map the loader produced while booting the
  * request that is serving this page, so what the screen reports and what the
@@ -55,9 +58,9 @@ final class StatusScreen {
 			wp_die( esc_html__( 'You do not have permission to view SiteHelm.', 'sitehelm' ) );
 		}
 
-		echo '<div class="wrap sitehelm-app">';
+		Ui::app_open( AdminMenu::PAGE_STATUS );
 
-		Ui::masthead(
+		Ui::page_head(
 			__( 'Status', 'sitehelm' ),
 			__( 'What SiteHelm can do on this site, and what is holding the rest back.', 'sitehelm' )
 		);
@@ -84,68 +87,59 @@ final class StatusScreen {
 			);
 		}
 
-		$this->render_modules();
+		$this->render_readiness();
 		$this->render_environment();
 		$this->render_storage();
 
-		echo '</div>';
+		Ui::app_close();
 	}
 
 	/**
-	 * The module table.
-	 */
-	private function render_modules(): void {
-		Ui::section_open(
-			__( 'Modules', 'sitehelm' ),
-			__(
-				'A module is active when the plugin behind it is running. SiteHelm cannot tell an installed but deactivated plugin apart from one that was never installed, so both read as not active. A module that is not active still lists its operations in the catalogue, so an agent is told the operation exists and why it cannot run it.',
-				'sitehelm'
-			)
-		);
-
-		echo '<div class="sitehelm-scroll"><table class="sitehelm-table"><thead><tr>';
-
-		printf( '<th scope="col">%s</th>', esc_html__( 'Module', 'sitehelm' ) );
-		printf( '<th scope="col">%s</th>', esc_html__( 'State', 'sitehelm' ) );
-		printf( '<th scope="col">%s</th>', esc_html__( 'Detected version', 'sitehelm' ) );
-
-		echo '</tr></thead><tbody>';
-
-		foreach ( ModuleId::cases() as $module ) {
-			$this->render_module_row( $module );
-		}
-
-		echo '</tbody></table></div>';
-		Ui::section_close();
-	}
-
-	/**
-	 * One module's row.
+	 * The four cards that answer "can this site serve a request at all?".
 	 *
-	 * @param ModuleId $module The module to report on.
+	 * Each card states its answer in words. The tick and cross only repeat what
+	 * the value already says, so a person who cannot see the tint reads the same
+	 * result.
 	 */
-	private function render_module_row( ModuleId $module ): void {
-		$entry  = $this->health[ $module->value ] ?? null;
-		$state  = is_array( $entry ) && isset( $entry['health'] ) ? (string) $entry['health'] : '';
-		$number = is_array( $entry ) && isset( $entry['version'] ) && is_string( $entry['version'] )
-			? $entry['version']
-			: '';
+	private function render_readiness(): void {
+		$blocked = $this->blocked_count();
+		$storage = $this->storage_ready();
 
-		echo '<tr>';
+		Ui::section_open( __( 'Readiness', 'sitehelm' ), '' );
 
-		printf( '<td>%s</td>', esc_html( self::module_label( $module ) ) );
-
-		// Ui::badge() escapes its own label.
-		echo '<td>' . Ui::badge( self::tone_for( $state ), self::state_label( $state ) ) . '</td>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
-
-		printf(
-			'<td>%s</td>',
-			'' === $number
-				? '<span class="sitehelm-table__sub">' . esc_html__( 'Not detected', 'sitehelm' ) . '</span>'
-				: '<code>' . esc_html( $number ) . '</code>'
+		Ui::stat_grid(
+			[
+				[
+					'label' => __( 'Storage', 'sitehelm' ),
+					'value' => $storage ? __( 'Ready', 'sitehelm' ) : __( 'Unavailable', 'sitehelm' ),
+					'ok'    => $storage,
+				],
+				[
+					'label' => __( 'Modules active', 'sitehelm' ),
+					'value' => sprintf(
+						/* translators: 1: number of active modules, 2: total number of modules. */
+						__( '%1$s of %2$s', 'sitehelm' ),
+						number_format_i18n( count( ModuleId::cases() ) - $blocked ),
+						number_format_i18n( count( ModuleId::cases() ) )
+					),
+					'ok'    => 0 === $blocked,
+				],
+				[
+					'label' => __( 'Application passwords', 'sitehelm' ),
+					'value' => wp_is_application_passwords_available()
+						? __( 'Available', 'sitehelm' )
+						: __( 'Disabled', 'sitehelm' ),
+					'ok'    => (bool) wp_is_application_passwords_available(),
+				],
+				[
+					'label' => __( 'Connection', 'sitehelm' ),
+					'value' => is_ssl() ? __( 'HTTPS', 'sitehelm' ) : __( 'Not HTTPS', 'sitehelm' ),
+					'ok'    => is_ssl(),
+				],
+			]
 		);
 
-		echo '</tr>';
+		Ui::section_close();
 	}
 
 	/**
@@ -234,76 +228,5 @@ final class StatusScreen {
 		}
 
 		return $blocked;
-	}
-
-	/**
-	 * A module's name, as a person would say it.
-	 *
-	 * @param ModuleId $module The module.
-	 */
-	private static function module_label( ModuleId $module ): string {
-		switch ( $module ) {
-			case ModuleId::Core:
-				return __( 'Core content', 'sitehelm' );
-			case ModuleId::Diagnostics:
-				return __( 'Diagnostics', 'sitehelm' );
-			case ModuleId::Media:
-				return __( 'Media', 'sitehelm' );
-			case ModuleId::Menus:
-				return __( 'Menus', 'sitehelm' );
-			case ModuleId::Elementor:
-				return __( 'Elementor', 'sitehelm' );
-			case ModuleId::Acf:
-				return __( 'Advanced Custom Fields', 'sitehelm' );
-			case ModuleId::Metabox:
-				return __( 'Meta Box', 'sitehelm' );
-			default:
-				return $module->value;
-		}
-	}
-
-	/**
-	 * The word shown for a health state.
-	 *
-	 * A module missing from the map is reported as not loaded rather than as
-	 * inactive: the two have different causes, and telling an operator their
-	 * module is inactive when it never ran sends them looking in the wrong place.
-	 *
-	 * `Inactive` is reported as "Not active", NOT as "Not installed". Presence is
-	 * detected by asking whether the integration's constants and classes are
-	 * loaded, which is true only while its plugin is ACTIVE. An installed but
-	 * deactivated plugin is indistinguishable from an absent one from here, so
-	 * "Not installed" is a claim this screen has no evidence for — and it sends
-	 * an operator off to reinstall a plugin they already have.
-	 *
-	 * @param string $state The recorded health value.
-	 */
-	private static function state_label( string $state ): string {
-		switch ( $state ) {
-			case ModuleHealth::Active->value:
-				return __( 'Active', 'sitehelm' );
-			case ModuleHealth::VersionBlocked->value:
-				return __( 'Version too old', 'sitehelm' );
-			case ModuleHealth::Inactive->value:
-				return __( 'Not active', 'sitehelm' );
-			default:
-				return __( 'Not loaded', 'sitehelm' );
-		}
-	}
-
-	/**
-	 * The tone for a health state.
-	 *
-	 * @param string $state The recorded health value.
-	 */
-	private static function tone_for( string $state ): string {
-		switch ( $state ) {
-			case ModuleHealth::Active->value:
-				return 'ok';
-			case ModuleHealth::VersionBlocked->value:
-				return 'refused';
-			default:
-				return 'neutral';
-		}
 	}
 }

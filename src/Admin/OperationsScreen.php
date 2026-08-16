@@ -54,9 +54,9 @@ final class OperationsScreen {
 		$groups = $this->groups();
 		$total  = array_sum( array_map( 'count', $groups ) );
 
-		echo '<div class="wrap sitehelm-app">';
+		Ui::app_open( AdminMenu::PAGE_OPERATIONS );
 
-		Ui::masthead(
+		Ui::page_head(
 			__( 'Operations', 'sitehelm' ),
 			__( 'Everything a connected client can ask this site to do. Nothing outside this list is reachable.', 'sitehelm' )
 		);
@@ -81,7 +81,7 @@ final class OperationsScreen {
 			$this->render_group( (string) $dispatcher, $definitions );
 		}
 
-		echo '</div>';
+		Ui::app_close();
 	}
 
 	/**
@@ -125,10 +125,10 @@ final class OperationsScreen {
 	private function render_search(): void {
 		printf(
 			'<div class="sitehelm-filters" hidden>'
-				. '<label class="sitehelm-visually-hidden" for="sitehelm-search">%s</label>'
+				. '<label class="sitehelm-srt" for="sitehelm-search">%s</label>'
 				. '<input class="sitehelm-field__input" type="search" id="sitehelm-search" data-sitehelm-search'
 				. ' placeholder="%s" aria-describedby="sitehelm-search-status">'
-				. '<p class="sitehelm-visually-hidden" id="sitehelm-search-status" role="status" aria-live="polite"></p>'
+				. '<p class="sitehelm-srt" id="sitehelm-search-status" role="status" aria-live="polite"></p>'
 				. '</div>',
 			esc_html__( 'Filter operations', 'sitehelm' ),
 			esc_attr__( 'Filter by name or description', 'sitehelm' )

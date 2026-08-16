@@ -133,6 +133,148 @@
 	}
 
 	/**
+	 * Show or hide the tab bar's scroll arrows to match what is overflowing.
+	 *
+	 * The arrows exist only when the bar is wider than its frame. Offering a
+	 * control that scrolls nothing is worse than offering none.
+	 *
+	 * @param {HTMLElement} nav The scrolling tab bar.
+	 */
+	function syncNavArrows( nav ) {
+		var overflow = nav.scrollWidth - nav.clientWidth;
+		var prev = document.querySelector( '[data-sitehelm-nav="prev"]' );
+		var next = document.querySelector( '[data-sitehelm-nav="next"]' );
+
+		if ( prev ) {
+			prev.hidden = nav.scrollLeft <= 1;
+		}
+
+		if ( next ) {
+			next.hidden = nav.scrollLeft >= overflow - 1;
+		}
+	}
+
+	/**
+	 * Wire the tab bar's overflow arrows.
+	 *
+	 * @param {HTMLElement} nav The scrolling tab bar.
+	 */
+	function initNav( nav ) {
+		Array.prototype.forEach.call(
+			document.querySelectorAll( '[data-sitehelm-nav]' ),
+			function ( button ) {
+				button.addEventListener( 'click', function () {
+					var step = Math.max( 160, Math.round( nav.clientWidth * 0.6 ) );
+					var sign = 'prev' === button.getAttribute( 'data-sitehelm-nav' ) ? -1 : 1;
+
+					nav.scrollBy( { left: sign * step, behavior: 'smooth' } );
+				} );
+			}
+		);
+
+		nav.addEventListener( 'scroll', function () {
+			syncNavArrows( nav );
+		} );
+
+		window.addEventListener( 'resize', function () {
+			syncNavArrows( nav );
+		} );
+
+		syncNavArrows( nav );
+	}
+
+	/**
+	 * Describe what a response to the unauthenticated probe means.
+	 *
+	 * The probe carries no credential on purpose, so 401 is the good answer:
+	 * the route exists and is evaluating authentication, which narrows the
+	 * remaining problem to the credential or a stripped header. 404 means the
+	 * request never reached SiteHelm at all.
+	 *
+	 * @param {number} status The HTTP status the endpoint returned.
+	 *
+	 * @return {{ok: boolean, message: string}} The verdict to display.
+	 */
+	function describeProbe( status ) {
+		if ( 401 === status || 403 === status ) {
+			return {
+				ok: true,
+				message: strings.testReachable || 'The endpoint answered and asked for a credential.'
+			};
+		}
+
+		if ( 404 === status ) {
+			return {
+				ok: false,
+				message: strings.testNotFound || 'Nothing answered at that address on this site.'
+			};
+		}
+
+		return {
+			ok: false,
+			message: ( strings.testUnexpected || 'The endpoint answered with status %s.' )
+				.replace( '%s', String( status ) )
+		};
+	}
+
+	/**
+	 * Write the probe's verdict where the button says it will appear.
+	 *
+	 * @param {HTMLElement} target  The live region.
+	 * @param {string}      tone    Either "ok" or "refused".
+	 * @param {string}      message The verdict.
+	 */
+	function showProbe( target, tone, message ) {
+		target.innerHTML = '';
+
+		var note = document.createElement( 'div' );
+		note.className = 'sitehelm-note sitehelm-note--' + tone;
+
+		var line = document.createElement( 'p' );
+		line.textContent = message;
+
+		note.appendChild( line );
+		target.appendChild( note );
+	}
+
+	/**
+	 * Send one unauthenticated request to the endpoint and report what came back.
+	 *
+	 * @param {HTMLElement} button The test button.
+	 */
+	function probe( button ) {
+		var target = document.querySelector( '[data-sitehelm-test-result]' );
+
+		if ( ! target ) {
+			return;
+		}
+
+		button.disabled = true;
+		showProbe( target, 'waiting', strings.testRunning || 'Testing…' );
+
+		window.fetch( button.getAttribute( 'data-sitehelm-test' ), {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}',
+			credentials: 'omit'
+		} ).then(
+			function ( response ) {
+				var verdict = describeProbe( response.status );
+				showProbe( target, verdict.ok ? 'ok' : 'refused', verdict.message );
+			},
+			function () {
+				showProbe(
+					target,
+					'refused',
+					strings.testFailed || 'The request could not be sent from this browser.'
+				);
+			}
+		).then( function () {
+			button.disabled = false;
+		} );
+	}
+
+	/**
 	 * Wire the console once the markup is present.
 	 */
 	function init() {
@@ -161,6 +303,31 @@
 			search.closest( '.sitehelm-filters' ).hidden = false;
 			search.addEventListener( 'input', function () {
 				filterOperations( search );
+			} );
+		}
+
+		var nav = document.querySelector( '[data-sitehelm-appnav]' );
+
+		if ( nav ) {
+			initNav( nav );
+		}
+
+		var test = document.querySelector( '[data-sitehelm-test]' );
+
+		// Revealed only when the browser can actually make the request, so the
+		// no-script hint stays put on a browser that cannot.
+		if ( test && window.fetch ) {
+			test.hidden = false;
+
+			Array.prototype.forEach.call(
+				document.querySelectorAll( '[data-sitehelm-test-idle]' ),
+				function ( hint ) {
+					hint.hidden = true;
+				}
+			);
+
+			test.addEventListener( 'click', function () {
+				probe( test );
 			} );
 		}
 	}

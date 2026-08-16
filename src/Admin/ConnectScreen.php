@@ -27,6 +27,12 @@ use WP_Error;
  * over in a short-lived transient that the render deletes as it reads. A secret
  * that survives its own page load is a secret waiting to be found in a backup.
  *
+ * A password can be minted for another account, because the account is the only
+ * permission boundary an agent has — pointing a client at an editor rather than
+ * an administrator is how you stop it touching settings. That is gated on
+ * `edit_user` for the specific account, checked again inside the handler, so the
+ * dropdown can never become the thing that grants the permission.
+ *
  * @package SiteHelm
  */
 final class ConnectScreen {
@@ -50,6 +56,16 @@ final class ConnectScreen {
 	 * The application password's name, as it appears in the user's profile.
 	 */
 	public const PASSWORD_NAME = 'SiteHelm MCP';
+
+	/**
+	 * The form field naming the account the password is minted for.
+	 */
+	public const FIELD_USER = 'sitehelm_user';
+
+	/**
+	 * How many accounts the dropdown offers before it stops listing them.
+	 */
+	private const USER_LIMIT = 50;
 
 	/**
 	 * The query argument carrying a failure back to the screen.
@@ -80,28 +96,34 @@ final class ConnectScreen {
 			wp_die( esc_html__( 'You do not have permission to view SiteHelm.', 'sitehelm' ) );
 		}
 
-		$user     = wp_get_current_user();
 		$endpoint = self::endpoint();
-		$password = $this->take_new_password( (int) $user->ID );
+		$handoff  = $this->take_new_password( get_current_user_id() );
 
-		echo '<div class="wrap sitehelm-app">';
+		// Asked once and passed down: the verdict and the readiness cards answer
+		// the same question, and a second query could answer it differently.
+		$last = $this->store->query( [], 1, 0 );
 
-		Ui::masthead(
+		Ui::app_open( AdminMenu::PAGE_CONNECT );
+
+		Ui::page_head(
 			__( 'Connect', 'sitehelm' ),
 			__( 'Point an AI client at this site. Everything below is generated from this site\'s own settings.', 'sitehelm' )
 		);
 
-		$this->render_verdict();
+		$this->render_verdict( $last );
 		$this->render_failure();
+		$this->render_readiness( [] !== $last );
 		$this->render_endpoint( $endpoint );
-		$this->render_credential( $password );
-		$this->render_snippets( $endpoint, (string) $user->user_login, $password );
+		$this->render_credential( $handoff );
+		$this->render_clients( $endpoint, $handoff );
 
-		echo '</div>';
+		( new ConnectHelp() )->render();
+
+		Ui::app_close();
 	}
 
 	/**
-	 * Create an application password for the current user and return to the screen.
+	 * Create an application password and return to the screen.
 	 *
 	 * Bound to `admin_post` rather than performed on render, so the credential is
 	 * created by a deliberate, nonce-checked POST. A password minted by a page
@@ -114,9 +136,19 @@ final class ConnectScreen {
 
 		check_admin_referer( self::NONCE_CREATE_PASSWORD );
 
-		$user_id = get_current_user_id();
+		// phpcs:ignore WordPress.Security.NonceVerification.Missing -- check_admin_referer() above verified this POST.
+		$requested = isset( $_POST[ self::FIELD_USER ] ) ? absint( wp_unslash( $_POST[ self::FIELD_USER ] ) ) : 0;
+		$target    = 0 === $requested ? get_current_user_id() : $requested;
+
+		// Re-checked here rather than trusted from the form: the dropdown is a
+		// convenience, and a POST naming any other account must be refused on its
+		// own merits whether or not that account was ever offered.
+		if ( get_current_user_id() !== $target && ! current_user_can( 'edit_user', $target ) ) {
+			wp_die( esc_html__( 'You do not have permission to do that.', 'sitehelm' ), '', [ 'response' => 403 ] );
+		}
+
 		$created = WP_Application_Passwords::create_new_application_password(
-			$user_id,
+			$target,
 			[
 				'name'   => self::PASSWORD_NAME,
 				'app_id' => '',
@@ -124,11 +156,20 @@ final class ConnectScreen {
 		);
 
 		if ( $created instanceof WP_Error || ! is_array( $created ) || ! isset( $created[0] ) ) {
-			$this->go_back( __( 'WordPress would not create an application password for your account.', 'sitehelm' ) );
+			$this->go_back( __( 'WordPress would not create an application password for that account.', 'sitehelm' ) );
 			return;
 		}
 
-		set_transient( self::handoff_key( $user_id ), (string) $created[0], self::HANDOFF_TTL );
+		// Handed to whoever asked for it, not to whoever it belongs to: the person
+		// at the keyboard is the one who has to paste it into a client.
+		set_transient(
+			self::handoff_key( get_current_user_id() ),
+			[
+				'user'     => $target,
+				'password' => (string) $created[0],
+			],
+			self::HANDOFF_TTL
+		);
 
 		$this->go_back( '' );
 	}
@@ -150,10 +191,10 @@ final class ConnectScreen {
 	 * "Connected" is claimed only when a request has actually arrived. Before
 	 * that the screen says the site is ready, which is a different and honest
 	 * claim: SiteHelm cannot know a client is configured until one calls.
+	 *
+	 * @param array<int, array<string, mixed>> $last The most recent audit row, if any.
 	 */
-	private function render_verdict(): void {
-		$last = $this->store->query( [], 1, 0 );
-
+	private function render_verdict( array $last ): void {
 		if ( [] !== $last && isset( $last[0]['recorded_at'] ) ) {
 			Ui::verdict(
 				'ok',
@@ -180,6 +221,35 @@ final class ConnectScreen {
 			'waiting',
 			__( 'Ready to connect', 'sitehelm' ),
 			__( 'No client has called this site yet', 'sitehelm' )
+		);
+	}
+
+	/**
+	 * The three conditions a connection needs, each answered in words.
+	 *
+	 * @param bool $called Whether any request has ever been recorded.
+	 */
+	private function render_readiness( bool $called ): void {
+		$passwords = (bool) wp_is_application_passwords_available();
+
+		Ui::stat_grid(
+			[
+				[
+					'label' => __( 'Application passwords', 'sitehelm' ),
+					'value' => $passwords ? __( 'Available', 'sitehelm' ) : __( 'Disabled', 'sitehelm' ),
+					'ok'    => $passwords,
+				],
+				[
+					'label' => __( 'Transport security', 'sitehelm' ),
+					'value' => is_ssl() ? __( 'HTTPS', 'sitehelm' ) : __( 'Not HTTPS', 'sitehelm' ),
+					'ok'    => is_ssl(),
+				],
+				[
+					'label' => __( 'Requests received', 'sitehelm' ),
+					'value' => $called ? __( 'At least one', 'sitehelm' ) : __( 'None yet', 'sitehelm' ),
+					'ok'    => $called,
+				],
+			]
 		);
 	}
 
@@ -246,11 +316,11 @@ final class ConnectScreen {
 	}
 
 	/**
-	 * The credential block: either the button that creates one, or the one just created.
+	 * The credential block: either the form that creates one, or the one just created.
 	 *
-	 * @param string $password The password just created, or an empty string.
+	 * @param array{user: int, password: string} $handoff The password just created, if any.
 	 */
-	private function render_credential( string $password ): void {
+	private function render_credential( array $handoff ): void {
 		Ui::section_open(
 			__( 'Credential', 'sitehelm' ),
 			__(
@@ -261,8 +331,8 @@ final class ConnectScreen {
 
 		echo '<div class="sitehelm-panel"><div class="sitehelm-panel__body">';
 
-		if ( '' !== $password ) {
-			$this->render_new_password( $password );
+		if ( '' !== $handoff['password'] ) {
+			$this->render_new_password( $handoff );
 		} else {
 			$this->render_create_form();
 		}
@@ -294,6 +364,8 @@ final class ConnectScreen {
 		printf( '<input type="hidden" name="action" value="%s">', esc_attr( self::ACTION_CREATE_PASSWORD ) );
 		wp_nonce_field( self::NONCE_CREATE_PASSWORD );
 
+		$this->render_user_field();
+
 		printf(
 			'<button type="submit" class="sitehelm-btn sitehelm-btn--primary">%s</button>',
 			esc_html__( 'Create an application password', 'sitehelm' )
@@ -304,7 +376,7 @@ final class ConnectScreen {
 			esc_html(
 				sprintf(
 					/* translators: %s: the name the application password is given. */
-					__( 'Creates a password named "%s" on your own account. You can revoke it at any time under Users, then Profile.', 'sitehelm' ),
+					__( 'Creates a password named "%s". It can be revoked at any time under Users, then that account\'s profile.', 'sitehelm' ),
 					self::PASSWORD_NAME
 				)
 			)
@@ -312,17 +384,121 @@ final class ConnectScreen {
 	}
 
 	/**
-	 * The password, shown once.
+	 * The account picker.
 	 *
-	 * @param string $password The password just created.
+	 * Rendered as a dropdown only when there is more than one account this
+	 * person may act for. With one choice a dropdown is a decision that isn't
+	 * one, so the field states the account instead.
 	 */
-	private function render_new_password( string $password ): void {
+	private function render_user_field(): void {
+		$users = $this->selectable_users();
+
+		echo '<div class="sitehelm-field">';
+
 		printf(
-			'<div class="sitehelm-note sitehelm-note--ok"><p>%s</p></div>',
-			esc_html__( 'Copy this now. WordPress does not show an application password a second time.', 'sitehelm' )
+			'<label class="sitehelm-field__label" for="sitehelm-user">%s</label>',
+			esc_html__( 'Account the agent will act as', 'sitehelm' )
 		);
 
-		echo '<div class="sitehelm-field" style="margin-top:14px">';
+		if ( count( $users ) < 2 ) {
+			printf(
+				'<input class="sitehelm-field__input" type="text" id="sitehelm-user" value="%s" readonly disabled>',
+				esc_attr( wp_get_current_user()->user_login )
+			);
+			echo '</div>';
+			return;
+		}
+
+		printf(
+			'<select class="sitehelm-select" id="sitehelm-user" name="%s">',
+			esc_attr( self::FIELD_USER )
+		);
+
+		foreach ( $users as $user ) {
+			printf(
+				'<option value="%d">%s</option>',
+				(int) $user->ID,
+				esc_html( $this->user_label( $user ) )
+			);
+		}
+
+		printf(
+			'</select><p class="sitehelm-field__hint">%s</p></div>',
+			esc_html__(
+				'An agent can do exactly what this account can do, and no more. An editor account cannot change settings or install plugins however it is asked to.',
+				'sitehelm'
+			)
+		);
+	}
+
+	/**
+	 * The accounts this person may mint a password for, their own first.
+	 *
+	 * @return array<int, object>
+	 */
+	private function selectable_users(): array {
+		$current = wp_get_current_user();
+		$others  = [];
+
+		$candidates = get_users(
+			[
+				'number'  => self::USER_LIMIT,
+				'orderby' => 'display_name',
+				'order'   => 'ASC',
+				'exclude' => [ (int) $current->ID ],
+			]
+		);
+
+		foreach ( (array) $candidates as $user ) {
+			if ( is_object( $user ) && isset( $user->ID ) && current_user_can( 'edit_user', (int) $user->ID ) ) {
+				$others[] = $user;
+			}
+		}
+
+		return array_merge( [ $current ], $others );
+	}
+
+	/**
+	 * How an account is named in the picker.
+	 *
+	 * @param object $user The account.
+	 */
+	private function user_label( object $user ): string {
+		// `array_values()` because WordPress keys a user's roles by role name, and
+		// the first role is the one this label states.
+		$roles = array_values( array_map( 'strval', (array) ( $user->roles ?? [] ) ) );
+		$first = (string) ( $roles[0] ?? '' );
+
+		return sprintf(
+			/* translators: 1: user login, 2: the account's first role, such as editor. */
+			__( '%1$s (%2$s)', 'sitehelm' ),
+			(string) ( $user->user_login ?? '' ),
+			'' === $first ? __( 'no role', 'sitehelm' ) : $first
+		);
+	}
+
+	/**
+	 * The password, shown once.
+	 *
+	 * @param array{user: int, password: string} $handoff The password just created.
+	 */
+	private function render_new_password( array $handoff ): void {
+		$login = $this->login_of( $handoff['user'] );
+
+		printf(
+			'<div class="sitehelm-note sitehelm-note--ok"><p>%s</p></div>',
+			esc_html(
+				'' === $login
+					? __( 'Copy this now. WordPress does not show an application password a second time.', 'sitehelm' )
+					: sprintf(
+						/* translators: %s: the WordPress login the password belongs to. */
+						__( 'Created for %s. Copy it now — WordPress does not show an application password a second time.', 'sitehelm' ),
+						$login
+					)
+			)
+		);
+
+		echo '<div class="sitehelm-field">';
 
 		printf(
 			'<label class="sitehelm-field__label" for="sitehelm-password">%s</label>',
@@ -332,7 +508,7 @@ final class ConnectScreen {
 		printf(
 			'<input class="sitehelm-field__input" type="text" id="sitehelm-password" value="%s" readonly'
 				. ' spellcheck="false" autocomplete="off" onfocus="this.select()">',
-			esc_attr( $password )
+			esc_attr( $handoff['password'] )
 		);
 
 		Ui::copy_button( 'sitehelm-password', __( 'Copy password', 'sitehelm' ) );
@@ -341,104 +517,152 @@ final class ConnectScreen {
 	}
 
 	/**
-	 * The client configuration snippets.
+	 * The client picker and its configuration blocks.
 	 *
-	 * All three are rendered. Script hides the two that are not selected; with
-	 * scripting off every snippet stays on the page and readable, which is the
-	 * only behaviour that keeps this screen usable in every case.
+	 * Every client's blocks are rendered. Script hides the ones that are not
+	 * selected; with scripting off the whole page stays on screen and readable,
+	 * which is the only behaviour that keeps this screen usable in every case.
 	 *
-	 * @param string $endpoint The site's MCP endpoint.
-	 * @param string $username The current user's login.
-	 * @param string $password The password just created, or an empty string.
+	 * @param string                             $endpoint The site's MCP endpoint.
+	 * @param array{user: int, password: string} $handoff  The password just created, if any.
 	 */
-	private function render_snippets( string $endpoint, string $username, string $password ): void {
-		$snippets = ( new ClientConfig( $endpoint, $username, $password ) )->snippets();
+	private function render_clients( string $endpoint, array $handoff ): void {
+		$login = $this->login_of( $handoff['user'] );
+
+		// Falls back to the person reading the screen, because that is whose
+		// credential the placeholder snippets describe when none has been created.
+		if ( '' === $login ) {
+			$login = (string) ( wp_get_current_user()->user_login ?? '' );
+		}
+
+		$clients = ( new ClientConfig( $endpoint, $login, $handoff['password'] ) )->clients();
 
 		Ui::section_open(
 			__( 'Your client', 'sitehelm' ),
-			'' === $password
-				? __( 'Create a password above and these snippets fill themselves in. Until then they carry a placeholder.', 'sitehelm' )
-				: __( 'Ready to paste, with the password you just created.', 'sitehelm' )
+			'' === $handoff['password']
+				? __( 'Pick your client. Create a password above and these fill themselves in; until then they carry a placeholder.', 'sitehelm' )
+				: __( 'Pick your client. These are ready to paste, with the password you just created.', 'sitehelm' )
 		);
 
-		echo '<fieldset class="sitehelm-segments" data-sitehelm-clients>';
-		printf( '<legend class="sitehelm-segments__legend">%s</legend>', esc_html__( 'Choose your client', 'sitehelm' ) );
+		echo '<fieldset class="sitehelm-clients" data-sitehelm-clients>';
 
-		foreach ( $snippets as $index => $snippet ) {
-			printf(
-				'<div class="sitehelm-segment"><label><input type="radio" name="sitehelm-client" value="%s"%s>'
-					. '<span>%s</span></label></div>',
-				esc_attr( $snippet['id'] ),
-				0 === $index ? ' checked' : '',
-				esc_html( $snippet['name'] )
-			);
+		printf( '<legend class="sitehelm-srt">%s</legend>', esc_html__( 'Choose your client', 'sitehelm' ) );
+
+		foreach ( $clients as $index => $client ) {
+			$this->render_client_option( $client, 0 === $index );
 		}
 
 		echo '</fieldset>';
 
-		foreach ( $snippets as $snippet ) {
-			$this->render_snippet( $snippet );
+		foreach ( $clients as $client ) {
+			$this->render_client_blocks( $client );
 		}
 
 		Ui::section_close();
 	}
 
 	/**
-	 * One client snippet.
+	 * One card in the client picker.
 	 *
-	 * @param array{id: string, name: string, caption: string, body: string} $snippet The snippet to render.
+	 * @param array{id: string, name: string, icon: string, hint: string} $client  The client.
+	 * @param bool                                                        $checked Whether it starts selected.
 	 */
-	private function render_snippet( array $snippet ): void {
-		$id = 'sitehelm-snippet-' . $snippet['id'];
-
+	private function render_client_option( array $client, bool $checked ): void {
 		printf(
-			'<div class="sitehelm-code" data-sitehelm-client="%s" style="margin-bottom:14px">'
-				. '<div class="sitehelm-code__bar"><span class="sitehelm-code__name">%s</span>',
-			esc_attr( $snippet['id'] ),
-			esc_html( $snippet['caption'] )
+			'<label class="sitehelm-client"><input type="radio" name="sitehelm-client" value="%s"%s>'
+				. '<span class="dashicons %s" aria-hidden="true"></span>'
+				. '<span class="sitehelm-client__label">%s</span></label>',
+			esc_attr( $client['id'] ),
+			$checked ? ' checked' : '',
+			esc_attr( $client['icon'] ),
+			esc_html( $client['name'] )
 		);
+	}
 
-		Ui::copy_button(
-			$id,
-			sprintf(
-				/* translators: %s: client name, such as Claude Code. */
-				__( 'Copy %s config', 'sitehelm' ),
-				$snippet['name']
-			)
-		);
+	/**
+	 * One client's configuration blocks.
+	 *
+	 * @param array{id: string, name: string, hint: string, blocks: array<int, array{id: string, caption: string, body: string}>} $client The client.
+	 */
+	private function render_client_blocks( array $client ): void {
+		printf( '<div data-sitehelm-client="%s">', esc_attr( $client['id'] ) );
 
-		printf(
-			'</div><pre id="%s"><code>%s</code></pre></div>',
-			esc_attr( $id ),
-			esc_html( $snippet['body'] )
-		);
+		printf( '<p class="sitehelm-section__note">%s</p>', esc_html( $client['hint'] ) );
+
+		foreach ( $client['blocks'] as $block ) {
+			Ui::code_block(
+				'sitehelm-snippet-' . $block['id'],
+				$block['caption'],
+				$block['body'],
+				sprintf(
+					/* translators: %s: client name, such as Claude Code. */
+					__( 'Copy the %s config', 'sitehelm' ),
+					$client['name']
+				)
+			);
+		}
+
+		echo '</div>';
+	}
+
+	/**
+	 * The login belonging to an account id, or an empty string if there is none.
+	 *
+	 * @param int $user_id The account.
+	 */
+	private function login_of( int $user_id ): string {
+		if ( 0 === $user_id ) {
+			return '';
+		}
+
+		$user = get_userdata( $user_id );
+
+		return is_object( $user ) ? (string) ( $user->user_login ?? '' ) : '';
 	}
 
 	/**
 	 * Read and delete the newly created password handed over by the POST.
 	 *
-	 * @param int $user_id The user the password was created for.
+	 * @param int $user_id The user who asked for the password.
+	 *
+	 * @return array{user: int, password: string}
 	 */
-	private function take_new_password( int $user_id ): string {
-		$key      = self::handoff_key( $user_id );
-		$password = get_transient( $key );
+	private function take_new_password( int $user_id ): array {
+		$empty = [
+			'user'     => 0,
+			'password' => '',
+		];
 
-		if ( ! is_string( $password ) || '' === $password ) {
-			return '';
+		$key    = self::handoff_key( $user_id );
+		$stored = get_transient( $key );
+
+		if ( ! is_array( $stored ) ) {
+			return $empty;
 		}
 
+		// Deleted whatever it turned out to hold: a handoff that survives the one
+		// render it was written for is a secret left lying in the options table.
 		delete_transient( $key );
 
-		return $password;
+		$password = isset( $stored['password'] ) && is_string( $stored['password'] ) ? $stored['password'] : '';
+
+		if ( '' === $password ) {
+			return $empty;
+		}
+
+		return [
+			'user'     => isset( $stored['user'] ) ? (int) $stored['user'] : 0,
+			'password' => $password,
+		];
 	}
 
 	/**
 	 * The transient key the new password is handed over in.
 	 *
-	 * Keyed by user, so two administrators creating a password at the same
-	 * moment cannot be shown each other's.
+	 * Keyed by the person who asked, so two administrators creating a password
+	 * at the same moment cannot be shown each other's.
 	 *
-	 * @param int $user_id The user the password belongs to.
+	 * @param int $user_id The user who asked for the password.
 	 */
 	private static function handoff_key( int $user_id ): string {
 		return 'sitehelm_new_password_' . $user_id;

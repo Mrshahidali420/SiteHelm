@@ -1,54 +1,49 @@
 /**
  * SiteHelm admin console.
  *
- * Scoped under .sitehelm-app so nothing here can reach the rest of wp-admin.
- * The panel sits inside WordPress's own white chrome, so the theme is light by
- * decision rather than by default: a dark surface embedded in that chrome reads
- * as a rendering fault, not as a choice.
+ * Everything is scoped to .sitehelm-app so wp-admin's own screens are
+ * untouched. Status is never carried by colour alone: every tinted mark also
+ * carries its word, and every icon that means something has a text label beside
+ * it.
  */
 
+/* =========================================================================
+ * Tokens
+ * ========================================================================= */
+
 .sitehelm-app {
-	/* Brand. #0E7C86 measures 4.97:1 on white, so it carries text as well as fill. */
-	--sh-teal-900: oklch(0.31 0.052 205);
-	--sh-teal-700: oklch(0.44 0.071 204);
-	--sh-teal: oklch(0.52 0.079 204);
-	--sh-teal-400: oklch(0.66 0.083 201);
-	--sh-teal-100: oklch(0.93 0.021 200);
-	--sh-teal-50: oklch(0.968 0.011 200);
+	--sh-primary: #0e7c86;
+	--sh-primary-hover: #0b4f55;
+	--sh-primary-light: #e8f4f5;
+	--sh-accent: #23a6b3;
+	--sh-ok: #0f7a52;
+	--sh-ok-light: #e7f5ef;
+	--sh-warn: #8a5300;
+	--sh-warn-light: #fdf3e2;
+	--sh-danger: #b3261e;
+	--sh-danger-light: #fdeceb;
+	--sh-ink: #0f1b1d;
+	--sh-gray-50: #f7f9f9;
+	--sh-gray-100: #eff3f3;
+	--sh-gray-200: #e0e6e7;
+	--sh-gray-300: #c8d1d2;
+	--sh-gray-400: #9aa6a8;
+	--sh-gray-500: #6b797b;
+	--sh-gray-600: #53605f;
+	--sh-gray-700: #3a4547;
+	--sh-gray-800: #222e30;
+	--sh-white: #ffffff;
+	--sh-radius: 10px;
+	--sh-radius-sm: 6px;
+	--sh-radius-lg: 14px;
+	--sh-shadow-sm: 0 1px 2px rgba(15, 27, 29, 0.06);
+	--sh-shadow: 0 1px 3px rgba(15, 27, 29, 0.10), 0 1px 2px rgba(15, 27, 29, 0.06);
+	--sh-shadow-md: 0 4px 6px -1px rgba(15, 27, 29, 0.10), 0 2px 4px -2px rgba(15, 27, 29, 0.10);
+	--sh-ease: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 
-	/* Neutrals, tinted 0.006 toward the brand hue rather than toward warmth. */
-	--sh-ink: oklch(0.23 0.011 210);
-	--sh-ink-soft: oklch(0.45 0.010 210);
-	--sh-line: oklch(0.90 0.006 210);
-	--sh-line-strong: oklch(0.82 0.008 210);
-	--sh-surface: oklch(1 0 0);
-	--sh-surface-sunk: oklch(0.978 0.004 210);
-
-	/* Status. Each is paired with a word in the markup; colour never carries it alone. */
-	--sh-ok: oklch(0.52 0.128 150);
-	--sh-ok-bg: oklch(0.955 0.026 150);
-	--sh-refused: oklch(0.50 0.135 45);
-	--sh-refused-bg: oklch(0.958 0.028 55);
-	--sh-waiting: oklch(0.50 0.070 265);
-	--sh-waiting-bg: oklch(0.958 0.018 265);
-
-	--sh-radius: 6px;
-	--sh-radius-lg: 10px;
-	--sh-focus: 0 0 0 2px var(--sh-surface), 0 0 0 4px var(--sh-teal);
-
-	--sh-step--1: 0.8125rem;
-	--sh-step-0: 0.875rem;
-	--sh-step-1: 1rem;
-	--sh-step-2: 1.1875rem;
-	--sh-step-3: 1.5rem;
-
-	max-width: 76rem;
-	margin: 0;
-	padding: 0 20px 64px 0;
-	color: var(--sh-ink);
-	font-size: var(--sh-step-0);
-	line-height: 1.5;
-	-webkit-font-smoothing: antialiased;
+	color: var(--sh-gray-800);
+	font-size: 14px;
+	line-height: 1.55;
 }
 
 .sitehelm-app *,
@@ -57,282 +52,16 @@
 	box-sizing: border-box;
 }
 
-/* WordPress paints a 10px gutter above .wrap contents; we own our own rhythm. */
-.sitehelm-app > :first-child {
-	margin-top: 0;
-}
-
-/* ---------------------------------------------------------------- masthead */
-
-.sitehelm-masthead {
-	display: flex;
-	flex-wrap: wrap;
-	align-items: baseline;
-	gap: 8px 16px;
-	padding: 28px 0 20px;
-	border-bottom: 1px solid var(--sh-line);
-}
-
-.sitehelm-masthead__title {
-	margin: 0;
-	font-size: var(--sh-step-3);
-	font-weight: 600;
-	letter-spacing: -0.015em;
-	line-height: 1.2;
+.sitehelm-app h1,
+.sitehelm-app h2,
+.sitehelm-app h3 {
 	color: var(--sh-ink);
+	letter-spacing: -0.011em;
 }
 
-.sitehelm-masthead__lede {
-	flex: 1 1 20rem;
-	margin: 0;
-	max-width: 62ch;
-	color: var(--sh-ink-soft);
-	text-wrap: pretty;
-}
-
-.sitehelm-masthead__version {
-	font-variant-numeric: tabular-nums;
-	color: var(--sh-ink-soft);
-	font-size: var(--sh-step--1);
-}
-
-/* ------------------------------------------------------------------ verdict */
-
-/*
- * The first line of every screen answers that screen's one question. It is a
- * statement, not a banner: no fill, no icon set, no celebration.
- */
-.sitehelm-verdict {
-	display: flex;
-	flex-wrap: wrap;
-	align-items: baseline;
-	gap: 6px 14px;
-	margin: 24px 0 0;
-	font-size: var(--sh-step-2);
-	font-weight: 500;
-	letter-spacing: -0.01em;
-}
-
-.sitehelm-verdict__detail {
-	font-size: var(--sh-step-0);
-	font-weight: 400;
-	color: var(--sh-ink-soft);
-	font-variant-numeric: tabular-nums;
-}
-
-.sitehelm-dot {
-	display: inline-block;
-	width: 0.5em;
-	height: 0.5em;
-	margin-inline-end: 0.15em;
-	border-radius: 50%;
-	background: var(--sh-ink-soft);
-	vertical-align: 0.08em;
-}
-
-.sitehelm-dot--ok {
-	background: var(--sh-ok);
-}
-
-.sitehelm-dot--refused {
-	background: var(--sh-refused);
-}
-
-.sitehelm-dot--waiting {
-	background: var(--sh-waiting);
-}
-
-.sitehelm-dot--brand {
-	background: var(--sh-teal);
-}
-
-/* ------------------------------------------------------------------ section */
-
-.sitehelm-section {
-	margin: 40px 0 0;
-}
-
-.sitehelm-section__head {
-	margin: 0 0 4px;
-	font-size: var(--sh-step-1);
-	font-weight: 600;
-	letter-spacing: -0.005em;
-	color: var(--sh-ink);
-}
-
-.sitehelm-section__note {
-	margin: 0 0 16px;
-	max-width: 68ch;
-	color: var(--sh-ink-soft);
-	text-wrap: pretty;
-}
-
-.sitehelm-section__note:last-child {
-	margin-bottom: 0;
-}
-
-/* ------------------------------------------------------------------- panel */
-
-.sitehelm-panel {
-	border: 1px solid var(--sh-line);
-	border-radius: var(--sh-radius-lg);
-	background: var(--sh-surface);
-}
-
-.sitehelm-panel__body {
-	padding: 20px;
-}
-
-.sitehelm-panel__body + .sitehelm-panel__body {
-	border-top: 1px solid var(--sh-line);
-}
-
-/* -------------------------------------------------------------- field + copy */
-
-.sitehelm-field {
-	display: flex;
-	flex-wrap: wrap;
-	gap: 8px;
-	align-items: stretch;
-}
-
-.sitehelm-field__label {
-	flex: 1 0 100%;
-	margin: 0 0 6px;
-	font-size: var(--sh-step--1);
-	font-weight: 600;
-	color: var(--sh-ink);
-}
-
-.sitehelm-field__input {
-	flex: 1 1 22rem;
-	min-width: 0;
-	padding: 9px 12px;
-	border: 1px solid var(--sh-line-strong);
-	border-radius: var(--sh-radius);
-	background: var(--sh-surface-sunk);
-	color: var(--sh-ink);
-	font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
-	font-size: var(--sh-step--1);
-	line-height: 1.4;
-}
-
-.sitehelm-field__input:focus-visible {
-	outline: none;
-	border-color: var(--sh-teal);
-	box-shadow: var(--sh-focus);
-}
-
-.sitehelm-field__hint {
-	flex: 1 0 100%;
-	margin: 8px 0 0;
-	max-width: 68ch;
-	color: var(--sh-ink-soft);
-	font-size: var(--sh-step--1);
-	text-wrap: pretty;
-}
-
-/* ------------------------------------------------------------------ buttons */
-
-.sitehelm-btn {
-	display: inline-flex;
-	align-items: center;
-	justify-content: center;
-	gap: 7px;
-	padding: 9px 15px;
-	border: 1px solid var(--sh-line-strong);
-	border-radius: var(--sh-radius);
-	background: var(--sh-surface);
-	color: var(--sh-ink);
-	font-size: var(--sh-step--1);
-	font-weight: 500;
-	line-height: 1.3;
-	text-decoration: none;
-	cursor: pointer;
-	transition: background-color 160ms cubic-bezier(0.22, 1, 0.36, 1),
-		border-color 160ms cubic-bezier(0.22, 1, 0.36, 1),
-		color 160ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-.sitehelm-btn:hover {
-	border-color: var(--sh-teal-400);
-	color: var(--sh-teal-900);
-	background: var(--sh-teal-50);
-}
-
-.sitehelm-btn:focus-visible {
-	outline: none;
-	box-shadow: var(--sh-focus);
-}
-
-.sitehelm-btn:active {
-	background: var(--sh-teal-100);
-}
-
-.sitehelm-btn[disabled],
-.sitehelm-btn[aria-disabled="true"] {
-	cursor: not-allowed;
-	color: var(--sh-ink-soft);
-	border-color: var(--sh-line);
-	background: var(--sh-surface-sunk);
-}
-
-.sitehelm-btn[disabled]:hover,
-.sitehelm-btn[aria-disabled="true"]:hover {
-	border-color: var(--sh-line);
-	color: var(--sh-ink-soft);
-	background: var(--sh-surface-sunk);
-}
-
-.sitehelm-btn--primary {
-	border-color: var(--sh-teal);
-	background: var(--sh-teal);
-	color: #fff;
-}
-
-.sitehelm-btn--primary:hover {
-	border-color: var(--sh-teal-700);
-	background: var(--sh-teal-700);
-	color: #fff;
-}
-
-.sitehelm-btn--primary:active {
-	background: var(--sh-teal-900);
-	border-color: var(--sh-teal-900);
-}
-
-.sitehelm-btn__icon {
-	width: 14px;
-	height: 14px;
-	flex: none;
-}
-
-/* ------------------------------------------------------------------ segments */
-
-.sitehelm-segments {
-	display: flex;
-	flex-wrap: wrap;
-	gap: 6px;
-	margin: 0 0 14px;
-	padding: 0;
-	border: 0;
-}
-
-.sitehelm-segments__legend {
-	float: left;
-	width: 100%;
-	margin: 0 0 8px;
-	padding: 0;
-	font-size: var(--sh-step--1);
-	font-weight: 600;
-	color: var(--sh-ink);
-}
-
-.sitehelm-segment {
-	position: relative;
-}
-
-.sitehelm-segment input {
+/* The visible name lives in the app bar; the heading stays for the document
+   outline and for anyone navigating by headings. */
+.sitehelm-srt {
 	position: absolute;
 	width: 1px;
 	height: 1px;
@@ -344,296 +73,605 @@
 	border: 0;
 }
 
-.sitehelm-segment span {
-	display: inline-flex;
-	padding: 7px 13px;
-	border: 1px solid var(--sh-line-strong);
-	border-radius: var(--sh-radius);
-	background: var(--sh-surface);
-	color: var(--sh-ink-soft);
-	font-size: var(--sh-step--1);
-	font-weight: 500;
-	cursor: pointer;
-	transition: background-color 160ms cubic-bezier(0.22, 1, 0.36, 1),
-		border-color 160ms cubic-bezier(0.22, 1, 0.36, 1),
-		color 160ms cubic-bezier(0.22, 1, 0.36, 1);
+.sitehelm-app :focus-visible {
+	outline: 2px solid var(--sh-primary);
+	outline-offset: 2px;
+	border-radius: 3px;
 }
 
-.sitehelm-segment input:checked + span {
-	border-color: var(--sh-teal);
-	background: var(--sh-teal-50);
-	color: var(--sh-teal-900);
-}
+/* =========================================================================
+ * App bar
+ * ========================================================================= */
 
-.sitehelm-segment input:focus-visible + span {
-	outline: none;
-	box-shadow: var(--sh-focus);
-}
-
-/* --------------------------------------------------------------------- code */
-
-.sitehelm-code {
-	position: relative;
-	margin: 0;
-	border: 1px solid var(--sh-line);
-	border-radius: var(--sh-radius);
-	background: var(--sh-surface-sunk);
-}
-
-.sitehelm-code pre {
-	margin: 0;
-	padding: 16px 16px 16px 18px;
-	overflow-x: auto;
-	font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
-	font-size: var(--sh-step--1);
-	line-height: 1.55;
-	tab-size: 2;
-	color: var(--sh-ink);
-}
-
-.sitehelm-code__bar {
+.sitehelm-appbar {
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
-	gap: 12px;
-	padding: 8px 10px 8px 16px;
-	border-bottom: 1px solid var(--sh-line);
+	gap: 16px;
+	flex-wrap: wrap;
+	padding: 0 20px;
+	margin: 0 -20px 0 -22px;
+	background: var(--sh-white);
+	border-top: 1px solid var(--sh-gray-200);
+	border-bottom: 1px solid var(--sh-gray-200);
 }
 
-.sitehelm-code__name {
-	font-size: var(--sh-step--1);
-	font-weight: 600;
-	color: var(--sh-ink-soft);
-}
-
-/* -------------------------------------------------------------------- badge */
-
-.sitehelm-badge {
-	display: inline-flex;
+.sitehelm-appbar__brand {
+	display: flex;
 	align-items: center;
-	padding: 2px 7px;
-	border-radius: 4px;
-	background: var(--sh-surface-sunk);
-	color: var(--sh-ink-soft);
-	font-size: var(--sh-step--1);
-	font-weight: 500;
-	line-height: 1.5;
+	gap: 10px;
+	min-width: 0;
+	padding: 14px 0;
+}
+
+.sitehelm-appbar__mark {
+	display: block;
+	width: 32px;
+	height: 32px;
+	flex-shrink: 0;
+	color: var(--sh-primary);
+}
+
+.sitehelm-appbar__title {
+	font-size: 18px;
+	font-weight: 700;
+	color: var(--sh-ink);
 	white-space: nowrap;
 }
 
-.sitehelm-badge--ok {
-	background: var(--sh-ok-bg);
+.sitehelm-appbar__version {
+	font-size: 11px;
+	font-weight: 700;
+	color: var(--sh-primary-hover);
+	background: var(--sh-primary-light);
+	border-radius: 10px;
+	padding: 2px 8px;
+	white-space: nowrap;
+}
+
+.sitehelm-appbar__actions {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	flex-wrap: wrap;
+	padding: 10px 0;
+}
+
+/* =========================================================================
+ * Tab bar
+ * ========================================================================= */
+
+.sitehelm-appnav-wrap {
+	position: relative;
+	margin: 0 -20px 22px -22px;
+}
+
+.sitehelm-appnav {
+	display: flex;
+	align-items: stretch;
+	padding: 0 14px;
+	background: var(--sh-white);
+	border-bottom: 1px solid var(--sh-gray-200);
+	overflow-x: auto;
+	overflow-y: hidden;
+	scrollbar-width: none;
+	-ms-overflow-style: none;
+	-webkit-overflow-scrolling: touch;
+}
+
+.sitehelm-appnav::-webkit-scrollbar {
+	width: 0;
+	height: 0;
+	display: none;
+}
+
+.sitehelm-appnav__item {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 7px;
+	flex: 1;
+	padding: 14px 18px;
+	margin-bottom: -1px;
+	white-space: nowrap;
+	text-align: center;
+	text-decoration: none;
+	font-size: 14px;
+	font-weight: 600;
+	color: var(--sh-gray-600);
+	border-bottom: 2px solid transparent;
+	border-right: 1px solid var(--sh-gray-200);
+	transition: color var(--sh-ease), background var(--sh-ease);
+}
+
+.sitehelm-appnav__item:last-child {
+	border-right: none;
+}
+
+.sitehelm-appnav__item:hover,
+.sitehelm-appnav__item:focus {
+	color: var(--sh-ink);
+	background: var(--sh-gray-50);
+}
+
+.sitehelm-appnav__item.is-active {
+	color: var(--sh-primary-hover);
+	border-bottom-color: var(--sh-primary);
+	background: var(--sh-primary-light);
+}
+
+.sitehelm-appnav__item .dashicons {
+	font-size: 17px;
+	width: 17px;
+	height: 17px;
+}
+
+.sitehelm-appnav__arrow {
+	position: absolute;
+	top: 0;
+	bottom: 0;
+	width: 40px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 0;
+	border: none;
+	border-bottom: 1px solid var(--sh-gray-200);
+	background: var(--sh-white);
+	color: var(--sh-gray-600);
+	cursor: pointer;
+	z-index: 3;
+}
+
+.sitehelm-appnav__arrow[hidden] {
+	display: none !important;
+}
+
+.sitehelm-appnav__arrow:hover {
+	color: var(--sh-primary-hover);
+}
+
+.sitehelm-appnav__arrow--prev {
+	left: 0;
+	box-shadow: 8px 0 10px -6px rgba(15, 27, 29, 0.18);
+}
+
+.sitehelm-appnav__arrow--next {
+	right: 0;
+	box-shadow: -8px 0 10px -6px rgba(15, 27, 29, 0.18);
+}
+
+/* =========================================================================
+ * Page head and verdict
+ * ========================================================================= */
+
+.sitehelm-pagehead {
+	margin: 0 0 18px;
+}
+
+.sitehelm-pagehead__title {
+	margin: 0;
+	padding: 0;
+	font-size: 22px;
+	font-weight: 700;
+	line-height: 1.25;
+}
+
+.sitehelm-pagehead__lede {
+	margin: 5px 0 0;
+	max-width: 68ch;
+	color: var(--sh-gray-600);
+	font-size: 14px;
+	text-wrap: pretty;
+}
+
+.sitehelm-verdict {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	flex-wrap: wrap;
+	margin: 0 0 22px;
+	padding: 12px 16px;
+	background: var(--sh-white);
+	border: 1px solid var(--sh-gray-200);
+	border-radius: var(--sh-radius);
+	font-size: 15px;
+	font-weight: 600;
+	color: var(--sh-ink);
+}
+
+.sitehelm-dot {
+	width: 10px;
+	height: 10px;
+	border-radius: 50%;
+	background: var(--sh-gray-400);
+	flex-shrink: 0;
+}
+
+.sitehelm-dot--ok {
+	background: var(--sh-ok);
+}
+
+.sitehelm-dot--refused {
+	background: var(--sh-danger);
+}
+
+.sitehelm-dot--waiting {
+	background: var(--sh-warn);
+}
+
+.sitehelm-dot--brand {
+	background: var(--sh-primary);
+}
+
+.sitehelm-verdict__detail {
+	font-size: 13px;
+	font-weight: 400;
+	color: var(--sh-gray-600);
+}
+
+/* =========================================================================
+ * Sections
+ * ========================================================================= */
+
+.sitehelm-section {
+	margin: 0 0 30px;
+	padding: 0 0 24px;
+	border-bottom: 1px solid var(--sh-gray-200);
+}
+
+.sitehelm-section:last-of-type {
+	border-bottom: none;
+	margin-bottom: 0;
+	padding-bottom: 0;
+}
+
+.sitehelm-section__head {
+	margin: 0 0 6px;
+	font-size: 16px;
+	font-weight: 700;
+}
+
+.sitehelm-section__note {
+	margin: 0 0 14px;
+	max-width: 74ch;
+	color: var(--sh-gray-600);
+	font-size: 13px;
+	text-wrap: pretty;
+}
+
+.sitehelm-panel {
+	background: var(--sh-white);
+	border: 1px solid var(--sh-gray-200);
+	border-radius: var(--sh-radius);
+}
+
+.sitehelm-panel__body {
+	padding: 18px 20px;
+}
+
+/* =========================================================================
+ * Status cards
+ * ========================================================================= */
+
+.sitehelm-statgrid {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+	gap: 12px;
+	margin: 0 0 14px;
+}
+
+.sitehelm-statcard {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	padding: 14px 16px;
+	background: var(--sh-gray-50);
+	border: 1px solid var(--sh-gray-200);
+	border-radius: var(--sh-radius);
+}
+
+.sitehelm-statcard__icon {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 36px;
+	height: 36px;
+	border-radius: 8px;
+	flex-shrink: 0;
+	background: var(--sh-gray-100);
+	color: var(--sh-gray-600);
+}
+
+.sitehelm-statcard__icon svg {
+	width: 18px;
+	height: 18px;
+	fill: currentColor;
+}
+
+.sitehelm-statcard__icon--ok {
+	background: var(--sh-ok-light);
 	color: var(--sh-ok);
 }
 
-.sitehelm-badge--refused {
-	background: var(--sh-refused-bg);
-	color: var(--sh-refused);
+.sitehelm-statcard__icon--warn {
+	background: var(--sh-danger-light);
+	color: var(--sh-danger);
 }
 
-.sitehelm-badge--waiting {
-	background: var(--sh-waiting-bg);
-	color: var(--sh-waiting);
-}
-
-.sitehelm-badge--brand {
-	background: var(--sh-teal-50);
-	color: var(--sh-teal-900);
-}
-
-/* -------------------------------------------------------------------- table */
-
-.sitehelm-table {
-	width: 100%;
-	border-collapse: collapse;
-	font-variant-numeric: tabular-nums;
-}
-
-.sitehelm-table caption {
-	padding: 0 0 10px;
-	text-align: left;
-	color: var(--sh-ink-soft);
-	font-size: var(--sh-step--1);
-}
-
-.sitehelm-table th,
-.sitehelm-table td {
-	padding: 10px 14px;
-	text-align: left;
-	vertical-align: top;
-	border-bottom: 1px solid var(--sh-line);
-}
-
-.sitehelm-table thead th {
-	position: sticky;
-	top: 32px;
-	z-index: 1;
-	background: var(--sh-surface);
-	border-bottom-color: var(--sh-line-strong);
-	font-size: var(--sh-step--1);
-	font-weight: 600;
-	color: var(--sh-ink-soft);
-	white-space: nowrap;
-}
-
-.sitehelm-table tbody tr:last-child th,
-.sitehelm-table tbody tr:last-child td {
-	border-bottom: 0;
-}
-
-.sitehelm-table tbody tr:hover td,
-.sitehelm-table tbody tr:hover th {
-	background: var(--sh-teal-50);
-}
-
-.sitehelm-table__mono {
-	font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
-	font-size: var(--sh-step--1);
-}
-
-.sitehelm-table__time {
-	white-space: nowrap;
-	color: var(--sh-ink-soft);
-	font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
-	font-size: var(--sh-step--1);
-}
-
-.sitehelm-table__sub {
+.sitehelm-statcard__label {
 	display: block;
-	margin-top: 3px;
-	color: var(--sh-ink-soft);
-	font-size: var(--sh-step--1);
+	font-size: 12px;
+	color: var(--sh-gray-500);
 }
 
-.sitehelm-scroll {
-	overflow-x: auto;
-	border: 1px solid var(--sh-line);
-	border-radius: var(--sh-radius-lg);
-	background: var(--sh-surface);
+.sitehelm-statcard__value {
+	display: block;
+	font-size: 13px;
+	font-weight: 700;
+	color: var(--sh-ink);
 }
 
-/* --------------------------------------------------------------- definition */
+/* =========================================================================
+ * Endpoint row
+ * ========================================================================= */
 
-.sitehelm-facts {
-	display: grid;
-	grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
-	gap: 18px 28px;
-	margin: 0;
+.sitehelm-endpoint {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	flex-wrap: wrap;
+	padding: 10px 14px;
+	background: var(--sh-gray-50);
+	border: 1px solid var(--sh-gray-200);
+	border-radius: var(--sh-radius-sm);
 }
 
-.sitehelm-facts div {
-	min-width: 0;
+.sitehelm-endpoint code {
+	flex: 1;
+	min-width: 220px;
+	padding: 0;
+	background: none;
+	font-size: 12.5px;
+	color: var(--sh-gray-700);
+	word-break: break-all;
 }
 
-.sitehelm-facts dt {
-	margin: 0 0 3px;
-	color: var(--sh-ink-soft);
-	font-size: var(--sh-step--1);
+.sitehelm-copysource {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	opacity: 0;
+	pointer-events: none;
 }
 
-.sitehelm-facts dd {
-	margin: 0;
-	font-weight: 500;
-	overflow-wrap: anywhere;
-	font-variant-numeric: tabular-nums;
+/* =========================================================================
+ * Buttons and fields
+ * ========================================================================= */
+
+.sitehelm-btn {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	padding: 7px 14px;
+	background: var(--sh-white);
+	border: 1px solid var(--sh-gray-300);
+	border-radius: var(--sh-radius-sm);
+	font-size: 13px;
+	font-weight: 600;
+	color: var(--sh-gray-700);
+	cursor: pointer;
+	transition: border-color var(--sh-ease), background var(--sh-ease);
 }
 
-/* -------------------------------------------------------------------- empty */
+.sitehelm-btn:hover {
+	border-color: var(--sh-gray-400);
+	background: var(--sh-gray-50);
+}
+
+.sitehelm-btn--primary {
+	background: var(--sh-primary);
+	border-color: var(--sh-primary);
+	color: var(--sh-white);
+}
+
+.sitehelm-btn--primary:hover {
+	background: var(--sh-primary-hover);
+	border-color: var(--sh-primary-hover);
+	color: var(--sh-white);
+}
+
+.sitehelm-btn--small {
+	padding: 3px 10px;
+	font-size: 11px;
+	font-weight: 600;
+}
+
+.sitehelm-btn__icon {
+	width: 14px;
+	height: 14px;
+	flex-shrink: 0;
+}
+
+.sitehelm-field {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 10px;
+}
+
+.sitehelm-field__label {
+	flex-basis: 100%;
+	font-size: 12px;
+	font-weight: 600;
+	color: var(--sh-gray-600);
+}
+
+.sitehelm-field__input {
+	flex: 1;
+	min-width: 240px;
+	padding: 8px 12px;
+	border: 1px solid var(--sh-gray-300);
+	border-radius: var(--sh-radius-sm);
+	background: var(--sh-gray-50);
+	font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+	font-size: 12.5px;
+	color: var(--sh-gray-800);
+}
+
+.sitehelm-field__hint {
+	flex-basis: 100%;
+	margin: 2px 0 0;
+	max-width: 74ch;
+	font-size: 12.5px;
+	color: var(--sh-gray-500);
+}
+
+.sitehelm-select {
+	padding: 7px 10px;
+	border: 1px solid var(--sh-gray-300);
+	border-radius: var(--sh-radius-sm);
+	background: var(--sh-white);
+	font-size: 13px;
+	color: var(--sh-gray-800);
+	max-width: 100%;
+}
+
+/* =========================================================================
+ * Notes
+ * ========================================================================= */
+
+.sitehelm-note {
+	padding: 12px 15px;
+	background: var(--sh-gray-50);
+	border: 1px solid var(--sh-gray-200);
+	border-radius: var(--sh-radius-sm);
+	font-size: 13px;
+	color: var(--sh-gray-700);
+}
+
+.sitehelm-note p {
+	margin: 0 0 8px;
+	max-width: 74ch;
+}
+
+.sitehelm-note p:last-child {
+	margin-bottom: 0;
+}
+
+.sitehelm-note--ok {
+	background: var(--sh-ok-light);
+	border-color: #bfe3d4;
+	color: #0b4f38;
+}
+
+.sitehelm-note--refused {
+	background: var(--sh-danger-light);
+	border-color: #f2c7c4;
+	color: #7d1a15;
+}
+
+.sitehelm-note--waiting {
+	background: var(--sh-warn-light);
+	border-color: #edd6ac;
+	color: #6b4100;
+}
 
 .sitehelm-empty {
-	padding: 40px 24px;
+	padding: 28px 20px;
 	text-align: center;
+	background: var(--sh-gray-50);
+	border: 1px dashed var(--sh-gray-300);
+	border-radius: var(--sh-radius);
 }
 
 .sitehelm-empty__head {
-	margin: 0 0 6px;
-	font-size: var(--sh-step-1);
-	font-weight: 600;
+	margin: 0 0 4px;
+	font-size: 15px;
+	font-weight: 700;
+	color: var(--sh-ink);
 }
 
 .sitehelm-empty__body {
 	margin: 0 auto;
-	max-width: 52ch;
-	color: var(--sh-ink-soft);
-	text-wrap: pretty;
+	max-width: 56ch;
+	font-size: 13px;
+	color: var(--sh-gray-600);
 }
 
-/* -------------------------------------------------------------------- notes */
+/* =========================================================================
+ * Badges
+ * ========================================================================= */
 
-.sitehelm-note {
-	padding: 14px 16px;
-	border: 1px solid var(--sh-line);
-	border-radius: var(--sh-radius);
-	background: var(--sh-surface-sunk);
-	color: var(--sh-ink);
-	max-width: 72ch;
-	text-wrap: pretty;
+.sitehelm-badge {
+	display: inline-flex;
+	align-items: center;
+	padding: 1px 8px;
+	border-radius: 10px;
+	background: var(--sh-gray-100);
+	color: var(--sh-gray-700);
+	font-size: 10.5px;
+	font-weight: 700;
+	line-height: 1.75;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	white-space: nowrap;
 }
 
-.sitehelm-note--refused {
-	border-color: color-mix(in oklch, var(--sh-refused) 35%, var(--sh-line));
-	background: var(--sh-refused-bg);
+.sitehelm-badge--ok {
+	background: var(--sh-ok-light);
+	color: var(--sh-ok);
 }
 
-.sitehelm-note--ok {
-	border-color: color-mix(in oklch, var(--sh-ok) 30%, var(--sh-line));
-	background: var(--sh-ok-bg);
+.sitehelm-badge--refused {
+	background: var(--sh-danger-light);
+	color: var(--sh-danger);
 }
 
-.sitehelm-note p {
-	margin: 0;
+.sitehelm-badge--waiting {
+	background: var(--sh-warn-light);
+	color: var(--sh-warn);
 }
 
-.sitehelm-note p + p {
-	margin-top: 8px;
+.sitehelm-badge--brand {
+	background: var(--sh-primary-light);
+	color: var(--sh-primary-hover);
 }
 
-/* ------------------------------------------------------------------ filters */
+/* =========================================================================
+ * Filters and pagination
+ * ========================================================================= */
 
 .sitehelm-filters {
 	display: flex;
 	flex-wrap: wrap;
 	align-items: flex-end;
-	gap: 10px 14px;
-	margin: 0 0 16px;
-}
-
-.sitehelm-filters label {
-	display: block;
-	margin-bottom: 5px;
-	font-size: var(--sh-step--1);
-	font-weight: 600;
-}
-
-.sitehelm-filters select,
-.sitehelm-filters input[type="search"] {
-	min-height: 36px;
-	padding: 6px 10px;
-	border: 1px solid var(--sh-line-strong);
+	gap: 12px;
+	margin: 0 0 20px;
+	padding: 14px 16px;
+	background: var(--sh-gray-50);
+	border: 1px solid var(--sh-gray-200);
 	border-radius: var(--sh-radius);
-	background: var(--sh-surface);
-	color: var(--sh-ink);
-	font-size: var(--sh-step--1);
 }
 
-.sitehelm-filters select:focus-visible,
-.sitehelm-filters input[type="search"]:focus-visible {
-	outline: none;
-	border-color: var(--sh-teal);
-	box-shadow: var(--sh-focus);
+.sitehelm-filters .sitehelm-field {
+	margin: 0;
+	flex: 1 1 200px;
 }
 
-/* --------------------------------------------------------------- pagination */
+.sitehelm-filters .sitehelm-field__input {
+	max-width: none;
+}
 
 .sitehelm-pager {
 	display: flex;
+	flex-wrap: wrap;
 	align-items: center;
 	justify-content: space-between;
-	gap: 14px;
-	margin-top: 16px;
-	color: var(--sh-ink-soft);
-	font-size: var(--sh-step--1);
-	font-variant-numeric: tabular-nums;
+	gap: 12px;
+	margin: 16px 0 0;
+	font-size: 13px;
+	color: var(--sh-gray-600);
 }
 
 .sitehelm-pager__links {
@@ -641,58 +679,319 @@
 	gap: 8px;
 }
 
-/* -------------------------------------------------------------------- a11y */
+/* =========================================================================
+ * Disclosure
+ * ========================================================================= */
 
-.sitehelm-visually-hidden {
-	position: absolute !important;
-	width: 1px;
-	height: 1px;
-	margin: -1px;
+.sitehelm-details {
+	margin: 16px 0 0;
 	padding: 0;
-	overflow: hidden;
-	clip: rect(0 0 0 0);
-	white-space: nowrap;
+	background: var(--sh-white);
+	border: 1px solid var(--sh-gray-200);
+	border-radius: var(--sh-radius);
+}
+
+.sitehelm-details > summary {
+	padding: 14px 18px;
+	font-weight: 600;
+	color: var(--sh-ink);
+	cursor: pointer;
+	list-style-position: inside;
+}
+
+.sitehelm-details > summary:hover {
+	color: var(--sh-primary-hover);
+}
+
+.sitehelm-details[open] > summary {
+	border-bottom: 1px solid var(--sh-gray-200);
+}
+
+.sitehelm-details > *:not(summary) {
+	margin-left: 18px;
+	margin-right: 18px;
+}
+
+.sitehelm-details > *:last-child {
+	margin-bottom: 18px;
+}
+
+/* =========================================================================
+ * Client picker
+ * ========================================================================= */
+
+.sitehelm-clients {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+	gap: 12px;
+	margin: 0 0 20px;
+	padding: 0;
 	border: 0;
 }
 
-.sitehelm-app a {
-	color: var(--sh-teal-700);
+.sitehelm-client {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 8px;
+	padding: 16px 12px;
+	background: var(--sh-white);
+	border: 1px solid var(--sh-gray-300);
+	border-radius: 8px;
+	cursor: pointer;
+	text-align: center;
+	transition: border-color var(--sh-ease), box-shadow var(--sh-ease);
 }
 
-.sitehelm-app a:hover {
-	color: var(--sh-teal-900);
+.sitehelm-client:hover {
+	border-color: var(--sh-primary);
 }
 
-.sitehelm-app a:focus-visible {
-	outline: none;
-	border-radius: 3px;
-	box-shadow: var(--sh-focus);
+.sitehelm-client.is-selected {
+	border-color: var(--sh-primary);
+	background: var(--sh-primary-light);
+	box-shadow: 0 0 0 1px var(--sh-primary) inset;
 }
 
-/* -------------------------------------------------------------------- motion */
+.sitehelm-client .dashicons {
+	font-size: 26px;
+	width: 26px;
+	height: 26px;
+	color: var(--sh-gray-600);
+}
+
+.sitehelm-client.is-selected .dashicons {
+	color: var(--sh-primary-hover);
+}
+
+.sitehelm-client__label {
+	font-size: 13px;
+	font-weight: 600;
+	color: var(--sh-ink);
+}
+
+/* Without scripting every client's blocks stay on the page and readable. */
+[data-sitehelm-client][hidden] {
+	display: none;
+}
+
+/* =========================================================================
+ * Config / code cards
+ * ========================================================================= */
+
+.sitehelm-code {
+	margin: 0 0 16px;
+	border: 1px solid var(--sh-gray-200);
+	border-radius: var(--sh-radius);
+	overflow: hidden;
+	background: var(--sh-white);
+}
+
+.sitehelm-code__bar {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 10px;
+	padding: 10px 14px;
+	background: var(--sh-gray-50);
+	border-bottom: 1px solid var(--sh-gray-200);
+}
+
+.sitehelm-code__name {
+	font-size: 13px;
+	font-weight: 700;
+	color: var(--sh-gray-700);
+}
+
+.sitehelm-code pre {
+	margin: 0;
+	padding: 14px 16px;
+	background: #0d1f22;
+	color: #dceaea;
+	font-size: 12.5px;
+	line-height: 1.6;
+	overflow-x: auto;
+	white-space: pre-wrap;
+	word-break: break-word;
+}
+
+.sitehelm-code code {
+	background: none;
+	color: inherit;
+	font-size: inherit;
+	font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+/* =========================================================================
+ * Cards (modules, operations)
+ * ========================================================================= */
+
+.sitehelm-cards {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+	gap: 12px;
+}
+
+.sitehelm-card {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	padding: 16px 18px;
+	background: var(--sh-white);
+	border: 1px solid var(--sh-gray-200);
+	border-radius: var(--sh-radius);
+	transition: border-color var(--sh-ease), box-shadow var(--sh-ease);
+}
+
+.sitehelm-card:hover {
+	border-color: var(--sh-gray-300);
+	box-shadow: var(--sh-shadow-sm);
+}
+
+.sitehelm-card--muted {
+	background: var(--sh-gray-50);
+}
+
+.sitehelm-card__head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 10px;
+}
+
+.sitehelm-card__name {
+	font-size: 14px;
+	font-weight: 700;
+	color: var(--sh-ink);
+}
+
+.sitehelm-card__desc {
+	margin: 0;
+	font-size: 13px;
+	color: var(--sh-gray-600);
+	text-wrap: pretty;
+}
+
+.sitehelm-card__meta {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	margin-top: 2px;
+}
+
+.sitehelm-card__id {
+	font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+	font-size: 12px;
+	color: var(--sh-gray-500);
+	word-break: break-all;
+}
+
+/* =========================================================================
+ * Facts and tables
+ * ========================================================================= */
+
+.sitehelm-facts {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+	gap: 14px 24px;
+	margin: 0;
+}
+
+.sitehelm-facts dt {
+	font-size: 12px;
+	font-weight: 600;
+	color: var(--sh-gray-500);
+}
+
+.sitehelm-facts dd {
+	margin: 2px 0 0;
+	font-size: 13.5px;
+	font-weight: 600;
+	color: var(--sh-ink);
+	word-break: break-word;
+}
+
+.sitehelm-scroll {
+	overflow-x: auto;
+	border: 1px solid var(--sh-gray-200);
+	border-radius: var(--sh-radius);
+	background: var(--sh-white);
+}
+
+.sitehelm-table {
+	width: 100%;
+	border-collapse: collapse;
+	font-size: 13px;
+}
+
+.sitehelm-table th {
+	padding: 10px 14px;
+	text-align: left;
+	font-size: 11.5px;
+	font-weight: 700;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	color: var(--sh-gray-500);
+	background: var(--sh-gray-50);
+	border-bottom: 1px solid var(--sh-gray-200);
+	white-space: nowrap;
+}
+
+.sitehelm-table td {
+	padding: 10px 14px;
+	border-bottom: 1px solid var(--sh-gray-100);
+	vertical-align: middle;
+}
+
+.sitehelm-table tr:last-child td {
+	border-bottom: none;
+}
+
+.sitehelm-table code {
+	background: var(--sh-gray-100);
+	border-radius: 4px;
+	padding: 1px 6px;
+	font-size: 12px;
+	color: var(--sh-gray-700);
+}
+
+.sitehelm-table__sub {
+	color: var(--sh-gray-500);
+}
+
+.sitehelm-table__time {
+	white-space: nowrap;
+	font-variant-numeric: tabular-nums;
+	color: var(--sh-gray-600);
+}
+
+/* =========================================================================
+ * Responsive
+ * ========================================================================= */
+
+@media screen and (max-width: 782px) {
+	.sitehelm-appbar,
+	.sitehelm-appnav-wrap {
+		margin-left: -10px;
+		margin-right: -10px;
+	}
+
+	.sitehelm-appnav__item {
+		flex: 0 0 auto;
+	}
+
+	.sitehelm-statgrid,
+	.sitehelm-cards,
+	.sitehelm-clients {
+		grid-template-columns: 1fr;
+	}
+}
 
 @media (prefers-reduced-motion: reduce) {
 	.sitehelm-app *,
 	.sitehelm-app *::before,
 	.sitehelm-app *::after {
-		transition-duration: 1ms !important;
-		animation-duration: 1ms !important;
-		animation-iteration-count: 1 !important;
-	}
-}
-
-/* ------------------------------------------------------------------ narrow */
-
-@media (max-width: 782px) {
-	.sitehelm-app {
-		padding-right: 12px;
-	}
-
-	.sitehelm-table thead th {
-		position: static;
-	}
-
-	.sitehelm-field__input {
-		flex-basis: 100%;
+		transition-duration: 0.01ms !important;
+		animation-duration: 0.01ms !important;
 	}
 }

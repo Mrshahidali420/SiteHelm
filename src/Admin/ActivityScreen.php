@@ -59,9 +59,9 @@ final class ActivityScreen {
 		$total   = $this->store->count( $filters );
 		$rows    = $this->store->query( $filters, self::PER_PAGE, ( $page - 1 ) * self::PER_PAGE );
 
-		echo '<div class="wrap sitehelm-app">';
+		Ui::app_open( AdminMenu::PAGE_ACTIVITY );
 
-		Ui::masthead(
+		Ui::page_head(
 			__( 'Activity', 'sitehelm' ),
 			__( 'Every operation an AI client has performed on this site, newest first.', 'sitehelm' )
 		);
@@ -76,7 +76,7 @@ final class ActivityScreen {
 			$this->render_pager( $page, $total, $filters );
 		}
 
-		echo '</div>';
+		Ui::app_close();
 	}
 
 	/**
@@ -164,7 +164,7 @@ final class ActivityScreen {
 		printf( '<input type="hidden" name="page" value="%s">', esc_attr( AdminMenu::PAGE_ACTIVITY ) );
 
 		printf(
-			'<label class="sitehelm-visually-hidden" for="sitehelm-filter-operation">%s</label>'
+			'<label class="sitehelm-srt" for="sitehelm-filter-operation">%s</label>'
 				. '<input class="sitehelm-field__input" type="search" id="sitehelm-filter-operation" name="operation"'
 				. ' value="%s" placeholder="%s">',
 			esc_html__( 'Filter by operation', 'sitehelm' ),
@@ -173,7 +173,7 @@ final class ActivityScreen {
 		);
 
 		printf(
-			'<label class="sitehelm-visually-hidden" for="sitehelm-filter-correlation">%s</label>'
+			'<label class="sitehelm-srt" for="sitehelm-filter-correlation">%s</label>'
 				. '<input class="sitehelm-field__input" type="search" id="sitehelm-filter-correlation" name="correlation"'
 				. ' value="%s" placeholder="%s">',
 			esc_html__( 'Filter by correlation id', 'sitehelm' ),
