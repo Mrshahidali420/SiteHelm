@@ -13,6 +13,41 @@ an operation behaves.
 
 Nothing yet. See [ROADMAP.md](ROADMAP.md) for what is next.
 
+## [0.2.1] — 2026-08-17
+
+### Added
+
+- **Modules screen** — one card per capability pack, stating whether it is active, the
+  version SiteHelm detected, and how many operations it actually registered this request.
+  A module that is not active is dimmed as well as badged, so a wall of cards does not have
+  to be read badge by badge to find the one that is wrong.
+- **Eight more clients on Connect**, taking it from three to eleven: Claude Desktop, Claude
+  on the web, VS Code, Codex CLI, Antigravity, OpenClaw, Hermes, and any stdio-only client
+  over the public `mcp-remote` bridge. Each carries the config in the shape that client
+  actually reads — including the `servers` object VS Code wants rather than the `mcpServers`
+  object everything else wants, and a config fragment for OpenClaw rather than a whole file
+  that would overwrite settings unrelated to SiteHelm.
+- **A request you can run to prove the endpoint answers**, offered on Connect, because "it
+  does not work" is almost always the wrong URL, a stripped `Authorization` header, or a
+  revoked password — and one request separates those without involving a client at all.
+
+### Changed
+
+- The admin area is now a five-tab console under one menu entry rather than a single page.
+- **Connect can create an Application Password for another account** you have permission to
+  edit, so an agency can hand a client's site a credential without signing in as them. The
+  picker offers only accounts you may act for, and the request is re-checked when it is
+  submitted rather than trusted from the form.
+- **Status no longer repeats the module table.** It reports the count and points at Modules.
+
+### Fixed
+
+- A module whose plugin is installed but deactivated now reads as **not active** rather than
+  **not installed**. Presence is detected from loaded constants and classes, which cannot
+  tell those two apart, and the old wording sent operators off to reinstall what they had.
+- A module SiteHelm never detected a version for omits the version line instead of printing
+  "detected" followed by nothing.
+
 ## [0.2.0] — 2026-08-16
 
 ### Added
@@ -122,6 +157,7 @@ Arbitrary PHP execution, unrestricted SQL, unrestricted filesystem access, and i
 permanent deletion are out of scope by design and will not be added. See
 [ROADMAP.md](ROADMAP.md).
 
-[Unreleased]: https://github.com/Mrshahidali420/SiteHelm/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/Mrshahidali420/SiteHelm/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/Mrshahidali420/SiteHelm/releases/tag/v0.2.1
 [0.2.0]: https://github.com/Mrshahidali420/SiteHelm/releases/tag/v0.2.0
 [0.1.0]: https://github.com/Mrshahidali420/SiteHelm/releases/tag/v0.1.0
