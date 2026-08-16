@@ -59,6 +59,7 @@ final class MediaDefinitionInvariantsTest extends TestCase {
 		'media-meta-update',
 		'media-attach',
 		'media-upload',
+		'media-import',
 	];
 
 	/**
@@ -69,7 +70,7 @@ final class MediaDefinitionInvariantsTest extends TestCase {
 	/**
 	 * The media module's write count. Bumped by each later write task.
 	 */
-	private const MEDIA_WRITE_COUNT = 3;
+	private const MEDIA_WRITE_COUNT = 4;
 
 	/**
 	 * A registry with the media module registered.
