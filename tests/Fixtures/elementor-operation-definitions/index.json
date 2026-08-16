@@ -3,6 +3,9 @@
         "elementor-document-list",
         "elementor-document-get",
         "elementor-widget-availability",
+        "elementor-element-get",
+        "elementor-element-search",
+        "elementor-control-schema",
         "elementor-element-add",
         "elementor-element-update",
         "elementor-widget-settings-update",
@@ -10,5 +13,5 @@
         "elementor-element-duplicate",
         "elementor-element-remove"
     ],
-    "operationCount": 9
+    "operationCount": 12
 }
