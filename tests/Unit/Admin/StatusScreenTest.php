@@ -123,18 +123,26 @@ final class StatusScreenTest extends TestCase {
 	}
 
 	/**
-	 * "Not installed" and "Not loaded" have different causes. Telling an operator
-	 * their module is not installed when the module never ran at all sends them
+	 * "Not active" and "Not loaded" have different causes. Telling an operator
+	 * their module is not active when the module never ran at all sends them
 	 * looking in the wrong place.
 	 */
-	public function testAModuleMissingFromTheMapReadsAsNotLoadedRatherThanNotInstalled(): void {
+	public function testAModuleMissingFromTheMapReadsAsNotLoadedRatherThanNotActive(): void {
 		$html = $this->render( [] );
 
 		$this->assertStringContainsString( 'Not loaded', $html );
-		$this->assertStringNotContainsString( 'Not installed', $html );
+		$this->assertStringNotContainsString( '>Not active<', $html );
 	}
 
-	public function testAnInactiveModuleReadsAsNotInstalled(): void {
+	/**
+	 * Presence is detected by asking whether the integration's constants and
+	 * classes are loaded, which is true only while its plugin is ACTIVE. An
+	 * installed but deactivated plugin therefore looks exactly like an absent
+	 * one from here, so the screen must not claim it is not installed — that is
+	 * a claim it has no evidence for, and it sends an operator off to reinstall
+	 * a plugin they already have.
+	 */
+	public function testAnInactiveModuleReadsAsNotActiveRatherThanNotInstalled(): void {
 		$html = $this->render(
 			[
 				ModuleId::Elementor->value => [
@@ -144,7 +152,8 @@ final class StatusScreenTest extends TestCase {
 			]
 		);
 
-		$this->assertStringContainsString( 'Not installed', $html );
+		$this->assertStringContainsString( '>Not active<', $html );
+		$this->assertStringNotContainsString( 'Not installed', $html );
 	}
 
 	public function testAVersionBlockedModuleSaysSoAndShowsTheVersionItFound(): void {

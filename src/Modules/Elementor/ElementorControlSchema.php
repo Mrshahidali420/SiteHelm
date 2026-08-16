@@ -197,7 +197,7 @@ final class ElementorControlSchema {
 			throw new OperationException(
 				ErrorCode::IntegrationUnavailable,
 				'Elementor is not active on this site, so it declares no controls here.',
-				'Install and activate Elementor, then try again.'
+				'Activate Elementor, or install it first if it is not on this site, then try again.'
 			);
 		}
 
