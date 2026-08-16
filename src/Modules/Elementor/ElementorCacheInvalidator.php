@@ -10,22 +10,38 @@ declare(strict_types=1);
 namespace SiteHelm\Modules\Elementor;
 
 /**
- * REQ-0043: discards BOTH halves of one document's Elementor CSS cache, and
- * reports only what it could confirm gone afterwards.
+ * REQ-0043: discards ALL THREE artefacts one document's Elementor render is
+ * cached in, and reports only what it could confirm gone afterwards.
  *
- * THERE ARE TWO HALVES AND BOTH MUST GO. Elementor keeps a `_elementor_css`
- * post meta row describing the generated stylesheet, and the stylesheet itself
- * at `elementor/css/post-{id}.css` under the uploads directory. Invalidating
- * one and leaving the other is worse than invalidating neither: the meta row
- * points at a file that no longer matches, or the file survives a meta row that
- * would have caused it to be rebuilt, and either way the page keeps serving
- * CSS that describes a layout the document no longer has.
+ * TWO OF THEM ARE THE CSS CACHE AND BOTH MUST GO. Elementor keeps a
+ * `_elementor_css` post meta row describing the generated stylesheet, and the
+ * stylesheet itself at `elementor/css/post-{id}.css` under the uploads
+ * directory. Invalidating one and leaving the other is worse than invalidating
+ * neither: the meta row points at a file that no longer matches, or the file
+ * survives a meta row that would have caused it to be rebuilt, and either way
+ * the page keeps serving CSS that describes a layout the document no longer has.
+ *
+ * THE THIRD IS THE RENDERED-ELEMENT CACHE, and it is the one that serves the
+ * old page outright. Elementor stores a document's rendered element tree in a
+ * `_elementor_element_cache` post meta row with a timeout inside it, and the
+ * frontend prefers that row over the document whenever the timeout has not
+ * passed. The timeout comes from a site option whose longest setting is a year.
+ *
+ * IT IS SPECIFICALLY THE FALLBACK PATH THAT NEEDS IT. Elementor discards this
+ * row itself at the end of its own document save, so a write that went through
+ * Elementor has already had it cleared. The write that calls this class did NOT
+ * go through Elementor — it wrote `_elementor_data` as a meta row directly — and
+ * Elementor registers no meta hook that would notice. Without the delete below,
+ * the document is correct in the database, every re-read agrees it is correct,
+ * and the site keeps serving the previous page until the timeout expires.
  *
  * ELEMENTOR'S OWN FLUSH IS ATTEMPTED FIRST, through `ElementorApi`, because it
  * is the only thing that also clears whatever that release caches internally.
- * The two manual deletes below it are not a duplicate of it — they are what
- * happens on a site where Elementor could not be reached at all, which is the
- * exact site state the fallback write that calls this class is already in.
+ * The manual deletes below it are not a duplicate of it — they are what happens
+ * on a site where Elementor could not be reached at all, which is the exact site
+ * state the fallback write that calls this class is already in. That flush also
+ * does not reach the rendered-element row on any release: it deletes a CSS file
+ * handle, which is why that row is deleted here rather than left to it.
  *
  * NOTHING HERE NAMES AN `\Elementor\` SYMBOL (spec Decision 1). The flush goes
  * through `ElementorApi`; the meta key and the generated file's path are a WordPress
@@ -37,7 +53,7 @@ namespace SiteHelm\Modules\Elementor;
  * not there and true for one it removed, and neither answer says anything
  * about the row's state afterwards — a persistent object cache another plugin
  * owns can serve the old value back on the next read. So both halves are
- * re-read, and both re-reads are reported separately: a caller that received
+ * re-read, and every re-read is reported separately: a caller that received
  * one boolean could not tell a half-invalidated cache from a whole one.
  *
  * ABSENCE IS SUCCESS. A page that has never been rendered has no generated file
@@ -50,7 +66,7 @@ namespace SiteHelm\Modules\Elementor;
  * object-cache GROUP names — a meta key and a file path are neither, and
  * putting them in that list would make one list mean two things.
  *
- * NO PATH AND NO MESSAGE LEAVES THIS CLASS. The answer is two booleans, so
+ * NO PATH AND NO MESSAGE LEAVES THIS CLASS. The answer is three booleans, so
  * there is nowhere for a filesystem path to appear in an envelope.
  *
  * @package SiteHelm
@@ -61,6 +77,15 @@ final class ElementorCacheInvalidator {
 	 * The post meta key Elementor stores one document's CSS state under.
 	 */
 	public const META_CSS = '_elementor_css';
+
+	/**
+	 * The post meta key Elementor caches one document's rendered element tree
+	 * under.
+	 *
+	 * The row carries its own expiry, so leaving it in place does not merely
+	 * delay the new page — it serves the old one until that expiry passes.
+	 */
+	public const META_ELEMENTS = '_elementor_element_cache';
 
 	/**
 	 * The uploads-relative directory Elementor generates per-post CSS into.
@@ -88,7 +113,7 @@ final class ElementorCacheInvalidator {
 	}
 
 	/**
-	 * Discards one document's cached CSS and reports what it confirmed gone.
+	 * Discards one document's cached render and reports what it confirmed gone.
 	 *
 	 * The identifier is tested BEFORE anything is deleted. A non-positive id
 	 * names no post, and `delete_post_meta( 0, ... )` reaches the meta of
@@ -99,14 +124,16 @@ final class ElementorCacheInvalidator {
 	 *
 	 * @param int $post_id The post identifier.
 	 *
-	 * @return array{meta:bool,file:bool} Each true only when a re-read confirmed
-	 *                                    that half gone.
+	 * @return array{meta:bool,elements:bool,file:bool} Each true only when a
+	 *                                                  re-read confirmed that
+	 *                                                  artefact gone.
 	 */
 	public function invalidate( int $post_id ): array {
 		if ( $post_id <= 0 ) {
 			return [
-				'meta' => false,
-				'file' => false,
+				'meta'     => false,
+				'elements' => false,
+				'file'     => false,
 			];
 		}
 
@@ -116,6 +143,7 @@ final class ElementorCacheInvalidator {
 		$this->api->flushDocumentCss( $post_id );
 
 		delete_post_meta( $post_id, self::META_CSS );
+		delete_post_meta( $post_id, self::META_ELEMENTS );
 
 		$path = $this->css_path( $post_id );
 
@@ -123,7 +151,8 @@ final class ElementorCacheInvalidator {
 			wp_delete_file( $path );
 		}
 
-		$meta = get_post_meta( $post_id, self::META_CSS, true );
+		$meta     = get_post_meta( $post_id, self::META_CSS, true );
+		$elements = get_post_meta( $post_id, self::META_ELEMENTS, true );
 
 		// PHP caches stat results per request, so a file deleted a microsecond ago
 		// can still answer file_exists() true. Verifying against a stale cache
@@ -134,11 +163,33 @@ final class ElementorCacheInvalidator {
 		clearstatcache( true, $path ?? '' );
 
 		return [
-			'meta' => '' === $meta || [] === $meta || null === $meta || false === $meta,
+			'meta'     => $this->is_absent( $meta ),
+			'elements' => $this->is_absent( $elements ),
 			// An unresolvable uploads directory makes the file's state UNKNOWN,
 			// and unknown is not confirmed.
-			'file' => null !== $path && ! file_exists( $path ),
+			'file'     => null !== $path && ! file_exists( $path ),
 		];
+	}
+
+	/**
+	 * Whether a re-read of a meta row shows nothing there.
+	 *
+	 * The two meta halves ask the identical question, and asking it in one place
+	 * is what makes them provably identical: two copies of a four-way comparison
+	 * are two things that can drift, and the half that drifts is the half that
+	 * starts reporting a surviving cache as gone.
+	 *
+	 * `get_post_meta( ..., true )` answers `''` for a key that is not there and
+	 * for a key holding an empty string, and cannot distinguish them. That is the
+	 * right reading here either way: neither state can serve a stale page, which
+	 * is the only thing this class is claiming.
+	 *
+	 * @param mixed $value The re-read value.
+	 *
+	 * @return bool Whether the row is confirmed gone.
+	 */
+	private function is_absent( mixed $value ): bool {
+		return '' === $value || [] === $value || null === $value || false === $value;
 	}
 
 	/**

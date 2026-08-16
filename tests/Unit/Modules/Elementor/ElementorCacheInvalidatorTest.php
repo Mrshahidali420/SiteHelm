@@ -176,7 +176,7 @@ final class ElementorCacheInvalidatorTest extends TestCase {
 
 		$confirmed = $this->invalidator()->invalidate( 7 );
 
-		$this->assertSame( [ 'meta' => true, 'file' => true ], $confirmed );
+		$this->assertSame( [ 'meta' => true, 'elements' => true, 'file' => true ], $confirmed );
 		$this->assertFileDoesNotExist( $path, 'The generated file must really be gone, not merely reported gone.' );
 		$this->assertContains( [ 7, ElementorCacheInvalidator::META_CSS ], $this->deletes );
 	}
@@ -187,10 +187,11 @@ final class ElementorCacheInvalidatorTest extends TestCase {
 	 */
 	public function test_a_meta_delete_that_did_not_take_is_reported_false_while_the_file_is_still_reported_true(): void {
 		$this->deletesTake = false;
-		$this->meta[ '7|' . ElementorCacheInvalidator::META_CSS ] = [ 'status' => 'inline' ];
+		$this->meta[ '7|' . ElementorCacheInvalidator::META_CSS ]      = [ 'status' => 'inline' ];
+		$this->meta[ '7|' . ElementorCacheInvalidator::META_ELEMENTS ] = '{"timeout":99,"value":[]}';
 		$this->writeCssFile( 7 );
 
-		$this->assertSame( [ 'meta' => false, 'file' => true ], $this->invalidator()->invalidate( 7 ) );
+		$this->assertSame( [ 'meta' => false, 'elements' => false, 'file' => true ], $this->invalidator()->invalidate( 7 ) );
 	}
 
 	/**
@@ -198,7 +199,7 @@ final class ElementorCacheInvalidatorTest extends TestCase {
 	 * file, and that is the ordinary state — not a failure to report.
 	 */
 	public function test_a_cache_that_was_never_written_is_confirmed_gone_without_throwing(): void {
-		$this->assertSame( [ 'meta' => true, 'file' => true ], $this->invalidator()->invalidate( 7 ) );
+		$this->assertSame( [ 'meta' => true, 'elements' => true, 'file' => true ], $this->invalidator()->invalidate( 7 ) );
 	}
 
 	/**
@@ -208,7 +209,7 @@ final class ElementorCacheInvalidatorTest extends TestCase {
 	public function test_an_unresolvable_uploads_directory_is_reported_as_an_unconfirmed_file(): void {
 		$this->uploadDir = [ 'error' => 'The uploads directory is not writable.' ];
 
-		$this->assertSame( [ 'meta' => true, 'file' => false ], $this->invalidator()->invalidate( 7 ) );
+		$this->assertSame( [ 'meta' => true, 'elements' => true, 'file' => false ], $this->invalidator()->invalidate( 7 ) );
 	}
 
 	/**
@@ -221,7 +222,7 @@ final class ElementorCacheInvalidatorTest extends TestCase {
 	public function test_an_uploads_directory_with_no_base_path_is_reported_as_an_unconfirmed_file(): void {
 		$this->uploadDir = [ 'basedir' => '   ' ];
 
-		$this->assertSame( [ 'meta' => true, 'file' => false ], $this->invalidator()->invalidate( 7 ) );
+		$this->assertSame( [ 'meta' => true, 'elements' => true, 'file' => false ], $this->invalidator()->invalidate( 7 ) );
 	}
 
 	/**
@@ -230,7 +231,7 @@ final class ElementorCacheInvalidatorTest extends TestCase {
 	 */
 	public function test_a_non_positive_post_id_touches_nothing(): void {
 		foreach ( [ 0, -1 ] as $post_id ) {
-			$this->assertSame( [ 'meta' => false, 'file' => false ], $this->invalidator()->invalidate( $post_id ) );
+			$this->assertSame( [ 'meta' => false, 'elements' => false, 'file' => false ], $this->invalidator()->invalidate( $post_id ) );
 		}
 
 		$this->assertSame( [], $this->deletes, 'No meta may be deleted for a post id that names no post.' );
@@ -240,12 +241,12 @@ final class ElementorCacheInvalidatorTest extends TestCase {
 	 * The envelope rule, asserted on the shape rather than on one message: the
 	 * answer is two booleans, so there is nowhere for a path to appear.
 	 */
-	public function test_the_answer_carries_two_booleans_and_no_filesystem_path(): void {
+	public function test_the_answer_carries_three_booleans_and_no_filesystem_path(): void {
 		$this->writeCssFile( 7 );
 
 		$confirmed = $this->invalidator()->invalidate( 7 );
 
-		$this->assertSame( [ 'meta', 'file' ], array_keys( $confirmed ) );
+		$this->assertSame( [ 'meta', 'elements', 'file' ], array_keys( $confirmed ) );
 
 		foreach ( $confirmed as $value ) {
 			$this->assertIsBool( $value, 'Nothing but a boolean may be reported, so no path can ever be.' );
@@ -290,12 +291,12 @@ final class ElementorCacheInvalidatorTest extends TestCase {
 		$confirmed = $this->invalidator()->invalidate( 7 );
 
 		$this->assertSame(
-			[ 'elementor-flush', 'meta-delete', 'file-delete' ],
+			[ 'elementor-flush', 'meta-delete', 'meta-delete', 'file-delete' ],
 			$this->events,
-			'Elementor\'s own flush must run before either manual delete, not merely alongside them.'
+			'Elementor\'s own flush must run before every manual delete, not merely alongside them.'
 		);
 		$this->assertSame( [ 7 ], CacheFakeCssFile::$deleted, 'Elementor\'s own flush must be attempted for the post.' );
-		$this->assertSame( [ 'meta' => true, 'file' => true ], $confirmed );
+		$this->assertSame( [ 'meta' => true, 'elements' => true, 'file' => true ], $confirmed );
 		$this->assertContains(
 			[ 7, ElementorCacheInvalidator::META_CSS ],
 			$this->deletes,
@@ -333,7 +334,7 @@ final class ElementorCacheInvalidatorTest extends TestCase {
 
 		$this->assertSame( [], CacheFakeCssFile::$deleted, 'There was no handle, so Elementor deleted nothing.' );
 		$this->assertSame(
-			[ 'meta' => true, 'file' => true ],
+			[ 'meta' => true, 'elements' => true, 'file' => true ],
 			$confirmed,
 			'The manual deletes are exactly what a site Elementor cannot serve needs, so they must still run and still be confirmed.'
 		);
@@ -353,15 +354,73 @@ final class ElementorCacheInvalidatorTest extends TestCase {
 		$confirmed = $this->invalidator()->invalidate( 7 );
 
 		$this->assertSame(
-			[ 'meta' => true, 'file' => false ],
+			[ 'meta' => true, 'elements' => true, 'file' => false ],
 			$confirmed,
 			'A file still on disk after the delete is not a confirmed invalidation.'
 		);
 		$this->assertFileExists( $path, 'The double must really have left the file, or this proves nothing.' );
 	}
 
-	public function test_the_meta_key_is_frozen(): void {
+	/**
+	 * THE ROW THAT SERVES THE OLD PAGE. Elementor caches a document's rendered
+	 * element tree in its own meta row and prefers that row over the document
+	 * until the timeout inside it passes — up to a year on a site configured for
+	 * it. Elementor discards the row at the end of its own document save, so the
+	 * ONLY path that can leave it stale is the one that calls this class: a write
+	 * that put `_elementor_data` there directly, which Elementor never saw and
+	 * registers no meta hook to notice.
+	 *
+	 * This is the artefact whose survival is invisible to every check upstream.
+	 * The document re-read returns the new tree, so the write verifies as exact,
+	 * and the site serves the previous page anyway.
+	 */
+	public function test_the_rendered_element_cache_is_deleted_and_confirmed_gone(): void {
+		$this->meta[ '7|' . ElementorCacheInvalidator::META_ELEMENTS ] = '{"timeout":4102444800,"value":[{"id":"abc1234"}]}';
+
+		$confirmed = $this->invalidator()->invalidate( 7 );
+
+		$this->assertContains(
+			[ 7, ElementorCacheInvalidator::META_ELEMENTS ],
+			$this->deletes,
+			'The rendered-element cache must be deleted, or the site serves the previous page until its timeout passes.'
+		);
+		$this->assertTrue( $confirmed['elements'] );
+		$this->assertArrayNotHasKey(
+			'7|' . ElementorCacheInvalidator::META_ELEMENTS,
+			$this->meta,
+			'The row must really be gone from the store, not merely reported gone.'
+		);
+	}
+
+	/**
+	 * The three artefacts are reported SEPARATELY, and this is the case that
+	 * proves it is not decoration: the CSS cache invalidated cleanly and the
+	 * rendered-element row survived. Folding the answer into one boolean, or
+	 * deriving `elements` from either CSS half, would report this site as fully
+	 * invalidated while it still serves the old page.
+	 */
+	public function test_a_surviving_element_cache_is_reported_false_while_both_css_halves_are_confirmed(): void {
+		$this->meta[ '7|' . ElementorCacheInvalidator::META_ELEMENTS ] = '{"timeout":4102444800,"value":[]}';
+		$path = $this->writeCssFile( 7 );
+
+		// The row survives its delete, exactly as a persistent object cache
+		// another plugin owns can make it survive.
+		Functions\when( 'get_post_meta' )->alias(
+			fn( int $post_id, string $key, bool $single = false ): mixed =>
+				ElementorCacheInvalidator::META_ELEMENTS === $key
+					? '{"timeout":4102444800,"value":[]}'
+					: ( $this->meta[ $post_id . '|' . $key ] ?? '' )
+		);
+
+		$confirmed = $this->invalidator()->invalidate( 7 );
+
+		$this->assertSame( [ 'meta' => true, 'elements' => false, 'file' => true ], $confirmed );
+		$this->assertFileDoesNotExist( $path, 'The CSS half really did invalidate, so this is not a test of the CSS half failing.' );
+	}
+
+	public function test_the_meta_keys_are_frozen(): void {
 		$this->assertSame( '_elementor_css', ElementorCacheInvalidator::META_CSS );
+		$this->assertSame( '_elementor_element_cache', ElementorCacheInvalidator::META_ELEMENTS );
 	}
 }
 
