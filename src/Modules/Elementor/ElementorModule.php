@@ -196,6 +196,14 @@ final class ElementorModule implements IntegrationModule {
 		$api  = new ElementorApi( $this->presence );
 		$edit = new ElementorTreeEdit();
 
+		// The kit accessor and the generated-stylesheet flush are shared by the
+		// global-token read and both global-token writes. The invalidator is built
+		// here rather than inside the write block because the element writes below
+		// take the same instance: a kit change and a document change discard
+		// generated CSS by the identical route.
+		$cache = new ElementorCacheInvalidator( $api );
+		$kit   = new ElementorKit( $this->presence );
+
 		$registry->register(
 			ElementorDocumentList::definition(),
 			[ new ElementorDocumentList( $fields, $this->presence ), 'handle' ]
@@ -226,12 +234,17 @@ final class ElementorModule implements IntegrationModule {
 			[ new ElementorControlSchema( $api, $this->presence ), 'handle' ]
 		);
 
+		$registry->register(
+			ElementorGlobalTokensGet::definition(),
+			[ new ElementorGlobalTokensGet( $kit, $this->presence ), 'handle' ]
+		);
+
 		// The write block. Every one of these shares a single ElementorWriteTarget,
 		// and the target shares a single ElementorApi with the cache invalidator the
 		// writer holds — one presence gate, one registry read, one cache flush per
 		// document, rather than one of each per operation.
 		$coercion = new ElementorPropCoercion( $api );
-		$writer   = new ElementorDocumentWriter( $api, $document, new ElementorCacheInvalidator( $api ) );
+		$writer   = new ElementorDocumentWriter( $api, $document, $cache );
 		$targets  = new ElementorWriteTarget( $document, $tree, $this->presence, $coercion, $writer );
 		$inputs   = new ElementorElementAddInput( $coercion, $edit );
 		$merge    = new ElementorSettingsMerge( $edit, $coercion );
@@ -287,6 +300,20 @@ final class ElementorModule implements IntegrationModule {
 		$registry->registerWrite(
 			ElementorElementRemove::definition(),
 			new ElementorElementRemove( $targets, $document, $merge, $edit, $coercion, $writer, $diff )
+		);
+
+		// The two global-token writes address the active kit rather than a document,
+		// so they take the kit write machinery instead of the document target.
+		$tokens = new ElementorKitWrite( $kit, $cache );
+
+		$registry->registerWrite(
+			ElementorGlobalColorsUpdate::definition(),
+			new ElementorGlobalColorsUpdate( $tokens )
+		);
+
+		$registry->registerWrite(
+			ElementorGlobalTypographyUpdate::definition(),
+			new ElementorGlobalTypographyUpdate( $tokens )
 		);
 	}
 }
