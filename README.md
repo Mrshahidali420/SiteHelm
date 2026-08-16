@@ -138,9 +138,18 @@ Elementor is the deepest module, at 15 operations. SiteHelm edits the stored Ele
 
 1. Download the latest `sitehelm-*.zip` from [Releases](https://github.com/Mrshahidali420/SiteHelm/releases).
 2. In WordPress: **Plugins → Add New → Upload Plugin**, choose the zip, **Install Now**, then **Activate**.
-3. Create an Application Password: **Users → Profile → Application Passwords**.
+3. Open **SiteHelm → Connect** and press **Create an application password**. The endpoint, the credential and a ready-to-paste config for your client are all on that screen.
 
-That is the whole install. SiteHelm registers one REST route and nothing else — no admin pages, no options screen, no dashboard widget, no cron jobs.
+That is the whole install. SiteHelm registers one REST route and one admin menu — no options screen, no dashboard widget, no cron jobs.
+
+### The console
+
+Four screens, all read-only except the one button that mints a credential:
+
+- **Connect** — the endpoint, an application password created in place and shown once, and a config snippet for Claude Code, Cursor, or any other MCP client.
+- **Activity** — every operation a client has performed, newest first, with its target, outcome, actor and rollback reference. Filterable by operation or correlation id.
+- **Status** — which modules are active, which are version-blocked, which are absent, and whether the storage tables exist.
+- **Operations** — the full catalogue of what a connected client can ask this site to do, grouped by tool, marked read or write, preview-required, destructive or high risk.
 
 If PHP or WordPress is below the floor, the plugin refuses to boot and shows an admin notice instead of fataling.
 
@@ -193,7 +202,7 @@ claude mcp add --transport http sitehelm https://your-site.com/wp-json/sitehelm/
 <details>
 <summary><strong>Clients that only speak stdio (Claude Desktop today)</strong></summary>
 
-A stdio bridge is the top item on the [roadmap](ROADMAP.md) (REQ-0073), together with published per-client configuration files (REQ-0074). Until it ships, use a client with HTTP transport, or a generic HTTP-to-stdio MCP bridge.
+A stdio bridge is the top item on the [roadmap](ROADMAP.md) (REQ-0073). Until it ships, use a client with HTTP transport, or a generic HTTP-to-stdio MCP bridge.
 </details>
 
 **Always use HTTPS.** An Application Password sent over plain HTTP is a credential sent in the clear.

@@ -1,0 +1,208 @@
+<?php
+
+declare(strict_types=1);
+
+namespace SiteHelm\Tests\Unit\Admin;
+
+use SiteHelm\Admin\StatusScreen;
+use SiteHelm\Contracts\ModuleHealth;
+use SiteHelm\Contracts\ModuleId;
+use SiteHelm\Gateway\McpServer;
+use SiteHelm\Storage\Installer;
+use SiteHelm\Tests\Doubles\AdminDied;
+use SiteHelm\Tests\Doubles\AdminWordPressStubs;
+use SiteHelm\Tests\TestCase;
+
+final class StatusScreenTest extends TestCase {
+
+	protected function setUp(): void {
+		parent::setUp();
+		AdminWordPressStubs::install();
+
+		$GLOBALS['wp_version'] = '6.8.1';
+
+		AdminWordPressStubs::$options[ Installer::STATUS_OPTION ]     = Installer::STATUS_READY;
+		AdminWordPressStubs::$options[ Installer::DB_VERSION_OPTION ] = (string) Installer::DB_VERSION;
+	}
+
+	/**
+	 * Renders the screen with the given health map and returns the markup.
+	 *
+	 * @param array<string, array{version: ?string, health: string}> $health The loader's map.
+	 */
+	private function render( array $health ): string {
+		ob_start();
+		( new StatusScreen( $health ) )->render();
+
+		return (string) ob_get_clean();
+	}
+
+	/**
+	 * Every module reported active, so no module is holding anything back.
+	 *
+	 * @return array<string, array{version: ?string, health: string}>
+	 */
+	private function allActive(): array {
+		$health = [];
+
+		foreach ( ModuleId::cases() as $module ) {
+			$health[ $module->value ] = [
+				'version' => '1.0.0',
+				'health'  => ModuleHealth::Active->value,
+			];
+		}
+
+		return $health;
+	}
+
+	public function testAVisitorWithoutTheCapabilityIsStoppedRatherThanShownTheScreen(): void {
+		AdminWordPressStubs::$canManage = false;
+
+		$this->expectException( AdminDied::class );
+
+		ob_start();
+
+		try {
+			( new StatusScreen( [] ) )->render();
+		} finally {
+			ob_end_clean();
+		}
+	}
+
+	public function testTheVerdictReportsEverythingActiveWhenNoModuleIsBlocked(): void {
+		$html = $this->render( $this->allActive() );
+
+		$this->assertStringContainsString( 'Everything available is active', $html );
+		$this->assertStringContainsString( 'sitehelm-dot--ok', $html );
+	}
+
+	public function testTheVerdictCountsTheModulesThatAreNotActive(): void {
+		$health = $this->allActive();
+		unset( $health[ ModuleId::Elementor->value ], $health[ ModuleId::Acf->value ] );
+
+		$html = $this->render( $health );
+
+		$this->assertStringContainsString( 'Some modules are unavailable', $html );
+		$this->assertStringContainsString( '2 modules are not active', $html );
+	}
+
+	/**
+	 * Storage failure outranks every module verdict. Without the tables a change
+	 * cannot be recorded or put back, which is a worse state than any module being
+	 * absent, and reporting "everything active" over it would be a lie.
+	 */
+	public function testStorageBeingUnavailableOverridesTheModuleVerdict(): void {
+		AdminWordPressStubs::$options[ Installer::STATUS_OPTION ] = Installer::STATUS_UNAVAILABLE;
+
+		$html = $this->render( $this->allActive() );
+
+		$this->assertStringContainsString( 'Storage unavailable', $html );
+		$this->assertStringNotContainsString( 'Everything available is active', $html );
+	}
+
+	public function testStorageBeingUnavailableExplainsHowToRecover(): void {
+		AdminWordPressStubs::$options[ Installer::STATUS_OPTION ] = Installer::STATUS_UNAVAILABLE;
+
+		$html = $this->render( $this->allActive() );
+
+		$this->assertStringContainsString( 'could not create its tables', $html );
+		$this->assertStringContainsString( 'Deactivating and reactivating', $html );
+	}
+
+	public function testAReadyStoreStatesItsSchemaVersion(): void {
+		$html = $this->render( $this->allActive() );
+
+		$this->assertStringContainsString( 'Schema version', $html );
+		$this->assertStringContainsString( (string) Installer::DB_VERSION, $html );
+	}
+
+	public function testEveryModuleGetsARowWhetherOrNotTheLoaderReportedOnIt(): void {
+		$html = $this->render( [] );
+
+		$this->assertSame( count( ModuleId::cases() ), substr_count( $html, '<tr><td>' ) );
+	}
+
+	/**
+	 * "Not installed" and "Not loaded" have different causes. Telling an operator
+	 * their module is not installed when the module never ran at all sends them
+	 * looking in the wrong place.
+	 */
+	public function testAModuleMissingFromTheMapReadsAsNotLoadedRatherThanNotInstalled(): void {
+		$html = $this->render( [] );
+
+		$this->assertStringContainsString( 'Not loaded', $html );
+		$this->assertStringNotContainsString( 'Not installed', $html );
+	}
+
+	public function testAnInactiveModuleReadsAsNotInstalled(): void {
+		$html = $this->render(
+			[
+				ModuleId::Elementor->value => [
+					'version' => null,
+					'health'  => ModuleHealth::Inactive->value,
+				],
+			]
+		);
+
+		$this->assertStringContainsString( 'Not installed', $html );
+	}
+
+	public function testAVersionBlockedModuleSaysSoAndShowsTheVersionItFound(): void {
+		$html = $this->render(
+			[
+				ModuleId::Acf->value => [
+					'version' => '5.9.0',
+					'health'  => ModuleHealth::VersionBlocked->value,
+				],
+			]
+		);
+
+		$this->assertStringContainsString( 'Version too old', $html );
+		$this->assertStringContainsString( '<code>5.9.0</code>', $html );
+		$this->assertStringContainsString( 'sitehelm-badge--refused', $html );
+	}
+
+	public function testAModuleWithNoDetectedVersionSaysSoRatherThanShowingAnEmptyCell(): void {
+		$html = $this->render(
+			[
+				ModuleId::Metabox->value => [
+					'version' => null,
+					'health'  => ModuleHealth::Inactive->value,
+				],
+			]
+		);
+
+		$this->assertStringContainsString( 'Not detected', $html );
+	}
+
+	public function testEveryModuleIsNamedInWordsRatherThanByItsIdentifier(): void {
+		$html = $this->render( $this->allActive() );
+
+		$this->assertStringContainsString( 'Advanced Custom Fields', $html );
+		$this->assertStringContainsString( 'Meta Box', $html );
+		$this->assertStringContainsString( 'Core content', $html );
+	}
+
+	public function testTheEnvironmentReportsTheVersionsAnOperatorWouldBeAskedFor(): void {
+		$html = $this->render( $this->allActive() );
+
+		$this->assertStringContainsString( SITEHELM_VERSION, $html );
+		$this->assertStringContainsString( '6.8.1', $html );
+		$this->assertStringContainsString( PHP_VERSION, $html );
+		$this->assertStringContainsString( McpServer::PROTOCOL_VERSION, $html );
+	}
+
+	public function testTheEnvironmentStatesWhetherTheSiteIsServedOverHttps(): void {
+		AdminWordPressStubs::$isSsl = false;
+
+		$html = $this->render( $this->allActive() );
+
+		$this->assertStringContainsString( 'No, this site is not served over HTTPS', $html );
+	}
+
+	public function testTheEnvironmentSaysSoWhenTheSiteIsServedOverHttps(): void {
+		$html = $this->render( $this->allActive() );
+
+		$this->assertStringContainsString( 'Yes, this site is served over HTTPS', $html );
+	}
+}
