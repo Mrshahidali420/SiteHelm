@@ -1,0 +1,62 @@
+{
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "type": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100,
+                "description": "The type name, such as `heading` for a widget or `container` for a structural element."
+            },
+            "kind": {
+                "type": "string",
+                "enum": [
+                    "widget",
+                    "container"
+                ],
+                "description": "Which registry to resolve the name through. Defaults to `widget`. The two registries are separate, and a name in one is not a name in the other."
+            }
+        },
+        "required": [
+            "type"
+        ],
+        "additionalProperties": false
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "type": {
+                "type": "string",
+                "description": "The type described, echoed as requested."
+            },
+            "kind": {
+                "type": "string",
+                "enum": [
+                    "widget",
+                    "container"
+                ],
+                "description": "The registry the type was resolved through."
+            },
+            "elementorVersion": {
+                "type": "string",
+                "description": "The Elementor version that answered. A control vocabulary is version-specific, so a cached schema is only valid while this is unchanged."
+            },
+            "controlCount": {
+                "type": "integer",
+                "description": "How many controls the type declares. ZERO IS A VALID ANSWER: some structural types declare none."
+            },
+            "controls": {
+                "type": "object",
+                "description": "Control name => descriptor. Every descriptor carries `name`, `type` and `tab`, which Elementor guarantees on every stored control. `label`, `default`, `options`, `section` and `description` appear only when the control declares them, and a key the control does not declare is ABSENT rather than null. Rendering members — selectors, conditions, dynamic and responsive wiring — are deliberately not projected."
+            }
+        },
+        "required": [
+            "type",
+            "kind",
+            "elementorVersion",
+            "controlCount",
+            "controls"
+        ],
+        "additionalProperties": false
+    }
+}

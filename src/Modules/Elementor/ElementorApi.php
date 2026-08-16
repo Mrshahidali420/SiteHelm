@@ -73,6 +73,16 @@ final class ElementorApi {
 	public const SAVE_ELEMENTS_KEY = 'elements';
 
 	/**
+	 * The control members projected into a descriptor only when the control
+	 * declares them.
+	 *
+	 * Deliberately not `name`, `type` or `tab` — those three are guaranteed and
+	 * are projected unconditionally; see `descriptor()` for why the split is a
+	 * fact about Elementor rather than a preference.
+	 */
+	public const OPTIONAL_CONTROL_KEYS = [ 'label', 'default', 'options', 'section', 'description' ];
+
+	/**
 	 * Constructs the accessor.
 	 *
 	 * The presence gate is injected rather than constructed here, exactly as the
@@ -194,6 +204,168 @@ final class ElementorApi {
 		return $descriptors;
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- The module vocabulary is camelCase across every class.
+	/**
+	 * The control definitions one element type declares, read from the installed
+	 * Elementor.
+	 *
+	 * REQ-0067. A control schema is a property of the CODE ON THIS SITE, not of
+	 * any document, so there is no stored row that could answer it and reading it
+	 * from the running plugin is the only correct source. Hardcoding a table
+	 * would be the same mistake `propSchema()` already records: Elementor's
+	 * control vocabulary drifts between versions, and a stale table describes a
+	 * widget the running editor no longer has.
+	 *
+	 * THIS DOES NOT REPLACE `propSchema()` AND MUST NOT BE CONFUSED WITH IT.
+	 * That method reads `get_props_schema()`, which only Elementor's newer atomic
+	 * widgets implement, and its null is a signal to the coercion layer to refuse
+	 * a write. This reads `get_controls()`, which every widget and every
+	 * structural element inherits from `Controls_Stack`, so one accessor covers
+	 * both. Widening `propSchema()` instead would change what every Phase 6b
+	 * write does when it cannot read a schema, which is not a change this
+	 * operation is entitled to make.
+	 *
+	 * NULL DOES NOT MEAN "NO SUCH TYPE" HERE. It means nothing was read. The
+	 * caller establishes existence first, from `ElementorPresence::widgetTypes()`
+	 * or `elementTypes()`, so that an unknown type refuses as `TargetNotFound`
+	 * and an unreadable registry refuses as the retryable `ExecutionFailed`. Were
+	 * this one null asked to carry both meanings, an operator whose widget
+	 * manager was momentarily unbuilt would be told their widget does not exist
+	 * and would go looking for a plugin that was installed the whole time.
+	 *
+	 * ONE UNREADABLE CONTROL MAKES THE WHOLE SCHEMA UNREADABLE, on
+	 * `propSchema()`'s stated reasoning: a silently shortened schema is worse
+	 * than none, because a client trusts it and omits the key it never saw.
+	 *
+	 * `[]` is a normal answer meaning the type was found and declares no
+	 * controls.
+	 *
+	 * @param string $type      The widget or element type name.
+	 * @param bool   $is_widget True to resolve through the widget manager, false through the element manager.
+	 *
+	 * @return array<string, array<string, mixed>>|null Control name => descriptor, or null when unreadable.
+	 */
+	public function controlSchema( string $type, bool $is_widget ): ?array {
+		$element = $is_widget ? $this->widget( $type ) : $this->element( $type );
+
+		if ( ! is_object( $element ) || ! method_exists( $element, 'get_controls' ) ) {
+			return null;
+		}
+
+		$controls = $element->get_controls();
+
+		if ( ! is_array( $controls ) ) {
+			return null;
+		}
+
+		$descriptors = [];
+
+		foreach ( $controls as $name => $control ) {
+			$descriptor = $this->descriptor( (string) $name, $control );
+
+			if ( null === $descriptor ) {
+				return null;
+			}
+
+			$descriptors[ (string) $name ] = $descriptor;
+		}
+
+		return $descriptors;
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+
+	/**
+	 * One widget instance from Elementor's widget registry, or null.
+	 *
+	 * @param string $type The widget type name.
+	 *
+	 * @return object|null The widget, or null when it cannot be addressed.
+	 */
+	private function widget( string $type ): ?object {
+		$manager = $this->plugin_member( 'widgets_manager', 'get_widget_types' );
+
+		if ( null === $manager ) {
+			return null;
+		}
+
+		$widget = $manager->get_widget_types( $type );
+
+		return is_object( $widget ) ? $widget : null;
+	}
+
+	/**
+	 * One structural element instance from Elementor's element registry, or null.
+	 *
+	 * @param string $type The element type name.
+	 *
+	 * @return object|null The element, or null when it cannot be addressed.
+	 */
+	private function element( string $type ): ?object {
+		$manager = $this->plugin_member( 'elements_manager', 'get_element_types' );
+
+		if ( null === $manager ) {
+			return null;
+		}
+
+		$element = $manager->get_element_types( $type );
+
+		return is_object( $element ) ? $element : null;
+	}
+
+	/**
+	 * Projects one raw control definition into the descriptor the response
+	 * carries.
+	 *
+	 * THREE KEYS ARE GUARANTEED AND THE REST ARE NOT, and the split is not a
+	 * guess. `Controls_Manager::add_control()` merges `type` and `tab` defaults
+	 * into every control before storing it and stamps `name` from the control
+	 * id, so all three are present on anything the stack holds; `label`,
+	 * `default`, `options`, `section` and `description` are declared per control
+	 * and are genuinely optional. Projecting an optional key as though it were
+	 * guaranteed is how a response grows a member whose absence a client cannot
+	 * distinguish from an empty value.
+	 *
+	 * NOTHING ELSE IS PROJECTED. `selectors`, `condition`, `dynamic`,
+	 * `responsive` and the rest describe how Elementor RENDERS and SHOWS a
+	 * control in its own editor, not what value the control accepts, and a
+	 * client writing settings cannot act on them. Returning them would multiply
+	 * the size of a response nobody can use.
+	 *
+	 * A control that is not an array, or whose guaranteed keys are missing or
+	 * the wrong shape, answers null and takes the whole schema with it.
+	 *
+	 * @param string $name    The control name, from the registry key.
+	 * @param mixed  $control The raw control definition, of unverified shape.
+	 *
+	 * @return array<string, mixed>|null The descriptor, or null when unreadable.
+	 */
+	private function descriptor( string $name, mixed $control ): ?array {
+		if ( ! is_array( $control ) ) {
+			return null;
+		}
+
+		$type = $control['type'] ?? null;
+		$tab  = $control['tab'] ?? null;
+
+		if ( ! is_scalar( $type ) || ! is_scalar( $tab ) ) {
+			return null;
+		}
+
+		$descriptor = [
+			'name' => $name,
+			'type' => (string) $type,
+			'tab'  => (string) $tab,
+		];
+
+		foreach ( self::OPTIONAL_CONTROL_KEYS as $key ) {
+			if ( array_key_exists( $key, $control ) ) {
+				$descriptor[ $key ] = $control[ $key ];
+			}
+		}
+
+		return $descriptor;
+	}
 
 	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- The module vocabulary is camelCase across every class.
 	/**

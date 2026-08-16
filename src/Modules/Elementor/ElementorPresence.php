@@ -10,8 +10,14 @@ declare(strict_types=1);
 namespace SiteHelm\Modules\Elementor;
 
 /**
- * Answers two questions and one derived one: is Elementor loaded, what version
- * is it, and which widget types does it register.
+ * Answers two questions and two derived ones: is Elementor loaded, what version
+ * is it, which widget types does it register, and which element types.
+ *
+ * THE TWO REGISTRY ACCESSORS ARE SEPARATE ON PURPOSE. Widgets and structural
+ * elements are registered by two different managers, either of which a third
+ * party can replace independently, so one accessor answering for both would
+ * report either failure as both — and a caller told "no container types" by a
+ * broken widget manager would draw exactly the wrong conclusion.
  *
  * THIS IS THE ONLY FILE IN THE MODULE PERMITTED TO NAME AN `\Elementor\` SYMBOL
  * OR `ELEMENTOR_VERSION` (spec Decision 2). Every reference below is guarded by
@@ -154,7 +160,7 @@ final class ElementorPresence {
 	 * @return string[]|null The registered type names, or null when unreachable.
 	 */
 	public function widgetTypes(): ?array {
-		$manager = $this->widgets_manager();
+		$manager = $this->manager( 'widgets_manager', 'get_widget_types' );
 
 		if ( null === $manager ) {
 			return null;
@@ -170,20 +176,63 @@ final class ElementorPresence {
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- The module vocabulary is camelCase across every class.
 	/**
-	 * Elementor's widget manager, or null when it cannot be addressed.
+	 * The element type names the installed Elementor registers.
 	 *
-	 * Four separate ways to be unreachable, each guarded rather than assumed:
-	 * Elementor absent; `\Elementor\Plugin` carrying no `$instance` property at
-	 * all (a `??` would not save us — an undefined STATIC property is an Error,
-	 * not a notice); the singleton null, which is the real state between the
-	 * plugin header defining the constant and `Plugin::instance()` running on
-	 * `plugins_loaded`; and a `widgets_manager` that some other plugin has
-	 * replaced with something that does not answer the registry call.
+	 * The container half of the pair `widgetTypes()` opens, and it answers on
+	 * exactly the same terms: NULL means the registry could not be reached, `[]`
+	 * means it was read and registers nothing. A caller that coalesced the first
+	 * into the second would report every container type as unknown on a site
+	 * where nothing was read at all.
+	 *
+	 * These are Elementor's structural element types — `container`, and on older
+	 * documents `section` and `column` — as opposed to the widget types that
+	 * render content. They are registered by a DIFFERENT manager, which is why
+	 * this is a separate accessor rather than a flag on the existing one: a site
+	 * whose widget manager has been replaced still has an intact element
+	 * manager, and vice versa, and one accessor answering for both would report
+	 * either failure as both.
+	 *
+	 * The names are the registry's KEYS. `Elements_Manager::get_element_types()`
+	 * called with no argument returns an associative array keyed by element name
+	 * whose values are `Element_Base` instances; the values are never read here,
+	 * so no element is instantiated by this call beyond the registry build
+	 * Elementor memoizes anyway.
+	 *
+	 * @return string[]|null The registered element type names, or null when unreachable.
+	 */
+	public function elementTypes(): ?array {
+		$manager = $this->manager( 'elements_manager', 'get_element_types' );
+
+		if ( null === $manager ) {
+			return null;
+		}
+
+		$types = $manager->get_element_types();
+
+		if ( ! is_array( $types ) ) {
+			return null;
+		}
+
+		return array_values( array_map( 'strval', array_keys( $types ) ) );
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+
+	/**
+	 * One manager hanging off Elementor's plugin singleton, or null.
+	 *
+	 * The four ways to be unreachable live here once rather than once per
+	 * manager, because a guard that exists in two copies is a guard that will
+	 * eventually exist in one — and the half that drifts is the half that stops
+	 * guarding.
+	 *
+	 * @param string $property The singleton property holding the manager.
+	 * @param string $method   The method the caller is about to invoke on it.
 	 *
 	 * @return object|null The manager, or null.
 	 */
-	private function widgets_manager(): ?object {
+	private function manager( string $property, string $method ): ?object {
 		if ( ! $this->isLoaded() || ! property_exists( self::PLUGIN_CLASS, 'instance' ) ) {
 			return null;
 		}
@@ -194,8 +243,8 @@ final class ElementorPresence {
 			return null;
 		}
 
-		$manager = $plugin->widgets_manager ?? null;
+		$member = $plugin->{$property} ?? null;
 
-		return is_object( $manager ) && method_exists( $manager, 'get_widget_types' ) ? $manager : null;
+		return is_object( $member ) && method_exists( $member, $method ) ? $member : null;
 	}
 }

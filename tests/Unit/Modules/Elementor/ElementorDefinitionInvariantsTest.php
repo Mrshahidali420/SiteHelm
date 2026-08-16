@@ -73,6 +73,9 @@ final class ElementorDefinitionInvariantsTest extends TestCase {
 		'elementor-document-list',
 		'elementor-document-get',
 		'elementor-widget-availability',
+		'elementor-element-get',
+		'elementor-element-search',
+		'elementor-control-schema',
 		'elementor-element-add',
 		'elementor-element-update',
 		'elementor-widget-settings-update',
@@ -90,7 +93,7 @@ final class ElementorDefinitionInvariantsTest extends TestCase {
 	 * read that silently became a write, or a write registered without its write
 	 * handler, moves the derived count away from this one.
 	 */
-	private const ELEMENTOR_READ_COUNT = 3;
+	private const ELEMENTOR_READ_COUNT = 6;
 
 	/**
 	 * The Elementor module's write count, bumped by every task registering a write.

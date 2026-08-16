@@ -1,0 +1,123 @@
+{
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "document": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "Identifier of the Elementor document to change. Call elementor-document-list for the documents Elementor controls."
+            },
+            "elementId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "pattern": "^[A-Za-z0-9_-]{1,64}$",
+                "description": "Stable identifier of the element to act on, exactly as elementor-document-get reports it."
+            }
+        },
+        "required": [
+            "document",
+            "elementId"
+        ],
+        "additionalProperties": false
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "document": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "description": "The document's WordPress post identifier."
+                    },
+                    "type": {
+                        "type": "string",
+                        "description": "The WordPress post type: page, post, or elementor_library for a saved template."
+                    },
+                    "title": {
+                        "type": "string",
+                        "description": "The document's title."
+                    },
+                    "status": {
+                        "type": "string",
+                        "description": "The WordPress post status, such as publish or draft."
+                    },
+                    "editMode": {
+                        "type": "string",
+                        "description": "The stored Elementor edit mode, normally builder. Empty when the stored value is unreadable."
+                    }
+                },
+                "required": [
+                    "id",
+                    "type",
+                    "title",
+                    "status",
+                    "editMode"
+                ],
+                "additionalProperties": false
+            },
+            "element": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "description": "The element's stored identifier, exactly as requested."
+                    },
+                    "elType": {
+                        "type": "string",
+                        "description": "The element type Elementor stores, such as widget or container."
+                    },
+                    "widgetType": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "The widget type when this element renders a widget, null otherwise."
+                    },
+                    "kind": {
+                        "type": "string",
+                        "enum": [
+                            "widget",
+                            "container"
+                        ],
+                        "description": "Whether this element is a widget or a structural container. An element of unknown type is reported as a container."
+                    },
+                    "label": {
+                        "type": "string",
+                        "description": "DERIVED, for display only. Computed from the element type on every read; no stored row holds it and it must never be treated as stored state."
+                    },
+                    "path": {
+                        "type": "string",
+                        "description": "DERIVED position as parentId/index, for display only. It is not an address: any insertion or removal before this element changes it. Address elements by id."
+                    },
+                    "childCount": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "How many elements this one directly contains. Read the subtree with elementor-document-get."
+                    }
+                },
+                "required": [
+                    "id",
+                    "elType",
+                    "widgetType",
+                    "kind",
+                    "label",
+                    "path",
+                    "childCount"
+                ],
+                "additionalProperties": false
+            },
+            "storedSettings": {
+                "type": "object",
+                "description": "The element's settings exactly as the document stores them. A key the element does not store is ABSENT rather than null: the element uses its control default, which elementor-control-schema reports. No default is merged in here."
+            }
+        },
+        "required": [
+            "document",
+            "element",
+            "storedSettings"
+        ],
+        "additionalProperties": false
+    }
+}
