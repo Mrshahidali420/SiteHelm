@@ -1,5 +1,7 @@
 # Tooling state — not part of the project
 .remember/
+.claude/
+mut/
 
 # OS cruft
 .DS_Store

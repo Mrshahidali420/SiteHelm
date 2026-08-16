@@ -1,0 +1,332 @@
+<?php
+
+declare(strict_types=1);
+
+namespace SiteHelm\Tests\Unit\Admin;
+
+use SiteHelm\Admin\OperationsScreen;
+use SiteHelm\Contracts\Domain;
+use SiteHelm\Contracts\Mode;
+use SiteHelm\Contracts\ModuleId;
+use SiteHelm\Contracts\OperationDefinition;
+use SiteHelm\Contracts\PreviewPolicy;
+use SiteHelm\Contracts\Risk;
+use SiteHelm\Contracts\RollbackPolicy;
+use SiteHelm\Contracts\SnapshotPolicy;
+use SiteHelm\Registry\CapabilityRegistry;
+use SiteHelm\Tests\Doubles\AdminDied;
+use SiteHelm\Tests\Doubles\AdminWordPressStubs;
+use SiteHelm\Tests\Doubles\StubWriteOperation;
+use SiteHelm\Tests\TestCase;
+
+final class OperationsScreenTest extends TestCase {
+
+	protected function setUp(): void {
+		parent::setUp();
+		AdminWordPressStubs::install();
+	}
+
+	/**
+	 * A read definition on the given dispatcher's domain.
+	 *
+	 * @param string $id          The operation identifier.
+	 * @param Domain $domain      The domain, which decides the dispatcher.
+	 * @param string $description What the operation does.
+	 * @param Risk   $risk        The declared risk.
+	 * @param string $capability  The capability it requires.
+	 */
+	private function readDefinition(
+		string $id,
+		Domain $domain,
+		string $description = 'Reads a thing.',
+		Risk $risk = Risk::Low,
+		string $capability = 'edit_posts'
+	): OperationDefinition {
+		return new OperationDefinition(
+			id: $id,
+			domain: $domain,
+			mode: Mode::Read,
+			description: $description,
+			inputSchema: [
+				'type'                 => 'object',
+				'properties'           => [],
+				'additionalProperties' => false,
+			],
+			outputSchema: [
+				'type'                 => 'object',
+				'properties'           => [],
+				'additionalProperties' => false,
+			],
+			schemaVersion: 1,
+			requiredCapabilities: [ $capability ],
+			risk: $risk,
+			isReadOnly: true,
+			isDestructive: false,
+			isIdempotent: true,
+			previewPolicy: PreviewPolicy::NotApplicable,
+			snapshotPolicy: SnapshotPolicy::NotApplicable,
+			rollbackPolicy: RollbackPolicy::NotApplicable,
+			module: ModuleId::Core,
+			supportedVersions: [ 'wordpress' => '>=6.6' ],
+			example: [
+				'operation' => $id,
+				'arguments' => [],
+			],
+		);
+	}
+
+	/**
+	 * A write definition, which the contract forces to require preview.
+	 *
+	 * @param string $id          The operation identifier.
+	 * @param bool   $destructive Whether it destroys data, which forces every policy.
+	 */
+	private function writeDefinition( string $id, bool $destructive = false ): OperationDefinition {
+		return new OperationDefinition(
+			id: $id,
+			domain: Domain::Content,
+			mode: Mode::Write,
+			description: 'Changes a thing.',
+			inputSchema: [
+				'type'                 => 'object',
+				'properties'           => [],
+				'additionalProperties' => false,
+			],
+			outputSchema: [
+				'type'                 => 'object',
+				'properties'           => [],
+				'additionalProperties' => false,
+			],
+			schemaVersion: 1,
+			requiredCapabilities: [ 'edit_posts' ],
+			risk: $destructive ? Risk::High : Risk::Medium,
+			isReadOnly: false,
+			isDestructive: $destructive,
+			isIdempotent: false,
+			previewPolicy: PreviewPolicy::Required,
+			snapshotPolicy: $destructive ? SnapshotPolicy::Required : SnapshotPolicy::NotApplicable,
+			rollbackPolicy: $destructive ? RollbackPolicy::Required : RollbackPolicy::NotApplicable,
+			module: ModuleId::Core,
+			supportedVersions: [ 'wordpress' => '>=6.6' ],
+			example: [
+				'operation' => $id,
+				'arguments' => [],
+			],
+		);
+	}
+
+	/**
+	 * Renders the screen over the given registry.
+	 *
+	 * @param CapabilityRegistry $registry The registry to catalogue.
+	 */
+	private function render( CapabilityRegistry $registry ): string {
+		ob_start();
+		( new OperationsScreen( $registry ) )->render();
+
+		return (string) ob_get_clean();
+	}
+
+	public function testAVisitorWithoutTheCapabilityIsStoppedRatherThanShownTheCatalogue(): void {
+		AdminWordPressStubs::$canManage = false;
+
+		$this->expectException( AdminDied::class );
+
+		ob_start();
+
+		try {
+			( new OperationsScreen( new CapabilityRegistry() ) )->render();
+		} finally {
+			ob_end_clean();
+		}
+	}
+
+	public function testAnEmptyRegistryReportsNoOperationsRatherThanFailing(): void {
+		$html = $this->render( new CapabilityRegistry() );
+
+		$this->assertStringContainsString( '0 operations registered', $html );
+		$this->assertStringContainsString( 'across 0 tools', $html );
+	}
+
+	public function testTheVerdictCountsBothOperationsAndTheToolsHoldingThem(): void {
+		$registry = new CapabilityRegistry();
+		$registry->register( $this->readDefinition( 'content-read-one', Domain::Content ), static fn(): array => [] );
+		$registry->register( $this->readDefinition( 'content-read-two', Domain::Content ), static fn(): array => [] );
+		$registry->register( $this->readDefinition( 'media-read-one', Domain::Media ), static fn(): array => [] );
+
+		$html = $this->render( $registry );
+
+		$this->assertStringContainsString( '3 operations registered', $html );
+		$this->assertStringContainsString( 'across 2 tools', $html );
+	}
+
+	/**
+	 * A dispatcher with nothing behind it reads as a tool that does nothing, when
+	 * in fact the module is simply absent from this site. Status is where absence
+	 * is explained; this screen omits the heading rather than showing it empty.
+	 */
+	public function testADispatcherWithNoOperationsIsOmittedRatherThanShownEmpty(): void {
+		$registry = new CapabilityRegistry();
+		$registry->register( $this->readDefinition( 'content-read-one', Domain::Content ), static fn(): array => [] );
+
+		$html = $this->render( $registry );
+
+		$this->assertStringContainsString( '<code>content-read</code>', $html );
+		$this->assertStringNotContainsString( '<code>elementor-read</code>', $html );
+		$this->assertSame( 1, substr_count( $html, 'data-sitehelm-group' ) );
+	}
+
+	public function testDispatchersAppearInTheOrderTheContractDefinesThem(): void {
+		$registry = new CapabilityRegistry();
+		$registry->register( $this->readDefinition( 'media-read-one', Domain::Media ), static fn(): array => [] );
+		$registry->register( $this->readDefinition( 'content-read-one', Domain::Content ), static fn(): array => [] );
+
+		$html = $this->render( $registry );
+
+		$this->assertLessThan(
+			strpos( $html, '<code>media-read</code>' ),
+			strpos( $html, '<code>content-read</code>' )
+		);
+	}
+
+	public function testOperationsWithinAToolAreListedAlphabetically(): void {
+		$registry = new CapabilityRegistry();
+		$registry->register( $this->readDefinition( 'content-read-zulu', Domain::Content ), static fn(): array => [] );
+		$registry->register( $this->readDefinition( 'content-read-alpha', Domain::Content ), static fn(): array => [] );
+
+		$html = $this->render( $registry );
+
+		$this->assertLessThan(
+			strpos( $html, '<code>content-read-zulu</code>' ),
+			strpos( $html, '<code>content-read-alpha</code>' )
+		);
+	}
+
+	public function testEachRowStatesTheOperationItsDescriptionAndTheCapabilityItNeeds(): void {
+		$registry = new CapabilityRegistry();
+		$registry->register(
+			$this->readDefinition( 'content-read-one', Domain::Content, 'Reads one post.', Risk::Low, 'publish_posts' ),
+			static fn(): array => []
+		);
+
+		$html = $this->render( $registry );
+
+		$this->assertStringContainsString( '<code>content-read-one</code>', $html );
+		$this->assertStringContainsString( 'Reads one post.', $html );
+		$this->assertStringContainsString( '<code>publish_posts</code>', $html );
+	}
+
+	public function testAReadOnlyOperationIsBadgedAsARead(): void {
+		$registry = new CapabilityRegistry();
+		$registry->register( $this->readDefinition( 'content-read-one', Domain::Content ), static fn(): array => [] );
+
+		$html = $this->render( $registry );
+
+		$this->assertStringContainsString( '>Read</span>', $html );
+		$this->assertStringNotContainsString( '>Write</span>', $html );
+	}
+
+	/**
+	 * The extra badges only appear when they are true, so a row carrying one is
+	 * carrying information rather than filling a column.
+	 */
+	public function testALowRiskNonDestructiveReadCarriesNoWarningBadges(): void {
+		$registry = new CapabilityRegistry();
+		$registry->register( $this->readDefinition( 'content-read-one', Domain::Content ), static fn(): array => [] );
+
+		$html = $this->render( $registry );
+
+		$this->assertStringNotContainsString( 'Preview required', $html );
+		$this->assertStringNotContainsString( 'Destructive', $html );
+		$this->assertStringNotContainsString( 'High risk', $html );
+	}
+
+	public function testAWriteIsBadgedAsAWriteAndAsRequiringPreview(): void {
+		$registry = new CapabilityRegistry();
+		$registry->registerWrite( $this->writeDefinition( 'content-post-update' ), new StubWriteOperation() );
+
+		$html = $this->render( $registry );
+
+		$this->assertStringContainsString( '>Write</span>', $html );
+		$this->assertStringContainsString( '>Preview required</span>', $html );
+		$this->assertStringNotContainsString( '>Read</span>', $html );
+	}
+
+	public function testADestructiveOperationIsBadgedAsDestructive(): void {
+		$registry = new CapabilityRegistry();
+		$registry->registerWrite( $this->writeDefinition( 'content-post-delete', true ), new StubWriteOperation() );
+
+		$html = $this->render( $registry );
+
+		$this->assertStringContainsString( '>Destructive</span>', $html );
+	}
+
+	/**
+	 * A write appears in the catalogue exactly like a read. An operator deciding
+	 * whether to connect a client needs the whole surface, and a write that only
+	 * showed up once it ran would defeat the point of the screen.
+	 */
+	public function testWritesAppearInTheCatalogueAlongsideReads(): void {
+		$registry = new CapabilityRegistry();
+		$registry->register( $this->readDefinition( 'content-read-one', Domain::Content ), static fn(): array => [] );
+		$registry->registerWrite( $this->writeDefinition( 'content-post-update' ), new StubWriteOperation() );
+
+		$html = $this->render( $registry );
+
+		$this->assertStringContainsString( '2 operations registered', $html );
+		$this->assertStringContainsString( '<code>content-read</code>', $html );
+		$this->assertStringContainsString( '<code>content-write</code>', $html );
+	}
+
+	public function testAHighRiskOperationIsBadgedAsHighRisk(): void {
+		$registry = new CapabilityRegistry();
+		$registry->register(
+			$this->readDefinition( 'content-read-one', Domain::Content, 'Reads.', Risk::High ),
+			static fn(): array => []
+		);
+
+		$html = $this->render( $registry );
+
+		$this->assertStringContainsString( '>High risk</span>', $html );
+	}
+
+	/**
+	 * The filter hides rows, which nothing but script can undo. It ships hidden so
+	 * that with scripting off every operation stays on the page, which is the only
+	 * honest fallback for a list whose entire purpose is completeness.
+	 */
+	public function testTheFilterFieldShipsHiddenSoNoScriptStillShowsEveryOperation(): void {
+		$registry = new CapabilityRegistry();
+		$registry->register( $this->readDefinition( 'content-read-one', Domain::Content ), static fn(): array => [] );
+
+		$html = $this->render( $registry );
+
+		$this->assertStringContainsString( '<div class="sitehelm-filters" hidden>', $html );
+		$this->assertStringContainsString( '<code>content-read-one</code>', $html );
+	}
+
+	public function testEachRowCarriesALowercasedHaystackForTheFilterToMatch(): void {
+		$registry = new CapabilityRegistry();
+		$registry->register(
+			$this->readDefinition( 'content-read-one', Domain::Content, 'Reads One Post.' ),
+			static fn(): array => []
+		);
+
+		$html = $this->render( $registry );
+
+		$this->assertStringContainsString( 'data-sitehelm-haystack="content-read-one reads one post."', $html );
+	}
+
+	public function testAnOperationDescriptionIsEscapedBeforeItReachesThePage(): void {
+		$registry = new CapabilityRegistry();
+		$registry->register(
+			$this->readDefinition( 'content-read-one', Domain::Content, '<script>alert(1)</script>' ),
+			static fn(): array => []
+		);
+
+		$html = $this->render( $registry );
+
+		$this->assertStringNotContainsString( '<script>alert(1)</script>', $html );
+		$this->assertStringContainsString( '&lt;script&gt;', $html );
+	}
+}

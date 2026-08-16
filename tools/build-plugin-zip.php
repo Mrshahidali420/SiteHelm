@@ -60,7 +60,10 @@ if ( str_contains( (string) file_get_contents( $psr4_file ), 'SiteHelm\\\\Tests'
 
 $files = [ 'sitehelm.php', 'LICENSE', 'README.md', 'CHANGELOG.md' ];
 
-foreach ( [ 'src', 'vendor/composer' ] as $directory ) {
+// assets/ carries the admin console's stylesheet and script. Omitting it does
+// not break the plugin, which is exactly why it has to be listed deliberately:
+// the console would ship and render unstyled, and nothing would report an error.
+foreach ( [ 'src', 'assets', 'vendor/composer' ] as $directory ) {
 	$iterator = new RecursiveIteratorIterator(
 		new RecursiveDirectoryIterator( $root . '/' . $directory, FilesystemIterator::SKIP_DOTS )
 	);

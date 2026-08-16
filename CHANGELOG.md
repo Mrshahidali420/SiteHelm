@@ -11,7 +11,32 @@ an operation behaves.
 
 ## [Unreleased]
 
-Nothing yet. See [ROADMAP.md](ROADMAP.md) for what is next.
+### Added
+
+**Admin console** — one top-level **SiteHelm** menu with four screens, replacing the
+"connect it by hand from the documentation" install.
+
+- **Connect** — states the MCP endpoint, creates an Application Password in place and shows
+  it exactly once, and renders a ready-to-paste configuration for Claude Code, Cursor, or
+  any other MCP client. Warns when the site is not on HTTPS, and when Application Passwords
+  are disabled explains why rather than offering a button that cannot work. (REQ-0074)
+- **Activity** — every operation a client has performed, newest first, with its target,
+  outcome, actor and rollback reference. Filterable by operation or correlation id, paged.
+  It states a rollback reference rather than offering an undo button, so a rollback stays a
+  deliberate act performed through the gateway.
+- **Status** — which modules are active, inactive or version-blocked, the detected version
+  of each integration, whether the ledger tables exist, and the environment SiteHelm is
+  running in. Storage being unavailable overrides the module verdict, because nothing can be
+  recorded without it.
+- **Operations** — the full catalogue of what a connected client can ask this site to do,
+  grouped by tool, in contract order, each marked read or write and badged when it requires
+  preview, is destructive, or is high risk. Filterable client-side, and with scripting off
+  every operation stays on the page.
+
+The console is read-only apart from the single button that mints a credential. It adds no
+options screen, no dashboard widget and no cron jobs.
+
+See [ROADMAP.md](ROADMAP.md) for what is next.
 
 ## [0.1.0] — 2026-08-16
 
