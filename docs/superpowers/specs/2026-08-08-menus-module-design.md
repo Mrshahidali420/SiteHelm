@@ -4,14 +4,14 @@
 through SiteHelm's existing gateway: two reads and four writes on the two-phase
 change engine.
 
-**Reuse basis:** the WordPress domain logic is ported from `EMCP Tools` v3.9.1
+**Reuse basis:** the WordPress domain logic is ported from `the reference implementation` v3.9.1
 (`includes/abilities/class-nav-menu-abilities.php`, 897 lines, GPL-2.0-or-later,
 same licence as SiteHelm). Nothing is copied file-for-file — see *Why porting,
 not copying* below.
 
 ## Why porting, not copying
 
-EMCP registers "abilities" against the WordPress MCP Adapter and writes
+the reference implementation registers "abilities" against the WordPress MCP Adapter and writes
 directly: one `op_*` method per operation, `WP_Error` on refusal, no preview, no
 snapshot, no restore. SiteHelm exposes its own gateway with eleven **frozen**
 dispatchers and eleven **frozen** error codes, and every write implements the
@@ -19,11 +19,11 @@ six-method `WriteOperation` interface (`resolveTarget`, `planChange`,
 `captureSnapshot`, `applyChange`, `readBack`, `restore`) behind a single-use
 plan token bound to a state fingerprint.
 
-So each EMCP `op_*` method splits across six SiteHelm methods and gains a
+So each the reference implementation `op_*` method splits across six SiteHelm methods and gains a
 snapshot and a restore path it never had. What genuinely transfers is the
 WordPress knowledge, which is the expensive part to get right:
 
-| EMCP source | Ports into |
+| the reference implementation source | Ports into |
 |---|---|
 | `resolve_menu()` — id \| slug \| name | `MenuTarget::resolveTarget()` |
 | `resolve_item_type()` — custom / post-type / taxonomy validation | `MenuItemCreate::planChange()` |
@@ -32,10 +32,10 @@ WordPress knowledge, which is the expensive part to get right:
 | `wp_setup_nav_menu_item()` / `wp_update_nav_menu_item()` argument shapes | all four writes |
 | `get_nav_menu_locations()` / `set_theme_mod( 'nav_menu_locations', … )` | `MenuLocationAssign` |
 
-**Two EMCP behaviours must NOT be ported.** `op_reorder_items()` `continue`s
+**Two the reference implementation behaviours must NOT be ported.** `op_reorder_items()` `continue`s
 past every invalid entry and returns only an `updated` count — a partial write
 reported as success. SiteHelm refuses the whole batch in `planChange()` before
-anything is written. And EMCP's `op_delete_menu` / `op_create_menu` /
+anything is written. And the reference implementation's `op_delete_menu` / `op_create_menu` /
 `op_rename_menu` / `op_delete_item` are outside V1 scope; YAGNI — do not build
 them.
 
@@ -53,7 +53,7 @@ All six require `edit_theme_options`. No new dispatcher, no new error code.
 | REQ-0031 | `menu-location-assign` | write | required | required | supported |
 
 `menu-location-assign` covers both assignment and clearing: a null `menu`
-unassigns, so EMCP's separate `unassign-location` operation collapses into one.
+unassigns, so the reference implementation's separate `unassign-location` operation collapses into one.
 
 ## Files
 

@@ -35,8 +35,8 @@ use SiteHelm\Contracts\SnapshotPolicy;
  * handing it only the changed field does not update a title — it blanks the
  * address, the tooltip, the classes, the description, the XFN value, and the
  * window target on the way past. applyChange() therefore reads the item's whole
- * current field set first and overlays the planned changes onto it. That is EMCP's
- * `merge_existing_item()`, and the merge base here is MenuTarget::snapshotItem(),
+ * current field set first and overlays the planned changes onto it. The merge base
+ * is MenuTarget::snapshotItem(),
  * which already produces exactly the `menu-item-*` set the restore path replays;
  * one list, so the merge and the rollback cannot drift apart.
  *
@@ -53,12 +53,8 @@ use SiteHelm\Contracts\SnapshotPolicy;
  * so an item re-parented by someone else between preview and apply is refused at
  * apply rather than half-applied.
  *
- * Ported from EMCP Tools' `class-nav-menu-abilities.php` (GPL-2.0-or-later):
- * `op_update_item()` and `merge_existing_item()`. The WordPress knowledge
- * transfers; the control flow does not, because EMCP validates and writes in one
- * pass with no preview, snapshot, or rollback. Two checks are added that EMCP has
- * no equivalent of: the cycle test below, and the refusal of an address on an item
- * whose address WordPress derives.
+ * Two checks here have no equivalent in a naive update: the cycle test below, and
+ * the refusal of an address on an item whose address WordPress derives.
  *
  * @package SiteHelm
  */
@@ -521,8 +517,8 @@ final class MenuItemUpdate implements WriteOperation {
 	 * The requested parent, once it is legal for this item in this menu.
 	 *
 	 * TWO checks, because they refuse different states. validateParent() answers
-	 * whether the parent is an item of this menu at all — EMCP's rule, and the one
-	 * that stops a footer item from being nested under a header one. The ancestor
+	 * whether the parent is an item of this menu at all, which is what
+	 * stops a footer item from being nested under a header one. The ancestor
 	 * walk answers whether the MOVE would close a loop, which validateParent()
 	 * cannot see because both items are legitimately in the same menu. A loop is
 	 * not a wrong menu; it is an item that is its own ancestor, which every tree

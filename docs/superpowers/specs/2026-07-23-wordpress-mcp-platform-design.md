@@ -6,11 +6,11 @@
 
 ## 1. Executive Summary
 
-Build a standalone WordPress plugin that competes directly with EMCP by exposing WordPress, Elementor, and supported third-party plugins through the Model Context Protocol (MCP).
+Build a standalone WordPress plugin that competes directly with the reference implementation by exposing WordPress, Elementor, and supported third-party plugins through the Model Context Protocol (MCP).
 
 Customers install one plugin. All supported integrations ship inside that plugin. Internally, the code remains modular so integrations can be added, tested, activated, and maintained without changing unrelated subsystems.
 
-The product will study EMCP's successful behaviors, feature coverage, onboarding ideas, and public lessons, but use an original implementation, architecture, schemas, interface, tests, and brand. It will not copy EMCP source code, private materials, or product identity.
+The product will study the reference implementation's successful behaviors, feature coverage, onboarding ideas, and public lessons, but use an original implementation, architecture, schemas, interface, tests, and brand. It will not copy the reference implementation source code, private materials, or product identity.
 
 The long-term differentiators are:
 
@@ -35,13 +35,13 @@ An AI client should be able to discover and operate supported WordPress capabili
 
 ### 2.3 Competitive posture
 
-The product is a direct EMCP competitor, not an EMCP add-on or dependency. It will pursue overlapping user outcomes through a clean-room implementation and distinguish itself through modularity, safety, onboarding, diagnostics, and agency workflows.
+The product is a direct the reference implementation competitor, not an the reference implementation add-on or dependency. It will pursue overlapping user outcomes through a clean-room implementation and distinguish itself through modularity, safety, onboarding, diagnostics, and agency workflows.
 
 ### 2.4 Reuse policy
 
 Permitted reference material:
 
-- Public EMCP documentation and demonstrations.
+- Public the reference implementation documentation and demonstrations.
 - Publicly observable feature behavior.
 - Public issue reports and compatibility lessons.
 - General WordPress and MCP conventions.
@@ -49,10 +49,10 @@ Permitted reference material:
 
 Not permitted:
 
-- Copying EMCP implementation code.
+- Copying the reference implementation implementation code.
 - Using unpublished, private, or confidential materials.
-- Copying EMCP branding, text, icons, screenshots, or confusingly similar product identity.
-- Presenting EMCP-originated work as an original invention.
+- Copying the reference implementation branding, text, icons, screenshots, or confusingly similar product identity.
+- Presenting the reference implementation-originated work as an original invention.
 
 A competitor matrix may describe public capabilities, but implementation requirements must be derived independently from user needs and upstream plugin APIs.
 
@@ -609,12 +609,12 @@ This sequence describes program-level delivery boundaries, not one implementatio
 
 ## 17. Approved Decisions
 
-- Build an independent direct competitor to EMCP.
+- Build an independent direct competitor to the reference implementation.
 - Deliver one plugin containing all supported integrations.
 - Keep integrations internally modular but not customer-facing add-ons.
 - Include essential Elementor support in V1.
 - Include WordPress core, ACF, and Meta Box support in V1.
-- Study EMCP behavior but write an original clean-room implementation.
+- Study the reference implementation behavior but write an original clean-room implementation.
 - Make modularity, safety, onboarding, and agency operations long-term differentiators.
 - Use a free public release and 100 active installations as the first validation milestone.
 - Monetize operational and agency capabilities rather than individual connector availability.

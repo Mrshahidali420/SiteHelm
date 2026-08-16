@@ -2,7 +2,7 @@
 
 ## Completed Design Work
 
-- [x] Explore the EMCP contribution context and existing Meta Box research.
+- [x] Explore the the reference implementation contribution context and existing Meta Box research.
 - [x] Clarify the commercial path, target buyer, competitive posture, packaging, and V1 scope.
 - [x] Approve and self-review the product design specification.
 - [x] Create and self-review the Phase 1 execution plan.
@@ -10,7 +10,7 @@
 ## Phase 1 Execution
 
 - [x] Task 1: Establish the clean-room evidence protocol and source register. Validation: PASS. Committed in 4b097a5.
-- [x] Task 2: Build public WordPress MCP market and EMCP capability inventories. Validation: PASS with 21 registered sources. Committed in 4b097a5.
+- [x] Task 2: Build public WordPress MCP market and the reference implementation capability inventories. Validation: PASS with 21 registered sources. Committed in 4b097a5.
 - [x] Task 3: Define, screen, and obtain approval for the product identity. User selected SiteHelm on 2026-07-24. Validation: PASS.
 - [x] Task 4: Create the auditable V1 requirements matrix. Validation: PASS with 64 requirements (51 V1, 13 roadmap/excluded) covering all seven V1 modules.
 - [x] Task 5: Freeze the Phase 2 foundation contract. Validation: PASS with all 51 V1 requirements mapped to dispatchers and modules, 11 stable error codes documented.
@@ -21,7 +21,7 @@
 All Phase 1 gates passed on 2026-07-24. Validator outputs, re-run from the repository root:
 
 - Task 1: `PASS: clean-room protocol and empty source register are valid` — `docs/research/clean-room-protocol.md`, `docs/research/source-register.csv` (26 sources).
-- Task 2: `PASS: 26 sources registered and all cited IDs resolve` — `docs/research/wordpress-mcp-market-scan.md`, `docs/research/emcp-public-feature-inventory.md`.
+- Task 2: `PASS: 26 sources registered and all cited IDs resolve` — `docs/research/wordpress-mcp-market-scan.md`, `docs/research/reference-feature-inventory.md`.
 - Task 3: `PASS: identity brief contains a selected, screened identity` — `docs/product/product-identity-brief.md` (SiteHelm selected 2026-07-24).
 - Task 4: `PASS: 64 requirements are complete and all V1 modules are covered` — `docs/product/v1-requirements-matrix.csv` (51 V1, 13 roadmap/excluded).
 - Task 5: `PASS: foundation contract maps all 51 V1 requirements` — `docs/product/phase-2-foundation-contract.md` (11 stable error codes).
@@ -238,7 +238,7 @@ and response recorded verbatim.
   write-verification-contract plan: its `user_outcome` column also promises "a
   revision trail for recovery", and correcting the evidence while leaving the
   outcome would desync the row. That outcome traces to external sources
-  (SRC-0006; SRC-0009; SRC-0011) and market evidence EMCP-CAP-004, so this is a
+  (SRC-0006; SRC-0009; SRC-0011) and market evidence REF-CAP-004, so this is a
   product decision, not a wording fix. Needs an explicit decision at Phase 5
   (Elementor) planning covering **both** the `acceptance_evidence` and the
   `user_outcome` column.
@@ -300,6 +300,6 @@ once the whole-branch review is closed and the integration decision is taken.
 Two items were surfaced at approval time and remain the user's to action:
 
 - The Application Password named "SiteHelm Phase 3a demonstration" issued to
-  `admin` on `emcp-license-test` should be revoked when the site is no longer
+  `admin` on `sitehelm-dev` should be revoked when the site is no longer
   used to drive the plugin from an MCP client.
 - The branch is unpushed and unmerged pending the integration decision.

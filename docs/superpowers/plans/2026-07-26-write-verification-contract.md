@@ -951,7 +951,7 @@ What this task verifies live is what today's operations can reach. Where a case 
 
 ```bash
 WT="C:/Users/SHAHID ALI/Desktop/SiteHelm/.claude/worktrees/phase-3a-change-engine"
-LIVE="C:/Users/SHAHID ALI/Local Sites/emcp-license-test/app/public/wp-content/plugins/sitehelm"
+LIVE="C:/Users/SHAHID ALI/Local Sites/sitehelm-dev/app/public/wp-content/plugins/sitehelm"
 cp -r "$WT/src/." "$LIVE/src/"
 grep -c "VerifiedWithAdjustments" "$LIVE/src/Contracts/VerificationStatus.php"
 ```
@@ -969,7 +969,7 @@ Write to the scratchpad (never the repo). Bootstrap pattern:
 ```bash
 PHP="/c/Users/SHAHID ALI/AppData/Roaming/Local/lightning-services/php-8.2.29+0/bin/win64/php.exe"
 CONF="C:\\Users\\SHAHID ALI\\AppData\\Roaming\\Local\\run\\EMWMtyRkQ\\conf\\php"
-cd "C:/Users/SHAHID ALI/Local Sites/emcp-license-test/app/public" && "$PHP" -c "$CONF" <probe.php>
+cd "C:/Users/SHAHID ALI/Local Sites/sitehelm-dev/app/public" && "$PHP" -c "$CONF" <probe.php>
 ```
 
 A `php_imagick.dll` startup warning is harmless noise. The site must be running in the LocalWP GUI; that start is manual and no CLI can do it reliably.
@@ -992,7 +992,7 @@ Paste the actual output into the task report. Report what happened, including an
 - [ ] **Step 4: Revoke the probe credential**
 
 ```bash
-cd "C:/Users/SHAHID ALI/Local Sites/emcp-license-test/app/public" && "$PHP" -c "$CONF" -r '
+cd "C:/Users/SHAHID ALI/Local Sites/sitehelm-dev/app/public" && "$PHP" -c "$CONF" -r '
 define("WP_USE_THEMES",false); require "wp-load.php";
 foreach (WP_Application_Passwords::get_user_application_passwords(1) as $p) {
   if (str_starts_with($p["name"],"SiteHelm")) { WP_Application_Passwords::delete_application_password(1,$p["uuid"]); }
@@ -1038,5 +1038,5 @@ Before declaring the plan complete:
 - [ ] `verified()` no longer exists in `ChangeEngine`; the three-way rule exists in exactly one place
 - [ ] A live probe confirms a title WordPress adjusts no longer returns `verification_failed`
 - [ ] No warning anywhere attributes a field change to a plugin
-- [ ] `grep -rn "revision" docs/product/v1-requirements-matrix.csv` returns exactly two rows, both adjudicated: **REQ-0042** (Elementor, unbuilt) rests its evidence on a revision trail and is the same defect class, but its `user_outcome` promises that trail from external sources (SRC-0006/0009/0011, EMCP-CAP-004), so correcting evidence alone would desync the row — deliberately left for a Phase 5 decision covering both columns, and tracked as an open item in `tasks/todo.md`. **REQ-0008**'s "restored revision content" names the content version restored rather than asserting a WordPress revision row exists, and the mechanism it cites as evidence — re-reading the target — does deliver. *Corrected after Task 5: the original wording demanded zero hits, which contradicts these two rulings.*
+- [ ] `grep -rn "revision" docs/product/v1-requirements-matrix.csv` returns exactly two rows, both adjudicated: **REQ-0042** (Elementor, unbuilt) rests its evidence on a revision trail and is the same defect class, but its `user_outcome` promises that trail from external sources (SRC-0006/0009/0011, REF-CAP-004), so correcting evidence alone would desync the row — deliberately left for a Phase 5 decision covering both columns, and tracked as an open item in `tasks/todo.md`. **REQ-0008**'s "restored revision content" names the content version restored rather than asserting a WordPress revision row exists, and the mechanism it cites as evidence — re-reading the target — does deliver. *Corrected after Task 5: the original wording demanded zero hits, which contradicts these two rulings.*
 - [ ] No Application Password beginning `SiteHelm` remains on the live site
