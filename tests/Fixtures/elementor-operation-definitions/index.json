@@ -6,12 +6,15 @@
         "elementor-element-get",
         "elementor-element-search",
         "elementor-control-schema",
+        "elementor-global-tokens-get",
         "elementor-element-add",
         "elementor-element-update",
         "elementor-widget-settings-update",
         "elementor-element-move",
         "elementor-element-duplicate",
-        "elementor-element-remove"
+        "elementor-element-remove",
+        "elementor-global-colors-update",
+        "elementor-global-typography-update"
     ],
-    "operationCount": 12
+    "operationCount": 15
 }

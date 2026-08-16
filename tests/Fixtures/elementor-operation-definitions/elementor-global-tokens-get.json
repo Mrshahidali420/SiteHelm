@@ -1,0 +1,46 @@
+{
+    "inputSchema": {
+        "type": "object",
+        "properties": [],
+        "required": [],
+        "additionalProperties": false
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "kitId": {
+                "type": "integer",
+                "description": "The post identifier of the active site-settings kit the answer was read from."
+            },
+            "elementorVersion": {
+                "type": "string",
+                "description": "The Elementor version that answered."
+            },
+            "colorCount": {
+                "type": "integer",
+                "description": "How many addressable colour entries the palette holds."
+            },
+            "colors": {
+                "type": "array",
+                "description": "The palette. Each entry carries `id` (the handle a write addresses it by, and the suffix of its `--e-global-color-` CSS variable), `title`, `scope`, and `color` as stored. `color` is ABSENT when the entry stores none."
+            },
+            "typographyCount": {
+                "type": "integer",
+                "description": "How many addressable typography entries the site holds."
+            },
+            "typography": {
+                "type": "array",
+                "description": "The shared type styles. Each entry carries `id`, `title`, `scope`, and `settings` — every stored `typography_` member of that entry, as stored. A member the entry has never set is ABSENT rather than null."
+            }
+        },
+        "required": [
+            "kitId",
+            "elementorVersion",
+            "colorCount",
+            "colors",
+            "typographyCount",
+            "typography"
+        ],
+        "additionalProperties": false
+    }
+}

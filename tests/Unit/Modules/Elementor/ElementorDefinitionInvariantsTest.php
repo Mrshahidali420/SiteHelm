@@ -76,12 +76,15 @@ final class ElementorDefinitionInvariantsTest extends TestCase {
 		'elementor-element-get',
 		'elementor-element-search',
 		'elementor-control-schema',
+		'elementor-global-tokens-get',
 		'elementor-element-add',
 		'elementor-element-update',
 		'elementor-widget-settings-update',
 		'elementor-element-move',
 		'elementor-element-duplicate',
 		'elementor-element-remove',
+		'elementor-global-colors-update',
+		'elementor-global-typography-update',
 	];
 
 	/**
@@ -93,12 +96,12 @@ final class ElementorDefinitionInvariantsTest extends TestCase {
 	 * read that silently became a write, or a write registered without its write
 	 * handler, moves the derived count away from this one.
 	 */
-	private const ELEMENTOR_READ_COUNT = 6;
+	private const ELEMENTOR_READ_COUNT = 7;
 
 	/**
 	 * The Elementor module's write count, bumped by every task registering a write.
 	 */
-	private const ELEMENTOR_WRITE_COUNT = 6;
+	private const ELEMENTOR_WRITE_COUNT = 8;
 
 	/**
 	 * The capabilities an Elementor operation may declare.
@@ -109,9 +112,17 @@ final class ElementorDefinitionInvariantsTest extends TestCase {
 	 * every page the site builds, and `manage_options` would refuse the editor
 	 * the requirements are written for.
 	 *
+	 * `edit_theme_options` IS THE THIRD, AND IT IS NOT A WIDENING. It gates only
+	 * the global-token operations, which address the site-settings kit rather than
+	 * a document, and it is the capability ELEMENTOR ITSELF declares on that kit
+	 * — `core/kits/documents/kit.php` sets `edit_capability` to exactly this. An
+	 * operator who may not open Site Settings in Elementor's own editor must not
+	 * be able to repaint the whole site through SiteHelm, and gating the kit on
+	 * `edit_posts` instead would let any contributor do precisely that.
+	 *
 	 * @var string[]
 	 */
-	private const ALLOWED_CAPABILITIES = [ 'edit_posts', 'edit_post' ];
+	private const ALLOWED_CAPABILITIES = [ 'edit_posts', 'edit_post', 'edit_theme_options' ];
 
 	/**
 	 * The builders REQ-0063 requires SiteHelm V1 to expose no operation for.
@@ -327,6 +338,34 @@ final class ElementorDefinitionInvariantsTest extends TestCase {
 				);
 			}
 		}
+	}
+
+	/**
+	 * The site-settings capability reaches only the operations that address the kit.
+	 *
+	 * Without this, adding `edit_theme_options` to ALLOWED_CAPABILITIES would have
+	 * silently permitted a DOCUMENT operation to gate on it — which is the wrong
+	 * direction twice over: it would refuse an editor who may edit the page, and
+	 * it would let a theme administrator with no post rights rewrite one.
+	 */
+	public function test_the_site_settings_capability_gates_only_the_global_token_operations(): void {
+		$kit_scoped = [];
+
+		foreach ( $this->registeredDefinitions( $this->registryWithElementorModule() ) as $definition ) {
+			if ( in_array( 'edit_theme_options', $definition->requiredCapabilities, true ) ) {
+				$kit_scoped[] = $definition->id;
+			}
+		}
+
+		$this->assertSame(
+			[
+				'elementor-global-tokens-get',
+				'elementor-global-colors-update',
+				'elementor-global-typography-update',
+			],
+			$kit_scoped,
+			'Only the global-token operations address the site-settings kit, so only they may gate on the capability Elementor puts on that kit.'
+		);
 	}
 
 	public function test_every_registered_operation_routes_to_one_of_the_eleven_frozen_dispatchers(): void {
