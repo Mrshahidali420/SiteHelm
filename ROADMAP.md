@@ -12,6 +12,13 @@ commitment to sequence.
 
 ---
 
+## Shipped — v0.2.0
+
+An admin console: **Connect**, **Activity**, **Status** and **Operations**, under one
+top-level menu. Connecting a client is now a screen rather than a documentation exercise —
+the endpoint, an Application Password minted in place, and a paste-ready configuration.
+Closes REQ-0074.
+
 ## Shipped — v0.1.0
 
 51 operations across 11 dispatchers: content, media, menus, Elementor, ACF, Meta Box, and

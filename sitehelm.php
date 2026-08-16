@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       SiteHelm
  * Description:       Secure WordPress MCP operations platform: safe, auditable AI-driven site operations.
- * Version:           0.1.0
+ * Version:           0.2.0
  * Requires at least: 6.6
  * Requires PHP:      8.1
  * Author:            SiteHelm
@@ -15,7 +15,7 @@
 declare(strict_types=1);
 
 if ( ! defined( 'SITEHELM_VERSION' ) ) {
-	define( 'SITEHELM_VERSION', '0.1.0' );
+	define( 'SITEHELM_VERSION', '0.2.0' );
 	define( 'SITEHELM_MIN_PHP', '8.1' );
 	define( 'SITEHELM_MIN_WP', '6.6' );
 	define( 'SITEHELM_PLUGIN_FILE', __FILE__ );
