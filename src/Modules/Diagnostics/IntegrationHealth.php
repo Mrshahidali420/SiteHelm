@@ -185,7 +185,7 @@ final class IntegrationHealth {
 		}
 
 		return sprintf(
-			'%s is unavailable: %s is not active on this site. Install and activate %s %s to enable this module\'s operations.',
+			'%s is unavailable: %s is not active on this site. SiteHelm cannot tell a deactivated plugin apart from one that was never installed. Activate %s %s — installing it first if it is not present — to enable this module\'s operations.',
 			$name,
 			$dep,
 			$dep,

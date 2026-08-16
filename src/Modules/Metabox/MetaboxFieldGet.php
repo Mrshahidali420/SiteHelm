@@ -305,7 +305,7 @@ final class MetaboxFieldGet {
 			throw new OperationException(
 				ErrorCode::IntegrationUnavailable,
 				'Meta Box is not active on this site, so no Meta Box field value can be read from this post.',
-				'Install and activate Meta Box, then try again.'
+				'Activate Meta Box, or install it first if it is not on this site, then try again.'
 			);
 		}
 
