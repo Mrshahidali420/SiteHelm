@@ -116,80 +116,15 @@ final class StatusScreenTest extends TestCase {
 		$this->assertStringContainsString( (string) Installer::DB_VERSION, $html );
 	}
 
-	public function testEveryModuleGetsARowWhetherOrNotTheLoaderReportedOnIt(): void {
+	/**
+	 * Per-module detail lives on the Modules screen; Status carries the count and
+	 * nothing more. {@see ModulesScreenTest} covers the cards themselves.
+	 */
+	public function testStatusReportsTheModuleCountWithoutRepeatingTheModulesScreen(): void {
 		$html = $this->render( [] );
 
-		$this->assertSame( count( ModuleId::cases() ), substr_count( $html, '<tr><td>' ) );
-	}
-
-	/**
-	 * "Not active" and "Not loaded" have different causes. Telling an operator
-	 * their module is not active when the module never ran at all sends them
-	 * looking in the wrong place.
-	 */
-	public function testAModuleMissingFromTheMapReadsAsNotLoadedRatherThanNotActive(): void {
-		$html = $this->render( [] );
-
-		$this->assertStringContainsString( 'Not loaded', $html );
-		$this->assertStringNotContainsString( '>Not active<', $html );
-	}
-
-	/**
-	 * Presence is detected by asking whether the integration's constants and
-	 * classes are loaded, which is true only while its plugin is ACTIVE. An
-	 * installed but deactivated plugin therefore looks exactly like an absent
-	 * one from here, so the screen must not claim it is not installed — that is
-	 * a claim it has no evidence for, and it sends an operator off to reinstall
-	 * a plugin they already have.
-	 */
-	public function testAnInactiveModuleReadsAsNotActiveRatherThanNotInstalled(): void {
-		$html = $this->render(
-			[
-				ModuleId::Elementor->value => [
-					'version' => null,
-					'health'  => ModuleHealth::Inactive->value,
-				],
-			]
-		);
-
-		$this->assertStringContainsString( '>Not active<', $html );
-		$this->assertStringNotContainsString( 'Not installed', $html );
-	}
-
-	public function testAVersionBlockedModuleSaysSoAndShowsTheVersionItFound(): void {
-		$html = $this->render(
-			[
-				ModuleId::Acf->value => [
-					'version' => '5.9.0',
-					'health'  => ModuleHealth::VersionBlocked->value,
-				],
-			]
-		);
-
-		$this->assertStringContainsString( 'Version too old', $html );
-		$this->assertStringContainsString( '<code>5.9.0</code>', $html );
-		$this->assertStringContainsString( 'sitehelm-badge--refused', $html );
-	}
-
-	public function testAModuleWithNoDetectedVersionSaysSoRatherThanShowingAnEmptyCell(): void {
-		$html = $this->render(
-			[
-				ModuleId::Metabox->value => [
-					'version' => null,
-					'health'  => ModuleHealth::Inactive->value,
-				],
-			]
-		);
-
-		$this->assertStringContainsString( 'Not detected', $html );
-	}
-
-	public function testEveryModuleIsNamedInWordsRatherThanByItsIdentifier(): void {
-		$html = $this->render( $this->allActive() );
-
-		$this->assertStringContainsString( 'Advanced Custom Fields', $html );
-		$this->assertStringContainsString( 'Meta Box', $html );
-		$this->assertStringContainsString( 'Core content', $html );
+		$this->assertStringContainsString( '0 of 7', $html );
+		$this->assertStringNotContainsString( 'Advanced Custom Fields', $html );
 	}
 
 	public function testTheEnvironmentReportsTheVersionsAnOperatorWouldBeAskedFor(): void {

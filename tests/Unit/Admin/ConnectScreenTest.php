@@ -29,10 +29,12 @@ final class ConnectScreenTest extends TestCase {
 		$this->wpdb      = new FakeWpdb();
 		$GLOBALS['wpdb'] = $this->wpdb;
 		$_GET            = [];
+		$_POST           = [];
 	}
 
 	protected function tearDown(): void {
-		$_GET = [];
+		$_GET  = [];
+		$_POST = [];
 		unset( $GLOBALS['wpdb'] );
 		parent::tearDown();
 	}
@@ -140,8 +142,25 @@ final class ConnectScreenTest extends TestCase {
 		$this->assertStringNotContainsString( 'travels in the clear', $html );
 	}
 
+	/**
+	 * Hands the screen a password to reveal, shaped as the handler stores it.
+	 *
+	 * @param string $password The password the handler minted.
+	 * @param int    $user     The account it belongs to.
+	 */
+	private function queueHandoff( string $password, int $user = 0 ): string {
+		$key = 'sitehelm_new_password_' . AdminWordPressStubs::$currentUserId;
+
+		AdminWordPressStubs::$transients[ $key ] = [
+			'user'     => 0 === $user ? AdminWordPressStubs::$currentUserId : $user,
+			'password' => $password,
+		];
+
+		return $key;
+	}
+
 	public function testANewlyCreatedPasswordIsShownOnce(): void {
-		AdminWordPressStubs::$transients[ 'sitehelm_new_password_' . AdminWordPressStubs::$currentUserId ] = 'abcd efgh ijkl';
+		$this->queueHandoff( 'abcd efgh ijkl' );
 
 		$html = $this->render();
 
@@ -155,9 +174,7 @@ final class ConnectScreenTest extends TestCase {
 	 * the create form again rather than the password a second time.
 	 */
 	public function testTheHandoffTransientIsDeletedAsItIsRead(): void {
-		$key = 'sitehelm_new_password_' . AdminWordPressStubs::$currentUserId;
-
-		AdminWordPressStubs::$transients[ $key ] = 'abcd efgh ijkl';
+		$key = $this->queueHandoff( 'abcd efgh ijkl' );
 
 		$this->render();
 
@@ -170,7 +187,10 @@ final class ConnectScreenTest extends TestCase {
 	 * the same moment cannot be shown each other's.
 	 */
 	public function testAnotherUsersHandoffIsNeverRead(): void {
-		AdminWordPressStubs::$transients['sitehelm_new_password_99'] = 'someone elses password';
+		AdminWordPressStubs::$transients['sitehelm_new_password_99'] = [
+			'user'     => 99,
+			'password' => 'someone elses password',
+		];
 
 		$html = $this->render();
 
@@ -201,7 +221,7 @@ final class ConnectScreenTest extends TestCase {
 	}
 
 	public function testTheSnippetsCarryTheNewPasswordOnceThereIsOne(): void {
-		AdminWordPressStubs::$transients[ 'sitehelm_new_password_' . AdminWordPressStubs::$currentUserId ] = 'abcd efgh';
+		$this->queueHandoff( 'abcd efgh' );
 
 		$html = $this->render();
 
@@ -209,7 +229,84 @@ final class ConnectScreenTest extends TestCase {
 			base64_encode( AdminWordPressStubs::$currentUserLogin . ':abcd efgh' ),
 			$html
 		);
-		$this->assertStringContainsString( 'Ready to paste', $html );
+		$this->assertStringContainsString( 'ready to paste', $html );
+	}
+
+	/**
+	 * A password minted for another account must be described by that account's
+	 * login, not by the person looking at the screen. Snippets that named the
+	 * reader would be pasted into a client and fail to authenticate.
+	 */
+	public function testSnippetsForAnotherAccountsPasswordNameThatAccount(): void {
+		AdminWordPressStubs::$users         = [ 12 => [ 'login' => 'editorial', 'role' => 'editor' ] ];
+		AdminWordPressStubs::$editableUsers = [ 12 ];
+
+		$this->queueHandoff( 'abcd efgh', 12 );
+
+		$html = $this->render();
+
+		$this->assertStringContainsString( base64_encode( 'editorial:abcd efgh' ), $html );
+		$this->assertStringNotContainsString(
+			base64_encode( AdminWordPressStubs::$currentUserLogin . ':abcd efgh' ),
+			$html
+		);
+	}
+
+	/**
+	 * One choice is not a choice. A dropdown holding only the reader's own account
+	 * asks a question with a single answer, so the field states the account.
+	 */
+	public function testWithOnlyOneAccountThePickerIsAStatementRatherThanAChoice(): void {
+		$html = $this->render();
+
+		$this->assertStringNotContainsString( 'name="sitehelm_user"', $html );
+		$this->assertStringContainsString( 'value="agency" readonly disabled', $html );
+	}
+
+	public function testTheAccountsThisPersonMayActForAreOffered(): void {
+		AdminWordPressStubs::$users         = [ 12 => [ 'login' => 'editorial', 'role' => 'editor' ] ];
+		AdminWordPressStubs::$editableUsers = [ 12 ];
+
+		$html = $this->render();
+
+		$this->assertStringContainsString( 'name="sitehelm_user"', $html );
+		$this->assertStringContainsString( '<option value="12">editorial (editor)</option>', $html );
+	}
+
+	/**
+	 * The picker cannot be the thing that grants the permission. An account this
+	 * person may not edit is not offered, even though it exists on the site.
+	 */
+	public function testAnAccountThisPersonMayNotEditIsNotOffered(): void {
+		AdminWordPressStubs::$users         = [
+			12 => [ 'login' => 'editorial', 'role' => 'editor' ],
+			13 => [ 'login' => 'someone-elses', 'role' => 'author' ],
+		];
+		AdminWordPressStubs::$editableUsers = [ 12 ];
+
+		$html = $this->render();
+
+		$this->assertStringContainsString( '>editorial (editor)<', $html );
+		$this->assertStringNotContainsString( 'someone-elses', $html );
+	}
+
+	/**
+	 * The rendered dropdown is not the boundary; the handler is. A POST naming an
+	 * account this person may not edit is refused whatever the page offered, so a
+	 * forged form cannot mint a credential for an administrator.
+	 */
+	public function testCreatingAPasswordForAnAccountThisPersonMayNotEditIsRefused(): void {
+		AdminWordPressStubs::$users         = [ 13 => [ 'login' => 'someone-elses', 'role' => 'administrator' ] ];
+		AdminWordPressStubs::$editableUsers = [];
+
+		$_POST['sitehelm_user'] = '13';
+
+		try {
+			( new ConnectScreen( new AuditStore() ) )->handle_create_password();
+			$this->fail( 'The handler minted a password for an account the actor may not edit.' );
+		} catch ( AdminDied $died ) {
+			$this->assertStringContainsString( 'do not have permission', $died->getMessage() );
+		}
 	}
 
 	public function testAFailureCarriedBackFromThePasswordRequestIsShown(): void {
@@ -242,5 +339,37 @@ final class ConnectScreenTest extends TestCase {
 		$this->expectException( AdminDied::class );
 
 		( new ConnectScreen( new AuditStore() ) )->handle_create_password();
+	}
+
+	/**
+	 * The capability gate alone would let a third-party page mint a credential in
+	 * an administrator's browser, so the POST is checked for its own nonce before
+	 * anything is read from it.
+	 */
+	public function testTheCapabilityGateIsRefusedBeforeTheNonceIsEvenConsulted(): void {
+		AdminWordPressStubs::$canManage = false;
+
+		try {
+			( new ConnectScreen( new AuditStore() ) )->handle_create_password();
+		} catch ( AdminDied $died ) {
+			unset( $died );
+		}
+
+		$this->assertSame( [], AdminWordPressStubs::$refererChecks );
+	}
+
+	public function testThePostIsVerifiedAgainstItsOwnNonceBeforeAnAccountIsRead(): void {
+		AdminWordPressStubs::$users         = [ 13 => [ 'login' => 'someone-elses', 'role' => 'administrator' ] ];
+		AdminWordPressStubs::$editableUsers = [];
+
+		$_POST['sitehelm_user'] = '13';
+
+		try {
+			( new ConnectScreen( new AuditStore() ) )->handle_create_password();
+		} catch ( AdminDied $died ) {
+			unset( $died );
+		}
+
+		$this->assertSame( [ ConnectScreen::NONCE_CREATE_PASSWORD ], AdminWordPressStubs::$refererChecks );
 	}
 }
