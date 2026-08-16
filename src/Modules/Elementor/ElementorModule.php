@@ -189,6 +189,13 @@ final class ElementorModule implements IntegrationModule {
 		$document = new ElementorDocument();
 		$tree     = new ElementorTree();
 
+		// The accessor and the addressing walk are built here rather than in the
+		// write block below because the introspection reads need them too, and one
+		// ElementorApi per request means one presence gate and one registry read
+		// shared by everything under this module.
+		$api  = new ElementorApi( $this->presence );
+		$edit = new ElementorTreeEdit();
+
 		$registry->register(
 			ElementorDocumentList::definition(),
 			[ new ElementorDocumentList( $fields, $this->presence ), 'handle' ]
@@ -204,15 +211,28 @@ final class ElementorModule implements IntegrationModule {
 			[ new ElementorWidgetAvailability( $this->presence ), 'handle' ]
 		);
 
+		$registry->register(
+			ElementorElementGet::definition(),
+			[ new ElementorElementGet( $fields, $document, $tree, $edit, $this->presence ), 'handle' ]
+		);
+
+		$registry->register(
+			ElementorElementSearch::definition(),
+			[ new ElementorElementSearch( $fields, $document, new ElementorTreeSearch(), $edit, $this->presence ), 'handle' ]
+		);
+
+		$registry->register(
+			ElementorControlSchema::definition(),
+			[ new ElementorControlSchema( $api, $this->presence ), 'handle' ]
+		);
+
 		// The write block. Every one of these shares a single ElementorWriteTarget,
 		// and the target shares a single ElementorApi with the cache invalidator the
 		// writer holds — one presence gate, one registry read, one cache flush per
 		// document, rather than one of each per operation.
-		$api      = new ElementorApi( $this->presence );
 		$coercion = new ElementorPropCoercion( $api );
 		$writer   = new ElementorDocumentWriter( $api, $document, new ElementorCacheInvalidator( $api ) );
 		$targets  = new ElementorWriteTarget( $document, $tree, $this->presence, $coercion, $writer );
-		$edit     = new ElementorTreeEdit();
 		$inputs   = new ElementorElementAddInput( $coercion, $edit );
 		$merge    = new ElementorSettingsMerge( $edit, $coercion );
 		$diff     = new ElementorTreeDiff( $tree );
