@@ -75,9 +75,39 @@ final class AdminWordPressStubs {
 	public static bool $applicationPasswords = true;
 
 	/**
+	 * Other accounts on the doubled site, as id to login and first role.
+	 *
+	 * @var array<int, array{login: string, role: string}>
+	 */
+	public static array $users = [];
+
+	/**
+	 * Account ids `current_user_can( 'edit_user', … )` answers true for.
+	 *
+	 * Separate from {@see self::$users} on purpose: the screen is supposed to
+	 * offer only the accounts this person may act for, and a double that let
+	 * every listed account through could not tell a screen that filters from one
+	 * that does not.
+	 *
+	 * @var int[]
+	 */
+	public static array $editableUsers = [];
+
+	/**
+	 * Nonce actions passed to the doubled `check_admin_referer()`, in order.
+	 *
+	 * Recorded rather than merely allowed, because a handler that never verified
+	 * its nonce would pass against a double that only returned true.
+	 *
+	 * @var string[]
+	 */
+	public static array $refererChecks = [];
+
+	/**
 	 * Installs the double set and clears state from the previous test.
 	 */
 	public static function install(): void {
+		self::$refererChecks = [];
 		self::$canManage            = true;
 		self::$isSsl                = true;
 		self::$options              = [];
@@ -86,6 +116,8 @@ final class AdminWordPressStubs {
 		self::$currentUserId        = 7;
 		self::$currentUserLogin     = 'agency';
 		self::$applicationPasswords = true;
+		self::$users                = [];
+		self::$editableUsers        = [];
 
 		Functions\stubTranslationFunctions();
 		Functions\stubEscapeFunctions();
@@ -100,8 +132,41 @@ final class AdminWordPressStubs {
 			static fn( string $single, string $plural, int $number ): string => 1 === $number ? $single : $plural
 		);
 
-		Functions\when( 'current_user_can' )->alias( static fn(): bool => self::$canManage );
+		/*
+		 * `current_user_can()` is asked TWO different questions here, and a double
+		 * that answered both from one flag could not tell a screen that checks
+		 * `edit_user` per account apart from one that never checks it at all. The
+		 * meta capability is answered from its own list, against the object id the
+		 * caller passed.
+		 */
+		Functions\when( 'current_user_can' )->alias(
+			static function ( string $capability, ...$args ): bool {
+				if ( 'edit_user' !== $capability ) {
+					return self::$canManage;
+				}
+
+				return in_array( (int) ( $args[0] ?? 0 ), self::$editableUsers, true );
+			}
+		);
+		Functions\when( 'get_users' )->alias(
+			static function ( array $query = [] ): array {
+				$exclude = array_map( 'intval', (array) ( $query['exclude'] ?? [] ) );
+				$found   = [];
+
+				foreach ( self::$users as $id => $user ) {
+					if ( ! in_array( (int) $id, $exclude, true ) ) {
+						$found[] = self::user( (int) $id );
+					}
+				}
+
+				return $found;
+			}
+		);
+		Functions\when( 'get_userdata' )->alias(
+			static fn( int $id ) => isset( self::$users[ $id ] ) ? self::user( $id ) : false
+		);
 		Functions\when( 'is_ssl' )->alias( static fn(): bool => self::$isSsl );
+
 		Functions\when( 'wp_die' )->alias(
 			static function ( $message = '' ): void {
 				throw new AdminDied( is_string( $message ) ? $message : '' );
@@ -151,18 +216,19 @@ final class AdminWordPressStubs {
 		Functions\when( 'wp_unslash' )->returnArg( 1 );
 		Functions\when( 'absint' )->alias( static fn( $value ): int => abs( (int) $value ) );
 		Functions\when( 'wp_nonce_field' )->justReturn( '' );
+		Functions\when( 'check_admin_referer' )->alias(
+			static function ( string $action ): bool {
+				self::$refererChecks[] = $action;
+
+				return true;
+			}
+		);
 		Functions\when( 'wp_is_application_passwords_available' )->alias(
 			static fn(): bool => self::$applicationPasswords
 		);
 		Functions\when( 'get_current_user_id' )->alias( static fn(): int => self::$currentUserId );
 		Functions\when( 'wp_get_current_user' )->alias(
-			static function (): object {
-				$user             = new \stdClass();
-				$user->ID         = self::$currentUserId;
-				$user->user_login = self::$currentUserLogin;
-
-				return $user;
-			}
+			static fn(): object => self::user( self::$currentUserId )
 		);
 		/*
 		 * Real `add_query_arg()` takes EITHER an array of pairs plus a URL, or a
@@ -181,5 +247,34 @@ final class AdminWordPressStubs {
 				return $url . $separator . http_build_query( $args );
 			}
 		);
+	}
+
+	/**
+	 * One account, shaped the way WordPress shapes one.
+	 *
+	 * THE ROLE LIST IS NOT ZERO-INDEXED, DELIBERATELY. `WP_User::$roles` is built
+	 * by filtering the capability list, and `array_filter()` preserves keys, so a
+	 * real account's roles routinely start at an index other than zero. A double
+	 * that handed back a tidy `[ 0 => 'editor' ]` would let a screen read
+	 * `$roles[0]` and pass here while printing nothing on a live site.
+	 *
+	 * The current user falls back to an administrator, because that is who reaches
+	 * a screen gated on `manage_options`.
+	 *
+	 * @param int $id The account identifier.
+	 */
+	private static function user( int $id ): object {
+		$known = self::$users[ $id ] ?? null;
+
+		$login = is_array( $known ) ? (string) $known['login'] : self::$currentUserLogin;
+		$role  = is_array( $known ) ? (string) $known['role'] : 'administrator';
+
+		$user               = new \stdClass();
+		$user->ID           = $id;
+		$user->user_login   = $login;
+		$user->display_name = $login;
+		$user->roles        = '' === $role ? [] : [ 3 => $role ];
+
+		return $user;
 	}
 }

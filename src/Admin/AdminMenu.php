@@ -12,7 +12,7 @@ namespace SiteHelm\Admin;
 use SiteHelm\Registry\CapabilityRegistry;
 
 /**
- * Registers the SiteHelm top-level menu and its four screens.
+ * Registers the SiteHelm top-level menu and its screens.
  *
  * The whole menu is gated on `manage_options`, which is the capability the
  * `system-*` and `audit-list` operations already require. A user who could see
@@ -53,6 +53,47 @@ final class AdminMenu {
 	 * The Operations screen's page slug.
 	 */
 	public const PAGE_OPERATIONS = 'sitehelm-operations';
+
+	/**
+	 * The Modules screen's page slug.
+	 */
+	public const PAGE_MODULES = 'sitehelm-modules';
+
+	/**
+	 * The console's screens, in the order they appear.
+	 *
+	 * One list, read by both the WordPress submenu and the console's own tab bar,
+	 * so a screen can never exist in one and not the other. The order runs from
+	 * what a person does first to what they consult afterwards: connect the
+	 * client, see what it can reach, look up an operation, then read back what
+	 * happened and why.
+	 *
+	 * @return array<string, array{label: string, icon: string}> Page slug to label and dashicon class.
+	 */
+	public static function tabs(): array {
+		return [
+			self::PAGE_CONNECT    => [
+				'label' => __( 'Connect', 'sitehelm' ),
+				'icon'  => 'dashicons-admin-links',
+			],
+			self::PAGE_MODULES    => [
+				'label' => __( 'Modules', 'sitehelm' ),
+				'icon'  => 'dashicons-screenoptions',
+			],
+			self::PAGE_OPERATIONS => [
+				'label' => __( 'Operations', 'sitehelm' ),
+				'icon'  => 'dashicons-list-view',
+			],
+			self::PAGE_ACTIVITY   => [
+				'label' => __( 'Activity', 'sitehelm' ),
+				'icon'  => 'dashicons-backup',
+			],
+			self::PAGE_STATUS     => [
+				'label' => __( 'Status', 'sitehelm' ),
+				'icon'  => 'dashicons-shield-alt',
+			],
+		];
+	}
 
 	/**
 	 * The registry the Operations screen reads.
@@ -97,40 +138,36 @@ final class AdminMenu {
 	 * Register the top-level menu and its subpages.
 	 */
 	public function add_pages(): void {
-		$connect    = new ConnectScreen();
-		$activity   = new ActivityScreen();
-		$status     = new StatusScreen( $this->health );
-		$operations = new OperationsScreen( $this->registry );
+		$screens = [
+			self::PAGE_CONNECT    => new ConnectScreen(),
+			self::PAGE_MODULES    => new ModulesScreen( $this->registry, $this->health ),
+			self::PAGE_OPERATIONS => new OperationsScreen( $this->registry ),
+			self::PAGE_ACTIVITY   => new ActivityScreen(),
+			self::PAGE_STATUS     => new StatusScreen( $this->health ),
+		];
 
 		add_menu_page(
 			__( 'SiteHelm', 'sitehelm' ),
 			__( 'SiteHelm', 'sitehelm' ),
 			self::CAPABILITY,
 			self::PAGE_CONNECT,
-			[ $connect, 'render' ],
+			[ $screens[ self::PAGE_CONNECT ], 'render' ],
 			self::menu_icon(),
 			58
 		);
 
-		$pages = [
-			[ self::PAGE_CONNECT, __( 'Connect', 'sitehelm' ), [ $connect, 'render' ] ],
-			[ self::PAGE_ACTIVITY, __( 'Activity', 'sitehelm' ), [ $activity, 'render' ] ],
-			[ self::PAGE_STATUS, __( 'Status', 'sitehelm' ), [ $status, 'render' ] ],
-			[ self::PAGE_OPERATIONS, __( 'Operations', 'sitehelm' ), [ $operations, 'render' ] ],
-		];
-
-		foreach ( $pages as list( $slug, $label, $callback ) ) {
+		foreach ( self::tabs() as $slug => $tab ) {
 			add_submenu_page(
 				self::PAGE_CONNECT,
 				sprintf(
 					/* translators: %s: screen name, such as Activity. */
 					__( 'SiteHelm %s', 'sitehelm' ),
-					$label
+					$tab['label']
 				),
-				$label,
+				$tab['label'],
 				self::CAPABILITY,
 				$slug,
-				$callback
+				[ $screens[ $slug ], 'render' ]
 			);
 		}
 	}
@@ -159,6 +196,18 @@ final class AdminMenu {
 				'copyUnavailable' => __( 'Select and copy manually', 'sitehelm' ),
 				/* translators: 1: number of matching operations, 2: total number of operations. */
 				'filtered'        => __( '%1$s of %2$s operations shown', 'sitehelm' ),
+				'testRunning'     => __( 'Testing the endpoint…', 'sitehelm' ),
+				'testReachable'   => __(
+					'The endpoint answered and asked for a credential, so the address is right and authentication is being checked. If a client still fails here, the password is wrong or the Authorization header is being dropped.',
+					'sitehelm'
+				),
+				'testNotFound'    => __(
+					'Nothing answered at that address. Check that permalinks are working and that the REST API has not been disabled on this site.',
+					'sitehelm'
+				),
+				/* translators: %s: the HTTP status code the endpoint returned. */
+				'testUnexpected'  => __( 'The endpoint answered with status %s, which SiteHelm did not expect.', 'sitehelm' ),
+				'testFailed'      => __( 'The request could not be sent from this browser. Something between it and the site is blocking the call.', 'sitehelm' ),
 			]
 		);
 	}

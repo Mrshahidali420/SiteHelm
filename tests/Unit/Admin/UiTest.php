@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace SiteHelm\Tests\Unit\Admin;
 
+use SiteHelm\Admin\AdminMenu;
 use SiteHelm\Admin\Ui;
 use SiteHelm\Tests\Doubles\AdminWordPressStubs;
 use SiteHelm\Tests\TestCase;
@@ -27,12 +28,94 @@ final class UiTest extends TestCase {
 		return (string) ob_get_clean();
 	}
 
-	public function testTheMastheadCarriesTheTitleTheLedeAndTheRunningVersion(): void {
-		$html = $this->capture( static fn() => Ui::masthead( 'Status', 'What SiteHelm can do here.' ) );
+	public function testThePageHeadCarriesTheTitleAndTheLede(): void {
+		$html = $this->capture( static fn() => Ui::page_head( 'Status', 'What SiteHelm can do here.' ) );
 
-		$this->assertStringContainsString( '<h1 class="sitehelm-masthead__title">Status</h1>', $html );
+		$this->assertStringContainsString( '<p class="sitehelm-pagehead__title">Status</p>', $html );
 		$this->assertStringContainsString( 'What SiteHelm can do here.', $html );
+	}
+
+	public function testTheAppShellCarriesTheRunningVersionAndEveryTab(): void {
+		$html = $this->capture( static fn() => Ui::app_open( AdminMenu::PAGE_STATUS ) );
+
 		$this->assertStringContainsString( SITEHELM_VERSION, $html );
+
+		foreach ( AdminMenu::tabs() as $slug => $tab ) {
+			$this->assertStringContainsString( 'page=' . $slug, $html, $slug );
+			$this->assertStringContainsString( '>' . $tab['label'] . '<', $html, $slug );
+		}
+	}
+
+	/**
+	 * The tab a person is on must be marked for assistive technology, not only
+	 * tinted: a nav where every item reads identically leaves someone who cannot
+	 * see the tint with no way to tell where they are.
+	 */
+	public function testTheActiveTabIsMarkedForAssistiveTechnology(): void {
+		$html = $this->capture( static fn() => Ui::app_open( AdminMenu::PAGE_ACTIVITY ) );
+
+		$this->assertSame( 1, substr_count( $html, 'aria-current="page"' ) );
+		$this->assertMatchesRegularExpression(
+			'/page=' . preg_quote( AdminMenu::PAGE_ACTIVITY, '/' ) . '"[^>]*aria-current="page"/',
+			$html
+		);
+	}
+
+	public function testTheAppShellClosesTheElementItOpened(): void {
+		$opened = $this->capture( static fn() => Ui::app_open( AdminMenu::PAGE_STATUS ) );
+		$closed = $this->capture( static fn() => Ui::app_close() );
+
+		$this->assertSame(
+			substr_count( $opened . $closed, '<div' ),
+			substr_count( $opened . $closed, '</div>' )
+		);
+	}
+
+	/**
+	 * A stat card's icon is decoration; the words are the answer. A card that
+	 * expressed "ready" only as a green tick would say nothing at all to a
+	 * screen reader.
+	 */
+	public function testEveryStatCardStatesItsValueInWords(): void {
+		$html = $this->capture(
+			static fn() => Ui::stat_grid(
+				[
+					[
+						'label' => 'Storage',
+						'value' => 'Ready',
+						'ok'    => true,
+					],
+					[
+						'label' => 'Connection',
+						'value' => 'Not HTTPS',
+						'ok'    => false,
+					],
+				]
+			)
+		);
+
+		$this->assertStringContainsString( '>Storage<', $html );
+		$this->assertStringContainsString( '>Ready<', $html );
+		$this->assertStringContainsString( '>Connection<', $html );
+		$this->assertStringContainsString( '>Not HTTPS<', $html );
+		$this->assertStringContainsString( 'sitehelm-statcard__icon--ok', $html );
+		$this->assertStringContainsString( 'sitehelm-statcard__icon--warn', $html );
+	}
+
+	/**
+	 * The copy source has to be readable with scripting off, because the button
+	 * that would have read it is hidden in that case. A block whose body lived
+	 * only in the textarea would be invisible to the person who needs it most.
+	 */
+	public function testACodeBlockShowsItsBodyAndAlsoOffersItToTheClipboard(): void {
+		$html = $this->capture(
+			static fn() => Ui::code_block( 'sitehelm-snippet-x', 'Run this', 'claude mcp add', 'Copy it' )
+		);
+
+		$this->assertStringContainsString( '<pre><code>claude mcp add</code></pre>', $html );
+		$this->assertStringContainsString( 'id="sitehelm-snippet-x"', $html );
+		$this->assertStringContainsString( 'data-sitehelm-copy="sitehelm-snippet-x"', $html );
+		$this->assertStringContainsString( 'Run this', $html );
 	}
 
 	public function testAVerdictWithoutDetailRendersNoDetailElement(): void {
@@ -130,8 +213,18 @@ final class UiTest extends TestCase {
 
 		$rendered = $this->capture(
 			static function () use ( $attack ): void {
-				Ui::masthead( $attack, $attack );
+				Ui::page_head( $attack, $attack );
 				Ui::verdict( 'ok', $attack, $attack );
+				Ui::code_block( $attack, $attack, $attack, $attack );
+				Ui::stat_grid(
+					[
+						[
+							'label' => $attack,
+							'value' => $attack,
+							'ok'    => true,
+						],
+					]
+				);
 				Ui::empty_state( $attack, $attack );
 				Ui::section_open( $attack, $attack );
 				Ui::facts( [ $attack => $attack ] );
