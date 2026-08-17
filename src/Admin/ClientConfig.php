@@ -22,9 +22,10 @@ namespace SiteHelm\Admin;
  * credential would fail in a way that looks like SiteHelm being broken.
  *
  * Every client here reaches the same single HTTP endpoint. Clients that speak
- * only stdio are given the public `mcp-remote` bridge rather than a SiteHelm
- * package, because SiteHelm does not ship one and a config naming a package
- * that does not exist is worse than no config at all.
+ * only stdio are pointed at the bridge shipped inside this plugin, so what runs
+ * on the operator's machine is the code that was reviewed and installed here.
+ * The public `mcp-remote` bridge is offered after it, for a client running on a
+ * machine that does not have the plugin's files.
  *
  * @package SiteHelm
  */
@@ -39,6 +40,11 @@ final class ClientConfig {
 	 * The MCP server name suggested to every client.
 	 */
 	public const SERVER_NAME = 'sitehelm';
+
+	/**
+	 * Where the shipped stdio bridge sits inside the plugin folder.
+	 */
+	public const BRIDGE_RELATIVE_PATH = 'bridge/sitehelm-bridge.mjs';
 
 	/**
 	 * The site's MCP endpoint.
@@ -226,13 +232,18 @@ final class ClientConfig {
 				'blocks' => [
 					[
 						'id'      => 'bridge-json',
-						'caption' => __( 'Uses the public mcp-remote bridge over npx', 'sitehelm' ),
+						'caption' => __( 'Runs the bridge shipped with this plugin. Needs Node 18 or newer. A client on a different machine than this site needs its own copy of bridge/sitehelm-bridge.mjs, with the path below pointed at the copy.', 'sitehelm' ),
 						'body'    => $this->bridge_json(),
 					],
 					[
 						'id'      => 'bridge-cli',
-						'caption' => __( 'Or run the bridge directly, to check it connects', 'sitehelm' ),
+						'caption' => __( 'Or run it by hand, to check it connects', 'sitehelm' ),
 						'body'    => $this->bridge_command(),
+					],
+					[
+						'id'      => 'bridge-remote',
+						'caption' => __( 'Or use the public mcp-remote bridge, which needs no local copy but fetches its code afresh at every launch', 'sitehelm' ),
+						'body'    => $this->remote_bridge_json(),
 					],
 				],
 			],
@@ -328,9 +339,66 @@ final class ClientConfig {
 	}
 
 	/**
-	 * A stdio entry that runs the public `mcp-remote` bridge over npx.
+	 * A stdio entry that runs the bridge shipped with this plugin.
+	 *
+	 * The credential goes in `env` rather than in `args` because a command line
+	 * is readable by every process on the machine while a child process
+	 * environment is not, and every client that launches a subprocess supports
+	 * both.
 	 */
 	private function bridge_json(): string {
+		return $this->encode(
+			[
+				'mcpServers' => [
+					self::SERVER_NAME => [
+						'command' => 'node',
+						'args'    => [ $this->bridge_path() ],
+						'env'     => [
+							'SITEHELM_ENDPOINT' => $this->endpoint,
+							'SITEHELM_AUTH'     => 'Basic ' . $this->credential(),
+						],
+					],
+				],
+			]
+		);
+	}
+
+	/**
+	 * The same bridge, run by hand to see whether it connects.
+	 */
+	private function bridge_command(): string {
+		return sprintf(
+			"SITEHELM_ENDPOINT=%s \\\n  SITEHELM_AUTH=\"Basic %s\" \\\n  node %s",
+			$this->endpoint,
+			$this->credential(),
+			$this->bridge_path()
+		);
+	}
+
+	/**
+	 * Where the shipped bridge lives on this server.
+	 *
+	 * The path is absolute and belongs to the machine WordPress runs on. A
+	 * client running on that same machine can use it as it stands; a client on
+	 * a different machine needs a copy of the file, which is why the screen says
+	 * so beside the snippet rather than leaving a path that resolves to nothing.
+	 *
+	 * Backslashes are folded to forward slashes so the value survives JSON
+	 * encoding legibly on Windows, where both spellings open the same file.
+	 */
+	private function bridge_path(): string {
+		return str_replace( '\\', '/', dirname( SITEHELM_PLUGIN_FILE ) ) . '/' . self::BRIDGE_RELATIVE_PATH;
+	}
+
+	/**
+	 * The fallback for a machine without the plugin's files: the public
+	 * `mcp-remote` bridge, fetched over npx.
+	 *
+	 * It is offered second rather than first because it fetches code from a
+	 * package registry at every launch, so what runs is whatever was published
+	 * most recently rather than what was reviewed and installed here.
+	 */
+	private function remote_bridge_json(): string {
 		return $this->encode(
 			[
 				'mcpServers' => [
@@ -346,17 +414,6 @@ final class ClientConfig {
 					],
 				],
 			]
-		);
-	}
-
-	/**
-	 * The same bridge, run by hand.
-	 */
-	private function bridge_command(): string {
-		return sprintf(
-			"npx -y mcp-remote %s \\\n  --header \"Authorization: Basic %s\"",
-			$this->endpoint,
-			$this->credential()
 		);
 	}
 
