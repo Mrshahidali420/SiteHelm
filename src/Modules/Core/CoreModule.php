@@ -107,10 +107,15 @@ final class CoreModule implements IntegrationModule {
 	 */
 	public function register( CapabilityRegistry $registry ): void {
 		$fields = new ContentFields();
+		$blocks = new ContentBlocks();
 
 		$registry->register( ContentRead::definition(), [ new ContentRead( $fields ), 'handle' ] );
 		$registry->register( ContentList::definition(), [ new ContentList(), 'handle' ] );
 		$registry->register( TaxonomyList::definition(), [ new TaxonomyList(), 'handle' ] );
+		$registry->register(
+			ContentBlocksRead::definition(),
+			[ new ContentBlocksRead( $fields, $blocks ), 'handle' ]
+		);
 
 		$targets = new ContentTarget( $fields );
 
@@ -150,6 +155,11 @@ final class CoreModule implements IntegrationModule {
 		$registry->registerWrite(
 			ContentTrash::definition(),
 			new ContentTrash( $fields, $targets )
+		);
+
+		$registry->registerWrite(
+			ContentBlockUpdate::definition(),
+			new ContentBlockUpdate( $fields, $targets, $blocks )
 		);
 
 		$registry->register( AuditRead::definition(), [ new AuditRead( new AuditStore(), new Installer() ), 'handle' ] );

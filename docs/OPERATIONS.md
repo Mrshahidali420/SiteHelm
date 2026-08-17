@@ -1,6 +1,6 @@
 # Operations reference
 
-SiteHelm exposes **54 operations** through **11 MCP tools**, called dispatchers. Every operation is
+SiteHelm exposes **56 operations** through **11 MCP tools**, called dispatchers. Every operation is
 declared once, in code, with a strict input schema (`additionalProperties: false`), a required
 capability, a risk level, and preview, snapshot, and rollback policies. That declaration is the
 contract the gateway enforces and the catalogue an agent discovers.
@@ -85,15 +85,16 @@ string, authorization header, or resolved IP address.
 
 Posts, pages, custom post types, and taxonomies.
 
-### `content-read` — 3 operations
+### `content-read` — 4 operations
 
 | Operation | Does | Capability |
 |---|---|---|
 | `content-get` | Reads one item with its fields, terms, and metadata | `edit_posts` |
 | `content-list` | Lists items with filtering and pagination | `edit_posts` |
 | `taxonomy-list` | Lists registered taxonomies and their terms | `edit_posts` |
+| `content-blocks-get` | Returns the block outline of one item, or one addressed block in full | `edit_post` |
 
-### `content-write` — 8 operations
+### `content-write` — 9 operations
 
 | Operation | Does | Capability | Risk | Rollback |
 |---|---|---|---|---|
@@ -105,6 +106,16 @@ Posts, pages, custom post types, and taxonomies.
 | `content-terms-assign` | Assigns categories, tags, or custom terms | `edit_post` | medium | supported |
 | `content-trash` | Moves an item to trash — reversible, never a permanent delete | `delete_post` | medium | required |
 | `content-rollback-apply` | Restores a previous change from its snapshot | `edit_post` | medium | supported |
+| `content-block-update` | Changes the attributes or inner markup of one block | `edit_post` | medium | supported |
+
+> **A block write rewrites the whole document, so it refuses one it cannot reproduce.**
+> `post_content` is a single column: changing one block means writing the document
+> back. `content-block-update` therefore parses and re-serializes the stored
+> document *before* changing anything, and refuses with `conflict` unless the
+> result is byte-identical to what is stored. It also requires the caller to name
+> the block expected at the address — an index path cannot notice that the page was
+> re-ordered since the outline was read — and permits replacing inner markup only
+> on a block with no inner blocks and exactly one chunk of markup.
 
 ## Media
 
