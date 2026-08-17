@@ -20,7 +20,7 @@
 
 ---
 
-SiteHelm is a WordPress plugin that exposes your site to AI agents over the [Model Context Protocol](https://modelcontextprotocol.io/). Claude, Claude Code, Cursor, VS Code, or any other MCP client can read your content, edit Elementor pages, manage media and menus, and write ACF and Meta Box fields — through **51 typed operations**, every one of them capability-checked, previewed before it runs, snapshotted before it changes anything, and verified afterwards by reading the site back.
+SiteHelm is a WordPress plugin that exposes your site to AI agents over the [Model Context Protocol](https://modelcontextprotocol.io/). Claude, Claude Code, Cursor, VS Code, or any other MCP client can read your content, edit Elementor pages, manage media and menus, and write ACF and Meta Box fields — through **63 typed operations**, every one of them capability-checked, previewed before it runs, snapshotted before it changes anything, and verified afterwards by reading the site back.
 
 The reason this project exists is the gap between *an agent can change your site* and *you would let an agent change a client's site*. Plenty of tools do the first. SiteHelm is built around the second.
 
@@ -63,7 +63,7 @@ SiteHelm makes a different trade. It is smaller in surface area and much stricte
 | **Undo** | Your backup plugin | A snapshot taken by the same plan, restorable by operation |
 | **Permissions** | Often a single API key | The authenticating WordPress user's real capabilities, re-checked per operation |
 | **Errors** | Whatever PHP threw | One of eleven typed error codes with an operator-facing remedy — never a stack trace, path, or SQL string |
-| **Surface** | 200+ loosely specified tools | 61 operations behind 11 dispatchers, each with a strict JSON Schema |
+| **Surface** | 200+ loosely specified tools | 63 operations behind 11 dispatchers, each with a strict JSON Schema |
 
 Fewer tools is deliberate. Every operation here has a written acceptance criterion, an input schema that rejects unknown properties, and a test that fails if the guard protecting it is deleted.
 
@@ -95,7 +95,7 @@ Writes that need it also record a rollback reference, so the change can be put b
 
 ## What it can do
 
-61 operations across seven modules, reached through 11 MCP tools (dispatchers). Call any dispatcher with no `operation` argument to get its catalogue — agents discover the surface at runtime instead of memorising it.
+63 operations across seven modules, reached through 11 MCP tools (dispatchers). Call any dispatcher with no `operation` argument to get its catalogue — agents discover the surface at runtime instead of memorising it.
 
 <table>
 <tr><th align="left">Dispatcher</th><th align="left">Operations</th></tr>
@@ -105,8 +105,8 @@ Writes that need it also record a rollback reference, so the change can be put b
 <tr><td><code>media-write</code></td><td>Upload, import from a URL, update alt text and captions, attach to a post</td></tr>
 <tr><td><code>menu-read</code></td><td>Menus, their items, and their theme location assignments</td></tr>
 <tr><td><code>menu-write</code></td><td>Create and update items, reorder a tree, assign a menu to a location</td></tr>
-<tr><td><code>elementor-read</code></td><td>Documents, elements, element search, widget availability, control schemas, global design tokens</td></tr>
-<tr><td><code>elementor-write</code></td><td>Add, update, move, duplicate, remove elements; widget settings; global colours and typography</td></tr>
+<tr><td><code>elementor-read</code></td><td>Documents, elements, element search, widget availability, control schemas, global design tokens, theme-builder templates and their display conditions</td></tr>
+<tr><td><code>elementor-write</code></td><td>Add, update, move, duplicate, remove elements; widget settings; global colours and typography; theme-template display conditions</td></tr>
 <tr><td><code>fields-read</code></td><td>ACF and Meta Box field groups, fields, and values</td></tr>
 <tr><td><code>fields-write</code></td><td>ACF and Meta Box field values</td></tr>
 <tr><td><code>system-read</code></td><td>Connection check, environment discovery, integration health, and the change audit log</td></tr>
@@ -128,11 +128,12 @@ A plugin that is present but below its floor reports `VersionBlocked` — a dist
 
 ### Elementor support in detail
 
-Elementor is the deepest module, at 15 operations. SiteHelm edits the stored Elementor document tree directly and flushes the generated CSS afterwards, so changes show on the front end without opening the editor.
+Elementor is the deepest module, at 19 operations. SiteHelm edits the stored Elementor document tree directly and flushes the generated CSS afterwards, so changes show on the front end without opening the editor.
 
 - **Discovery** — list documents, read a document tree, search elements within a document, read one element, read a widget's control schema, check widget availability.
 - **Structure** — add, update, move, duplicate, and remove elements, addressed by their stable element id.
 - **Design tokens** — read the global palette and type styles with the identifiers writes address them by, then update global colours and typography. Entries merge rather than replace, so setting a colour does not erase its title.
+- **Theme builder** — list the header, footer, archive, and singular templates with the display conditions each one stores, then replace one template's conditions as a whole rule. SiteHelm owns the condition grammar rather than reading it from the plugin, so what a write accepts cannot shift under a plugin update, and the write discards Elementor's resolved condition map in the same step that stores the rule — otherwise the site keeps serving the old header while every re-read agrees the change landed.
 
 ## Install
 

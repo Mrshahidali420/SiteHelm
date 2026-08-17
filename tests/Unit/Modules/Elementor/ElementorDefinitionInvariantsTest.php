@@ -78,6 +78,7 @@ final class ElementorDefinitionInvariantsTest extends TestCase {
 		'elementor-element-search',
 		'elementor-control-schema',
 		'elementor-global-tokens-get',
+		'elementor-theme-template-list',
 		'elementor-element-add',
 		'elementor-element-update',
 		'elementor-elements-update',
@@ -87,6 +88,7 @@ final class ElementorDefinitionInvariantsTest extends TestCase {
 		'elementor-element-remove',
 		'elementor-global-colors-update',
 		'elementor-global-typography-update',
+		'elementor-theme-conditions-set',
 	];
 
 	/**
@@ -98,12 +100,12 @@ final class ElementorDefinitionInvariantsTest extends TestCase {
 	 * read that silently became a write, or a write registered without its write
 	 * handler, moves the derived count away from this one.
 	 */
-	private const ELEMENTOR_READ_COUNT = 8;
+	private const ELEMENTOR_READ_COUNT = 9;
 
 	/**
 	 * The Elementor module's write count, bumped by every task registering a write.
 	 */
-	private const ELEMENTOR_WRITE_COUNT = 9;
+	private const ELEMENTOR_WRITE_COUNT = 10;
 
 	/**
 	 * The capabilities an Elementor operation may declare.
@@ -343,19 +345,33 @@ final class ElementorDefinitionInvariantsTest extends TestCase {
 	}
 
 	/**
-	 * The site-settings capability reaches only the operations that address the kit.
+	 * The site-settings capability reaches only the operations whose subject is the
+	 * site rather than a document.
 	 *
 	 * Without this, adding `edit_theme_options` to ALLOWED_CAPABILITIES would have
 	 * silently permitted a DOCUMENT operation to gate on it — which is the wrong
 	 * direction twice over: it would refuse an editor who may edit the page, and
 	 * it would let a theme administrator with no post rights rewrite one.
+	 *
+	 * THE LIST GREW BY ONE IN REQ-0080, AND THE RULE DID NOT CHANGE.
+	 * `elementor-theme-conditions-set` addresses a document identifier, which is why
+	 * it belongs here only on an argument rather than by resemblance: what it writes
+	 * is not that document's content but WHERE that document replaces the theme's
+	 * own output, on every URL the condition matches. That is the same kind of
+	 * site-wide decision the kit writes make — one condition can put a half-finished
+	 * header on the whole site — so it gates the same way, and it additionally
+	 * requires `edit_post` on the template at resolve time so a theme administrator
+	 * with no rights over that template still cannot move it.
+	 *
+	 * A future document-content operation appearing in this list is a defect, and
+	 * the exact-match assertion is what makes it one.
 	 */
-	public function test_the_site_settings_capability_gates_only_the_global_token_operations(): void {
-		$kit_scoped = [];
+	public function test_the_site_settings_capability_gates_only_the_site_wide_operations(): void {
+		$site_scoped = [];
 
 		foreach ( $this->registeredDefinitions( $this->registryWithElementorModule() ) as $definition ) {
 			if ( in_array( 'edit_theme_options', $definition->requiredCapabilities, true ) ) {
-				$kit_scoped[] = $definition->id;
+				$site_scoped[] = $definition->id;
 			}
 		}
 
@@ -364,9 +380,10 @@ final class ElementorDefinitionInvariantsTest extends TestCase {
 				'elementor-global-tokens-get',
 				'elementor-global-colors-update',
 				'elementor-global-typography-update',
+				'elementor-theme-conditions-set',
 			],
-			$kit_scoped,
-			'Only the global-token operations address the site-settings kit, so only they may gate on the capability Elementor puts on that kit.'
+			$site_scoped,
+			'Only the operations whose subject is the site as a whole may gate on the capability Elementor puts on its site settings.'
 		);
 	}
 

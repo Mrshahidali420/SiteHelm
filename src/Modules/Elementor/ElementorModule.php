@@ -247,6 +247,16 @@ final class ElementorModule implements IntegrationModule {
 			[ new ElementorGlobalTokensGet( $kit, $this->presence ), 'handle' ]
 		);
 
+		// The theme-template vocabulary is built once and shared by the listing and
+		// the condition write, so the type list a read reports and the type list a
+		// write accepts cannot drift apart inside one request.
+		$conditions = new ElementorThemeConditions();
+
+		$registry->register(
+			ElementorThemeTemplateList::definition(),
+			[ new ElementorThemeTemplateList( $fields, $conditions, $this->presence ), 'handle' ]
+		);
+
 		// The write block. Every one of these shares a single ElementorWriteTarget,
 		// and the target shares a single ElementorApi with the cache invalidator the
 		// writer holds — one presence gate, one registry read, one cache flush per
@@ -327,6 +337,14 @@ final class ElementorModule implements IntegrationModule {
 		$registry->registerWrite(
 			ElementorGlobalTypographyUpdate::definition(),
 			new ElementorGlobalTypographyUpdate( $tokens )
+		);
+
+		// Registered last, and it is the widest write this module offers: it changes
+		// where a template displays rather than what one document contains, so a
+		// client reading the catalog top to bottom meets the document writes first.
+		$registry->registerWrite(
+			ElementorThemeConditionsSet::definition(),
+			new ElementorThemeConditionsSet( $conditions, $this->presence )
 		);
 	}
 }
