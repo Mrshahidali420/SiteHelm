@@ -59,6 +59,7 @@ next is drawn from **Considering**, and a concrete workflow is what moves an ite
 | REQ-0080 | Elementor | Theme-builder templates and their display conditions, so a shared header, footer, or archive can be pointed at the pages it should cover | could | ✅ shipped |
 | REQ-0059 | Integrations | Read and write a post's SEO metadata through one vocabulary, whether the site runs Yoast SEO or Rank Math | could | ✅ shipped |
 | REQ-0060 | Core | Comment moderation — list the queue, approve, unapprove, spam or trash one comment, and reply as the acting account | could | ✅ shipped |
+| REQ-0061 | Core | User administration — read who can reach the site and what the site's registered roles are, and change one account's role, with the last administrator, the acting account, and multisite super admins refused | could | ✅ shipped |
 
 ## Considering
 
@@ -66,7 +67,6 @@ next is drawn from **Considering**, and a concrete workflow is what moves an ite
 |---|---|---|---|
 | REQ-0057 | Integrations | WooCommerce | could |
 | REQ-0058 | Integrations | Form builders and CRM | could |
-| REQ-0061 | Core | User administration | could |
 | REQ-0062 | Core | Site settings | could |
 | REQ-0063 | Integrations | Additional page builders | could |
 | REQ-0064 | Core | Multisite | could |
