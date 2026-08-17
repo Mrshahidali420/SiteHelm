@@ -123,7 +123,7 @@ final class StatusScreenTest extends TestCase {
 	public function testStatusReportsTheModuleCountWithoutRepeatingTheModulesScreen(): void {
 		$html = $this->render( [] );
 
-		$this->assertStringContainsString( '0 of 7', $html );
+		$this->assertStringContainsString( '0 of 8', $html );
 		$this->assertStringNotContainsString( 'Advanced Custom Fields', $html );
 	}
 
