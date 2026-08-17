@@ -13,6 +13,14 @@ an operation behaves.
 
 ### Added
 
+- **A stdio bridge, shipped with the plugin.** AI clients that cannot open an HTTP connection
+  launch a local subprocess and speak over its stdin and stdout instead. `bridge/sitehelm-bridge.mjs`
+  is that subprocess: no dependencies, Node 18 or newer, and it forwards each message to the
+  site's endpoint unchanged. The Connect screen now hands out a config that runs it, so the code
+  on the operator's machine is the code that was reviewed and installed here rather than whatever
+  a package registry serves at launch. The credential travels in the config's `env` block instead
+  of on a command line, which every process on the machine can read. The public `mcp-remote`
+  bridge is still offered beneath it, for a client running somewhere the plugin's files are not.
 - **`system-operation-schema`**, a fourth system read that returns one named operation's full
   input and output schema on demand. An operation the caller cannot see does not surrender its
   schema: an unknown name and a hidden one are refused identically, so the answer cannot be

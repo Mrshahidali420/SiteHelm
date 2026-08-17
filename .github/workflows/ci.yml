@@ -63,6 +63,23 @@ jobs:
       - name: Run phpcs across the repository
         run: vendor/bin/phpcs
 
+  bridge:
+    name: Stdio bridge
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The bridge runs outside WordPress, so the PHP suite cannot reach it. It
+      # is shipped in the zip and launched on an operator's machine, which makes
+      # it the one part of the plugin that would otherwise go out untested.
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Exercise the bridge against a stand-in site
+        run: node tools/bridge-check.mjs
+
   coverage:
     name: Line coverage (>= 80%)
     runs-on: ubuntu-latest
