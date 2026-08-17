@@ -12,6 +12,14 @@ commitment to sequence.
 
 ---
 
+## Shipped — v0.3.0
+
+The whole v1.1 band, below. 54 operations: Elementor element search, control-schema
+discovery, batched element updates and site-wide global colour and typography tokens; a
+media resize that never overwrites the original; an on-demand schema fetch so a client no
+longer carries every schema in context; a retired-domain guard on writes; and a stdio
+bridge shipped inside the plugin, for clients that launch their server locally.
+
 ## Shipped — v0.2.0
 
 An admin console: **Connect**, **Activity**, **Status** and **Operations**, under one
@@ -26,7 +34,10 @@ diagnostics, on a two-phase write pipeline with snapshots, verification, a chang
 and rollback. See [CHANGELOG.md](CHANGELOG.md) and the
 [operations reference](docs/OPERATIONS.md).
 
-## Next — v1.1
+## Delivered — v1.1
+
+Every row below is shipped, in v0.3.0 unless the release notes say otherwise. What comes
+next is drawn from **Considering**, and a concrete workflow is what moves an item out of it.
 
 | # | Area | What it gives you | Priority | Status |
 |---|---|---|---|---|
