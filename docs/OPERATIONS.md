@@ -1,6 +1,6 @@
 # Operations reference
 
-SiteHelm exposes **53 operations** through **11 MCP tools**, called dispatchers. Every operation is
+SiteHelm exposes **54 operations** through **11 MCP tools**, called dispatchers. Every operation is
 declared once, in code, with a strict input schema (`additionalProperties: false`), a required
 capability, a risk level, and preview, snapshot, and rollback policies. That declaration is the
 contract the gateway enforces and the catalogue an agent discovers.
@@ -116,7 +116,7 @@ Posts, pages, custom post types, and taxonomies.
 | `media-list` | Lists the media library with filtering | `upload_files` |
 | `image-size-list` | Lists registered image sizes and their dimensions | `read` |
 
-### `media-write` — 4 operations
+### `media-write` — 5 operations
 
 | Operation | Does | Capability | Risk | Rollback |
 |---|---|---|---|---|
@@ -124,12 +124,20 @@ Posts, pages, custom post types, and taxonomies.
 | `media-import` | Fetches a file from a URL and adds it to the library | `upload_files` | high | supported |
 | `media-meta-update` | Updates alt text, caption, title, description | `edit_post` | medium | supported |
 | `media-attach` | Attaches an existing item to a post | `edit_post` | medium | supported |
+| `media-resize` | Brings an oversized image within a width and height you name, keeping the original file | `edit_post` + `upload_files` | high | supported |
 
 > **`media-import` is the most security-sensitive operation in SiteHelm.** The host is resolved and
 > validated before the connection is made; private, loopback, link-local, and reserved ranges are
 > refused; every redirect hop is re-validated and re-pinned; the resolved address is pinned so the
 > connection cannot be re-pointed between the check and the fetch; the wire read is capped; and the
 > refusal message is deliberately digit-free so it cannot be used as an SSRF oracle.
+
+> **`media-resize` never overwrites and never deletes.** The reduced image is written to a new file
+> beside the original; the attachment is re-pointed at it and the untouched original stays reachable
+> through WordPress's own `original_image` metadata, which is what `wp_get_original_image_path()`
+> reads. A second reduction still reads the true original rather than the previous reduction. An
+> image already within the requested bound is refused rather than re-saved, so a repeated request
+> cannot reduce twice.
 
 ## Menus
 
@@ -216,13 +224,14 @@ what is actually in the database, so a restore puts back what was really there.
 
 ## System
 
-### `system-read` — 4 operations
+### `system-read` — 5 operations
 
 | Operation | Does | Capability |
 |---|---|---|
 | `system-connection` | Confirms the gateway is reachable and reports who is authenticated | `read` |
 | `system-environment` | WordPress and PHP versions, theme, post types, taxonomies | `manage_options` |
 | `system-integrations` | Health of every optional integration: `Active`, `Inactive`, `VersionBlocked` | `manage_options` |
+| `system-operation-schema` | Returns one named operation's full input and output schema, so an agent fetches only the schema it is about to use | `read` |
 | `audit-list` | Reads the change ledger: what changed, when, by whom, and what can be rolled back | `manage_options` |
 
 Start every session with `system-connection`, then `system-integrations`. It costs one call and
