@@ -1,0 +1,207 @@
+{
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "id": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "Identifier of the Elementor document to summarize. Call elementor-document-list for the documents Elementor controls."
+            }
+        },
+        "required": [
+            "id"
+        ],
+        "additionalProperties": false
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "document": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "description": "The document's WordPress post identifier."
+                    },
+                    "type": {
+                        "type": "string",
+                        "description": "The WordPress post type: page, post, or elementor_library for a saved template."
+                    },
+                    "title": {
+                        "type": "string",
+                        "description": "The document's title."
+                    },
+                    "status": {
+                        "type": "string",
+                        "description": "The WordPress post status, such as publish or draft."
+                    },
+                    "editMode": {
+                        "type": "string",
+                        "description": "The stored Elementor edit mode, normally builder. Empty when the stored value is unreadable."
+                    }
+                },
+                "required": [
+                    "id",
+                    "type",
+                    "title",
+                    "status",
+                    "editMode"
+                ],
+                "additionalProperties": false
+            },
+            "totals": {
+                "type": "object",
+                "properties": {
+                    "nodeCount": {
+                        "type": "integer",
+                        "description": "Every element on the page, at any depth."
+                    },
+                    "maxDepth": {
+                        "type": "integer",
+                        "description": "How many levels deep the page nests. Zero for an empty document."
+                    },
+                    "widgetCount": {
+                        "type": "integer",
+                        "description": "Elements that render a widget."
+                    },
+                    "containerCount": {
+                        "type": "integer",
+                        "description": "Elements that hold other elements: sections, columns, containers, and any element whose stored data declares no type."
+                    },
+                    "bandCount": {
+                        "type": "integer",
+                        "description": "Top-level elements, which is how many entries `bands` holds."
+                    }
+                },
+                "required": [
+                    "nodeCount",
+                    "maxDepth",
+                    "widgetCount",
+                    "containerCount",
+                    "bandCount"
+                ],
+                "additionalProperties": false
+            },
+            "widgets": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "type": {
+                            "type": "string",
+                            "description": "A widget type present on the page."
+                        },
+                        "count": {
+                            "type": "integer",
+                            "description": "How many elements of this type the page holds, at any depth."
+                        }
+                    },
+                    "required": [
+                        "type",
+                        "count"
+                    ],
+                    "additionalProperties": false
+                },
+                "description": "One entry per distinct widget type, most used first, ties broken by name. One entry per type, never per occurrence."
+            },
+            "containers": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "type": {
+                            "type": "string",
+                            "description": "A container element type present on the page. The empty string counts elements whose stored data declares no type."
+                        },
+                        "count": {
+                            "type": "integer",
+                            "description": "How many elements of this type the page holds, at any depth."
+                        }
+                    },
+                    "required": [
+                        "type",
+                        "count"
+                    ],
+                    "additionalProperties": false
+                },
+                "description": "One entry per distinct container type, most used first, ties broken by name."
+            },
+            "bands": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "index": {
+                            "type": "integer",
+                            "description": "The band's zero-based position in stored order, top of the page first."
+                        },
+                        "id": {
+                            "type": [
+                                "string",
+                                "null"
+                            ],
+                            "description": "The band's stored Elementor identifier, or null when its stored data declares none. A band with no identifier cannot be addressed by any write."
+                        },
+                        "elType": {
+                            "type": "string",
+                            "description": "The band's stored element type, or the empty string when it declares none."
+                        },
+                        "label": {
+                            "type": "string",
+                            "description": "A short display string derived from the type. Not stored, and never to be written back."
+                        },
+                        "childCount": {
+                            "type": "integer",
+                            "description": "Elements directly inside this band."
+                        },
+                        "descendantCount": {
+                            "type": "integer",
+                            "description": "Every element inside this band at any depth, excluding the band itself. This is how much of the page a full read of this band would return."
+                        },
+                        "widgetTypeCount": {
+                            "type": "integer",
+                            "description": "Distinct widget types within this band. When it exceeds the length of `widgetTypes`, that list was truncated."
+                        },
+                        "widgetTypes": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            },
+                            "description": "Distinct widget types within this band, alphabetically, at most 12. Enough to recognize the band, not to enumerate it."
+                        }
+                    },
+                    "required": [
+                        "index",
+                        "id",
+                        "elType",
+                        "label",
+                        "childCount",
+                        "descendantCount",
+                        "widgetTypeCount",
+                        "widgetTypes"
+                    ],
+                    "additionalProperties": false
+                },
+                "description": "One entry per top-level element, in stored order."
+            },
+            "untypedElements": {
+                "type": "integer",
+                "description": "Elements anywhere on the page whose stored data declares no type. They are read as containers, conservatively; this is the size of that assumption here."
+            },
+            "unidentifiedElements": {
+                "type": "integer",
+                "description": "Elements anywhere on the page whose stored data declares no identifier. Every element write addresses its target by identifier, so this is how much of the page SiteHelm cannot change."
+            }
+        },
+        "required": [
+            "document",
+            "totals",
+            "widgets",
+            "containers",
+            "bands",
+            "untypedElements",
+            "unidentifiedElements"
+        ],
+        "additionalProperties": false
+    }
+}
