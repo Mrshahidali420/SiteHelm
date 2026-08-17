@@ -40,8 +40,8 @@ and rollback. See [CHANGELOG.md](CHANGELOG.md) and the
 | REQ-0072 | Media | Bring an oversized asset within the sizes the theme actually renders | could | planned |
 | REQ-0073 | Core | A subprocess transport bridge, for AI clients that launch their server locally over stdio | must | planned |
 | REQ-0074 | Core | Published, copy-pasteable connection configurations per client | should | ✅ shipped |
-| REQ-0075 | Diagnostics | Fetch the full input schema for one named operation on demand, instead of carrying every schema in context | should | planned |
-| REQ-0076 | Core | Request host validation, so a connector still pointed at a retired domain cannot drive changes | should | planned |
+| REQ-0075 | Diagnostics | Fetch the full input schema for one named operation on demand, instead of carrying every schema in context | should | ✅ shipped |
+| REQ-0076 | Core | Request host validation, so a connector still pointed at a retired domain cannot drive changes | should | ✅ shipped |
 
 ## Considering
 

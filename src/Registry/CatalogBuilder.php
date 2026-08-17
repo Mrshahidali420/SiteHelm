@@ -12,10 +12,10 @@ namespace SiteHelm\Registry;
 use SiteHelm\Contracts\Mode;
 use SiteHelm\Contracts\ModuleHealth;
 use SiteHelm\Policy\PolicyEngine;
+use SiteHelm\Policy\RequestHost;
 use SiteHelm\Contracts\OperationContext;
 use SiteHelm\Contracts\OperationDefinition;
 use SiteHelm\Contracts\PermissionMode;
-use stdClass;
 
 /**
  * Builds the catalog a dispatcher returns when called without an operation.
@@ -30,24 +30,25 @@ use stdClass;
  * - Operations the caller may see but cannot currently invoke stay listed with
  *   `available:false` and a `blockedReason`, because the contract requires
  *   blocked operations to remain explainable rather than silently disappear.
- *   Both a module dependency and read-only mode block this way; see
+ *   A module dependency, read-only mode, and a request that arrived on an
+ *   address the site no longer answers as all block this way; see
  *   blocked_reason().
+ *
+ * A listing describes each operation but does not carry its input and output
+ * schemas. A dispatcher holding a dozen operations would otherwise spend most of
+ * a client's context window on schemas for operations it will never call, and
+ * the schemas are the largest part by far. Each entry keeps its usage example,
+ * which states the argument shape concretely, and the catalog names the
+ * operation that returns one full schema on demand.
  *
  * @package SiteHelm
  */
 final class CatalogBuilder {
 
 	/**
-	 * JSON Schema members whose value must serialize as an object, never a list.
-	 * An empty PHP array would otherwise encode as `[]` and be rejected by
-	 * strict JSON Schema clients.
+	 * The operation a client calls to fetch one operation's full schema.
 	 */
-	private const OBJECT_VALUED_KEYS = [ 'properties' ];
-
-	/**
-	 * Members of a usage example whose value must serialize as an object.
-	 */
-	private const OBJECT_VALUED_EXAMPLE_KEYS = [ 'arguments' ];
+	public const SCHEMA_OPERATION = 'system-operation-schema';
 
 
 	/**
@@ -70,11 +71,15 @@ final class CatalogBuilder {
 	public function build( string $dispatcher, OperationContext $context ): array {
 		$permitted = array_filter(
 			$this->registry->forDispatcher( $dispatcher ),
-			fn( OperationDefinition $d ): bool => $this->is_permitted( $d, $context )
+			static fn( OperationDefinition $d ): bool => PolicyEngine::isVisibleWithoutTarget( $d, $context )
 		);
 
 		return [
 			'dispatcher' => $dispatcher,
+			'schemas'    => sprintf(
+				'Call %s with arguments {"operation": "<operation>"} for one operation\'s full input and output schema.',
+				self::SCHEMA_OPERATION
+			),
 			'operations' => array_values(
 				array_map(
 					fn( OperationDefinition $d ): array => $this->entry( $d, $context ),
@@ -83,37 +88,6 @@ final class CatalogBuilder {
 			),
 		];
 	}
-
-	/**
-	 * Whether the resolved user holds every capability the operation requires,
-	 * with target meta-capabilities evaluated through their primitive stand-ins.
-	 *
-	 * This answers "could this caller plausibly perform this operation at all",
-	 * which is the only question a target-less catalog listing can answer. It is
-	 * deliberately NOT an authorization decision: PolicyEngine performs the real
-	 * target-bound check at invocation time and remains authoritative, so an
-	 * operation listed here may still be refused with `forbidden` when invoked
-	 * against a specific target.
-	 *
-	 * @param OperationDefinition $definition The operation to test.
-	 * @param OperationContext    $context    The request context.
-	 *
-	 * @return bool True when the operation may be advertised to this caller.
-	 *
-	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
-	 */
-	private function is_permitted( OperationDefinition $definition, OperationContext $context ): bool {
-		foreach ( $definition->requiredCapabilities as $capability ) {
-			$effective = PolicyEngine::META_CAPABILITY_MAP[ $capability ] ?? $capability;
-
-			if ( ! user_can( $context->userId, $effective ) ) {
-				return false;
-			}
-		}
-
-		return true;
-	}
-	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 
 	/**
 	 * Builds one catalog entry.
@@ -128,12 +102,10 @@ final class CatalogBuilder {
 	private function entry( OperationDefinition $definition, OperationContext $context ): array {
 		$blocked_reason = $this->blocked_reason( $definition, $context );
 
-		return $this->normalize_object_shapes(
+		return SchemaShape::normalize(
 			[
 				'operation'            => $definition->id,
 				'description'          => $definition->description,
-				'inputSchema'          => $definition->inputSchema,
-				'outputSchema'         => $definition->outputSchema,
 				'schemaVersion'        => $definition->schemaVersion,
 				'requiredCapabilities' => $definition->requiredCapabilities,
 				'risk'                 => $definition->risk->value,
@@ -143,8 +115,7 @@ final class CatalogBuilder {
 				'available'            => null === $blocked_reason,
 				'blockedReason'        => $blocked_reason,
 				'example'              => $definition->example,
-			],
-			false
+			]
 		);
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
@@ -158,6 +129,13 @@ final class CatalogBuilder {
 	 * consulting the mode advertised every write as available while every attempt
 	 * was refused — the same catalog-versus-gate divergence that already caused
 	 * one defect in this phase.
+	 *
+	 * A retired host is reported second, and only for writes, for the same reason:
+	 * PolicyEngine refuses a write that arrived on an address the site no longer
+	 * answers as, and a catalog that advertised those writes as available would
+	 * send a client into a refusal it could have been warned about. Reads stay
+	 * available on purpose — an operator whose connector is pointed at the wrong
+	 * domain needs the diagnostics that say so.
 	 *
 	 * The write stays listed rather than hidden. The contract requires a blocked
 	 * operation to remain explainable, and read-only mode is a site setting an
@@ -176,6 +154,10 @@ final class CatalogBuilder {
 			return 'read_only_mode';
 		}
 
+		if ( Mode::Write === $definition->mode && ! RequestHost::matches( $context->siteId ) ) {
+			return 'retired_host';
+		}
+
 		$health = $context->moduleVersions[ $definition->module->value ]['health'] ?? ModuleHealth::Inactive->value;
 
 		return match ( $health ) {
@@ -185,40 +167,4 @@ final class CatalogBuilder {
 		};
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
-
-	/**
-	 * Replaces empty arrays with objects for the keys whose JSON Schema type must
-	 * be an object, so the advertised schema is valid JSON Schema.
-	 *
-	 * Only `properties` anywhere, and `arguments` directly inside `example`, are
-	 * converted. List-valued members such as `required` are left untouched:
-	 * JSON_FORCE_OBJECT would wrongly convert those as well.
-	 *
-	 * @param array<array-key, mixed> $value          The value to normalize.
-	 * @param bool                    $inside_example Whether this array is a usage example.
-	 *
-	 * @return array<array-key, mixed> The normalized value.
-	 */
-	private function normalize_object_shapes( array $value, bool $inside_example ): array {
-		$normalized = [];
-
-		foreach ( $value as $key => $member ) {
-			if ( ! is_array( $member ) ) {
-				$normalized[ $key ] = $member;
-				continue;
-			}
-
-			$must_be_object = in_array( $key, self::OBJECT_VALUED_KEYS, true )
-				|| ( $inside_example && in_array( $key, self::OBJECT_VALUED_EXAMPLE_KEYS, true ) );
-
-			if ( [] === $member && $must_be_object ) {
-				$normalized[ $key ] = new stdClass();
-				continue;
-			}
-
-			$normalized[ $key ] = $this->normalize_object_shapes( $member, 'example' === $key );
-		}
-
-		return $normalized;
-	}
 }

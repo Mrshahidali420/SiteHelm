@@ -90,6 +90,65 @@ final class PolicyEngineTest extends TestCase {
 		}
 	}
 
+	/**
+	 * REQ-0076: a retired domain that still resolves lets a forgotten connector go
+	 * on writing to a site its operator believes it left. The request is not
+	 * malformed and the credentials are real, so nothing else in the gate stops it.
+	 */
+	public function test_write_from_a_retired_host_is_forbidden(): void {
+		Functions\when( 'user_can' )->justReturn( true );
+		Functions\when( 'home_url' )->justReturn( 'https://example.com/' );
+		$_SERVER['HTTP_HOST'] = 'old-agency-site.com';
+
+		try {
+			$this->policy->authorize(
+				$this->makeDefinition( Mode::Write, [ 'edit_posts' ] ),
+				$this->makeContext( PermissionMode::SafeWrite )
+			);
+			$this->fail( 'A write arriving on a retired host must be refused.' );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::Forbidden, $e->errorCode );
+			$this->assertStringContainsString( 'no longer answers as', $e->getMessage() );
+		} finally {
+			unset( $_SERVER['HTTP_HOST'] );
+		}
+	}
+
+	/**
+	 * Reads stay available on purpose. An operator whose connector is pointed at
+	 * the wrong domain needs the diagnostics that say so, and a read cannot change
+	 * the site it reached by mistake.
+	 */
+	public function test_read_from_a_retired_host_is_still_allowed(): void {
+		Functions\when( 'user_can' )->justReturn( true );
+		$_SERVER['HTTP_HOST'] = 'old-agency-site.com';
+
+		try {
+			$this->policy->authorize(
+				$this->makeDefinition( Mode::Read, [ 'edit_posts' ] ),
+				$this->makeContext( PermissionMode::SafeWrite )
+			);
+			$this->addToAssertionCount( 1 ); // no exception thrown
+		} finally {
+			unset( $_SERVER['HTTP_HOST'] );
+		}
+	}
+
+	public function test_write_from_the_site_own_host_is_allowed(): void {
+		Functions\when( 'user_can' )->justReturn( true );
+		$_SERVER['HTTP_HOST'] = 'example.com';
+
+		try {
+			$this->policy->authorize(
+				$this->makeDefinition( Mode::Write, [ 'edit_posts' ] ),
+				$this->makeContext( PermissionMode::SafeWrite )
+			);
+			$this->addToAssertionCount( 1 ); // no exception thrown
+		} finally {
+			unset( $_SERVER['HTTP_HOST'] );
+		}
+	}
+
 	public function test_missing_capability_is_forbidden(): void {
 		Functions\when( 'user_can' )->justReturn( false );
 		$this->expectException( OperationException::class );
