@@ -37,7 +37,7 @@ and rollback. See [CHANGELOG.md](CHANGELOG.md) and the
 | REQ-0070 | Elementor | Correct brand colours once at site level instead of editing every page | could | ✅ shipped |
 | REQ-0071 | Elementor | Correct shared typography once at site level so type stays consistent | could | ✅ shipped |
 | REQ-0068 | Elementor | Apply many element changes to one page as a single reviewed change; one bad entry refuses the whole batch | should | ✅ shipped |
-| REQ-0072 | Media | Bring an oversized asset within the sizes the theme actually renders | could | planned |
+| REQ-0072 | Media | Bring an oversized asset within the sizes the theme actually renders | could | ✅ shipped |
 | REQ-0073 | Core | A subprocess transport bridge, for AI clients that launch their server locally over stdio | must | ✅ shipped |
 | REQ-0074 | Core | Published, copy-pasteable connection configurations per client | should | ✅ shipped |
 | REQ-0075 | Diagnostics | Fetch the full input schema for one named operation on demand, instead of carrying every schema in context | should | ✅ shipped |
