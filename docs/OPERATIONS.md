@@ -1,6 +1,6 @@
 # Operations reference
 
-SiteHelm exposes **60 operations** through **11 MCP tools**, called dispatchers. Every operation is
+SiteHelm exposes **61 operations** through **11 MCP tools**, called dispatchers. Every operation is
 declared once, in code, with a strict input schema (`additionalProperties: false`), a required
 capability, a risk level, and preview, snapshot, and rollback policies. That declaration is the
 contract the gateway enforces and the catalogue an agent discovers.
@@ -85,7 +85,7 @@ string, authorization header, or resolved IP address.
 
 Posts, pages, custom post types, and taxonomies.
 
-### `content-read` — 5 operations
+### `content-read` — 6 operations
 
 | Operation | Does | Capability |
 |---|---|---|
@@ -94,6 +94,15 @@ Posts, pages, custom post types, and taxonomies.
 | `taxonomy-list` | Lists registered taxonomies and their terms | `edit_posts` |
 | `content-blocks-get` | Returns the block outline of one item, or one addressed block in full | `edit_post` |
 | `redirect-list` | Lists every redirect this site serves, with the table's size and capacity | `manage_options` |
+| `content-links-check` | Reports the links in one item, resolving this site's own against its posts and redirects | `edit_post` |
+
+**`content-links-check` never fetches a link.** Every answer comes from this site's own
+database: a link to another host is listed as `unchecked`, and only a link to this site is
+resolved — to the post it addresses, to the redirect that catches it (`redirect` or `gone`,
+since the router runs on `template_redirect` and so wins over a live post at the same
+path), or to nothing, which is the `broken` count worth acting on. A link a redirect
+catches is still worth rewriting: the redirect is a safety net, not a fix. At most 200
+links are listed per item, and `truncated` says when a page held more.
 
 ### `content-write` — 11 operations
 
