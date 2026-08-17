@@ -42,6 +42,8 @@ final class WriteOutputSchemaTest extends TestCase {
 		'content-terms-assign',
 		'content-trash',
 		'content-block-update',
+		'redirect-set',
+		'redirect-delete',
 	];
 
 	public function test_every_core_write_declares_the_shared_union(): void {

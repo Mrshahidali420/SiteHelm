@@ -109,12 +109,21 @@ final class CoreModule implements IntegrationModule {
 		$fields = new ContentFields();
 		$blocks = new ContentBlocks();
 
+		// One store shared by the read, both writes and the front-end router, so
+		// the path normalisation a redirect is stored under and the one it is
+		// matched by are the same code and cannot drift apart.
+		$redirects = new RedirectStore();
+
 		$registry->register( ContentRead::definition(), [ new ContentRead( $fields ), 'handle' ] );
 		$registry->register( ContentList::definition(), [ new ContentList(), 'handle' ] );
 		$registry->register( TaxonomyList::definition(), [ new TaxonomyList(), 'handle' ] );
 		$registry->register(
 			ContentBlocksRead::definition(),
 			[ new ContentBlocksRead( $fields, $blocks ), 'handle' ]
+		);
+		$registry->register(
+			RedirectList::definition(),
+			[ new RedirectList( $redirects ), 'handle' ]
 		);
 
 		$targets = new ContentTarget( $fields );
@@ -161,6 +170,13 @@ final class CoreModule implements IntegrationModule {
 			ContentBlockUpdate::definition(),
 			new ContentBlockUpdate( $fields, $targets, $blocks )
 		);
+
+		// The two redirect writes are registered last among the writes and beside
+		// each other, because they are the only pair in this module that share a
+		// snapshot: both rewrite one option holding the whole redirect table, and
+		// RedirectSnapshot is the half they have in common.
+		$registry->registerWrite( RedirectSet::definition(), new RedirectSet( $redirects ) );
+		$registry->registerWrite( RedirectDelete::definition(), new RedirectDelete( $redirects ) );
 
 		$registry->register( AuditRead::definition(), [ new AuditRead( new AuditStore(), new Installer() ), 'handle' ] );
 	}
