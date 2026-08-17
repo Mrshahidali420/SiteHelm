@@ -13,6 +13,15 @@ an operation behaves.
 
 ### Added
 
+- **`media-resize`**, which brings an oversized image within a width and a height you name,
+  so the size the site actually serves fits the sizes the theme renders. The original file is
+  never overwritten and never deleted: the reduced image is written to a new file beside it,
+  the media item is re-pointed at the new file, and the untouched original stays reachable
+  through the same metadata WordPress uses for its own scaled uploads. A second reduction
+  still reads the true original rather than the previous reduction, so detail is not thrown
+  away twice. Rolling back points the item at the file and the metadata the snapshot recorded
+  and then checks that it landed. An image already within the requested maximum is refused
+  rather than re-saved, so a repeated request cannot reduce it twice.
 - **`elementor-elements-update`**, which changes the settings of several elements on one
   Elementor page as a single reviewed change. One preview covers all of it, one save writes
   it, and one rollback reference undoes it. Every entry is checked against the page before
