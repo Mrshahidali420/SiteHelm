@@ -132,6 +132,30 @@ final class CoreModuleCensusTest extends TestCase {
 			'snapshot'      => 'required',
 			'rollback'      => 'required',
 		],
+		'redirect-list'              => [
+			'dispatcher'    => 'content-read',
+			'schemaVersion' => 1,
+			'capabilities'  => [ 'manage_options' ],
+			'preview'       => 'not-applicable',
+			'snapshot'      => 'not-applicable',
+			'rollback'      => 'not-applicable',
+		],
+		'redirect-set'               => [
+			'dispatcher'    => 'content-write',
+			'schemaVersion' => 1,
+			'capabilities'  => [ 'manage_options' ],
+			'preview'       => 'required',
+			'snapshot'      => 'required',
+			'rollback'      => 'supported',
+		],
+		'redirect-delete'            => [
+			'dispatcher'    => 'content-write',
+			'schemaVersion' => 1,
+			'capabilities'  => [ 'manage_options' ],
+			'preview'       => 'required',
+			'snapshot'      => 'required',
+			'rollback'      => 'required',
+		],
 		'audit-list'                 => [
 			'dispatcher'    => 'system-read',
 			'schemaVersion' => 1,
@@ -168,8 +192,8 @@ final class CoreModuleCensusTest extends TestCase {
 	public function test_per_dispatcher_registration_counts_are_unchanged(): void {
 		$registry = $this->registryWithCoreModule();
 
-		$this->assertCount( 4, $registry->forDispatcher( 'content-read' ) );
-		$this->assertCount( 9, $registry->forDispatcher( 'content-write' ) );
+		$this->assertCount( 5, $registry->forDispatcher( 'content-read' ) );
+		$this->assertCount( 11, $registry->forDispatcher( 'content-write' ) );
 		$this->assertCount( 1, $registry->forDispatcher( 'system-read' ) );
 
 		$empty = [ 'media-read', 'media-write', 'menu-read', 'menu-write', 'elementor-read', 'elementor-write', 'fields-read', 'fields-write' ];
