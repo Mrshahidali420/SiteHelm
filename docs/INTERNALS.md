@@ -230,6 +230,17 @@ first docblock** (after the last constant) and close it after the last method:
   and a golden fixture directory `tests/Fixtures/<module>-operation-definitions/`
   with an `index.json` carrying `operationIds` in registration order plus
   `operationCount`.
+- **Four census nets pin the core catalog, and a new core operation must satisfy
+  every one.** Miss one and CI fails in a directory the phase never touched.
+  1. `CoreDefinitionInvariantsTest` — the operation-id list and `CORE_WRITE_COUNT`.
+  2. `CoreModuleCensusTest` — the per-dispatcher counts.
+  3. `tests/Fixtures/core-operation-definitions.json` — the golden baseline,
+     regenerated via `CoreDefinitionBaselineTest::currentBaselineJson()`.
+  4. **`tests/Unit/Change/WriteOutputSchemaTest::CORE_WRITE_IDS`** — lives outside
+     `tests/Unit/Modules/Core`, which is why it is the one that gets missed. It is
+     hardcoded so a write absent from it would be silently exempt from the
+     shared plan/apply union check, and it asserts the list equals the registered
+     writes exactly so the omission fails loudly instead.
 - Mutation runs are **PHP-version-dependent** (e.g. `filter_var`'s IPv6 unmapping
   differs 8.2 vs 8.3); a single-version pass can call a load-bearing guard dead
   code. A mutation that does not parse reports its guard as unpinned — check
