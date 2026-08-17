@@ -39,7 +39,7 @@ final class IntegrationHealthTest extends TestCase {
 	 *
 	 * @var string[]
 	 */
-	private const BOOT_ORDER = [ 'diagnostics', 'core', 'media', 'menus', 'elementor', 'acf', 'metabox' ];
+	private const BOOT_ORDER = [ 'diagnostics', 'core', 'media', 'menus', 'elementor', 'acf', 'metabox', 'seo' ];
 
 	/**
 	 * Whether SiteHelm's own storage answers ready for the test at hand.

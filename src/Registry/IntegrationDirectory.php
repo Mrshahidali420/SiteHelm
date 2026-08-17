@@ -17,6 +17,7 @@ use SiteHelm\Modules\Elementor\ElementorModule;
 use SiteHelm\Modules\Media\MediaModule;
 use SiteHelm\Modules\Menus\MenusModule;
 use SiteHelm\Modules\Metabox\MetaboxModule;
+use SiteHelm\Modules\Seo\SeoModule;
 use Throwable;
 
 /**
@@ -63,6 +64,7 @@ final class IntegrationDirectory {
 		ElementorModule::class,
 		AcfModule::class,
 		MetaboxModule::class,
+		SeoModule::class,
 	];
 
 	/**

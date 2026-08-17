@@ -240,6 +240,8 @@ final class ModulesScreen {
 				return __( 'Advanced Custom Fields', 'sitehelm' );
 			case ModuleId::Metabox:
 				return __( 'Meta Box', 'sitehelm' );
+			case ModuleId::Seo:
+				return __( 'SEO metadata', 'sitehelm' );
 			default:
 				return $module->value;
 		}
@@ -266,6 +268,8 @@ final class ModulesScreen {
 				return __( 'Read and write Advanced Custom Fields values, respecting each field\'s own type.', 'sitehelm' );
 			case ModuleId::Metabox:
 				return __( 'Read and write Meta Box fields, respecting each field\'s own type.', 'sitehelm' );
+			case ModuleId::Seo:
+				return __( 'Read and set a post\'s search-engine title, description and visibility, in Yoast SEO or Rank Math.', 'sitehelm' );
 			default:
 				return '';
 		}
