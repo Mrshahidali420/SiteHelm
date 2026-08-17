@@ -11,7 +11,29 @@ an operation behaves.
 
 ## [Unreleased]
 
-Nothing yet. See [ROADMAP.md](ROADMAP.md) for what is next.
+### Added
+
+- **`system-operation-schema`**, a fourth system read that returns one named operation's full
+  input and output schema on demand. An operation the caller cannot see does not surrender its
+  schema: an unknown name and a hidden one are refused identically, so the answer cannot be
+  used to map the site's surface area.
+- **A retired-domain guard on writes.** A request that reaches the site at an address the site
+  no longer answers as is refused for every write, with a remediation naming the address to
+  reconnect at. Reads stay available on purpose, so an operator whose connector points at an
+  old domain can still run the diagnostics that say so. A request arriving with no `Host`
+  header at all — WP-CLI, cron, an internal dispatch — is not treated as a mismatch, and
+  neither is the `www.` spelling of the site's own domain.
+
+### Changed
+
+- **Dispatcher catalogs no longer carry each operation's `inputSchema` and `outputSchema`.** A
+  dispatcher holding a dozen operations spent most of a client's context window on schemas for
+  operations it would never call. Each entry keeps its usage example, which states the argument
+  shape concretely, and the catalog names `system-operation-schema` as the way to fetch one full
+  schema when it is actually needed. A client that read schemas straight from the catalog must
+  now ask for them.
+- Catalogs list a write that arrived on a retired host as unavailable with the new blocking
+  reason `retired_host`, rather than advertising it as available and refusing it on use.
 
 ## [0.2.1] — 2026-08-17
 
