@@ -75,7 +75,7 @@ final class DiagnosticsModule implements IntegrationModule {
 	}
 
 	/**
-	 * Registers the three system read operations.
+	 * Registers the four system read operations.
 	 *
 	 * @param CapabilityRegistry $registry The capability registry.
 	 */
@@ -215,6 +215,61 @@ final class DiagnosticsModule implements IntegrationModule {
 				],
 			),
 			[ new ConnectionCheck(), 'handle' ]
+		);
+
+		$registry->register(
+			new OperationDefinition(
+				id: 'system-operation-schema',
+				domain: Domain::System,
+				mode: Mode::Read,
+				description: 'Return the full input and output schema of one named operation. A dispatcher catalog lists operations without their schemas; this returns the one you are about to call.',
+				inputSchema: [
+					'type'                 => 'object',
+					'properties'           => [
+						'operation' => [
+							'type'        => 'string',
+							'minLength'   => 1,
+							'maxLength'   => 64,
+							'description' => 'The operation identifier, as listed in a dispatcher catalog.',
+						],
+					],
+					'required'             => [ 'operation' ],
+					'additionalProperties' => false,
+				],
+				outputSchema: [
+					'type'                 => 'object',
+					'properties'           => [
+						'operation'            => [ 'type' => 'string' ],
+						'dispatcher'           => [ 'type' => 'string' ],
+						'description'          => [ 'type' => 'string' ],
+						'schemaVersion'        => [ 'type' => 'integer' ],
+						'requiredCapabilities' => [
+							'type'  => 'array',
+							'items' => [ 'type' => 'string' ],
+						],
+						'inputSchema'          => [ 'type' => 'object' ],
+						'outputSchema'         => [ 'type' => 'object' ],
+						'example'              => [ 'type' => 'object' ],
+					],
+					'additionalProperties' => false,
+				],
+				schemaVersion: 1,
+				requiredCapabilities: [ 'read' ],
+				risk: Risk::Low,
+				isReadOnly: true,
+				isDestructive: false,
+				isIdempotent: true,
+				previewPolicy: PreviewPolicy::NotApplicable,
+				snapshotPolicy: SnapshotPolicy::NotApplicable,
+				rollbackPolicy: RollbackPolicy::NotApplicable,
+				module: ModuleId::Diagnostics,
+				supportedVersions: [ 'wordpress' => '>=' . SITEHELM_MIN_WP ],
+				example: [
+					'operation' => 'system-operation-schema',
+					'arguments' => [ 'operation' => 'content-update' ],
+				],
+			),
+			[ new OperationSchema( $registry ), 'handle' ]
 		);
 	}
 }

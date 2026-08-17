@@ -108,7 +108,7 @@ final class EnvironmentDiscoveryTest extends TestCase {
 
 	// phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 	/**
-	 * All three Diagnostics operations reach the system-read catalog, and
+	 * All four Diagnostics operations reach the system-read catalog, and
 	 * nothing else does.
 	 *
 	 * The catalog is asserted as a whole list rather than by two `has()` calls,
@@ -117,15 +117,15 @@ final class EnvironmentDiscoveryTest extends TestCase {
 	 * typo that parked `system-integrations` on the content catalog. Asserting
 	 * the identifiers in registration order also fails when a third operation
 	 * arrives unannounced, which is what makes this a net rather than a pair of
-	 * existence checks — as it did when `system-connection` arrived, which is
-	 * why the list below names three.
+	 * existence checks — as it did when `system-connection` arrived and again
+	 * when `system-operation-schema` did, which is why the list below names four.
 	 */
 	public function test_module_registers_its_system_reads_and_nothing_else(): void {
 		$registry = new CapabilityRegistry();
 		( new DiagnosticsModule() )->register( $registry );
 
 		$this->assertSame(
-			[ 'system-environment', 'system-integrations', 'system-connection' ],
+			[ 'system-environment', 'system-integrations', 'system-connection', 'system-operation-schema' ],
 			array_map(
 				static fn( OperationDefinition $d ): string => $d->id,
 				$registry->forDispatcher( 'system-read' )

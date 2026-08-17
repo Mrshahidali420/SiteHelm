@@ -219,10 +219,10 @@ final class McpServerTest extends TestCase {
 		$this->assertFalse( $response['result']['isError'] );
 		$text = $response['result']['content'][0]['text'];
 		// I3: the wire text must be valid JSON Schema, so empty object members
-		// serialize as {} rather than [].
-		$this->assertStringContainsString( '"properties":{}', $text );
+		// serialize as {} rather than []. REQ-0075 moved the schemas themselves
+		// out of the catalog, so the example's arguments are what remains here.
 		$this->assertStringContainsString( '"arguments":{}', $text );
-		$this->assertStringNotContainsString( '"properties":[]', $text );
+		$this->assertStringNotContainsString( '"arguments":[]', $text );
 		$payload = json_decode( $text, true );
 		$this->assertSame( 'system-read', $payload['dispatcher'] );
 	}
