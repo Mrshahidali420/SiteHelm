@@ -140,6 +140,14 @@ final class CoreModuleCensusTest extends TestCase {
 			'snapshot'      => 'not-applicable',
 			'rollback'      => 'not-applicable',
 		],
+		'content-links-check'        => [
+			'dispatcher'    => 'content-read',
+			'schemaVersion' => 1,
+			'capabilities'  => [ 'edit_post' ],
+			'preview'       => 'not-applicable',
+			'snapshot'      => 'not-applicable',
+			'rollback'      => 'not-applicable',
+		],
 		'redirect-set'               => [
 			'dispatcher'    => 'content-write',
 			'schemaVersion' => 1,
@@ -192,7 +200,7 @@ final class CoreModuleCensusTest extends TestCase {
 	public function test_per_dispatcher_registration_counts_are_unchanged(): void {
 		$registry = $this->registryWithCoreModule();
 
-		$this->assertCount( 5, $registry->forDispatcher( 'content-read' ) );
+		$this->assertCount( 6, $registry->forDispatcher( 'content-read' ) );
 		$this->assertCount( 11, $registry->forDispatcher( 'content-write' ) );
 		$this->assertCount( 1, $registry->forDispatcher( 'system-read' ) );
 
