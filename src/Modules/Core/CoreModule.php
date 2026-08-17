@@ -125,6 +125,10 @@ final class CoreModule implements IntegrationModule {
 			RedirectList::definition(),
 			[ new RedirectList( $redirects ), 'handle' ]
 		);
+		$registry->register(
+			ContentLinksCheck::definition(),
+			[ new ContentLinksCheck( $fields, new ContentLinks( $redirects ) ), 'handle' ]
+		);
 
 		$targets = new ContentTarget( $fields );
 

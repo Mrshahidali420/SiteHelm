@@ -28,6 +28,17 @@ an operation behaves.
   write back restores the table as it stood at apply — any other redirect changed in the
   interval is reverted with it, and both operations say so in their descriptions.
 
+- **`content-links-check`**, which reports the links in one content item and says which of
+  this site's own links no longer lead anywhere. A rename leaves the site pointing at its
+  old paths from inside its own content, and nobody sees those until a visitor clicks one.
+  Every answer comes from this site's database: a link to another host is listed and left
+  `unchecked`, because a content operation that makes outbound requests is a content
+  operation that can be pointed anywhere. This site's own links are resolved the way a
+  visitor's request resolves them — to a post, to the redirect that catches the path, or to
+  nothing at all. A link a redirect already catches is reported as a redirect rather than
+  hidden among the working ones, because a hop is a net, not a repair. `brokenOnly` trims
+  the list to what needs fixing while the counts keep describing the whole page.
+
 - **`content-blocks-get`**, which reads the block structure of a page instead of its text.
   Called with an identifier alone it returns the outline: every block, its address, its
   depth, the *names* of its attributes, and a short plain-text preview — enough to find the

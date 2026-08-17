@@ -5,6 +5,7 @@
         "taxonomy-list",
         "content-blocks-get",
         "redirect-list",
+        "content-links-check",
         "content-update",
         "content-create",
         "content-rollback-apply",
@@ -18,7 +19,7 @@
         "redirect-delete",
         "audit-list"
     ],
-    "operationCount": 17,
+    "operationCount": 18,
     "definitions": {
         "content-get": {
             "inputSchema": {
@@ -398,6 +399,53 @@
                     "total",
                     "capacity"
                 ],
+                "additionalProperties": false
+            }
+        },
+        "content-links-check": {
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "Identifier of the content item whose links to check."
+                    },
+                    "brokenOnly": {
+                        "type": "boolean",
+                        "description": "Return only the links that resolve to nothing. Counts still describe every link found."
+                    }
+                },
+                "required": [
+                    "id"
+                ],
+                "additionalProperties": false
+            },
+            "outputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer"
+                    },
+                    "linkCount": {
+                        "type": "integer"
+                    },
+                    "internalCount": {
+                        "type": "integer"
+                    },
+                    "brokenCount": {
+                        "type": "integer"
+                    },
+                    "redirectCount": {
+                        "type": "integer"
+                    },
+                    "truncated": {
+                        "type": "boolean"
+                    },
+                    "links": {
+                        "type": "array"
+                    }
+                },
                 "additionalProperties": false
             }
         },
