@@ -13,6 +13,22 @@ an operation behaves.
 
 ### Added
 
+- **User administration — `user-list` and `user-role-set`.** The people who can reach a
+  site can now be read and, one account at a time, re-roled. The listing answers accounts
+  by role or search term, newest registration first, and carries the role slugs this
+  particular site has registered — a roster no fixed list could publish, since a store or
+  a membership plugin adds its own. The write replaces one user's roles with a single
+  registered slug. It refuses four things outright rather than letting a preview promise
+  them: an unregistered slug, the acting user's own account, the last remaining
+  administrator, and a multisite super admin — each of them a way to lock a site out of
+  its own admin. Promoting someone to administrator is permitted and warned about, as is
+  the collapse of a multi-role account down to the one role you sent; the snapshot keeps
+  every role held beforehand, so a rollback restores the whole set rather than the first
+  of them. Seeing the roster and changing it are two separate capabilities, and neither
+  operation accepts the other's, so a client allowed to audit access cannot grant it. The
+  target-bound edit check runs against the specific account in the preview, the apply, and
+  the rollback. No password hash, reset key, or session token is reachable through either
+  operation.
 - **Comment moderation — `comment-list`, `comment-status-set`, and `comment-reply`.** The
   comment queue can now be worked: listed by post, status, or search term newest first;
   one comment moved between approved, pending, spam, and trash; and a reply posted under

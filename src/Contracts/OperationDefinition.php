@@ -28,6 +28,15 @@ final class OperationDefinition {
 	 * is what WordPress puts on its own comment screens, and REQ-0060's operations
 	 * gate on it alone so a moderator with no editing rights can still work. A
 	 * narrowing test confines it to those operations.
+	 *
+	 * `list_users` and `promote_users` are REQ-0061's pair, and they are two entries
+	 * rather than one because WordPress separates seeing who has access from handing
+	 * access out. Both are site-wide primitives, so neither belongs in
+	 * PolicyEngine::META_CAPABILITY_MAP; the target-bound half of the role rule
+	 * (`edit_user`) is deliberately absent from this list because a meta capability
+	 * with no target resolves to `do_not_allow`, and it is re-checked inside the
+	 * operation where the target id is known. A narrowing test confines each of
+	 * these two to exactly one operation.
 	 */
 	private const ALLOWED_CAPABILITIES = [
 		'read',
@@ -40,6 +49,8 @@ final class OperationDefinition {
 		'upload_files',
 		'edit_theme_options',
 		'moderate_comments',
+		'list_users',
+		'promote_users',
 	];
 
 	/**
