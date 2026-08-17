@@ -18,6 +18,7 @@ use SiteHelm\Modules\Elementor\ElementorDocument;
 use SiteHelm\Modules\Elementor\ElementorDocumentWriter;
 use SiteHelm\Modules\Elementor\ElementorElementAddInput;
 use SiteHelm\Modules\Elementor\ElementorElementUpdate;
+use SiteHelm\Modules\Elementor\ElementorElementsUpdate;
 use SiteHelm\Modules\Elementor\ElementorPresence;
 use SiteHelm\Modules\Elementor\ElementorPropCoercion;
 use SiteHelm\Modules\Elementor\ElementorSettingsMerge;
@@ -105,6 +106,26 @@ trait SettingsUpdateFixtures {
 		$parts = $this->collaborators();
 
 		return new ElementorElementUpdate(
+			$parts['targets'],
+			$parts['document'],
+			$parts['merge'],
+			$parts['edit'],
+			$parts['coercion'],
+			$parts['writer'],
+			$parts['diff'],
+			$parts['inputs']
+		);
+	}
+
+	/**
+	 * The batched element-update operation, wired exactly as the module wires it.
+	 *
+	 * @return ElementorElementsUpdate The subject.
+	 */
+	private function elementsUpdate(): ElementorElementsUpdate {
+		$parts = $this->collaborators();
+
+		return new ElementorElementsUpdate(
 			$parts['targets'],
 			$parts['document'],
 			$parts['merge'],
