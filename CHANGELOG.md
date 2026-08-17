@@ -9,7 +9,7 @@ Every entry names the user-visible outcome. Internal refactors, test additions, 
 documentation-only changes are not listed unless they change what an agent can do or how
 an operation behaves.
 
-## [Unreleased]
+## [0.3.0] — 2026-08-17
 
 ### Added
 
@@ -38,7 +38,7 @@ an operation behaves.
   a package registry serves at launch. The credential travels in the config's `env` block instead
   of on a command line, which every process on the machine can read. The public `mcp-remote`
   bridge is still offered beneath it, for a client running somewhere the plugin's files are not.
-- **`system-operation-schema`**, a fourth system read that returns one named operation's full
+- **`system-operation-schema`**, a fifth system read that returns one named operation's full
   input and output schema on demand. An operation the caller cannot see does not surrender its
   schema: an unknown name and a hidden one are refused identically, so the answer cannot be
   used to map the site's surface area.
@@ -204,7 +204,8 @@ Arbitrary PHP execution, unrestricted SQL, unrestricted filesystem access, and i
 permanent deletion are out of scope by design and will not be added. See
 [ROADMAP.md](ROADMAP.md).
 
-[Unreleased]: https://github.com/Mrshahidali420/SiteHelm/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/Mrshahidali420/SiteHelm/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/Mrshahidali420/SiteHelm/releases/tag/v0.3.0
 [0.2.1]: https://github.com/Mrshahidali420/SiteHelm/releases/tag/v0.2.1
 [0.2.0]: https://github.com/Mrshahidali420/SiteHelm/releases/tag/v0.2.0
 [0.1.0]: https://github.com/Mrshahidali420/SiteHelm/releases/tag/v0.1.0
