@@ -13,6 +13,24 @@ an operation behaves.
 
 ### Added
 
+- **Elementor theme builder — `elementor-theme-template-list` and
+  `elementor-theme-conditions-set`.** The header, footer, archive, search, 404, singular, and
+  product templates a site has built can now be listed with the display conditions each one
+  stores, and one template's conditions can be replaced as a whole rule — `include/general`
+  for the whole site, `exclude/singular/page/12` to carve out a page. The list is replaced
+  whole rather than edited entry by entry, because the conditions on a template are one
+  indivisible rule; that makes the write idempotent and the preview a complete statement of
+  where the template will display afterwards. An empty list is legal and detaches the
+  template without deleting it. A condition that does not parse refuses the whole request,
+  so a half-applied rule is not reachable. The write discards Elementor's resolved condition
+  map in the same step that stores the rule, so the front end stops serving the previous
+  header immediately — without that, the stored value is correct and every re-read agrees
+  while visitors still see the old one. Rolling back distinguishes a template that had no
+  conditions from one that had an empty list, so a restore of a never-configured template
+  removes the row rather than storing an empty one. Both operations omit templates the caller
+  may not edit, and the write requires `edit_theme_options` — the capability Elementor puts
+  on site-wide settings — as well as edit rights on the template itself.
+
 - **Redirects — `redirect-list`, `redirect-set`, and `redirect-delete`.** A retired URL can
   be pointed at its successor, so the traffic and the ranking the old address earned survive
   a rename, and a page that is simply gone can be marked `410` instead of answering `404`

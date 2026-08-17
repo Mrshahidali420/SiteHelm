@@ -1,0 +1,71 @@
+{
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "id": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "Identifier of the theme template whose conditions are being replaced, as elementor-theme-template-list reports it."
+            },
+            "conditions": {
+                "type": "array",
+                "items": {
+                    "type": "string",
+                    "maxLength": 120
+                },
+                "description": "The complete condition list to store, such as [\"include/general\"] for the whole site, [\"include/singular/post\"] for every post, or [\"include/general\",\"exclude/singular/page/12\"]. An empty list detaches the template."
+            }
+        },
+        "required": [
+            "id",
+            "conditions"
+        ],
+        "additionalProperties": false
+    },
+    "outputSchema": {
+        "type": "object",
+        "oneOf": [
+            {
+                "title": "Plan phase",
+                "type": "object",
+                "properties": {
+                    "plan": {
+                        "type": "object",
+                        "description": "The change plan to approve, including its plan token."
+                    }
+                },
+                "required": [
+                    "plan"
+                ],
+                "additionalProperties": false
+            },
+            {
+                "title": "Apply phase",
+                "type": "object",
+                "properties": {
+                    "target": {
+                        "type": "string",
+                        "description": "The concrete target that was written."
+                    },
+                    "changed": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "description": "The fields the approved plan changed."
+                    },
+                    "state": {
+                        "type": "object",
+                        "description": "The verified persisted state of the target."
+                    }
+                },
+                "required": [
+                    "target",
+                    "changed",
+                    "state"
+                ],
+                "additionalProperties": false
+            }
+        ]
+    }
+}

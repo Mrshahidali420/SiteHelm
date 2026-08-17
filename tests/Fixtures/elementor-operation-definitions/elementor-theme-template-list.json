@@ -1,0 +1,87 @@
+{
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "limit": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "Page size, clamped to 100. The response echoes the size actually used."
+            },
+            "offset": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Templates to skip before the page begins."
+            }
+        },
+        "additionalProperties": false
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "templates": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "id": {
+                            "type": "integer",
+                            "description": "The template's WordPress post identifier."
+                        },
+                        "title": {
+                            "type": "string",
+                            "description": "The template's title."
+                        },
+                        "status": {
+                            "type": "string",
+                            "description": "The WordPress post status. A template that is not published displays nowhere, whatever its conditions say."
+                        },
+                        "templateType": {
+                            "type": "string",
+                            "description": "The stored theme document type, such as header, footer, archive or single-post."
+                        },
+                        "conditions": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            },
+                            "description": "The stored display conditions, in stored order, such as include/general or exclude/singular/post/42. An empty list means the template displays nowhere."
+                        },
+                        "conditionCount": {
+                            "type": "integer",
+                            "description": "How many conditions the template stores."
+                        }
+                    },
+                    "required": [
+                        "id",
+                        "title",
+                        "status",
+                        "templateType",
+                        "conditions",
+                        "conditionCount"
+                    ],
+                    "additionalProperties": false
+                },
+                "description": "One page of the theme-builder templates the caller may edit."
+            },
+            "total": {
+                "type": "integer",
+                "description": "Theme-builder templates across the whole site, before this page was taken."
+            },
+            "limit": {
+                "type": "integer",
+                "description": "The page size actually used, after clamping."
+            },
+            "offset": {
+                "type": "integer",
+                "description": "The page start actually used."
+            }
+        },
+        "required": [
+            "templates",
+            "total",
+            "limit",
+            "offset"
+        ],
+        "additionalProperties": false
+    }
+}
