@@ -13,6 +13,27 @@ an operation behaves.
 
 ### Added
 
+- **Comment moderation — `comment-list`, `comment-status-set`, and `comment-reply`.** The
+  comment queue can now be worked: listed by post, status, or search term newest first;
+  one comment moved between approved, pending, spam, and trash; and a reply posted under
+  a comment as the acting account. All three gate on the comment-moderation capability
+  alone, so a moderator with no editing rights can use them and a capability meant for
+  posts is never demanded alongside it. Nothing here deletes anything — spam and trash
+  are reversible statuses on a row that stays where it is, every status write is
+  snapshotted and rolls back, and the value that would perform a permanent deletion is
+  not in the vocabulary at all. The status write goes through the same WordPress function
+  the moderation screen does, so marking a comment as spam still records the prior status
+  for WordPress's own unspam and still tells the anti-spam plugins what was decided. Two
+  refusals exist because performing the write would produce a result with a hidden expiry
+  date: a comment whose parent post is in the trash is refused with the real fix named,
+  because WordPress owns that comment's status until the post returns; and a reply under
+  a spam, trashed, or post-trashed parent is refused, because WordPress would silently
+  reparent it to the top of the thread. Replying under a pending parent is allowed but
+  warns that the parent is still awaiting moderation, so the reply does not sit invisible
+  under an invisible comment. The listing defaults to approved plus pending together
+  rather than the moderation queue alone — an empty queue reads as "nothing to do", which
+  is the wrong answer to "what is on this post" — and spam and trash appear only when
+  asked for by name. The commenter's IP address is never reported.
 - **SEO metadata — `content-seo-get` and `content-seo-set`.** One post's search-engine
   metadata can now be read and written on a site running either Yoast SEO or Rank Math,
   through one vocabulary that names neither: `title`, `description`, `canonical`, the four

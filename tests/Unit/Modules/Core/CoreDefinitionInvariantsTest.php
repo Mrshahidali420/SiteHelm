@@ -55,6 +55,7 @@ final class CoreDefinitionInvariantsTest extends TestCase {
 		'content-blocks-get',
 		'redirect-list',
 		'content-links-check',
+		'comment-list',
 		'content-update',
 		'content-create',
 		'content-rollback-apply',
@@ -66,13 +67,15 @@ final class CoreDefinitionInvariantsTest extends TestCase {
 		'content-block-update',
 		'redirect-set',
 		'redirect-delete',
+		'comment-status-set',
+		'comment-reply',
 		'audit-list',
 	];
 
 	/**
 	 * The core module's frozen write count.
 	 */
-	private const CORE_WRITE_COUNT = 11;
+	private const CORE_WRITE_COUNT = 13;
 
 	/**
 	 * A registry with the core module registered.
@@ -174,7 +177,7 @@ final class CoreDefinitionInvariantsTest extends TestCase {
 		$this->assertCount(
 			self::CORE_WRITE_COUNT,
 			$writes,
-			'The core module must expose nine writes; a tenth write has to declare the shared union too, and this count is what makes it say so.'
+			'The core module must expose thirteen writes; a fourteenth write has to declare the shared union too, and this count is what makes it say so.'
 		);
 
 		foreach ( $writes as $write ) {
@@ -184,5 +187,39 @@ final class CoreDefinitionInvariantsTest extends TestCase {
 				"Write '{$write->id}' must declare WriteOutputSchema::schema(). A forked copy splits the plan/apply union that the change engine's two phases and every client share, and the split stays invisible until one branch drifts."
 			);
 		}
+	}
+
+	/**
+	 * The comment capability reaches the comment operations and nothing else.
+	 *
+	 * REQ-0060 widened `OperationDefinition::ALLOWED_CAPABILITIES` by one, and a
+	 * widened allowlist is only as narrow as the test that pins who may use it.
+	 * `moderate_comments` is the right gate for these three because it is the
+	 * capability WordPress itself puts on its comment screens, but it is the WRONG
+	 * gate for anything that touches a post: it is granted to editors and
+	 * administrators without implying any right over content, so a content
+	 * operation adopting it would admit a moderator who may not edit the page it
+	 * rewrites. The exact match is what makes that a failure rather than a drift.
+	 *
+	 * The converse holds too — the comment operations must not additionally demand
+	 * a post capability, because a moderator with no editing rights is exactly the
+	 * user this feature exists for.
+	 */
+	public function test_the_comment_capability_gates_the_comment_operations_and_only_those(): void {
+		$gated = [];
+
+		foreach ( $this->registeredDefinitions( $this->registryWithCoreModule() ) as $definition ) {
+			if ( in_array( 'moderate_comments', $definition->requiredCapabilities, true ) ) {
+				$gated[] = $definition->id;
+
+				$this->assertSame(
+					[ 'moderate_comments' ],
+					$definition->requiredCapabilities,
+					"Operation '{$definition->id}' must gate on comment moderation alone; demanding a post capability alongside it locks out the moderator this operation is for."
+				);
+			}
+		}
+
+		$this->assertSame( [ 'comment-list', 'comment-status-set', 'comment-reply' ], $gated );
 	}
 }

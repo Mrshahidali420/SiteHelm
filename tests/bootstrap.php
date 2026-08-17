@@ -19,3 +19,13 @@ require_once dirname(__DIR__) . '/sitehelm.php';
 if ( ! class_exists( 'WP_Query' ) ) {
 	class_alias( \SiteHelm\Tests\Doubles\FakeWpQuery::class, 'WP_Query' );
 }
+
+/*
+ * WP_Comment is the second WordPress class the operations name in a signature
+ * rather than only through a faked function, so it is aliased here for the same
+ * reason and under the same guard: the alias is permanent for the process, and a
+ * real WP_Comment must win if one is ever loaded.
+ */
+if ( ! class_exists( 'WP_Comment' ) ) {
+	class_alias( \SiteHelm\Tests\Doubles\FakeWpComment::class, 'WP_Comment' );
+}

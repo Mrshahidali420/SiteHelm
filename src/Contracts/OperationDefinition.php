@@ -21,6 +21,14 @@ final class OperationDefinition {
 
 	private const ID_PATTERN = '/^[a-z0-9]+(?:-[a-z0-9]+)*$/';
 
+	/**
+	 * The capabilities an operation may gate on.
+	 *
+	 * `moderate_comments` is the one entry that grants no rights over content: it
+	 * is what WordPress puts on its own comment screens, and REQ-0060's operations
+	 * gate on it alone so a moderator with no editing rights can still work. A
+	 * narrowing test confines it to those operations.
+	 */
 	private const ALLOWED_CAPABILITIES = [
 		'read',
 		'manage_options',
@@ -31,6 +39,7 @@ final class OperationDefinition {
 		'assign_terms',
 		'upload_files',
 		'edit_theme_options',
+		'moderate_comments',
 	];
 
 	/**

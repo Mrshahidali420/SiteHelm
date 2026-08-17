@@ -89,10 +89,15 @@ final class CoreModule implements IntegrationModule {
 	/**
 	 * Caches this module's writes can invalidate.
 	 *
+	 * `comment` and `comment_meta` are listed because the comment writes change
+	 * rows read through both: the status change touches the comment row and the
+	 * spam transition writes the meta WordPress uses to unspam it, and a reply
+	 * changes the parent post's cached comment count.
+	 *
 	 * @return string[] Cache group names.
 	 */
 	public function cacheCleanup(): array {
-		return [ 'posts', 'post_meta', 'terms' ];
+		return [ 'posts', 'post_meta', 'terms', 'comment', 'comment_meta' ];
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 
@@ -129,6 +134,8 @@ final class CoreModule implements IntegrationModule {
 			ContentLinksCheck::definition(),
 			[ new ContentLinksCheck( $fields, new ContentLinks( $redirects ) ), 'handle' ]
 		);
+
+		$registry->register( CommentList::definition(), [ new CommentList(), 'handle' ] );
 
 		$targets = new ContentTarget( $fields );
 
@@ -181,6 +188,14 @@ final class CoreModule implements IntegrationModule {
 		// RedirectSnapshot is the half they have in common.
 		$registry->registerWrite( RedirectSet::definition(), new RedirectSet( $redirects ) );
 		$registry->registerWrite( RedirectDelete::definition(), new RedirectDelete( $redirects ) );
+
+		// Both comment writes share one target resolver, for the same reason the
+		// content writes share theirs: the key a plan is recorded under and the key
+		// a rollback resolves must be built by the same code.
+		$comments = new CommentTarget();
+
+		$registry->registerWrite( CommentStatusSet::definition(), new CommentStatusSet( $comments ) );
+		$registry->registerWrite( CommentReply::definition(), new CommentReply( $comments ) );
 
 		$registry->register( AuditRead::definition(), [ new AuditRead( new AuditStore(), new Installer() ), 'handle' ] );
 	}
