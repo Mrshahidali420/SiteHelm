@@ -1,6 +1,6 @@
 # Operations reference
 
-SiteHelm exposes **61 operations** through **11 MCP tools**, called dispatchers. Every operation is
+SiteHelm exposes **63 operations** through **11 MCP tools**, called dispatchers. Every operation is
 declared once, in code, with a strict input schema (`additionalProperties: false`), a required
 capability, a risk level, and preview, snapshot, and rollback policies. That declaration is the
 contract the gateway enforces and the catalogue an agent discovers.
@@ -195,7 +195,7 @@ links are listed per item, and `truncated` says when a page held more.
 Requires Elementor 3.0.0+. SiteHelm edits the stored Elementor document directly and flushes the
 generated CSS afterwards, so changes appear on the front end without opening the editor.
 
-### `elementor-read` — 8 operations
+### `elementor-read` — 9 operations
 
 | Operation | Does | Capability |
 |---|---|---|
@@ -207,8 +207,9 @@ generated CSS afterwards, so changes appear on the front end without opening the
 | `elementor-widget-availability` | Reports which widget types this site actually has | `edit_posts` |
 | `elementor-control-schema` | Returns a widget's or container's control schema | `edit_posts` |
 | `elementor-global-tokens-get` | Reads the global palette and type styles with their write identifiers | `edit_theme_options` |
+| `elementor-theme-template-list` | Lists theme-builder templates with the display conditions each one stores | `edit_posts` |
 
-### `elementor-write` — 9 operations
+### `elementor-write` — 10 operations
 
 | Operation | Does | Capability | Risk | Rollback |
 |---|---|---|---|---|
@@ -221,6 +222,7 @@ generated CSS afterwards, so changes appear on the front end without opening the
 | `elementor-element-remove` | Removes an element from the tree | `edit_post` | high | required |
 | `elementor-global-colors-update` | Updates global colour tokens site-wide | `edit_theme_options` | high | supported |
 | `elementor-global-typography-update` | Updates global type styles site-wide | `edit_theme_options` | high | supported |
+| `elementor-theme-conditions-set` | Replaces one theme template's display conditions as a whole rule | `edit_theme_options` | high | supported |
 
 **On the global-token writes.** They address the active Elementor kit, so they gate on
 `edit_theme_options` — the capability Elementor itself puts on the kit document — rather than on a
@@ -229,6 +231,29 @@ its title, and non-palette kit settings are untouched. An unknown identifier ref
 request and changes nothing. Typography setting names are validated by shape rather than against a
 fixed allowlist, so a control a newer Elementor adds is not refused; the entry's own `_id` is
 unreachable through that rule, so a write cannot re-point a token that pages already reference.
+
+**On the theme-builder operations.** A theme template's conditions decide where the template
+replaces the theme's own output, so the write gates on `edit_theme_options` like the kit writes, and
+still requires `edit_post` on the template itself when the target is resolved. Only header, footer,
+archive, search, 404, singular, and product templates are addressed; popups and saved sections store
+a different structure under a different key and are out of scope.
+
+The condition grammar is SiteHelm's own, not Elementor's: `include/general`, `include/singular/post`,
+`exclude/singular/page/12`. Two to four slash-separated segments, `include` or `exclude` first,
+`general` taking nothing after it. A condition that does not parse refuses the whole request, so a
+partly-applied rule is not reachable. That grammar is declared here rather than read from the plugin
+so what a write accepts cannot shift under a plugin update.
+
+The condition list is replaced **whole**, because the conditions on a template are one indivisible
+rule — which also makes the write idempotent and the preview a complete statement of the result. An
+empty list is legal and detaches the template rather than deleting it. Submitting the same list twice
+is a no-op that still verifies.
+
+The write **discards Elementor's resolved condition map** in the same step that stores the rule, and
+it does so by deleting the cached option rather than rebuilding it. Without that, the stored row is
+correct and every re-read agrees, while the front end keeps serving the previous header. A restore
+distinguishes "had no conditions row at all" from "had an empty list", so rolling back a
+never-configured template removes the row instead of storing an empty one.
 
 ## Fields (ACF and Meta Box)
 

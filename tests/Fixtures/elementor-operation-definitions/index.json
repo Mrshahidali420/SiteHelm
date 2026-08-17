@@ -8,6 +8,7 @@
         "elementor-element-search",
         "elementor-control-schema",
         "elementor-global-tokens-get",
+        "elementor-theme-template-list",
         "elementor-element-add",
         "elementor-element-update",
         "elementor-elements-update",
@@ -16,7 +17,8 @@
         "elementor-element-duplicate",
         "elementor-element-remove",
         "elementor-global-colors-update",
-        "elementor-global-typography-update"
+        "elementor-global-typography-update",
+        "elementor-theme-conditions-set"
     ],
-    "operationCount": 17
+    "operationCount": 19
 }
