@@ -9,6 +9,7 @@
         "elementor-global-tokens-get",
         "elementor-element-add",
         "elementor-element-update",
+        "elementor-elements-update",
         "elementor-widget-settings-update",
         "elementor-element-move",
         "elementor-element-duplicate",
@@ -16,5 +17,5 @@
         "elementor-global-colors-update",
         "elementor-global-typography-update"
     ],
-    "operationCount": 15
+    "operationCount": 16
 }

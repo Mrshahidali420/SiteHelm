@@ -13,6 +13,14 @@ an operation behaves.
 
 ### Added
 
+- **`elementor-elements-update`**, which changes the settings of several elements on one
+  Elementor page as a single reviewed change. One preview covers all of it, one save writes
+  it, and one rollback reference undoes it. Every entry is checked against the page before
+  anything is written, so an entry naming a setting the widget does not declare — or a
+  layout element, or an element that is not there — refuses the whole request and leaves
+  the page untouched, rather than landing the entries before it and stopping. A refusal
+  names which change in the request caused it. Two entries naming the same element are
+  refused rather than resolved by order.
 - **A stdio bridge, shipped with the plugin.** AI clients that cannot open an HTTP connection
   launch a local subprocess and speak over its stdin and stdout instead. `bridge/sitehelm-bridge.mjs`
   is that subprocess: no dependencies, Node 18 or newer, and it forwards each message to the

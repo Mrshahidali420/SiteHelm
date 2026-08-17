@@ -1,6 +1,6 @@
 # Operations reference
 
-SiteHelm exposes **51 operations** through **11 MCP tools**, called dispatchers. Every operation is
+SiteHelm exposes **53 operations** through **11 MCP tools**, called dispatchers. Every operation is
 declared once, in code, with a strict input schema (`additionalProperties: false`), a required
 capability, a risk level, and preview, snapshot, and rollback policies. That declaration is the
 contract the gateway enforces and the catalogue an agent discovers.
@@ -166,12 +166,13 @@ generated CSS afterwards, so changes appear on the front end without opening the
 | `elementor-control-schema` | Returns a widget's or container's control schema | `edit_posts` |
 | `elementor-global-tokens-get` | Reads the global palette and type styles with their write identifiers | `edit_theme_options` |
 
-### `elementor-write` — 8 operations
+### `elementor-write` — 9 operations
 
 | Operation | Does | Capability | Risk | Rollback |
 |---|---|---|---|---|
 | `elementor-element-add` | Inserts an element at a position in the tree | `edit_post` | medium | supported |
 | `elementor-element-update` | Updates an element's settings | `edit_post` | medium | supported |
+| `elementor-elements-update` | Updates several elements' settings as one change; one bad entry refuses all of them | `edit_post` | medium | supported |
 | `elementor-widget-settings-update` | Updates a widget's settings against its control schema | `edit_post` | medium | supported |
 | `elementor-element-move` | Moves an element within or between containers | `edit_post` | medium | supported |
 | `elementor-element-duplicate` | Duplicates an element with fresh ids | `edit_post` | medium | supported |
