@@ -166,7 +166,7 @@ generated CSS afterwards, so changes appear on the front end without opening the
 | `elementor-control-schema` | Returns a widget's or container's control schema | `edit_posts` |
 | `elementor-global-tokens-get` | Reads the global palette and type styles with their write identifiers | `edit_theme_options` |
 
-### `elementor-write` — 8 operations
+### `elementor-write` — 9 operations
 
 | Operation | Does | Capability | Risk | Rollback |
 |---|---|---|---|---|
