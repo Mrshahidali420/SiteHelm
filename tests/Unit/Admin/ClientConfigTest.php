@@ -243,6 +243,86 @@ final class ClientConfigTest extends TestCase {
 	}
 
 	/**
+	 * The stdio config must launch the bridge that shipped with this install
+	 * rather than fetch one at launch, which is the whole point of shipping it:
+	 * the code that runs is the code that was reviewed and installed here.
+	 */
+	public function testTheStdioConfigLaunchesTheBridgeShippedWithThePlugin(): void {
+		$decoded = json_decode( $this->body( 'bridge', 'bridge-json', 'abcd efgh' ), true );
+		$entry   = $decoded['mcpServers'][ ClientConfig::SERVER_NAME ];
+
+		$this->assertSame( 'node', $entry['command'] );
+		$this->assertCount( 1, $entry['args'] );
+		$this->assertStringEndsWith( '/' . ClientConfig::BRIDGE_RELATIVE_PATH, $entry['args'][0] );
+
+		// An absolute path, because a client is launched from its own working
+		// directory and a relative one would resolve against that instead. The
+		// separators are forward slashes even on Windows, where both spellings
+		// open the same file but only one survives JSON encoding legibly.
+		$this->assertMatchesRegularExpression( '#^(/|[A-Za-z]:/)#', $entry['args'][0] );
+		$this->assertStringNotContainsString( '\\', $entry['args'][0] );
+
+		// The path is only worth printing if a file is there. Recomputing it from
+		// the same expression the class uses would prove nothing; opening it does.
+		$this->assertFileExists( $entry['args'][0] );
+
+		$this->assertSame( self::ENDPOINT, $entry['env']['SITEHELM_ENDPOINT'] );
+		$this->assertSame( 'Basic ' . base64_encode( 'agency:abcd efgh' ), $entry['env']['SITEHELM_AUTH'] );
+	}
+
+	/**
+	 * A command line is readable by every process on the machine while a child
+	 * process environment is not, so the credential must never be an argument.
+	 */
+	public function testTheStdioConfigKeepsTheCredentialOutOfTheCommandLine(): void {
+		$credential = base64_encode( 'agency:abcd efgh' );
+		$decoded    = json_decode( $this->body( 'bridge', 'bridge-json', 'abcd efgh' ), true );
+		$entry      = $decoded['mcpServers'][ ClientConfig::SERVER_NAME ];
+
+		$this->assertStringNotContainsString( $credential, $entry['command'] );
+
+		foreach ( $entry['args'] as $argument ) {
+			$this->assertStringNotContainsString( $credential, $argument );
+		}
+
+		// Proves the search above was looking for something that is present
+		// somewhere: an assertion that nothing contains a credential passes just
+		// as well when no credential was built at all.
+		$this->assertStringContainsString( $credential, (string) wp_json_encode( $entry['env'] ) );
+	}
+
+	/**
+	 * The npx bridge stays on offer for a machine without the plugin's files, and
+	 * it is the one place a credential does belong on a command line, because
+	 * `mcp-remote` takes it no other way.
+	 */
+	public function testThePublicBridgeIsStillOfferedForAMachineWithoutTheseFiles(): void {
+		$decoded = json_decode( $this->body( 'bridge', 'bridge-remote', 'abcd efgh' ), true );
+		$entry   = $decoded['mcpServers'][ ClientConfig::SERVER_NAME ];
+
+		$this->assertSame( 'npx', $entry['command'] );
+		$this->assertContains( 'mcp-remote', $entry['args'] );
+		$this->assertContains( 'Authorization: Basic ' . base64_encode( 'agency:abcd efgh' ), $entry['args'] );
+	}
+
+	/**
+	 * Two other cards hand out the same stdio entry. They must move with it: a
+	 * card left on the npx bridge would still work, and would quietly be the one
+	 * config on the screen that runs code nobody here reviewed.
+	 */
+	public function testEveryStdioCardOffersTheShippedBridge(): void {
+		foreach ( [ [ 'claude-desktop', 'claude-desktop-json' ], [ 'antigravity', 'antigravity-json' ] ] as $block ) {
+			$decoded = json_decode( $this->body( $block[0], $block[1] ), true );
+
+			$this->assertSame(
+				'node',
+				$decoded['mcpServers'][ ClientConfig::SERVER_NAME ]['command'],
+				$block[1]
+			);
+		}
+	}
+
+	/**
 	 * A connector dialog has no field for a header, so that block states the facts
 	 * it can actually accept and points at the bridge for the rest. Encoding a
 	 * credential into it would be telling someone to paste it where it cannot go.

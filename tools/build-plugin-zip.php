@@ -63,7 +63,11 @@ $files = [ 'sitehelm.php', 'LICENSE', 'README.md', 'CHANGELOG.md' ];
 // assets/ carries the admin console's stylesheet and script. Omitting it does
 // not break the plugin, which is exactly why it has to be listed deliberately:
 // the console would ship and render unstyled, and nothing would report an error.
-foreach ( [ 'src', 'assets', 'vendor/composer' ] as $directory ) {
+//
+// bridge/ carries the stdio bridge. It is never executed by WordPress, so a zip
+// without it installs and runs cleanly; the only symptom is that the path the
+// Connect screen prints resolves to nothing on the operator's machine.
+foreach ( [ 'src', 'assets', 'bridge', 'vendor/composer' ] as $directory ) {
 	$iterator = new RecursiveIteratorIterator(
 		new RecursiveDirectoryIterator( $root . '/' . $directory, FilesystemIterator::SKIP_DOTS )
 	);
