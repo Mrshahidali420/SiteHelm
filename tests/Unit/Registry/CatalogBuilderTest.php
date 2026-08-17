@@ -189,22 +189,78 @@ final class CatalogBuilderTest extends TestCase {
 	}
 
 	/**
-	 * I3: empty JSON Schema object members must serialize as {}, not [].
+	 * REQ-0076: the gate refuses a write that arrived on an address the site no
+	 * longer answers as, so the catalog must say so rather than advertise those
+	 * writes as available and send a client into a refusal it could have been
+	 * warned about. The reason is its own, not read_only_mode: an operator sent
+	 * looking for a permission-mode setting would never find the stale URL.
 	 */
-	public function test_empty_schema_objects_serialize_as_json_objects(): void {
+	public function test_a_write_reached_on_a_retired_host_is_listed_as_blocked(): void {
+		$this->registry->registerWrite(
+			$this->makeMultiCapabilityDefinition(),
+			new StubWriteOperation()
+		);
+		$this->allowCapabilities( [ 'edit_posts', 'publish_posts' ] );
+		$_SERVER['HTTP_HOST'] = 'old-agency-site.com';
+
+		try {
+			$catalog = $this->builder->build( 'content-write', $this->makeContext() );
+		} finally {
+			unset( $_SERVER['HTTP_HOST'] );
+		}
+
+		$this->assertFalse( $catalog['operations'][0]['available'] );
+		$this->assertSame( 'retired_host', $catalog['operations'][0]['blockedReason'] );
+	}
+
+	/**
+	 * Reads stay available: a connector pointed at the wrong domain still needs
+	 * the diagnostics that say so.
+	 */
+	public function test_a_read_reached_on_a_retired_host_stays_available(): void {
+		$_SERVER['HTTP_HOST'] = 'old-agency-site.com';
+
+		try {
+			$catalog = $this->builder->build( 'system-read', $this->makeContext() );
+		} finally {
+			unset( $_SERVER['HTTP_HOST'] );
+		}
+
+		$this->assertTrue( $catalog['operations'][0]['available'] );
+		$this->assertNull( $catalog['operations'][0]['blockedReason'] );
+	}
+
+	/**
+	 * I3: an empty argument list in a usage example must serialize as {}, not [].
+	 */
+	public function test_empty_example_arguments_serialize_as_a_json_object(): void {
 		$catalog = $this->builder->build( 'system-read', $this->makeContext() );
 		$json    = (string) json_encode( $catalog['operations'][0] );
 
-		$this->assertStringContainsString( '"properties":{}', $json );
 		$this->assertStringContainsString( '"arguments":{}', $json );
-		$this->assertStringNotContainsString( '"properties":[]', $json );
 		$this->assertStringNotContainsString( '"arguments":[]', $json );
 	}
 
 	/**
-	 * I3: list-valued schema members such as required stay JSON arrays.
+	 * REQ-0075: a catalog states what exists, not how to call it. Carrying every
+	 * schema spent most of a client's context on operations it never called, so
+	 * the schemas moved to an operation that returns one on request.
 	 */
-	public function test_required_list_still_serializes_as_a_json_array(): void {
+	public function test_catalog_omits_schemas_and_names_where_to_fetch_one(): void {
+		$catalog = $this->builder->build( 'system-read', $this->makeContext() );
+		$entry   = $catalog['operations'][0];
+
+		$this->assertArrayNotHasKey( 'inputSchema', $entry );
+		$this->assertArrayNotHasKey( 'outputSchema', $entry );
+		$this->assertStringContainsString( CatalogBuilder::SCHEMA_OPERATION, $catalog['schemas'] );
+	}
+
+	/**
+	 * The example survives the trim. It is the one place the catalog still states
+	 * an argument shape concretely, so dropping it with the schemas would have
+	 * left a listing a client could not act on at all.
+	 */
+	public function test_catalog_still_states_the_argument_shape_by_example(): void {
 		$this->registry->registerWrite(
 			$this->makeMultiCapabilityDefinition(),
 			new StubWriteOperation()
@@ -212,10 +268,14 @@ final class CatalogBuilderTest extends TestCase {
 		$this->allowCapabilities( [ 'edit_posts', 'publish_posts' ] );
 
 		$catalog = $this->builder->build( 'content-write', $this->makeContext() );
-		$json    = (string) json_encode( $catalog['operations'][0] );
 
-		$this->assertStringContainsString( '"required":["id"]', $json );
-		$this->assertStringContainsString( '"properties":{"id":', $json );
+		$this->assertSame(
+			[
+				'operation' => 'content-update',
+				'arguments' => [ 'id' => 42 ],
+			],
+			$catalog['operations'][0]['example']
+		);
 	}
 
 	/**

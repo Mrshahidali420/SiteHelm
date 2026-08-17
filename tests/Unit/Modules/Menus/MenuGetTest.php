@@ -17,9 +17,9 @@ use SiteHelm\Contracts\OperationException;
 use SiteHelm\Contracts\PermissionMode;
 use SiteHelm\Modules\Menus\MenuFields;
 use SiteHelm\Modules\Menus\MenuGet;
+use SiteHelm\Modules\Diagnostics\OperationSchema;
 use SiteHelm\Modules\Menus\MenusModule;
 use SiteHelm\Registry\CapabilityRegistry;
-use SiteHelm\Registry\CatalogBuilder;
 use SiteHelm\Schema\SchemaValidator;
 use SiteHelm\Storage\Installer;
 use SiteHelm\Tests\TestCase;
@@ -459,44 +459,56 @@ final class MenuGetTest extends TestCase {
 
 	/**
 	 * The reference must resolve where clients ACTUALLY READ SCHEMAS, which is
-	 * the catalog listing rather than one operation's schema on its own. In the
-	 * catalog this schema is nested at `operations[n].outputSchema` inside a much
-	 * larger response, and a pointer fragment resolves against the base URI in
-	 * force where it appears — the response root, unless an `$id` moved it.
+	 * the on-demand schema lookup rather than the operation definition on its own.
+	 * REQ-0075 moved the schemas out of the dispatcher catalog, so that response
+	 * is where this schema now reaches a client: nested at `outputSchema` inside a
+	 * larger envelope, exactly as it was nested inside the catalog before. A
+	 * pointer fragment resolves against the base URI in force where it appears —
+	 * the response root, unless an `$id` moved it.
 	 *
 	 * So the resolver below is the test, not scaffolding. It is handed the WHOLE
-	 * catalog response as its starting document and implements the one rule that
+	 * lookup response as its starting document and implements the one rule that
 	 * decides the outcome: descending into a node that carries `$id` rebases
 	 * every reference beneath it on that node. Without the `$id`, every
-	 * `#/$defs/menuItem` in the response is resolved against a catalog root that
+	 * `#/$defs/menuItem` in the response is resolved against a response root that
 	 * has no `$defs` member, and the reference a client is supposed to follow
 	 * leads nowhere.
 	 *
 	 * Mutation that breaks this: deleting `'$id' => self::OUTPUT_SCHEMA_ID` from
 	 * MenuGet's outputSchema.
 	 */
-	public function test_every_schema_reference_resolves_from_the_catalog_response(): void {
+	public function test_every_schema_reference_resolves_from_the_schema_response(): void {
 		Functions\when( 'get_bloginfo' )->justReturn( '6.8.1' );
+		// The lookup requires `read`; the menu operation requires
+		// `edit_theme_options` to be visible at all. Both must be held here or
+		// the response under test is a refusal instead of a schema.
+		Functions\when( 'user_can' )->alias(
+			static fn( int $user_id, string $capability ): bool =>
+				in_array( $capability, [ 'read', 'edit_theme_options' ], true )
+		);
 
 		$registry = new CapabilityRegistry();
 		( new MenusModule() )->register( $registry );
 
-		$catalog = ( new CatalogBuilder( $registry ) )->build( 'menu-read', $this->makeContext() );
+		$response = ( new OperationSchema( $registry ) )->handle(
+			[ 'operation' => 'menu-get' ],
+			$this->makeContext()
+		);
 
 		$found    = [];
 		$dangling = [];
-		$this->collectRefs( $catalog, $catalog, '', $found, $dangling );
+		$this->collectRefs( $response, $response, '', $found, $dangling );
 
 		$this->assertNotSame(
 			[],
 			$found,
-			'The menu-read catalog must carry the menu item reference; a test that finds none proves nothing.'
+			'The menu-get schema response must carry the menu item reference; a test that finds none proves nothing.'
 		);
 
 		$this->assertSame(
 			[],
 			$dangling,
-			'A client resolving these references against the catalog response finds nothing at the far end of them.'
+			'A client resolving these references against the schema response finds nothing at the far end of them.'
 		);
 	}
 

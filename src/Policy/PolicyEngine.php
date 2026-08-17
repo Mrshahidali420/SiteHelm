@@ -50,6 +50,45 @@ final class PolicyEngine {
 		'delete_post' => 'delete_posts',
 	];
 
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+	/**
+	 * Whether the resolved user holds every capability the operation requires,
+	 * with target meta-capabilities evaluated through their primitive stand-ins.
+	 *
+	 * This answers "could this caller plausibly perform this operation at all",
+	 * which is the only question a target-less surface can answer. It is
+	 * deliberately NOT an authorization decision: authorize() performs the real
+	 * target-bound check at invocation time and remains authoritative, so an
+	 * operation visible here may still be refused with `forbidden` when invoked
+	 * against a specific target.
+	 *
+	 * It is static because the two surfaces that need it — the dispatcher catalog
+	 * and the on-demand schema lookup — describe operations rather than run them,
+	 * and neither should have to be handed the gate to ask a question about
+	 * visibility. Both must answer it the same way: an operation the catalog hides
+	 * would otherwise still surrender its schema on request.
+	 *
+	 * @param OperationDefinition $definition The operation to test.
+	 * @param OperationContext    $context    The request context.
+	 *
+	 * @return bool True when the operation may be described to this caller.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+	 */
+	public static function isVisibleWithoutTarget( OperationDefinition $definition, OperationContext $context ): bool {
+		foreach ( $definition->requiredCapabilities as $capability ) {
+			$effective = self::META_CAPABILITY_MAP[ $capability ] ?? $capability;
+
+			if ( ! user_can( $context->userId, $effective ) ) {
+				return false;
+			}
+		}
+
+		return true;
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+
 	/**
 	 * Authorizes one dispatch. Returns void on success; throws OperationException(Forbidden) otherwise.
 	 *
@@ -71,6 +110,14 @@ final class PolicyEngine {
 				ErrorCode::Forbidden,
 				'This site is in read-only mode; write operations are disabled.',
 				'A site administrator can change the permission mode in SiteHelm settings.'
+			);
+		}
+
+		if ( Mode::Write === $definition->mode && ! RequestHost::matches( $context->siteId ) ) {
+			throw new OperationException(
+				ErrorCode::Forbidden,
+				'This request reached the site at an address the site no longer answers as, so writes are refused.',
+				sprintf( 'Point the connector at %s and reconnect.', home_url( '/' ) )
 			);
 		}
 
