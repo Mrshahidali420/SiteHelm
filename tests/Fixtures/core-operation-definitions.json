@@ -20,9 +20,11 @@
         "redirect-delete",
         "comment-status-set",
         "comment-reply",
+        "user-role-set",
+        "user-list",
         "audit-list"
     ],
-    "operationCount": 21,
+    "operationCount": 23,
     "definitions": {
         "content-get": {
             "inputSchema": {
@@ -1556,6 +1558,169 @@
                         "additionalProperties": false
                     }
                 ]
+            }
+        },
+        "user-role-set": {
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "Identifier of the user whose role is being changed."
+                    },
+                    "role": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 64,
+                        "description": "Role slug to grant. Must be one of the slugs user-list reports as siteRoles; roles are registered by the site, so there is no fixed list."
+                    }
+                },
+                "required": [
+                    "id",
+                    "role"
+                ],
+                "additionalProperties": false
+            },
+            "outputSchema": {
+                "type": "object",
+                "oneOf": [
+                    {
+                        "title": "Plan phase",
+                        "type": "object",
+                        "properties": {
+                            "plan": {
+                                "type": "object",
+                                "description": "The change plan to approve, including its plan token."
+                            }
+                        },
+                        "required": [
+                            "plan"
+                        ],
+                        "additionalProperties": false
+                    },
+                    {
+                        "title": "Apply phase",
+                        "type": "object",
+                        "properties": {
+                            "target": {
+                                "type": "string",
+                                "description": "The concrete target that was written."
+                            },
+                            "changed": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                },
+                                "description": "The fields the approved plan changed."
+                            },
+                            "state": {
+                                "type": "object",
+                                "description": "The verified persisted state of the target."
+                            }
+                        },
+                        "required": [
+                            "target",
+                            "changed",
+                            "state"
+                        ],
+                        "additionalProperties": false
+                    }
+                ]
+            }
+        },
+        "user-list": {
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "role": {
+                        "type": "string",
+                        "maxLength": 64,
+                        "description": "Return only users holding this role slug. Roles are registered by the site, so call this operation without a role first to see which slugs exist."
+                    },
+                    "search": {
+                        "type": "string",
+                        "maxLength": 255,
+                        "description": "Return only users matching this term in their login, email, display name, or site URL."
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "Page size, clamped to 100. Defaults to 20."
+                    },
+                    "offset": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "Users to skip before the page begins."
+                    }
+                },
+                "additionalProperties": false
+            },
+            "outputSchema": {
+                "type": "object",
+                "properties": {
+                    "items": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {
+                                    "type": "integer"
+                                },
+                                "login": {
+                                    "type": "string"
+                                },
+                                "displayName": {
+                                    "type": "string"
+                                },
+                                "email": {
+                                    "type": "string"
+                                },
+                                "roles": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "string"
+                                    }
+                                },
+                                "registeredGmt": {
+                                    "type": "string"
+                                }
+                            },
+                            "required": [
+                                "id",
+                                "login",
+                                "displayName",
+                                "email",
+                                "roles",
+                                "registeredGmt"
+                            ],
+                            "additionalProperties": false
+                        }
+                    },
+                    "total": {
+                        "type": "integer"
+                    },
+                    "limit": {
+                        "type": "integer"
+                    },
+                    "offset": {
+                        "type": "integer"
+                    },
+                    "siteRoles": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    }
+                },
+                "required": [
+                    "items",
+                    "total",
+                    "limit",
+                    "offset",
+                    "siteRoles"
+                ],
+                "additionalProperties": false
             }
         },
         "audit-list": {

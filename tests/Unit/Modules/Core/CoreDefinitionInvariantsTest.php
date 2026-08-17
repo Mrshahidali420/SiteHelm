@@ -69,13 +69,15 @@ final class CoreDefinitionInvariantsTest extends TestCase {
 		'redirect-delete',
 		'comment-status-set',
 		'comment-reply',
+		'user-role-set',
+		'user-list',
 		'audit-list',
 	];
 
 	/**
 	 * The core module's frozen write count.
 	 */
-	private const CORE_WRITE_COUNT = 13;
+	private const CORE_WRITE_COUNT = 14;
 
 	/**
 	 * A registry with the core module registered.
@@ -177,7 +179,7 @@ final class CoreDefinitionInvariantsTest extends TestCase {
 		$this->assertCount(
 			self::CORE_WRITE_COUNT,
 			$writes,
-			'The core module must expose thirteen writes; a fourteenth write has to declare the shared union too, and this count is what makes it say so.'
+			'The core module must expose fourteen writes; a fifteenth write has to declare the shared union too, and this count is what makes it say so.'
 		);
 
 		foreach ( $writes as $write ) {
@@ -221,5 +223,64 @@ final class CoreDefinitionInvariantsTest extends TestCase {
 		}
 
 		$this->assertSame( [ 'comment-list', 'comment-status-set', 'comment-reply' ], $gated );
+	}
+
+	/**
+	 * Each user capability reaches exactly one operation, and gates it alone.
+	 *
+	 * REQ-0061 widened the allowlist by two, and the two must stay separated. The
+	 * pairing is the whole point: `list_users` on the write would let an account
+	 * that may only see the users screen change what other people can do, and
+	 * `promote_users` on the read would hide the roster from a client who is
+	 * allowed to see who has access but not to grant it. WordPress keeps these two
+	 * powers apart, and a single-capability allowlist entry is only as narrow as the
+	 * test that says which operation may hold it.
+	 *
+	 * `manage_options` must appear on neither, for the reason the comment pair gives:
+	 * folding a specific capability into the administrator's catch-all makes the
+	 * operation unavailable to exactly the roles a site grants the specific one to.
+	 *
+	 * `edit_user` must appear in no declared list at all. It is a meta capability,
+	 * and a meta capability with no target resolves to `do_not_allow` in WordPress —
+	 * so declaring it would refuse every caller including administrators, while
+	 * looking like a tightening. The role write re-checks it against the specific
+	 * account inside planChange() and restore(), where the target id exists.
+	 */
+	public function test_each_user_capability_gates_exactly_one_user_operation(): void {
+		$expected = [
+			'list_users'    => 'user-list',
+			'promote_users' => 'user-role-set',
+		];
+
+		$seen = [];
+
+		foreach ( $this->registeredDefinitions( $this->registryWithCoreModule() ) as $definition ) {
+			$this->assertNotContains(
+				'edit_user',
+				$definition->requiredCapabilities,
+				"Operation '{$definition->id}' declares the meta capability edit_user, which resolves to do_not_allow without a target and would refuse every caller. Re-check it inside the operation instead."
+			);
+
+			foreach ( $expected as $capability => $operationId ) {
+				if ( in_array( $capability, $definition->requiredCapabilities, true ) ) {
+					$seen[ $capability ] = $definition->id;
+
+					$this->assertSame(
+						[ $capability ],
+						$definition->requiredCapabilities,
+						"Operation '{$definition->id}' must gate on {$capability} alone; pairing it with another capability either widens who may act or locks out the role the site granted it to."
+					);
+				}
+			}
+		}
+
+		// Sorted by capability rather than compared in encounter order: the write is
+		// registered before the read, because the frozen dispatcher set puts them on
+		// different dispatchers and the catalog is walked dispatcher by dispatcher.
+		// The pairing is the invariant; the order in which it is discovered is not.
+		ksort( $seen );
+		ksort( $expected );
+
+		$this->assertSame( $expected, $seen );
 	}
 }

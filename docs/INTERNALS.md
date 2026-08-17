@@ -437,7 +437,71 @@ pinned by the double rather than asserted about it.
 
 ---
 
-## 12. Standing project constraints
+## 12. User administration (REQ-0061) in one screen
+
+**Two operations, two dispatchers, and the split is forced.** `user-list` is a
+`system-read`. `user-role-set` is registered under **`content-write`** — not because
+it is content, but because the eleven dispatchers are frozen and there is no
+`system-write` in the set (`OperationDefinition`'s constructor rejects one by name).
+The RedirectSet precedent is the same shape. Consequence for the census nets: the
+catalog is walked dispatcher by dispatcher and `system-read` is **last**, so
+`user-role-set` appears *before* `user-list` in `OPERATION_IDS` and in the baseline
+fixture. Any test that compares user operations in encounter order will fail; sort
+first (`CoreDefinitionInvariantsTest::test_each_user_capability_gates_exactly_one_user_operation`
+`ksort()`s both sides, and says why).
+
+**Two capabilities, not one, plus a third checked at the target.**
+`OperationDefinition::ALLOWED_CAPABILITIES` gained `list_users` and `promote_users`
+as separate entries. Both are site-wide primitives, so `META_CAPABILITY_MAP` is
+untouched. `edit_user` is **deliberately absent from the allowlist and from every
+declared `requiredCapabilities`**: it is a meta capability, and a meta capability
+with no target resolves to `do_not_allow`, so declaring it would refuse every caller
+including administrators while looking like a tightening. It is re-checked instead
+via `PolicyEngine::authorizeTargetCapability( 'edit_user', $user_id, … )` inside
+`planChange()` (both phases) and inside `restore()`.
+
+**`WP_User::$roles` is built with `array_filter()`, which preserves keys.** A user
+can answer `[ 1 => 'editor' ]`. Every projection must `array_values()` before it
+reaches an envelope, or the JSON encodes an object where the schema promises an
+array. `FakeWpUser::$roles` is untyped and keeps its keys on purpose so this stays
+pinned.
+
+**Four refusals, all raised in `planChange()` so no preview can promise them:**
+an unregistered role slug → `InvalidInput` naming the live slugs; the acting user's
+own account → `Forbidden`; the last remaining administrator → `Conflict`; and, on
+multisite, a super admin → `Conflict`. The administrator count uses
+`get_users( [ 'role' => 'administrator', 'fields' => 'ID', 'number' => 2 ] )` — two
+rows is all the question needs. Two warnings, not refusals: promoting to
+administrator, and collapsing a multi-role account.
+
+**The snapshot holds every role, the restore replays them in order.**
+`captureSnapshot()` records `[ 'user_id', 'roles' ]` with *all* current roles read
+off `$current->fields` (side-effect free, safe to call twice). `restore()` calls
+`set_role( $roles[0] ?? '' )` and then `add_role()` for each remaining one — the
+first call is what clears the existing set, so it cannot be replaced by a loop of
+`add_role()`. `readBack()` calls `clean_user_cache()` **before** projecting, or it
+reads the pre-write object back and passes.
+
+**`CoreModule::cacheCleanup()` gained `users` and `user_meta`.**
+
+**The four census nets, all four of which must be updated together:**
+`CoreDefinitionInvariantsTest` (`OPERATION_IDS` + `CORE_WRITE_COUNT`, now 14),
+`CoreModuleCensusTest` (per-dispatcher counts — **core-module-only**, so
+`content-write` is 14 and `system-read` is 2 there, while `docs/OPERATIONS.md`
+carries the catalog-wide 15 and 6), `tests/Fixtures/core-operation-definitions.json`
+(regenerate via `CoreDefinitionBaselineTest::currentBaselineJson()`), and
+`tests/Unit/Change/WriteOutputSchemaTest::CORE_WRITE_IDS` — that last one lives
+**outside** `tests/Unit/Modules/Core` and is the one that gets missed.
+
+Its tests: `UserFieldsTest` (19), `UserListTest` (20), `UserRoleSetTest` (37).
+Doubles: `FakeWpUser`, `FakeWpUserQuery`, `FakeWpRoles`, and the
+`UserWordPressStubs` trait — whose capability map is **per-capability booleans**, so
+a test that means to check `edit_user` is not silently also asserting
+`promote_users`. `WP_User` and `WP_User_Query` are aliased in `tests/bootstrap.php`.
+
+---
+
+## 13. Standing project constraints
 
 - **No AI attribution anywhere in git** — no "Generated with Claude Code" footer,
   no session URL, no `Co-Authored-By` trailer, in any commit, PR body, PR comment,

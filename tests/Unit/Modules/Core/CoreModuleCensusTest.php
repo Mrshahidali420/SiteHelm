@@ -188,6 +188,22 @@ final class CoreModuleCensusTest extends TestCase {
 			'snapshot'      => 'supported',
 			'rollback'      => 'supported',
 		],
+		'user-list'                  => [
+			'dispatcher'    => 'system-read',
+			'schemaVersion' => 1,
+			'capabilities'  => [ 'list_users' ],
+			'preview'       => 'not-applicable',
+			'snapshot'      => 'not-applicable',
+			'rollback'      => 'not-applicable',
+		],
+		'user-role-set'              => [
+			'dispatcher'    => 'content-write',
+			'schemaVersion' => 1,
+			'capabilities'  => [ 'promote_users' ],
+			'preview'       => 'required',
+			'snapshot'      => 'required',
+			'rollback'      => 'supported',
+		],
 		'audit-list'                 => [
 			'dispatcher'    => 'system-read',
 			'schemaVersion' => 1,
@@ -225,8 +241,8 @@ final class CoreModuleCensusTest extends TestCase {
 		$registry = $this->registryWithCoreModule();
 
 		$this->assertCount( 7, $registry->forDispatcher( 'content-read' ) );
-		$this->assertCount( 13, $registry->forDispatcher( 'content-write' ) );
-		$this->assertCount( 1, $registry->forDispatcher( 'system-read' ) );
+		$this->assertCount( 14, $registry->forDispatcher( 'content-write' ) );
+		$this->assertCount( 2, $registry->forDispatcher( 'system-read' ) );
 
 		$empty = [ 'media-read', 'media-write', 'menu-read', 'menu-write', 'elementor-read', 'elementor-write', 'fields-read', 'fields-write' ];
 		foreach ( $empty as $dispatcher ) {
