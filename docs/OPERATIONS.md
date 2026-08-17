@@ -1,6 +1,6 @@
 # Operations reference
 
-SiteHelm exposes **65 operations** through **11 MCP tools**, called dispatchers. Every operation is
+SiteHelm exposes **68 operations** through **11 MCP tools**, called dispatchers. Every operation is
 declared once, in code, with a strict input schema (`additionalProperties: false`), a required
 capability, a risk level, and preview, snapshot, and rollback policies. That declaration is the
 contract the gateway enforces and the catalogue an agent discovers.
@@ -85,7 +85,7 @@ string, authorization header, or resolved IP address.
 
 Posts, pages, custom post types, and taxonomies.
 
-### `content-read` — 7 operations
+### `content-read` — 8 operations
 
 | Operation | Does | Capability |
 |---|---|---|
@@ -95,6 +95,7 @@ Posts, pages, custom post types, and taxonomies.
 | `content-blocks-get` | Returns the block outline of one item, or one addressed block in full | `edit_post` |
 | `redirect-list` | Lists every redirect this site serves, with the table's size and capacity | `manage_options` |
 | `content-links-check` | Reports the links in one item, resolving this site's own against its posts and redirects | `edit_post` |
+| `comment-list` | Lists comments by status, post, or search term, newest first | `moderate_comments` |
 | `content-seo-get` | Reads one item's search-engine metadata from whichever SEO plugin the site runs | `edit_post` |
 
 **`content-links-check` never fetches a link.** Every answer comes from this site's own
@@ -105,7 +106,7 @@ path), or to nothing, which is the `broken` count worth acting on. A link a redi
 catches is still worth rewriting: the redirect is a safety net, not a fix. At most 200
 links are listed per item, and `truncated` says when a page held more.
 
-### `content-write` — 12 operations
+### `content-write` — 14 operations
 
 | Operation | Does | Capability | Risk | Rollback |
 |---|---|---|---|---|
@@ -120,6 +121,8 @@ links are listed per item, and `truncated` says when a page held more.
 | `content-block-update` | Changes the attributes or inner markup of one block | `edit_post` | medium | supported |
 | `redirect-set` | Points one path at a successor URL, or marks it gone | `manage_options` | medium | supported |
 | `redirect-delete` | Removes the redirect stored for one path | `manage_options` | medium | required |
+| `comment-status-set` | Approves, holds, spams, or trashes one comment | `moderate_comments` | medium | supported |
+| `comment-reply` | Posts an approved reply beneath one comment, authored by the acting user | `moderate_comments` | medium | supported |
 | `content-seo-set` | Writes one item's search-engine metadata into whichever SEO plugin the site runs | `edit_post` | medium | supported |
 
 > **The SEO operations speak one vocabulary whichever plugin is installed.** A site
@@ -165,6 +168,28 @@ links are listed per item, and `truncated` says when a page held more.
 > the block expected at the address — an index path cannot notice that the page was
 > re-ordered since the outline was read — and permits replacing inner markup only
 > on a block with no inner blocks and exactly one chunk of markup.
+
+> **The comment operations gate on comment moderation and nothing else.**
+> `moderate_comments` is the capability WordPress puts on its own comment screens, and
+> it is granted site-wide rather than per post, so a moderator with no right to edit a
+> page can still clear the queue underneath it. No comment operation demands a post
+> capability alongside it, and no other operation in the plugin gates on this one.
+>
+> **Nothing is ever permanently deleted.** `comment-status-set` moves between
+> approved, pending, spam, and trash — all four reversible, and the operation carries
+> a snapshot of the prior status. The `delete` argument WordPress accepts for a hard
+> delete is not reachable from here at all. Withdrawing a reply means trashing it.
+>
+> **Two writes refuse rather than produce a result with a hidden expiry.** A comment
+> whose post is in the trash reports as `post-trashed`, a status WordPress restores
+> from the post itself, so a status written onto it would be overwritten the moment
+> the post came back. And WordPress silently resets the parent of a reply posted
+> under a spam or trashed comment, publishing it top-level instead — so `comment-reply`
+> refuses that parent rather than reporting a threaded reply that is not one. A
+> pending parent is allowed, with a warning that readers see nothing until it is
+> approved. Replies are authored by the acting WordPress user and approved on
+> creation; the display name cannot be supplied by the caller. The commenter's IP
+> address is never reported.
 
 ## Media
 

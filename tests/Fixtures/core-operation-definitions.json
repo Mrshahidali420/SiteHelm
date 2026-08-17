@@ -6,6 +6,7 @@
         "content-blocks-get",
         "redirect-list",
         "content-links-check",
+        "comment-list",
         "content-update",
         "content-create",
         "content-rollback-apply",
@@ -17,9 +18,11 @@
         "content-block-update",
         "redirect-set",
         "redirect-delete",
+        "comment-status-set",
+        "comment-reply",
         "audit-list"
     ],
-    "operationCount": 18,
+    "operationCount": 21,
     "definitions": {
         "content-get": {
             "inputSchema": {
@@ -446,6 +449,121 @@
                         "type": "array"
                     }
                 },
+                "additionalProperties": false
+            }
+        },
+        "comment-list": {
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "postId": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "Return only comments on this content item."
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "approved",
+                            "pending",
+                            "spam",
+                            "trash",
+                            "post-trashed"
+                        ],
+                        "description": "Return only comments in this status. Defaults to approved and pending together; spam and trash are returned only when asked for by name."
+                    },
+                    "search": {
+                        "type": "string",
+                        "maxLength": 255,
+                        "description": "Return only comments matching this search term in their author, email, site, or body."
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "Page size, clamped to 100. Defaults to 20."
+                    },
+                    "offset": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "Comments to skip before the page begins."
+                    }
+                },
+                "additionalProperties": false
+            },
+            "outputSchema": {
+                "type": "object",
+                "properties": {
+                    "items": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {
+                                    "type": "integer"
+                                },
+                                "postId": {
+                                    "type": "integer"
+                                },
+                                "postTitle": {
+                                    "type": "string"
+                                },
+                                "parentId": {
+                                    "type": "integer"
+                                },
+                                "status": {
+                                    "type": "string"
+                                },
+                                "type": {
+                                    "type": "string"
+                                },
+                                "author": {
+                                    "type": "string"
+                                },
+                                "authorEmail": {
+                                    "type": "string"
+                                },
+                                "authorUrl": {
+                                    "type": "string"
+                                },
+                                "content": {
+                                    "type": "string"
+                                },
+                                "dateGmt": {
+                                    "type": "string"
+                                }
+                            },
+                            "required": [
+                                "id",
+                                "postId",
+                                "postTitle",
+                                "parentId",
+                                "status",
+                                "type",
+                                "author",
+                                "authorEmail",
+                                "authorUrl",
+                                "content",
+                                "dateGmt"
+                            ],
+                            "additionalProperties": false
+                        }
+                    },
+                    "total": {
+                        "type": "integer"
+                    },
+                    "limit": {
+                        "type": "integer"
+                    },
+                    "offset": {
+                        "type": "integer"
+                    }
+                },
+                "required": [
+                    "items",
+                    "total",
+                    "limit",
+                    "offset"
+                ],
                 "additionalProperties": false
             }
         },
@@ -1248,6 +1366,148 @@
                 },
                 "required": [
                     "source"
+                ],
+                "additionalProperties": false
+            },
+            "outputSchema": {
+                "type": "object",
+                "oneOf": [
+                    {
+                        "title": "Plan phase",
+                        "type": "object",
+                        "properties": {
+                            "plan": {
+                                "type": "object",
+                                "description": "The change plan to approve, including its plan token."
+                            }
+                        },
+                        "required": [
+                            "plan"
+                        ],
+                        "additionalProperties": false
+                    },
+                    {
+                        "title": "Apply phase",
+                        "type": "object",
+                        "properties": {
+                            "target": {
+                                "type": "string",
+                                "description": "The concrete target that was written."
+                            },
+                            "changed": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                },
+                                "description": "The fields the approved plan changed."
+                            },
+                            "state": {
+                                "type": "object",
+                                "description": "The verified persisted state of the target."
+                            }
+                        },
+                        "required": [
+                            "target",
+                            "changed",
+                            "state"
+                        ],
+                        "additionalProperties": false
+                    }
+                ]
+            }
+        },
+        "comment-status-set": {
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "Identifier of the comment whose status is being changed."
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": [
+                            "approved",
+                            "pending",
+                            "spam",
+                            "trash"
+                        ],
+                        "description": "Target status. Trash and spam are reversible; neither deletes the comment."
+                    }
+                },
+                "required": [
+                    "id",
+                    "status"
+                ],
+                "additionalProperties": false
+            },
+            "outputSchema": {
+                "type": "object",
+                "oneOf": [
+                    {
+                        "title": "Plan phase",
+                        "type": "object",
+                        "properties": {
+                            "plan": {
+                                "type": "object",
+                                "description": "The change plan to approve, including its plan token."
+                            }
+                        },
+                        "required": [
+                            "plan"
+                        ],
+                        "additionalProperties": false
+                    },
+                    {
+                        "title": "Apply phase",
+                        "type": "object",
+                        "properties": {
+                            "target": {
+                                "type": "string",
+                                "description": "The concrete target that was written."
+                            },
+                            "changed": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                },
+                                "description": "The fields the approved plan changed."
+                            },
+                            "state": {
+                                "type": "object",
+                                "description": "The verified persisted state of the target."
+                            }
+                        },
+                        "required": [
+                            "target",
+                            "changed",
+                            "state"
+                        ],
+                        "additionalProperties": false
+                    }
+                ]
+            }
+        },
+        "comment-reply": {
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "Identifier of the comment being replied to."
+                    },
+                    "content": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 65535,
+                        "description": "The reply body, as the acting user would type it."
+                    }
+                },
+                "required": [
+                    "id",
+                    "content"
                 ],
                 "additionalProperties": false
             },
