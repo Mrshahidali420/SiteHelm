@@ -13,6 +13,23 @@ an operation behaves.
 
 ### Added
 
+- **SEO metadata — `content-seo-get` and `content-seo-set`.** One post's search-engine
+  metadata can now be read and written on a site running either Yoast SEO or Rank Math,
+  through one vocabulary that names neither: `title`, `description`, `canonical`, the four
+  social fields, and the search-visibility directives. The answer carries a `provider`
+  saying which store it came from, and that is the only place a plugin is named. If both
+  plugins are installed Yoast serves the site, by a fixed precedence, so a write always
+  lands in the store the read that planned it came from. The visibility directives are
+  tri-state — `null` means the post says nothing and the plugin's own default decides,
+  which is a different state from an explicit instruction to index — and Rank Math's
+  inability to store an explicit *follow* is declared in the preview rather than
+  discovered at verification. Writing a flag on Rank Math merges into the directive list
+  it already stores, so `noarchive` or `nosnippet` set in the plugin's own screen survives
+  a `noindex` change. The two social images are read-only, because both plugins keep an
+  identifier and a cached URL that a partial write would leave disagreeing. A snapshot
+  records which plugin it was taken from, so a rollback on a site whose SEO plugin has
+  since changed is refused rather than replayed into a store the site no longer renders
+  from.
 - **Elementor theme builder — `elementor-theme-template-list` and
   `elementor-theme-conditions-set`.** The header, footer, archive, search, 404, singular, and
   product templates a site has built can now be listed with the display conditions each one

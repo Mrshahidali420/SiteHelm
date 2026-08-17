@@ -1,6 +1,6 @@
 # Operations reference
 
-SiteHelm exposes **63 operations** through **11 MCP tools**, called dispatchers. Every operation is
+SiteHelm exposes **65 operations** through **11 MCP tools**, called dispatchers. Every operation is
 declared once, in code, with a strict input schema (`additionalProperties: false`), a required
 capability, a risk level, and preview, snapshot, and rollback policies. That declaration is the
 contract the gateway enforces and the catalogue an agent discovers.
@@ -85,7 +85,7 @@ string, authorization header, or resolved IP address.
 
 Posts, pages, custom post types, and taxonomies.
 
-### `content-read` — 6 operations
+### `content-read` — 7 operations
 
 | Operation | Does | Capability |
 |---|---|---|
@@ -95,6 +95,7 @@ Posts, pages, custom post types, and taxonomies.
 | `content-blocks-get` | Returns the block outline of one item, or one addressed block in full | `edit_post` |
 | `redirect-list` | Lists every redirect this site serves, with the table's size and capacity | `manage_options` |
 | `content-links-check` | Reports the links in one item, resolving this site's own against its posts and redirects | `edit_post` |
+| `content-seo-get` | Reads one item's search-engine metadata from whichever SEO plugin the site runs | `edit_post` |
 
 **`content-links-check` never fetches a link.** Every answer comes from this site's own
 database: a link to another host is listed as `unchecked`, and only a link to this site is
@@ -104,7 +105,7 @@ path), or to nothing, which is the `broken` count worth acting on. A link a redi
 catches is still worth rewriting: the redirect is a safety net, not a fix. At most 200
 links are listed per item, and `truncated` says when a page held more.
 
-### `content-write` — 11 operations
+### `content-write` — 12 operations
 
 | Operation | Does | Capability | Risk | Rollback |
 |---|---|---|---|---|
@@ -119,8 +120,34 @@ links are listed per item, and `truncated` says when a page held more.
 | `content-block-update` | Changes the attributes or inner markup of one block | `edit_post` | medium | supported |
 | `redirect-set` | Points one path at a successor URL, or marks it gone | `manage_options` | medium | supported |
 | `redirect-delete` | Removes the redirect stored for one path | `manage_options` | medium | required |
+| `content-seo-set` | Writes one item's search-engine metadata into whichever SEO plugin the site runs | `edit_post` | medium | supported |
 
-> **The redirect table lives in one option, so a rollback restores the whole table.**
+> **The SEO operations speak one vocabulary whichever plugin is installed.** A site
+> running Yoast SEO and a site running Rank Math answer the same field names —
+> `title`, `description`, `canonical`, `ogTitle`, `noindex`, and the rest — and the
+> answer carries a `provider` naming which store it came from. Nothing else in the
+> contract mentions a plugin. If both are installed, Yoast serves the site, and the
+> precedence is fixed so a write lands in the same store the read that planned it came
+> from.
+>
+> **The three search-visibility directives are tri-state.** `noindex`, `nofollow`, and
+> the two social flags are `true`, `false`, or `null` — and `null` is not "off", it is
+> "this post says nothing, so the plugin's own default for its type decides". Clearing a
+> flag means sending `null`; sending `false` records an explicit instruction to index or
+> follow. One exception is declared rather than hidden: Rank Math has no way to store an
+> explicit *follow*, so on that site `nofollow: false` removes the directive and reads
+> back as `null`. The preview says so before the write runs.
+>
+> **`ogImage` and `twitterImage` are read-only.** Both plugins store them as attachment
+> identifiers with a resolved URL cached alongside, and writing one without the other
+> leaves the pair disagreeing. Use `content-featured-media-set`, or set the image in the
+> plugin's own screen.
+>
+> **A rollback is stamped with the plugin it was taken from.** If a site's SEO plugin
+> changes between the write and the rollback, the rollback is refused rather than
+> replayed into a store the site no longer renders from — which would report success for
+> a post that is still changed.
+, so a rollback restores the whole table.**
 > Nothing inside a single stored value can distinguish one redirect from its
 > siblings, so rolling back `redirect-set` or `redirect-delete` restores the table
 > as it stood at apply — any other redirect changed in the interval is reverted
