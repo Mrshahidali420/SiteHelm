@@ -9,6 +9,30 @@ Every entry names the user-visible outcome. Internal refactors, test additions, 
 documentation-only changes are not listed unless they change what an agent can do or how
 an operation behaves.
 
+## [Unreleased]
+
+### Added
+
+- **`content-blocks-get`**, which reads the block structure of a page instead of its text.
+  Called with an identifier alone it returns the outline: every block, its address, its
+  depth, the *names* of its attributes, and a short plain-text preview — enough to find the
+  paragraph you meant without spending a context window on the ones you did not. Called
+  with an address as well, it returns that one block in full: attribute values and inner
+  markup, with its descendants still in outline form. The outline also reports whether the
+  document can be rewritten a block at a time, so a client learns that before it plans a
+  change rather than when the change is refused.
+
+- **`content-block-update`**, which changes the attributes or the inner markup of one block
+  and leaves every other block byte-identical. Because `post_content` is one column, a
+  block edit is unavoidably a whole-document write — so the operation reproduces the
+  document from its own parse and refuses, without writing, if that reproduction is not
+  byte-identical to what is stored. It also requires the caller to name the block it expects
+  at the address, since an index path cannot notice that the page was re-ordered since the
+  outline was read, and it replaces inner markup only on a block with no inner blocks and a
+  single chunk of markup, rather than guessing where text belongs among a block's children.
+  Like every other write it previews first, snapshots the prior columns, verifies the result
+  by re-reading it, and can be rolled back.
+
 ## [0.3.0] — 2026-08-17
 
 ### Added
