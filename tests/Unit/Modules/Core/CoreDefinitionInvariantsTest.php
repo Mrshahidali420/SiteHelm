@@ -52,6 +52,7 @@ final class CoreDefinitionInvariantsTest extends TestCase {
 		'content-get',
 		'content-list',
 		'taxonomy-list',
+		'content-blocks-get',
 		'content-update',
 		'content-create',
 		'content-rollback-apply',
@@ -60,13 +61,14 @@ final class CoreDefinitionInvariantsTest extends TestCase {
 		'content-meta-update',
 		'content-terms-assign',
 		'content-trash',
+		'content-block-update',
 		'audit-list',
 	];
 
 	/**
 	 * The core module's frozen write count.
 	 */
-	private const CORE_WRITE_COUNT = 8;
+	private const CORE_WRITE_COUNT = 9;
 
 	/**
 	 * A registry with the core module registered.
@@ -168,7 +170,7 @@ final class CoreDefinitionInvariantsTest extends TestCase {
 		$this->assertCount(
 			self::CORE_WRITE_COUNT,
 			$writes,
-			'The core module must expose eight writes; a ninth write has to declare the shared union too, and this count is what makes it say so.'
+			'The core module must expose nine writes; a tenth write has to declare the shared union too, and this count is what makes it say so.'
 		);
 
 		foreach ( $writes as $write ) {

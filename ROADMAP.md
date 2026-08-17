@@ -53,12 +53,12 @@ next is drawn from **Considering**, and a concrete workflow is what moves an ite
 | REQ-0074 | Core | Published, copy-pasteable connection configurations per client | should | ✅ shipped |
 | REQ-0075 | Diagnostics | Fetch the full input schema for one named operation on demand, instead of carrying every schema in context | should | ✅ shipped |
 | REQ-0076 | Core | Request host validation, so a connector still pointed at a retired domain cannot drive changes | should | ✅ shipped |
+| REQ-0077 | Core | Block editor content operations, for the block-built half of a mixed-builder site | should | ✅ shipped |
 
 ## Considering
 
 | # | Area | What it would give you | Priority |
 |---|---|---|---|
-| REQ-0077 | Core | Block editor content operations, for the block-built half of a mixed-builder site | should |
 | REQ-0078 | Elementor | A compact page composition digest — what a page contains, without paying to read the whole tree | could |
 | REQ-0079 | Core | Redirect and broken-link management, so traffic and rankings survive a rename | could |
 | REQ-0080 | Elementor | Theme-builder templates and display conditions: shared headers, footers, archives | could |

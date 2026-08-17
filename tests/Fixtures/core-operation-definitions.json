@@ -3,6 +3,7 @@
         "content-get",
         "content-list",
         "taxonomy-list",
+        "content-blocks-get",
         "content-update",
         "content-create",
         "content-rollback-apply",
@@ -11,9 +12,10 @@
         "content-meta-update",
         "content-terms-assign",
         "content-trash",
+        "content-block-update",
         "audit-list"
     ],
-    "operationCount": 12,
+    "operationCount": 14,
     "definitions": {
         "content-get": {
             "inputSchema": {
@@ -287,6 +289,51 @@
                     "limit",
                     "offset"
                 ],
+                "additionalProperties": false
+            }
+        },
+        "content-blocks-get": {
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "Identifier of the content item to read."
+                    },
+                    "path": {
+                        "type": "string",
+                        "maxLength": 128,
+                        "description": "Address of one block, as dot-separated sibling indexes such as \"2\" or \"2.0.1\". Omit for the whole outline."
+                    }
+                },
+                "required": [
+                    "id"
+                ],
+                "additionalProperties": false
+            },
+            "outputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer"
+                    },
+                    "hasBlocks": {
+                        "type": "boolean"
+                    },
+                    "blockCount": {
+                        "type": "integer"
+                    },
+                    "reproducible": {
+                        "type": "boolean"
+                    },
+                    "truncated": {
+                        "type": "boolean"
+                    },
+                    "blocks": {
+                        "type": "array"
+                    }
+                },
                 "additionalProperties": false
             }
         },
@@ -848,6 +895,97 @@
                 },
                 "required": [
                     "id"
+                ],
+                "additionalProperties": false
+            },
+            "outputSchema": {
+                "type": "object",
+                "oneOf": [
+                    {
+                        "title": "Plan phase",
+                        "type": "object",
+                        "properties": {
+                            "plan": {
+                                "type": "object",
+                                "description": "The change plan to approve, including its plan token."
+                            }
+                        },
+                        "required": [
+                            "plan"
+                        ],
+                        "additionalProperties": false
+                    },
+                    {
+                        "title": "Apply phase",
+                        "type": "object",
+                        "properties": {
+                            "target": {
+                                "type": "string",
+                                "description": "The concrete target that was written."
+                            },
+                            "changed": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                },
+                                "description": "The fields the approved plan changed."
+                            },
+                            "state": {
+                                "type": "object",
+                                "description": "The verified persisted state of the target."
+                            }
+                        },
+                        "required": [
+                            "target",
+                            "changed",
+                            "state"
+                        ],
+                        "additionalProperties": false
+                    }
+                ]
+            }
+        },
+        "content-block-update": {
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "Identifier of the content item to revise."
+                    },
+                    "path": {
+                        "type": "string",
+                        "maxLength": 128,
+                        "description": "Address of the block to change, as dot-separated sibling indexes such as \"2\" or \"2.0.1\"."
+                    },
+                    "name": {
+                        "type": "string",
+                        "maxLength": 128,
+                        "description": "The block name expected at that address, such as \"core/paragraph\". The request is refused if a different block is there."
+                    },
+                    "attributes": {
+                        "type": "object",
+                        "description": "Attributes to set, merged into the block's existing attributes."
+                    },
+                    "removeAttributes": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "maxLength": 128
+                        },
+                        "description": "Attribute names to remove from the block."
+                    },
+                    "innerHtml": {
+                        "type": "string",
+                        "maxLength": 100000,
+                        "description": "Replacement inner markup. Permitted only on a block with exactly one chunk of markup and no inner blocks."
+                    }
+                },
+                "required": [
+                    "id",
+                    "path",
+                    "name"
                 ],
                 "additionalProperties": false
             },
