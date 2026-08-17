@@ -214,6 +214,14 @@ final class ElementorModule implements IntegrationModule {
 			[ new ElementorDocumentGet( $fields, $document, $tree, $this->presence ), 'handle' ]
 		);
 
+		// Registered directly after the full read, because it is the same read at a
+		// smaller size and a client scanning the catalog should meet the two beside
+		// each other rather than discover the cheap one after paying for the other.
+		$registry->register(
+			ElementorCompositionGet::definition(),
+			[ new ElementorCompositionGet( $fields, $document, $tree, new ElementorComposition(), $this->presence ), 'handle' ]
+		);
+
 		$registry->register(
 			ElementorWidgetAvailability::definition(),
 			[ new ElementorWidgetAvailability( $this->presence ), 'handle' ]
