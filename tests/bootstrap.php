@@ -29,3 +29,17 @@ if ( ! class_exists( 'WP_Query' ) ) {
 if ( ! class_exists( 'WP_Comment' ) ) {
 	class_alias( \SiteHelm\Tests\Doubles\FakeWpComment::class, 'WP_Comment' );
 }
+
+/*
+ * WP_User is named in the user operations' signatures and WP_User_Query is
+ * instantiated by the user listing, so both are aliased here under the same
+ * guard and for the same reasons: process-global, permanent, and yielding to a
+ * real class if one is ever loaded.
+ */
+if ( ! class_exists( 'WP_User' ) ) {
+	class_alias( \SiteHelm\Tests\Doubles\FakeWpUser::class, 'WP_User' );
+}
+
+if ( ! class_exists( 'WP_User_Query' ) ) {
+	class_alias( \SiteHelm\Tests\Doubles\FakeWpUserQuery::class, 'WP_User_Query' );
+}

@@ -1,6 +1,6 @@
 # Operations reference
 
-SiteHelm exposes **68 operations** through **11 MCP tools**, called dispatchers. Every operation is
+SiteHelm exposes **70 operations** through **11 MCP tools**, called dispatchers. Every operation is
 declared once, in code, with a strict input schema (`additionalProperties: false`), a required
 capability, a risk level, and preview, snapshot, and rollback policies. That declaration is the
 contract the gateway enforces and the catalogue an agent discovers.
@@ -106,7 +106,7 @@ path), or to nothing, which is the `broken` count worth acting on. A link a redi
 catches is still worth rewriting: the redirect is a safety net, not a fix. At most 200
 links are listed per item, and `truncated` says when a page held more.
 
-### `content-write` — 14 operations
+### `content-write` — 15 operations
 
 | Operation | Does | Capability | Risk | Rollback |
 |---|---|---|---|---|
@@ -124,6 +124,27 @@ links are listed per item, and `truncated` says when a page held more.
 | `comment-status-set` | Approves, holds, spams, or trashes one comment | `moderate_comments` | medium | supported |
 | `comment-reply` | Posts an approved reply beneath one comment, authored by the acting user | `moderate_comments` | medium | supported |
 | `content-seo-set` | Writes one item's search-engine metadata into whichever SEO plugin the site runs | `edit_post` | medium | supported |
+| `user-role-set` | Replaces one user's roles with a single registered role | `promote_users` | high | supported |
+
+> **`user-role-set` is a system operation wearing a content dispatcher.** It is here, not
+> beside `user-list`, only because the dispatcher set is frozen and holds no
+> `system-write`. Read the roster with `user-list` first: the write accepts one role slug
+> and only a slug the site has actually registered.
+>
+> **It refuses four things outright**, before the preview is even offered: a role slug the
+> site has not registered, the acting user's own account, the last remaining
+> administrator, and — on multisite — a super admin. The first refusal names the live
+> slugs so the correct call is one step away; the others cannot be forced by any argument,
+> because each of them is a way to lock a site out of its own admin.
+>
+> **A promotion to administrator is allowed, and warned about.** So is a collapse: a user
+> holding several roles ends up holding exactly the one you sent, and the preview says
+> which roles are being dropped. The snapshot records *every* role held beforehand, so a
+> rollback restores the full set rather than the first one.
+>
+> **`edit_post`-style target checking applies.** `promote_users` opens the door;
+> `edit_user` against the specific account is re-checked inside the operation, in both the
+> preview and the apply, and again on rollback.
 
 > **The SEO operations speak one vocabulary whichever plugin is installed.** A site
 > running Yoast SEO and a site running Rank Math answer the same field names —
@@ -335,7 +356,7 @@ what is actually in the database, so a restore puts back what was really there.
 
 ## System
 
-### `system-read` — 5 operations
+### `system-read` — 6 operations
 
 | Operation | Does | Capability |
 |---|---|---|
@@ -343,7 +364,22 @@ what is actually in the database, so a restore puts back what was really there.
 | `system-environment` | WordPress and PHP versions, theme, post types, taxonomies | `manage_options` |
 | `system-integrations` | Health of every optional integration: `Active`, `Inactive`, `VersionBlocked` | `manage_options` |
 | `system-operation-schema` | Returns one named operation's full input and output schema, so an agent fetches only the schema it is about to use | `read` |
+| `user-list` | Lists user accounts by role or search term, newest registration first, with the role slugs this site has registered | `list_users` |
 | `audit-list` | Reads the change ledger: what changed, when, by whom, and what can be rolled back | `manage_options` |
 
 Start every session with `system-connection`, then `system-integrations`. It costs one call and
 tells an agent what is actually available before it plans anything.
+
+> **The user pair is split across two dispatchers, and that is deliberate.** `user-list`
+> is a system read; its write, `user-role-set`, is registered under `content-write`
+> because the eleven dispatchers are a frozen contract and there is no `system-write`
+> in it. Nothing about the split changes the operations' behaviour.
+>
+> **`user-list` answers `siteRoles` on every call.** Roles are registered by the site —
+> a WooCommerce install has `customer` and `shop_manager`, a membership plugin adds its
+> own — so there is no fixed list to publish here, and `user-role-set` refuses any slug
+> that is not among the ones the site actually holds. Read the roster, then write.
+>
+> **Nothing sensitive is reported.** The password hash, the password-reset key and the
+> session tokens live on the same row as the display name and are not reachable through
+> either operation.

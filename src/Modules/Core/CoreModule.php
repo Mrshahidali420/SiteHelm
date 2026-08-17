@@ -94,10 +94,15 @@ final class CoreModule implements IntegrationModule {
 	 * spam transition writes the meta WordPress uses to unspam it, and a reply
 	 * changes the parent post's cached comment count.
 	 *
+	 * `users` and `user_meta` are listed for the role write, which stores the role
+	 * as a serialised capability value in user meta. Both groups matter: the meta
+	 * group holds the value that changed, and the `users` group holds the cached
+	 * user object built from it, which would otherwise answer with the old role.
+	 *
 	 * @return string[] Cache group names.
 	 */
 	public function cacheCleanup(): array {
-		return [ 'posts', 'post_meta', 'terms', 'comment', 'comment_meta' ];
+		return [ 'posts', 'post_meta', 'terms', 'comment', 'comment_meta', 'users', 'user_meta' ];
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 
@@ -136,6 +141,11 @@ final class CoreModule implements IntegrationModule {
 		);
 
 		$registry->register( CommentList::definition(), [ new CommentList(), 'handle' ] );
+
+		// The user read is registered here, under system-read, while its write goes
+		// in with the content writes below. The split is forced by the frozen
+		// dispatcher set rather than chosen: there is no system-write.
+		$registry->register( UserList::definition(), [ new UserList(), 'handle' ] );
 
 		$targets = new ContentTarget( $fields );
 
@@ -196,6 +206,12 @@ final class CoreModule implements IntegrationModule {
 
 		$registry->registerWrite( CommentStatusSet::definition(), new CommentStatusSet( $comments ) );
 		$registry->registerWrite( CommentReply::definition(), new CommentReply( $comments ) );
+
+		// The role write lives among the content writes only because the dispatcher
+		// set has no system-write; it is a system operation everywhere else. It gets
+		// its own PolicyEngine for the target-bound edit_user check that cannot be
+		// expressed as a declared capability.
+		$registry->registerWrite( UserRoleSet::definition(), new UserRoleSet( new PolicyEngine() ) );
 
 		$registry->register( AuditRead::definition(), [ new AuditRead( new AuditStore(), new Installer() ), 'handle' ] );
 	}
