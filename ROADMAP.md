@@ -55,12 +55,13 @@ next is drawn from **Considering**, and a concrete workflow is what moves an ite
 | REQ-0076 | Core | Request host validation, so a connector still pointed at a retired domain cannot drive changes | should | ✅ shipped |
 | REQ-0077 | Core | Block editor content operations, for the block-built half of a mixed-builder site | should | ✅ shipped |
 | REQ-0078 | Elementor | A compact page composition digest — what a page contains, without paying to read the whole tree | could | ✅ shipped |
+| REQ-0079 | Core | Redirects, so traffic and rankings survive a rename and a retired page can answer 410 | could | ✅ shipped |
 
 ## Considering
 
 | # | Area | What it would give you | Priority |
 |---|---|---|---|
-| REQ-0079 | Core | Redirect and broken-link management, so traffic and rankings survive a rename | could |
+| REQ-0079 | Core | Broken-link reporting over a site's own content — the redirect half shipped; link checking has not | could |
 | REQ-0080 | Elementor | Theme-builder templates and display conditions: shared headers, footers, archives | could |
 | REQ-0057 | Integrations | WooCommerce | could |
 | REQ-0058 | Integrations | Form builders and CRM | could |

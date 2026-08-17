@@ -4,6 +4,7 @@
         "content-list",
         "taxonomy-list",
         "content-blocks-get",
+        "redirect-list",
         "content-update",
         "content-create",
         "content-rollback-apply",
@@ -13,9 +14,11 @@
         "content-terms-assign",
         "content-trash",
         "content-block-update",
+        "redirect-set",
+        "redirect-delete",
         "audit-list"
     ],
-    "operationCount": 14,
+    "operationCount": 17,
     "definitions": {
         "content-get": {
             "inputSchema": {
@@ -334,6 +337,67 @@
                         "type": "array"
                     }
                 },
+                "additionalProperties": false
+            }
+        },
+        "redirect-list": {
+            "inputSchema": {
+                "type": "object",
+                "properties": [],
+                "additionalProperties": false
+            },
+            "outputSchema": {
+                "type": "object",
+                "properties": {
+                    "redirects": {
+                        "type": "array",
+                        "description": "Every stored redirect, ordered by source path.",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "source": {
+                                    "type": "string",
+                                    "description": "The canonical path on this site that is redirected."
+                                },
+                                "target": {
+                                    "type": [
+                                        "string",
+                                        "null"
+                                    ],
+                                    "description": "Where the visitor is sent, or null when the status is 410 and there is no successor."
+                                },
+                                "status": {
+                                    "type": "integer",
+                                    "description": "The HTTP status this redirect answers with."
+                                },
+                                "forwardQuery": {
+                                    "type": "boolean",
+                                    "description": "Whether the visitor's query string is carried over to the target."
+                                }
+                            },
+                            "required": [
+                                "source",
+                                "target",
+                                "status",
+                                "forwardQuery"
+                            ],
+                            "additionalProperties": false
+                        }
+                    },
+                    "total": {
+                        "type": "integer",
+                        "description": "How many redirects are stored."
+                    },
+                    "capacity": {
+                        "type": "integer",
+                        "description": "The greatest number of redirects this site will store."
+                    }
+                },
+                "required": [
+                    "redirects",
+                    "total",
+                    "capacity"
+                ],
                 "additionalProperties": false
             }
         },
@@ -986,6 +1050,156 @@
                     "id",
                     "path",
                     "name"
+                ],
+                "additionalProperties": false
+            },
+            "outputSchema": {
+                "type": "object",
+                "oneOf": [
+                    {
+                        "title": "Plan phase",
+                        "type": "object",
+                        "properties": {
+                            "plan": {
+                                "type": "object",
+                                "description": "The change plan to approve, including its plan token."
+                            }
+                        },
+                        "required": [
+                            "plan"
+                        ],
+                        "additionalProperties": false
+                    },
+                    {
+                        "title": "Apply phase",
+                        "type": "object",
+                        "properties": {
+                            "target": {
+                                "type": "string",
+                                "description": "The concrete target that was written."
+                            },
+                            "changed": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                },
+                                "description": "The fields the approved plan changed."
+                            },
+                            "state": {
+                                "type": "object",
+                                "description": "The verified persisted state of the target."
+                            }
+                        },
+                        "required": [
+                            "target",
+                            "changed",
+                            "state"
+                        ],
+                        "additionalProperties": false
+                    }
+                ]
+            }
+        },
+        "redirect-set": {
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "source": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 500,
+                        "description": "The path on this site to redirect, such as /old-pricing. A query string is ignored, a trailing slash does not matter, and the site's home page cannot be a source."
+                    },
+                    "target": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Where to send the visitor: a path on this site, or an absolute http or https URL on any host. A target may carry its own query string, which wins over the visitor's where the two name the same argument. Send null when the status is 410 and the page has no successor."
+                    },
+                    "status": {
+                        "type": "integer",
+                        "enum": [
+                            301,
+                            302,
+                            307,
+                            308,
+                            410
+                        ],
+                        "description": "The HTTP status to answer with. 301 and 308 are permanent and pass ranking signals on; 302 and 307 are temporary and do not; 410 says the page is gone and takes no target."
+                    },
+                    "forwardQuery": {
+                        "type": "boolean",
+                        "description": "Whether to carry the visitor's query string over to the target. Defaults to true, so campaign and analytics arguments survive the redirect."
+                    }
+                },
+                "required": [
+                    "source",
+                    "target",
+                    "status"
+                ],
+                "additionalProperties": false
+            },
+            "outputSchema": {
+                "type": "object",
+                "oneOf": [
+                    {
+                        "title": "Plan phase",
+                        "type": "object",
+                        "properties": {
+                            "plan": {
+                                "type": "object",
+                                "description": "The change plan to approve, including its plan token."
+                            }
+                        },
+                        "required": [
+                            "plan"
+                        ],
+                        "additionalProperties": false
+                    },
+                    {
+                        "title": "Apply phase",
+                        "type": "object",
+                        "properties": {
+                            "target": {
+                                "type": "string",
+                                "description": "The concrete target that was written."
+                            },
+                            "changed": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                },
+                                "description": "The fields the approved plan changed."
+                            },
+                            "state": {
+                                "type": "object",
+                                "description": "The verified persisted state of the target."
+                            }
+                        },
+                        "required": [
+                            "target",
+                            "changed",
+                            "state"
+                        ],
+                        "additionalProperties": false
+                    }
+                ]
+            }
+        },
+        "redirect-delete": {
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "source": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 500,
+                        "description": "The path whose redirect should be removed, as redirect-list reports it."
+                    }
+                },
+                "required": [
+                    "source"
                 ],
                 "additionalProperties": false
             },

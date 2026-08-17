@@ -16,6 +16,8 @@ use SiteHelm\Gateway\ContextFactory;
 use SiteHelm\Gateway\Dispatcher;
 use SiteHelm\Gateway\McpServer;
 use SiteHelm\Gateway\RestTransport;
+use SiteHelm\Modules\Core\RedirectRouter;
+use SiteHelm\Modules\Core\RedirectStore;
 use SiteHelm\Policy\PolicyEngine;
 use SiteHelm\Registry\CapabilityRegistry;
 use SiteHelm\Registry\CatalogBuilder;
@@ -99,6 +101,13 @@ final class Plugin {
 		if ( is_admin() ) {
 			( new AdminMenu( $registry, $module_health ) )->register();
 		}
+
+		// The redirect router is the only part of this plugin that serves ordinary
+		// front-end traffic, and it is bound OUTSIDE the is_admin() branch above
+		// for exactly that reason. It is bound unconditionally rather than behind
+		// a "are there any redirects" test, because answering that question needs
+		// the same autoloaded option the router already reads.
+		add_action( 'template_redirect', [ new RedirectRouter( new RedirectStore() ), 'handle' ], 1 );
 
 		$this->registerMaintenance();
 	}
