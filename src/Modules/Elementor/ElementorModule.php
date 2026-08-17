@@ -272,6 +272,11 @@ final class ElementorModule implements IntegrationModule {
 		);
 
 		$registry->registerWrite(
+			ElementorElementsUpdate::definition(),
+			new ElementorElementsUpdate( $targets, $document, $merge, $edit, $coercion, $writer, $diff, $inputs )
+		);
+
+		$registry->registerWrite(
 			ElementorWidgetSettingsUpdate::definition(),
 			new ElementorWidgetSettingsUpdate( $targets, $document, $merge, $edit, $coercion, $writer, $diff, $inputs )
 		);
