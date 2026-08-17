@@ -326,7 +326,107 @@ places), `docs/OPERATIONS.md` header, and the two per-dispatcher counts under
 
 ---
 
-## 11. Standing project constraints
+## 11. Comment moderation (REQ-0060) in one screen
+
+Five files under `src/Modules/Core/`, no new `ModuleId` — comments are `ModuleId::Core`,
+and the operations sit on the existing `content-read` / `content-write` dispatchers.
+
+- `CommentFields` — the vocabulary. `FIELD_ORDER` (11 projected members),
+  `REPORTABLE_STATUSES` (5, read-side), `SETTABLE_STATUSES` (4, write-side),
+  `CONTENT_MAX_LENGTH`, `TARGET_PREFIX = 'comment:'`,
+  `CAPABILITY = 'moderate_comments'`, `project()`, `targetKey()`,
+  `commentIdFromKey()` (null, never 0).
+- `CommentTarget` — shared resolution: `resolve()`, `snapshotOf()`, `verifyRead()`,
+  `restoreStatus()`. Used by both writes.
+- `CommentList` (`comment-list`), `CommentStatusSet` (`comment-status-set`),
+  `CommentReply` (`comment-reply`).
+
+**There are three status vocabularies and they must not be merged.** SiteHelm's own
+names (`approved`, `pending`, `spam`, `trash`, `post-trashed`) are what the wire
+carries. `CommentFields::STORED_BY_STATUS` maps them to the `comment_approved`
+column (`'1'`, `'0'`, `'spam'`, `'trash'`). `CommentFields::SET_ARGUMENT_BY_STATUS`
+maps them to what `wp_set_comment_status()` takes (`approve`, `hold`, `spam`,
+`trash`) and is **deliberately missing** `post-trashed` — a status a read may filter
+by but a write may never set. `CommentList::QUERY_STATUS_BY_STATUS` is the fourth
+spelling, what `get_comments()` wants, and includes `post-trashed` for exactly that
+reason. Sharing one map would mean either a read that cannot find trashed comments
+or a write that can create a status WordPress owns.
+
+Design decisions that are not obvious from the code:
+
+- **`moderate_comments` was added to `OperationDefinition::ALLOWED_CAPABILITIES`**
+  (§5). That allowlist is a frozen contract, so widening it required the paired
+  narrowing test — `CoreDefinitionInvariantsTest::test_the_comment_capability_gates_the_comment_operations_and_only_those()`
+  pins the capability to exactly `comment-list`, `comment-status-set`,
+  `comment-reply`, **and** asserts each of those gates on it *alone*. Both directions
+  matter: without the first, an unrelated operation silently adopts a comment gate;
+  without the second, demanding `edit_posts` alongside it locks out the moderator the
+  operations exist for.
+- **No per-comment permission re-check**, unlike `content-list`. `edit_posts` is a
+  site-wide primitive with a target-bound `edit_post` counterpart, so `content-list`
+  re-checks each match. `moderate_comments` has no target-bound form — WordPress
+  grants comment moderation site-wide or not at all — so a per-item check would have
+  to invent a rule WordPress does not have. It is also absent from
+  `PolicyEngine::META_CAPABILITY_MAP` and so resolves through plain
+  `user_can( $userId, $capability )` with no target.
+- **Nothing is ever deleted.** Spam and trash are reversible statuses on a row that
+  stays where it is; `SET_ARGUMENT_BY_STATUS` does not carry the value that would
+  perform a permanent deletion, so `isDestructive` is false with justification.
+  Permanent deletion is REQ-0056, permanently excluded.
+- **The status write goes through `wp_set_comment_status()`** for every destination,
+  not the meta/column directly, because spam routes through `wp_spam_comment()` —
+  which records the prior status for WordPress's own unspam and fires the hooks the
+  anti-spam plugins learn from. The `$wp_error` flag is passed so a refusal is
+  distinguishable from a written `false`; both failure shapes are tested.
+- **Two refusals exist because the write would otherwise have a hidden expiry.** A
+  status write on a comment whose parent post is trashed is a `Conflict` naming
+  "restore the parent post" — WordPress parks those comments at `post-trashed` and
+  replaces whatever was written when the post returns. A reply under a spam,
+  trashed, or `post-trashed` parent is a `Conflict` naming `comment-status-set`,
+  because `wp_new_comment()` silently resets `comment_parent` to 0 when the parent's
+  `comment_approved` is neither `'1'` nor `'0'`. `CommentReplyTest` calls
+  `wp_new_comment()` directly to prove the reparenting, rather than only asserting
+  the refusal.
+- Both parent checks live in `planChange()`, which **runs in both phases**, so a post
+  trashed between preview and apply is caught rather than written over.
+- **The reply body is not promised.** kses and `preprocess_comment` legitimately
+  rewrite it, so promising it would fail verification on a correct write. It goes in
+  `previewDetail` (with the resolved author name) so the operator still approves the
+  exact text; the promise is `parentId` / `postId` / `status`.
+- A reply under a **pending** parent is allowed but carries a warning containing
+  "awaiting moderation" — otherwise the reply sits invisible under an invisible
+  comment.
+- `comment-status-set` promises **one field** (`status`). Legal because
+  `WriteVerifier` compares only the promised keys against the full `readBack()`
+  projection.
+- `comment-reply` is `SnapshotPolicy::Supported` with `captureSnapshot()` returning
+  `null` and `restore()` always throwing `RollbackUnavailable` naming
+  `comment-status-set` — the honest undo for a posted reply is to unapprove it, not
+  to delete it.
+- The snapshot records the **reported** status, and `restoreStatus()` refuses four
+  unusable snapshot shapes plus a `post-trashed` snapshot.
+- `readBack()` **clears the comment cache first**; `CoreModule` registers the two new
+  cache groups (`comment`, `comment_meta`) for that.
+- **The commenter's IP address is never projected.** It is personal data with no
+  moderation use the author/email/site fields do not already serve.
+- WPCS: `CommentTarget` implements no interface, so the sniff exemption that covers
+  camelCase methods on interface implementors does not apply — `snapshotOf()` and
+  `restoreStatus()` carry method-scoped suppressions (§8). And
+  `Squiz.Commenting.FunctionComment.InvalidNoReturn` on `CommentReply::restore()`
+  **cannot be suppressed from inside the docblock**; the `phpcs:disable` sits on its
+  own line above it.
+
+Its tests: `CommentFieldsTest` (25), `CommentListTest` (20),
+`CommentStatusSetTest` (24), `CommentReplyTest` (29), plus the narrowing test in
+`CoreDefinitionInvariantsTest`, the counts in `CoreModuleCensusTest`, and the
+regenerated `tests/Fixtures/core-operation-definitions.json`. Doubles:
+`tests/Doubles/FakeWpComment.php` and `tests/Doubles/CommentWordPressStubs.php` —
+the stub's `wp_new_comment()` **reproduces the reparenting rule**, so the hazard is
+pinned by the double rather than asserted about it.
+
+---
+
+## 12. Standing project constraints
 
 - **No AI attribution anywhere in git** — no "Generated with Claude Code" footer,
   no session URL, no `Co-Authored-By` trailer, in any commit, PR body, PR comment,
