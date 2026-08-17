@@ -142,5 +142,10 @@ final class MediaModule implements IntegrationModule {
 			MediaImport::definition(),
 			new MediaImport( $fields, $targets, $guard, $urls, $fetch, $planner, $sideload )
 		);
+
+		$registry->registerWrite(
+			MediaResize::definition(),
+			new MediaResize( $fields, $targets )
+		);
 	}
 }

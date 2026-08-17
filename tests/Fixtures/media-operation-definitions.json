@@ -6,9 +6,10 @@
         "media-meta-update",
         "media-attach",
         "media-upload",
-        "media-import"
+        "media-import",
+        "media-resize"
     ],
-    "operationCount": 7,
+    "operationCount": 8,
     "definitions": {
         "media-get": {
             "inputSchema": {
@@ -545,6 +546,80 @@
                 },
                 "required": [
                     "url"
+                ],
+                "additionalProperties": false
+            },
+            "outputSchema": {
+                "type": "object",
+                "oneOf": [
+                    {
+                        "title": "Plan phase",
+                        "type": "object",
+                        "properties": {
+                            "plan": {
+                                "type": "object",
+                                "description": "The change plan to approve, including its plan token."
+                            }
+                        },
+                        "required": [
+                            "plan"
+                        ],
+                        "additionalProperties": false
+                    },
+                    {
+                        "title": "Apply phase",
+                        "type": "object",
+                        "properties": {
+                            "target": {
+                                "type": "string",
+                                "description": "The concrete target that was written."
+                            },
+                            "changed": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                },
+                                "description": "The fields the approved plan changed."
+                            },
+                            "state": {
+                                "type": "object",
+                                "description": "The verified persisted state of the target."
+                            }
+                        },
+                        "required": [
+                            "target",
+                            "changed",
+                            "state"
+                        ],
+                        "additionalProperties": false
+                    }
+                ]
+            }
+        },
+        "media-resize": {
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "Identifier of the media library image to bring down."
+                    },
+                    "maxWidth": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 10000,
+                        "description": "The widest the served image may be, in pixels. Omit to bound by height alone."
+                    },
+                    "maxHeight": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 10000,
+                        "description": "The tallest the served image may be, in pixels. Omit to bound by width alone."
+                    }
+                },
+                "required": [
+                    "id"
                 ],
                 "additionalProperties": false
             },
