@@ -56,12 +56,12 @@ next is drawn from **Considering**, and a concrete workflow is what moves an ite
 | REQ-0077 | Core | Block editor content operations, for the block-built half of a mixed-builder site | should | ✅ shipped |
 | REQ-0078 | Elementor | A compact page composition digest — what a page contains, without paying to read the whole tree | could | ✅ shipped |
 | REQ-0079 | Core | Redirects, so traffic and rankings survive a rename and a retired page can answer 410 — with a link report that finds the content still pointing at the old path | could | ✅ shipped |
+| REQ-0080 | Elementor | Theme-builder templates and their display conditions, so a shared header, footer, or archive can be pointed at the pages it should cover | could | ✅ shipped |
 
 ## Considering
 
 | # | Area | What it would give you | Priority |
 |---|---|---|---|
-| REQ-0080 | Elementor | Theme-builder templates and display conditions: shared headers, footers, archives | could |
 | REQ-0057 | Integrations | WooCommerce | could |
 | REQ-0058 | Integrations | Form builders and CRM | could |
 | REQ-0059 | Integrations | SEO metadata | could |
