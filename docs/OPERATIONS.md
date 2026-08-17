@@ -1,6 +1,6 @@
 # Operations reference
 
-SiteHelm exposes **56 operations** through **11 MCP tools**, called dispatchers. Every operation is
+SiteHelm exposes **57 operations** through **11 MCP tools**, called dispatchers. Every operation is
 declared once, in code, with a strict input schema (`additionalProperties: false`), a required
 capability, a risk level, and preview, snapshot, and rollback policies. That declaration is the
 contract the gateway enforces and the catalogue an agent discovers.
@@ -173,12 +173,13 @@ Posts, pages, custom post types, and taxonomies.
 Requires Elementor 3.0.0+. SiteHelm edits the stored Elementor document directly and flushes the
 generated CSS afterwards, so changes appear on the front end without opening the editor.
 
-### `elementor-read` — 7 operations
+### `elementor-read` — 8 operations
 
 | Operation | Does | Capability |
 |---|---|---|
 | `elementor-document-list` | Lists Elementor-built documents | `edit_posts` |
 | `elementor-document-get` | Reads a document's element tree | `edit_post` |
+| `elementor-composition-get` | Summarizes what a document contains, at a size that does not grow with it | `edit_post` |
 | `elementor-element-get` | Reads one element by its id | `edit_post` |
 | `elementor-element-search` | Finds elements within a document by type, text, or setting | `edit_post` |
 | `elementor-widget-availability` | Reports which widget types this site actually has | `edit_posts` |
