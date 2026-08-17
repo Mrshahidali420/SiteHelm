@@ -79,6 +79,7 @@ final class ElementorDefinitionInvariantsTest extends TestCase {
 		'elementor-global-tokens-get',
 		'elementor-element-add',
 		'elementor-element-update',
+		'elementor-elements-update',
 		'elementor-widget-settings-update',
 		'elementor-element-move',
 		'elementor-element-duplicate',
@@ -101,7 +102,7 @@ final class ElementorDefinitionInvariantsTest extends TestCase {
 	/**
 	 * The Elementor module's write count, bumped by every task registering a write.
 	 */
-	private const ELEMENTOR_WRITE_COUNT = 8;
+	private const ELEMENTOR_WRITE_COUNT = 9;
 
 	/**
 	 * The capabilities an Elementor operation may declare.
