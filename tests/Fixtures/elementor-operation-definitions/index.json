@@ -2,6 +2,7 @@
     "operationIds": [
         "elementor-document-list",
         "elementor-document-get",
+        "elementor-composition-get",
         "elementor-widget-availability",
         "elementor-element-get",
         "elementor-element-search",
@@ -17,5 +18,5 @@
         "elementor-global-colors-update",
         "elementor-global-typography-update"
     ],
-    "operationCount": 16
+    "operationCount": 17
 }

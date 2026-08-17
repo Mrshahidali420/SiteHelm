@@ -33,6 +33,16 @@ an operation behaves.
   Like every other write it previews first, snapshots the prior columns, verifies the result
   by re-reading it, and can be rolled back.
 
+- **`elementor-composition-get`**, which says what an Elementor page contains at a size that does
+  not grow with how much it contains. It returns the page's totals, a census of widget types and
+  container types by how often each is used, and one entry per top-level band naming that band's
+  identifier, how many elements sit inside it, and the widget types found anywhere beneath it —
+  enough to decide which band to read in full, without reading all of them first. It also reports
+  how many elements carry no stored identifier, which is exactly how much of the page no write can
+  address; reading a full tree node by node left a client to notice that for itself. A page whose
+  stored data cannot be read is refused here exactly as the full read refuses it, because a cheap
+  digest of a damaged page is the one wrong answer a client would act on without hesitating.
+
 ## [0.3.0] — 2026-08-17
 
 ### Added
