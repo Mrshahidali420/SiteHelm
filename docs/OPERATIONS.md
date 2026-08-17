@@ -1,6 +1,6 @@
 # Operations reference
 
-SiteHelm exposes **57 operations** through **11 MCP tools**, called dispatchers. Every operation is
+SiteHelm exposes **60 operations** through **11 MCP tools**, called dispatchers. Every operation is
 declared once, in code, with a strict input schema (`additionalProperties: false`), a required
 capability, a risk level, and preview, snapshot, and rollback policies. That declaration is the
 contract the gateway enforces and the catalogue an agent discovers.
@@ -85,7 +85,7 @@ string, authorization header, or resolved IP address.
 
 Posts, pages, custom post types, and taxonomies.
 
-### `content-read` — 4 operations
+### `content-read` — 5 operations
 
 | Operation | Does | Capability |
 |---|---|---|
@@ -93,8 +93,9 @@ Posts, pages, custom post types, and taxonomies.
 | `content-list` | Lists items with filtering and pagination | `edit_posts` |
 | `taxonomy-list` | Lists registered taxonomies and their terms | `edit_posts` |
 | `content-blocks-get` | Returns the block outline of one item, or one addressed block in full | `edit_post` |
+| `redirect-list` | Lists every redirect this site serves, with the table's size and capacity | `manage_options` |
 
-### `content-write` — 9 operations
+### `content-write` — 11 operations
 
 | Operation | Does | Capability | Risk | Rollback |
 |---|---|---|---|---|
@@ -107,6 +108,18 @@ Posts, pages, custom post types, and taxonomies.
 | `content-trash` | Moves an item to trash — reversible, never a permanent delete | `delete_post` | medium | required |
 | `content-rollback-apply` | Restores a previous change from its snapshot | `edit_post` | medium | supported |
 | `content-block-update` | Changes the attributes or inner markup of one block | `edit_post` | medium | supported |
+| `redirect-set` | Points one path at a successor URL, or marks it gone | `manage_options` | medium | supported |
+| `redirect-delete` | Removes the redirect stored for one path | `manage_options` | medium | required |
+
+> **The redirect table lives in one option, so a rollback restores the whole table.**
+> Nothing inside a single stored value can distinguish one redirect from its
+> siblings, so rolling back `redirect-set` or `redirect-delete` restores the table
+> as it stood at apply — any other redirect changed in the interval is reverted
+> with it. Both operations say so in their own descriptions. A site holds at most
+> 500 redirects, and `redirect-list` reports the count beside the capacity so the
+> bound is visible before a write refuses. Redirects are served on
+> `template_redirect`, ahead of the front-end request, and never on an
+> administration, cron, or REST request.
 
 > **A block write rewrites the whole document, so it refuses one it cannot reproduce.**
 > `post_content` is a single column: changing one block means writing the document

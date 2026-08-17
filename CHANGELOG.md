@@ -13,6 +13,21 @@ an operation behaves.
 
 ### Added
 
+- **Redirects — `redirect-list`, `redirect-set`, and `redirect-delete`.** A retired URL can
+  be pointed at its successor, so the traffic and the ranking the old address earned survive
+  a rename, and a page that is simply gone can be marked `410` instead of answering `404`
+  forever. `redirect-set` creates or replaces in one call — the target is the path itself, so
+  sending the same redirect twice leaves one row. The visitor's query string is carried over
+  by default, and a target may carry its own, which wins where the two name the same
+  argument. Redirects are served on `template_redirect`, ahead of the front-end request, and
+  never on an administration, cron, or REST request. A redirect that would send a visitor
+  back to the path they asked for is refused both when it is written and when it would be
+  served, because a rename months later can turn a good redirect into a loop. A site holds
+  at most 500, and `redirect-list` reports the count beside the capacity so the bound is
+  visible before a write refuses it. The whole table is one stored value, so rolling either
+  write back restores the table as it stood at apply — any other redirect changed in the
+  interval is reverted with it, and both operations say so in their descriptions.
+
 - **`content-blocks-get`**, which reads the block structure of a page instead of its text.
   Called with an identifier alone it returns the outline: every block, its address, its
   depth, the *names* of its attributes, and a short plain-text preview — enough to find the

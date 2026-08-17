@@ -53,6 +53,7 @@ final class CoreDefinitionInvariantsTest extends TestCase {
 		'content-list',
 		'taxonomy-list',
 		'content-blocks-get',
+		'redirect-list',
 		'content-update',
 		'content-create',
 		'content-rollback-apply',
@@ -62,13 +63,15 @@ final class CoreDefinitionInvariantsTest extends TestCase {
 		'content-terms-assign',
 		'content-trash',
 		'content-block-update',
+		'redirect-set',
+		'redirect-delete',
 		'audit-list',
 	];
 
 	/**
 	 * The core module's frozen write count.
 	 */
-	private const CORE_WRITE_COUNT = 9;
+	private const CORE_WRITE_COUNT = 11;
 
 	/**
 	 * A registry with the core module registered.
