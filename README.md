@@ -20,7 +20,7 @@
 
 ---
 
-SiteHelm is a WordPress plugin that exposes your site to AI agents over the [Model Context Protocol](https://modelcontextprotocol.io/). Claude, Claude Code, Cursor, VS Code, or any other MCP client can read your content, edit Elementor pages, manage media and menus, and write ACF and Meta Box fields — through **63 typed operations**, every one of them capability-checked, previewed before it runs, snapshotted before it changes anything, and verified afterwards by reading the site back.
+SiteHelm is a WordPress plugin that exposes your site to AI agents over the [Model Context Protocol](https://modelcontextprotocol.io/). Claude, Claude Code, Cursor, VS Code, or any other MCP client can read your content, edit Elementor pages, manage media and menus, write ACF and Meta Box fields, and edit SEO metadata in Yoast or Rank Math — through **65 typed operations**, every one of them capability-checked, previewed before it runs, snapshotted before it changes anything, and verified afterwards by reading the site back.
 
 The reason this project exists is the gap between *an agent can change your site* and *you would let an agent change a client's site*. Plenty of tools do the first. SiteHelm is built around the second.
 
@@ -63,7 +63,7 @@ SiteHelm makes a different trade. It is smaller in surface area and much stricte
 | **Undo** | Your backup plugin | A snapshot taken by the same plan, restorable by operation |
 | **Permissions** | Often a single API key | The authenticating WordPress user's real capabilities, re-checked per operation |
 | **Errors** | Whatever PHP threw | One of eleven typed error codes with an operator-facing remedy — never a stack trace, path, or SQL string |
-| **Surface** | 200+ loosely specified tools | 63 operations behind 11 dispatchers, each with a strict JSON Schema |
+| **Surface** | 200+ loosely specified tools | 65 operations behind 11 dispatchers, each with a strict JSON Schema |
 
 Fewer tools is deliberate. Every operation here has a written acceptance criterion, an input schema that rejects unknown properties, and a test that fails if the guard protecting it is deleted.
 
@@ -95,7 +95,7 @@ Writes that need it also record a rollback reference, so the change can be put b
 
 ## What it can do
 
-63 operations across seven modules, reached through 11 MCP tools (dispatchers). Call any dispatcher with no `operation` argument to get its catalogue — agents discover the surface at runtime instead of memorising it.
+65 operations across eight modules, reached through 11 MCP tools (dispatchers). Call any dispatcher with no `operation` argument to get its catalogue — agents discover the surface at runtime instead of memorising it.
 
 <table>
 <tr><th align="left">Dispatcher</th><th align="left">Operations</th></tr>
