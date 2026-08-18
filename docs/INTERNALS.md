@@ -95,6 +95,29 @@ silently unbooted module.
   ranges without joining `PLUGIN_BACKED_MODULES` — the key that rule would demand
   (`seo`) names nothing installable.
 - Read definitions use all three policies as `NotApplicable` and `isReadOnly: true`.
+- **A declared capability is re-checked in the handler, not only on the definition.**
+  Every handler that declares one opens with
+  `if ( ! user_can( $context->userId, self::CAPABILITY ) ) { throw ... Forbidden }`,
+  so a route to the handler that is not the policy engine — a direct call, a test, a
+  second dispatcher — still meets the gate. The refusal message must not name the
+  capability, and the check comes FIRST in the handler, before any storage or
+  target probe, so the refusal cannot be read as an oracle for anything else.
+  A census of the 67 files declaring `requiredCapabilities` found 32 holding no
+  `user_can()`/`current_user_can()` of their own. Three of them — `EnvironmentDiscovery`,
+  `AuditRead`, `ImageSizeList` — genuinely asked nobody, and now ask here. The
+  remaining 29 each name a collaborator that does the asking: a write target
+  (`AcfWriteTarget`, `ElementorWriteTarget`, `MediaTarget`, `MenuTarget`,
+  `MetaboxWriteTarget`), a read projection (`ContentFields`, and the handlers holding
+  `CommentFields::CAPABILITY` / `UserFields::READ_CAPABILITY`), or `PolicyEngine`
+  itself. `DiagnosticsModule` appears in the census only because it holds definitions;
+  its handlers live elsewhere. Re-measure with a name-reference sweep, not an import
+  sweep — a collaborator in the same namespace needs no `use` line, and scanning only
+  `use` statements reports every one of the 29 as delegating to nothing.
+- **An `outputSchema` states `required` for every member its handler always
+  returns**, and one test per operation calls `assertConformsToOutputSchema()` with a
+  real payload (interpretation I6: nothing validates output at runtime). All four
+  Diagnostics operations now do. `SchemaShape::normalize()` preserves keys, so a
+  payload that passed through it can be conformed to directly.
 
 ---
 

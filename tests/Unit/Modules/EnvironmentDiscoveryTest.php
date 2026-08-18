@@ -10,8 +10,10 @@ declare(strict_types=1);
 namespace SiteHelm\Tests\Unit\Modules;
 
 use Brain\Monkey\Functions;
+use SiteHelm\Contracts\ErrorCode;
 use SiteHelm\Contracts\OperationContext;
 use SiteHelm\Contracts\OperationDefinition;
+use SiteHelm\Contracts\OperationException;
 use SiteHelm\Contracts\PermissionMode;
 use SiteHelm\Modules\Diagnostics\DiagnosticsModule;
 use SiteHelm\Modules\Diagnostics\EnvironmentDiscovery;
@@ -49,6 +51,7 @@ final class EnvironmentDiscoveryTest extends TestCase {
 	 * Tests that the environment report contains no paths or credentials.
 	 */
 	public function test_reports_environment_without_paths_or_credentials(): void {
+		Functions\when( 'user_can' )->justReturn( true );
 		Functions\when( 'get_bloginfo' )->justReturn( '6.8.1' );
 		Functions\when( 'wp_get_theme' )->justReturn(
 			new class() {
@@ -79,10 +82,45 @@ final class EnvironmentDiscoveryTest extends TestCase {
 		$this->assertSame( 'safe-write', $data['permissionMode'] );
 		$this->assertArrayHasKey( 'diagnostics', $data['modules'] );
 
+		$registry = new CapabilityRegistry();
+		( new DiagnosticsModule() )->register( $registry );
+
+		$this->assertConformsToOutputSchema(
+			$data,
+			$registry->definition( 'system-environment' )->outputSchema
+		);
+
 		// REQ-0001 evidence: no filesystem paths or credentials in the payload.
 		$serialized = (string) wp_json_encode( $data );
 		$this->assertDoesNotMatchRegularExpression( '/\/var\/|\/home\/|wp-content|[A-Z]:\\\\/', $serialized );
 		$this->assertDoesNotMatchRegularExpression( '/password|secret|authorization/i', $serialized );
+	}
+
+	/**
+	 * THE DECLARED CAPABILITY IS RE-CHECKED IN THE HANDLER, not merely declared
+	 * on the definition. Its two siblings both re-checked; this one did not, so
+	 * any route to the handler that was not the policy engine — a direct call, a
+	 * second dispatcher — got the site's whole version inventory for free.
+	 *
+	 * The message is asserted not to name the capability, on the same rule the
+	 * rest of the plugin follows: a refusal explains what the operator needs, not
+	 * what the code looked at. The positive-control test above runs the same
+	 * handler with `user_can` true and gets a payload, so a red here is
+	 * attributable to the capability rather than to a broken handler.
+	 */
+	public function test_a_caller_without_manage_options_is_refused(): void {
+		Functions\when( 'user_can' )->justReturn( false );
+
+		try {
+			( new EnvironmentDiscovery() )->handle( [], $this->makeContext() );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::Forbidden, $e->errorCode );
+			$this->assertStringNotContainsString( 'manage_options', $e->getMessage() );
+
+			return;
+		}
+
+		$this->fail( 'A caller without manage_options must be refused with ErrorCode::Forbidden.' );
 	}
 
 	// phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
