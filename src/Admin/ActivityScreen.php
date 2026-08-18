@@ -31,6 +31,25 @@ final class ActivityScreen {
 	public const PER_PAGE = 25;
 
 	/**
+	 * The outcomes the gateway records, in the order the filter offers them.
+	 *
+	 * @var array<int, string>
+	 */
+	private const OUTCOMES = [
+		AuditRecorder::OUTCOME_APPLIED,
+		AuditRecorder::OUTCOME_RESTORED,
+		AuditRecorder::OUTCOME_VERIFICATION_FAILED,
+		AuditRecorder::OUTCOME_EXECUTION_FAILED,
+		AuditRecorder::OUTCOME_RESTORE_FAILED,
+		AuditRecorder::OUTCOME_STARTED,
+	];
+
+	/**
+	 * Changed field names listed in full before the rest are counted.
+	 */
+	private const SUMMARY_FIELD_LIMIT = 3;
+
+	/**
 	 * The audit store this screen reads.
 	 *
 	 * @var AuditStore
@@ -103,6 +122,17 @@ final class ActivityScreen {
 
 		if ( '' !== $correlation ) {
 			$filters['correlationId'] = $correlation;
+		}
+
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- As above; an outcome narrows the view and grants nothing.
+		$outcome = isset( $_GET['outcome'] ) ? sanitize_key( wp_unslash( (string) $_GET['outcome'] ) ) : '';
+
+		// Only a recorded outcome is accepted. A hand-edited URL asking for a
+		// word the gateway never writes would otherwise render an empty table
+		// under a filter bar showing nothing selected, which reads as "no
+		// activity" rather than "you asked for something that cannot exist".
+		if ( in_array( $outcome, self::OUTCOMES, true ) ) {
+			$filters['outcome'] = $outcome;
 		}
 
 		return $filters;
@@ -181,8 +211,10 @@ final class ActivityScreen {
 			esc_attr__( 'Correlation id', 'sitehelm' )
 		);
 
+		$this->render_outcome_filter( (string) ( $filters['outcome'] ?? '' ) );
+
 		printf(
-			'<button type="submit" class="sitehelm-btn">%s</button>',
+			'<button type="submit" class="sitehelm-btn sitehelm-btn--primary">%s</button>',
 			esc_html__( 'Filter', 'sitehelm' )
 		);
 
@@ -198,6 +230,39 @@ final class ActivityScreen {
 	}
 
 	/**
+	 * The outcome selector.
+	 *
+	 * A closed list rather than a text field, because the outcomes are a closed
+	 * list: there is no useful outcome to type that the gateway can record.
+	 *
+	 * @param string $selected The active outcome, or an empty string for all.
+	 */
+	private function render_outcome_filter( string $selected ): void {
+		printf(
+			'<label class="sitehelm-srt" for="sitehelm-filter-outcome">%s</label>'
+				. '<select class="sitehelm-select" id="sitehelm-filter-outcome" name="outcome">',
+			esc_html__( 'Filter by outcome', 'sitehelm' )
+		);
+
+		printf(
+			'<option value=""%s>%s</option>',
+			'' === $selected ? ' selected' : '',
+			esc_html__( 'Any outcome', 'sitehelm' )
+		);
+
+		foreach ( self::OUTCOMES as $outcome ) {
+			printf(
+				'<option value="%s"%s>%s</option>',
+				esc_attr( $outcome ),
+				$outcome === $selected ? ' selected' : '',
+				esc_html( self::label_for( $outcome ) )
+			);
+		}
+
+		echo '</select>';
+	}
+
+	/**
 	 * The table of recorded operations.
 	 *
 	 * @param array<int, array<string, mixed>> $rows Audit rows, newest first.
@@ -210,6 +275,7 @@ final class ActivityScreen {
 			__( 'Operation', 'sitehelm' ),
 			__( 'Target', 'sitehelm' ),
 			__( 'Outcome', 'sitehelm' ),
+			__( 'Took', 'sitehelm' ),
 			__( 'Who', 'sitehelm' ),
 			__( 'Rollback', 'sitehelm' ),
 		];
@@ -234,7 +300,7 @@ final class ActivityScreen {
 	 */
 	private function render_row( array $row ): void {
 		$outcome = isset( $row['outcome'] ) ? (string) $row['outcome'] : '';
-		$summary = isset( $row['summary'] ) ? (string) $row['summary'] : '';
+		$changes = self::change_text( isset( $row['summary'] ) ? (string) $row['summary'] : '' );
 
 		echo '<tr>';
 
@@ -243,7 +309,7 @@ final class ActivityScreen {
 		printf(
 			'<td><code>%s</code>%s</td>',
 			esc_html( isset( $row['operation_id'] ) ? (string) $row['operation_id'] : '' ),
-			'' === $summary ? '' : '<span class="sitehelm-table__sub">' . esc_html( $summary ) . '</span>'
+			'' === $changes ? '' : '<span class="sitehelm-table__sub">' . esc_html( $changes ) . '</span>'
 		);
 
 		printf(
@@ -253,6 +319,8 @@ final class ActivityScreen {
 
 		// Ui::badge() escapes its own label; the tone is chosen from a fixed set.
 		echo '<td>' . Ui::badge( self::tone_for( $outcome ), self::label_for( $outcome ) ) . '</td>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+
+		$this->render_duration_cell( $row );
 
 		printf(
 			'<td>%s</td>',
@@ -285,7 +353,151 @@ final class ActivityScreen {
 			return;
 		}
 
-		printf( '<td><code>%s</code></td>', esc_html( $reference ) );
+		// The reference is the one string on this screen an operator has to
+		// carry somewhere else, so it is never abbreviated in the markup. The
+		// cell narrows it visually; the title and the copy button both read the
+		// full value straight out of the element the row already carries.
+		$id = 'sitehelm-rollback-' . ( isset( $row['id'] ) ? (int) $row['id'] : 0 );
+
+		printf(
+			'<td><span class="sitehelm-ref"><code class="sitehelm-ref__value" id="%s" title="%s">%s</code>',
+			esc_attr( $id ),
+			esc_attr( $reference ),
+			esc_html( $reference )
+		);
+
+		Ui::copy_icon( $id, __( 'Copy rollback reference', 'sitehelm' ) );
+
+		echo '</span></td>';
+	}
+
+	/**
+	 * How long the operation took, when the record was timed.
+	 *
+	 * Records written before durations were stored have none, and an untimed
+	 * row shows a dash rather than a zero: "0 ms" would claim a measurement
+	 * that was never taken.
+	 *
+	 * @param array<string, mixed> $row One audit row.
+	 */
+	private function render_duration_cell( array $row ): void {
+		$duration = isset( $row['duration_ms'] ) && is_numeric( $row['duration_ms'] )
+			? (int) $row['duration_ms']
+			: null;
+
+		if ( null === $duration ) {
+			printf( '<td><span class="sitehelm-table__none" aria-hidden="true">—</span><span class="sitehelm-srt">%s</span></td>', esc_html__( 'Not timed', 'sitehelm' ) );
+			return;
+		}
+
+		printf( '<td class="sitehelm-table__num">%s</td>', esc_html( self::duration_text( $duration ) ) );
+	}
+
+	/**
+	 * A duration in the largest unit that still reads precisely.
+	 *
+	 * @param int $milliseconds The recorded duration.
+	 */
+	private static function duration_text( int $milliseconds ): string {
+		if ( $milliseconds < 1000 ) {
+			return sprintf(
+				/* translators: %s: a whole number of milliseconds. */
+				__( '%s ms', 'sitehelm' ),
+				number_format_i18n( $milliseconds )
+			);
+		}
+
+		// Rounded here rather than left to the formatter, so the value handed
+		// over is already the value shown whatever the locale does with it.
+		return sprintf(
+			/* translators: %s: a number of seconds, to one decimal place. */
+			__( '%s s', 'sitehelm' ),
+			number_format_i18n( round( $milliseconds / 1000, 1 ), 1 )
+		);
+	}
+
+	/**
+	 * The stored change summary, in English.
+	 *
+	 * The summary is deliberately a redacted JSON document: it names the fields
+	 * that changed and records the *size* of each before and after, never the
+	 * value. No unit is stored with those sizes — a character count and an
+	 * array length are the same integer here — so this method shows the pair
+	 * bare and never names a unit it would have to invent. When both sides
+	 * measure the same, the sizes carry no information at all and the field is
+	 * simply reported as changed.
+	 *
+	 * Anything that does not parse is shown verbatim, because an unreadable
+	 * summary is a fact about the record worth seeing rather than hiding.
+	 *
+	 * @param string $summary The stored summary JSON.
+	 */
+	private static function change_text( string $summary ): string {
+		if ( '' === $summary ) {
+			return '';
+		}
+
+		$decoded = json_decode( $summary, true );
+
+		if ( ! is_array( $decoded ) || ! isset( $decoded['changed'] ) || ! is_array( $decoded['changed'] ) ) {
+			return $summary;
+		}
+
+		$changed = array_values( array_filter( $decoded['changed'], 'is_string' ) );
+
+		if ( [] === $changed ) {
+			return '';
+		}
+
+		$metrics = isset( $decoded['metrics'] ) && is_array( $decoded['metrics'] ) ? $decoded['metrics'] : [];
+		$parts   = [];
+
+		foreach ( array_slice( $changed, 0, self::SUMMARY_FIELD_LIMIT ) as $field ) {
+			$parts[] = self::field_text( $field, $metrics[ $field ] ?? null );
+		}
+
+		$remaining = count( $changed ) - count( $parts );
+
+		if ( $remaining > 0 ) {
+			$parts[] = sprintf(
+				/* translators: %s: the number of further changed fields. */
+				_n( 'and %s more field', 'and %s more fields', $remaining, 'sitehelm' ),
+				number_format_i18n( $remaining )
+			);
+		}
+
+		return implode( ', ', $parts );
+	}
+
+	/**
+	 * One changed field, with its before and after size when that says anything.
+	 *
+	 * @param string $field  The field name as the redactor recorded it.
+	 * @param mixed  $metric The recorded before/after pair, if there is one.
+	 */
+	private static function field_text( string $field, mixed $metric ): string {
+		$name = str_replace( '_', ' ', $field );
+
+		if ( ! is_array( $metric ) || ! isset( $metric['before'], $metric['after'] ) ) {
+			/* translators: %s: the name of a field that changed. */
+			return sprintf( __( '%s changed', 'sitehelm' ), $name );
+		}
+
+		$before = (int) $metric['before'];
+		$after  = (int) $metric['after'];
+
+		if ( $before === $after ) {
+			/* translators: %s: the name of a field that changed. */
+			return sprintf( __( '%s changed', 'sitehelm' ), $name );
+		}
+
+		return sprintf(
+			/* translators: 1: field name, 2: size before the change, 3: size after it. */
+			__( '%1$s %2$s → %3$s', 'sitehelm' ),
+			$name,
+			number_format_i18n( $before ),
+			number_format_i18n( $after )
+		);
 	}
 
 	/**
@@ -395,6 +607,10 @@ final class ActivityScreen {
 
 		if ( isset( $filters['correlationId'] ) ) {
 			$args['correlation'] = (string) $filters['correlationId'];
+		}
+
+		if ( isset( $filters['outcome'] ) ) {
+			$args['outcome'] = (string) $filters['outcome'];
 		}
 
 		return add_query_arg( $args, admin_url( 'admin.php' ) );

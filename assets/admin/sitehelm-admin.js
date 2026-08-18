@@ -34,9 +34,16 @@
 		window.clearTimeout( Number( button.dataset.sitehelmTimer ) );
 		label.textContent = message;
 
+		// A button whose only label is for screen readers needs the result
+		// shown some other way, or a sighted operator cannot tell whether the
+		// press did anything. The class is harmless on buttons with a visible
+		// label, which carry the message in their text as before.
+		button.classList.add( 'is-flashed' );
+
 		button.dataset.sitehelmTimer = String(
 			window.setTimeout( function () {
 				label.textContent = button.dataset.sitehelmRest;
+				button.classList.remove( 'is-flashed' );
 			}, 2000 )
 		);
 	}

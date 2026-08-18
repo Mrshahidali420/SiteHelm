@@ -540,7 +540,58 @@ a test that means to check `edit_user` is not silently also asserting
 
 ---
 
-## 13. Standing project constraints
+## 13. The audit record and the Activity screen
+
+**Schema version is `Installer::DB_VERSION = 2`.** Version 2 added `duration_ms
+int(10) unsigned DEFAULT NULL` to the audit table. `dbDelta` migrates additively on
+the next request after the bump, so rows written before it keep a null duration
+forever — the console must never render an untimed row as `0 ms`.
+
+**Timing lives in `AuditRecorder`, not in the store.** `start()` stamps
+`microtime(true)` into a private `startedAt` map keyed by the returned row id, and
+`elapsed()` consumes that mark in `finish()`. Keyed, because one request can open
+several records (a batch operation opens one per element); consumed, because a
+record finalized twice must be timed once rather than re-timed from the same mark.
+A refused `insert()` returns `0` and is deliberately not stamped.
+
+`AuditStore::finish()` takes `?int $durationMs = null` as its **last** parameter and
+applies the same rule the recovery handles already follow: **null means "leave the
+stored value alone", never "clear it"**. A negative value is dropped rather than
+stored — a clock that moved backwards cannot describe elapsed time.
+
+**`AuditStore::FILTERS` accepts `outcome`.** Filter columns still come only from
+that hardcoded map; the Activity screen additionally refuses any outcome word the
+gateway never writes, so a hand-edited URL cannot render an empty table under a
+filter bar that reads "Any outcome".
+
+**The summary is a size, never a value, and carries no unit.**
+`AuditRedactor::measure()` returns `0` for null, `count()` for arrays, `1` for
+bools and `mb_strlen()` otherwise — so a character count and an array length are
+the same integer. `ActivityScreen::change_text()` therefore renders the pair bare
+(`post title 21 → 36`) and never names a unit. When before and after measure the
+same the pair says nothing, and the field is reported as "changed". A summary that
+does not parse is shown **verbatim**: an unreadable record is a fact worth seeing.
+
+**The rollback reference is never abbreviated in the markup.** `.sitehelm-ref`
+narrows the cell with `text-overflow: ellipsis`; the full value stays in the
+element, which is what both the `title` and `Ui::copy_icon()` read. Truncating the
+string in PHP would make the copy button hand over something that is not the
+reference.
+
+`Ui::copy_icon( $target_id, $label )` is the compact form of `copy_button()`: same
+`data-sitehelm-copy` wiring, hidden until the script reveals it, name carried on
+the button rather than in visible text. Because its label is screen-reader-only,
+`flash()` in `sitehelm-admin.js` also toggles `is-flashed` so a sighted operator
+gets confirmation.
+
+**Console contrast:** `--sh-gray-500` is the secondary-text token (table headings,
+card ids, stat labels, hints). It must clear 4.5:1 on **both** white and
+`--sh-gray-50`. `#5c6a6c` measures ~5.6:1 and ~5.3:1; the `#6b797b` it replaced
+measured ~4.4:1 on the tinted surfaces and failed.
+
+---
+
+## 14. Standing project constraints
 
 - **No AI attribution anywhere in git** — no "Generated with Claude Code" footer,
   no session URL, no `Co-Authored-By` trailer, in any commit, PR body, PR comment,

@@ -60,6 +60,7 @@ next is drawn from **Considering**, and a concrete workflow is what moves an ite
 | REQ-0059 | Integrations | Read and write a post's SEO metadata through one vocabulary, whether the site runs Yoast SEO or Rank Math | could | ✅ shipped |
 | REQ-0060 | Core | Comment moderation — list the queue, approve, unapprove, spam or trash one comment, and reply as the acting account | could | ✅ shipped |
 | REQ-0061 | Core | User administration — read who can reach the site and what the site's registered roles are, and change one account's role, with the last administrator, the acting account, and multisite super admins refused | could | ✅ shipped |
+| REQ-0082 | Core | An activity log a person can actually read — what changed stated in English rather than as stored JSON, how long each operation took, a filter by outcome, and a rollback reference that can be read and copied whole | should | ✅ shipped |
 | REQ-0081 | Core | Rollback for a change whose target is not a post — redirects, comment status and user roles — so the rollback reference those writes hand out can actually be redeemed, under the same permission the original change asked | must | ✅ shipped |
 
 ## Considering

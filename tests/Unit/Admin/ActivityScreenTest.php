@@ -84,6 +84,23 @@ final class ActivityScreenTest extends TestCase {
 		return (string) ob_get_clean();
 	}
 
+	/**
+	 * Every value the screen bound through prepare(), across all statements.
+	 *
+	 * @return array<int, mixed>
+	 */
+	private function boundValues(): array {
+		$values = [];
+
+		foreach ( $this->wpdb->prepared as $statement ) {
+			foreach ( $statement['args'] as $value ) {
+				$values[] = $value;
+			}
+		}
+
+		return $values;
+	}
+
 	public function testAVisitorWithoutTheCapabilityIsStoppedRatherThanShownTheLog(): void {
 		AdminWordPressStubs::$canManage = false;
 
@@ -140,8 +157,31 @@ final class ActivityScreenTest extends TestCase {
 	public function testTheRollbackReferenceIsStatedRatherThanOfferedAsAButton(): void {
 		$html = $this->render( 1, [ $this->row() ] );
 
-		$this->assertStringContainsString( '<code>audit-1</code>', $html );
+		$this->assertStringContainsString( '>audit-1</code>', $html );
 		$this->assertStringNotContainsString( 'Undo', $html );
+	}
+
+	/**
+	 * The reference is the one string on this screen an operator has to carry
+	 * elsewhere. Narrowing the cell is a visual choice; shortening the value in
+	 * the markup would make the copy button hand over something that is not the
+	 * reference at all.
+	 */
+	public function testALongRollbackReferenceIsCarriedWholeIntoTheMarkup(): void {
+		$reference = 'audit-' . str_repeat( '9', 40 );
+
+		$html = $this->render( 1, [ $this->row( [ 'rollback_ref' => $reference ] ) ] );
+
+		$this->assertStringContainsString( '>' . $reference . '</code>', $html );
+		$this->assertStringContainsString( 'title="' . $reference . '"', $html );
+		$this->assertStringNotContainsString( '…', $html );
+	}
+
+	public function testTheRollbackReferenceCanBeCopiedFromTheRowItIsIn(): void {
+		$html = $this->render( 1, [ $this->row( [ 'id' => 42, 'rollback_ref' => 'audit-42' ] ) ] );
+
+		$this->assertStringContainsString( 'id="sitehelm-rollback-42"', $html );
+		$this->assertStringContainsString( 'data-sitehelm-copy="sitehelm-rollback-42"', $html );
 	}
 
 	public function testARowWithNoRollbackReferenceSaysSoPlainly(): void {
@@ -289,6 +329,104 @@ final class ActivityScreenTest extends TestCase {
 		$html = $this->render( ActivityScreen::PER_PAGE + 1, [ $this->row() ] );
 
 		$this->assertStringContainsString( 'operation=content-post-update', $html );
+	}
+
+	public function testAChangeSummaryIsReadAsEnglishRatherThanPrintedAsJson(): void {
+		$summary = '{"changed":["post_title"],"metrics":{"post_title":{"before":21,"after":36}}}';
+
+		$html = $this->render( 1, [ $this->row( [ 'summary' => $summary ] ) ] );
+
+		$this->assertStringContainsString( 'post title 21 → 36', $html );
+		$this->assertStringNotContainsString( '"metrics"', $html );
+		$this->assertStringNotContainsString( '{&quot;changed&quot;', $html );
+	}
+
+	/**
+	 * The redactor stores a size, never a value, and stores no unit with it. A
+	 * field whose before and after measure the same has therefore said nothing
+	 * beyond "this changed", and a pair like "1 → 1" would read as a defect.
+	 */
+	public function testAFieldWhoseSizeDidNotMoveIsReportedAsChangedRatherThanAsAnIdenticalPair(): void {
+		$summary = '{"changed":["roles"],"metrics":{"roles":{"before":1,"after":1}}}';
+
+		$html = $this->render( 1, [ $this->row( [ 'summary' => $summary ] ) ] );
+
+		$this->assertStringContainsString( 'roles changed', $html );
+		$this->assertStringNotContainsString( '1 → 1', $html );
+	}
+
+	public function testAChangeWithNoRecordedFieldsAddsNoSubLine(): void {
+		$html = $this->render( 1, [ $this->row( [ 'summary' => '{"changed":[],"metrics":{}}' ] ) ] );
+
+		$this->assertStringNotContainsString( 'sitehelm-table__sub', $html );
+	}
+
+	public function testManyChangedFieldsAreCountedRatherThanListedInFull(): void {
+		$summary = '{"changed":["a","b","c","d","e"],"metrics":{}}';
+
+		$html = $this->render( 1, [ $this->row( [ 'summary' => $summary ] ) ] );
+
+		$this->assertStringContainsString( 'and 2 more fields', $html );
+		$this->assertStringNotContainsString( 'e changed', $html );
+	}
+
+	/**
+	 * A summary that does not parse is a fact about the record. Replacing it
+	 * with a friendly nothing would hide the only evidence that the writer and
+	 * the reader disagree about the format.
+	 */
+	public function testASummaryThatDoesNotParseIsShownVerbatim(): void {
+		$html = $this->render( 1, [ $this->row( [ 'summary' => 'not json at all' ] ) ] );
+
+		$this->assertStringContainsString( 'not json at all', $html );
+	}
+
+	public function testARecordedDurationIsShown(): void {
+		$html = $this->render( 1, [ $this->row( [ 'duration_ms' => 412 ] ) ] );
+
+		$this->assertStringContainsString( '412 ms', $html );
+	}
+
+	public function testALongDurationIsShownInSecondsRatherThanFourDigitsOfMilliseconds(): void {
+		$html = $this->render( 1, [ $this->row( [ 'duration_ms' => 2450 ] ) ] );
+
+		$this->assertStringContainsString( '2.5 s', $html );
+		$this->assertStringNotContainsString( '2450 ms', $html );
+	}
+
+	/**
+	 * Rows written before durations were recorded have none, and "0 ms" would
+	 * claim a measurement that was never taken.
+	 */
+	public function testAnUntimedRowShowsADashRatherThanZero(): void {
+		$html = $this->render( 1, [ $this->row() ] );
+
+		$this->assertStringContainsString( 'Not timed', $html );
+		$this->assertStringNotContainsString( '0 ms', $html );
+	}
+
+	public function testTheOutcomeFilterNarrowsTheQueryItRuns(): void {
+		$_GET['outcome'] = AuditRecorder::OUTCOME_RESTORE_FAILED;
+
+		$this->render( 1, [ $this->row( [ 'outcome' => AuditRecorder::OUTCOME_RESTORE_FAILED ] ) ] );
+
+		$this->assertStringContainsString( 'outcome = %s', implode( ' ', array_column( $this->wpdb->prepared, 'query' ) ) );
+		$this->assertContains( AuditRecorder::OUTCOME_RESTORE_FAILED, $this->boundValues() );
+	}
+
+	/**
+	 * An outcome the gateway never writes cannot match a row, so accepting it
+	 * would render an empty table under a filter bar showing "Any outcome" —
+	 * which reads as "nothing has happened" rather than "you asked for a word
+	 * that does not exist".
+	 */
+	public function testAnOutcomeTheGatewayNeverRecordsIsIgnoredRatherThanQueried(): void {
+		$_GET['outcome'] = 'nonsense';
+
+		$html = $this->render( 1, [ $this->row() ] );
+
+		$this->assertNotContains( 'nonsense', $this->boundValues() );
+		$this->assertStringContainsString( '<option value="" selected>', $html );
 	}
 
 	public function testAStoredSummaryIsEscapedBeforeItReachesThePage(): void {

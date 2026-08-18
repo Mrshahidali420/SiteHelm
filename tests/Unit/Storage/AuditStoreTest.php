@@ -116,6 +116,42 @@ final class AuditStoreTest extends TestCase {
 		$this->assertSame( '{"changed":["post_title"]}', $update['data']['summary'] );
 	}
 
+	public function test_finish_stores_a_measured_duration(): void {
+		$this->store->finish( 3, 'applied', null, null, 'post:77', '{}', 412 );
+
+		$this->assertSame( 412, $this->wpdb->updates[0]['data']['duration_ms'] );
+	}
+
+	/**
+	 * A null duration means "not measured", and writing it back would erase a
+	 * real measurement from an earlier finalization of the same row.
+	 */
+	public function test_finish_leaves_the_duration_alone_when_none_was_measured(): void {
+		$this->store->finish( 3, 'applied', null, null, 'post:77', '{}' );
+
+		$this->assertArrayNotHasKey( 'duration_ms', $this->wpdb->updates[0]['data'] );
+	}
+
+	/**
+	 * A clock that moved backwards cannot describe an elapsed time, and the
+	 * console would render the negative number as if it were one.
+	 */
+	public function test_finish_refuses_a_negative_duration(): void {
+		$this->store->finish( 3, 'applied', null, null, 'post:77', '{}', -5 );
+
+		$this->assertArrayNotHasKey( 'duration_ms', $this->wpdb->updates[0]['data'] );
+	}
+
+	public function test_query_can_be_narrowed_to_one_outcome(): void {
+		$this->wpdb->resultQueue = [ [] ];
+
+		$this->store->query( [ 'outcome' => 'restore-failed' ], 10, 0 );
+
+		$prepared = $this->wpdb->prepared[0];
+		$this->assertStringContainsString( 'outcome = %s', $prepared['query'] );
+		$this->assertContains( 'restore-failed', $prepared['args'] );
+	}
+
 	public function test_finish_returns_false_when_refused(): void {
 		$this->wpdb->failUpdate = true;
 

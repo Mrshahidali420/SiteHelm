@@ -26,7 +26,7 @@ final class Installer {
 	 * Current schema version. Bump when a statement below changes; dbDelta then
 	 * migrates additively in place on the next request.
 	 */
-	public const DB_VERSION = 1;
+	public const DB_VERSION = 2;
 
 	public const DB_VERSION_OPTION  = 'sitehelm_db_version';
 	public const STATUS_OPTION      = 'sitehelm_db_status';
@@ -234,6 +234,7 @@ final class Installer {
 	snapshot_id bigint(20) unsigned DEFAULT NULL,
 	rollback_ref varchar(64) DEFAULT NULL,
 	recorded_at bigint(20) unsigned NOT NULL,
+	duration_ms int(10) unsigned DEFAULT NULL,
 	PRIMARY KEY  (id),
 	KEY recorded_at (recorded_at),
 	KEY correlation_id (correlation_id),
