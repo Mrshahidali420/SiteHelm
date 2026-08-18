@@ -352,7 +352,16 @@ class MediaFetch {
 				// here. Set to the cap exactly, an oversized file would arrive
 				// truncated to exactly the cap and be accepted as a valid but
 				// silently corrupted image.
-				if ( strlen( $body ) > MediaMimeGuard::MAX_DECODED_BYTES ) {
+				//
+				// THE CAP IS THE SITE'S EFFECTIVE ONE, NOT THE BUILT-IN CEILING.
+				// MediaMimeGuard would refuse anything above it moments later
+				// anyway, so reading to the ceiling first only spends bandwidth
+				// and memory on bytes that are already destined to be thrown
+				// away: on a site capped at 2 MiB that is four times the transfer
+				// for the same refusal. Asked again here rather than reused from
+				// the hop above, because both calls are cheap and a cap read once
+				// and applied twice is a cap that can drift between the two.
+				if ( strlen( $body ) > MediaMimeGuard::decodedByteCap() ) {
 					$this->refuse(
 						ErrorCode::InvalidInput,
 						'The asset at the supplied address is larger than this site will import.',
@@ -446,7 +455,7 @@ class MediaFetch {
 				'timeout'             => self::TIMEOUT_SECONDS,
 				'httpversion'         => '1.1',
 				'stream'              => false,
-				'limit_response_size' => MediaMimeGuard::MAX_DECODED_BYTES + 1,
+				'limit_response_size' => MediaMimeGuard::decodedByteCap() + 1,
 				'user-agent'          => 'SiteHelm/' . SITEHELM_VERSION,
 			]
 		);
