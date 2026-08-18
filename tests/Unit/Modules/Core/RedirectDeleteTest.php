@@ -288,4 +288,65 @@ final class RedirectDeleteTest extends RedirectTestCase {
 
 		return $this->operation->planChange( $current, [ 'source' => $source ], $context );
 	}
+
+	/**
+	 * REQ-0081: a delete reversed through content-rollback-apply.
+	 *
+	 * resolveTarget() cannot serve this, because it refuses a path holding no
+	 * redirect — which is exactly the state a delete leaves behind and the one a
+	 * rollback of it starts from.
+	 */
+	public function test_a_rollback_target_resolves_the_path_this_operation_emptied(): void {
+		$state = $this->operation->resolveRollbackTarget( 'redirect:/old', $this->makeContext() );
+
+		$this->assertSame( 'redirect:/old', $state->targetKey );
+		$this->assertFalse( $state->exists );
+		$this->assertSame( [ 'exists' => false ], $state->fields );
+	}
+
+	public function test_a_rollback_target_is_refused_without_manage_options(): void {
+		$this->allowed = false;
+
+		try {
+			$this->operation->resolveRollbackTarget( 'redirect:/old', $this->makeContext() );
+			$this->fail( 'A caller who may not manage options must be refused.' );
+		} catch ( OperationException $exception ) {
+			$this->assertSame( ErrorCode::Forbidden, $exception->errorCode );
+		}
+	}
+
+	/**
+	 * The promise is in THIS operation's read vocabulary, not redirect-set's,
+	 * even though the two share a recorded state: the verifier compares the
+	 * promise against whichever read-back ran.
+	 */
+	public function test_a_rollback_promise_is_the_presence_this_operations_read_back_projects(): void {
+		$state = $this->operation->resolveRollbackTarget( 'redirect:/old', $this->makeContext() );
+
+		$promised = $this->operation->promiseRollback(
+			[
+				'source'    => '/old',
+				'redirects' => [ '/old' => $this->row( '/old' ) ],
+			],
+			$state,
+			$this->makeContext()
+		);
+
+		$this->assertSame( [ 'exists' => true ], $promised );
+	}
+
+	public function test_a_recorded_table_without_the_path_promises_absence(): void {
+		$state = $this->operation->resolveRollbackTarget( 'redirect:/old', $this->makeContext() );
+
+		$promised = $this->operation->promiseRollback(
+			[
+				'source'    => '/old',
+				'redirects' => [],
+			],
+			$state,
+			$this->makeContext()
+		);
+
+		$this->assertSame( [ 'exists' => false ], $promised );
+	}
 }
