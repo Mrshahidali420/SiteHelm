@@ -126,6 +126,11 @@ Facts that are not visible from the signatures:
   a partial promise reports a correct write as not applied.
 - `restore()` receives the recorded state **alone** — no target — so the snapshot
   must carry whatever identifies the target (e.g. `post_id`).
+- **A write whose target is NOT a post must also implement `RollbackDelegate`**
+  (`src/Change/RollbackDelegate.php`) or the `rollbackRef` it hands out cannot be
+  redeemed. `content-rollback-apply` resolves a `post:` target key through the
+  post parser; anything else routes to the origin operation's own
+  `resolveRollbackTarget()` / `promiseRollback()`. See §6a.
 - Snapshots are `ksort( $snapshot, SORT_STRING )`ed before returning, so the
   recorded bytes do not depend on insertion order.
 - Judge a write by **measurement, not by return value**: `update_post_meta()`
@@ -135,6 +140,40 @@ Facts that are not visible from the signatures:
 - Resolve an integration **per phase**, not once on the instance: the engine drives
   the two phases across two requests, and a provider resolved at preview would be
   the plugin that *was* active.
+
+### 6a. `RollbackDelegate` — restoring a non-post target
+
+```php
+resolveRollbackTarget( string $targetKey, OperationContext $c ): TargetState;
+promiseRollback( array $restoreState, TargetState $current, OperationContext $c ): array;
+```
+
+Implemented by `UserRoleSet`, `CommentStatusSet`, `RedirectSet`, `RedirectDelete`.
+
+- **`content-rollback-apply` selects the delegate by the snapshot's own
+  `operation_id`,** not by parsing the target key — `redirect-set` and
+  `redirect-delete` share a recorded state but restore through their own code and
+  promise different things. A `post:` key NEVER delegates.
+- **The capability re-check lives INSIDE `resolveRollbackTarget()`, deliberately.**
+  `content-rollback-apply` declares `edit_post` at the front gate, which is not
+  moderation authority and not `promote_users`; without the re-check a caller
+  holding only `edit_post` could reverse a comment moderation or a role change
+  their own operation gate refuses. Resolution runs in both phases, so a
+  permission withdrawn between them refuses the apply.
+- **`promiseRollback()` must speak the vocabulary `readBack()` projects**, not the
+  vocabulary the restore state is stored in. A redirect snapshot records the whole
+  table under `redirects`; the read-back projects one row. A generic key-by-key
+  promise would promise the path back to itself and verify having restored
+  nothing.
+- **An EMPTY promise is `rollback_unavailable`**, raised at preview. Use it when
+  the recorded state can no longer be reproduced — an unregistered role slug, a
+  `post-trashed` comment status.
+- The delegated branch in `planChange()` sits after the two identity checks and
+  before the post-bound ones, so the post path's refusal ORDER is unchanged. It
+  skips `assert_original_capability()` (whose body is post-shaped) because the
+  delegate already authorized the caller against its own target.
+- Post-path limitation, still open by design: the origin's `restore()` is bypassed
+  and `ContentTrash` cleanup is skipped.
 
 ---
 

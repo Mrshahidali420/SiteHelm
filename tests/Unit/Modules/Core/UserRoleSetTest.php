@@ -758,4 +758,118 @@ final class UserRoleSetTest extends TestCase {
 
 		$this->assertNull( $this->operation->captureSnapshot( $state, $this->context() ) );
 	}
+
+	/**
+	 * REQ-0081: the four delegated-rollback tests.
+	 *
+	 * A rollback reaching this operation through a stored reference is a role
+	 * change like any other, so it asks the same two capabilities and refuses on
+	 * the same three lockout conditions.
+	 */
+	public function test_a_rollback_target_resolves_the_recorded_account(): void {
+		$this->seedUser( 12, [ 'editor' ] );
+		$this->capabilities = [
+			'promote_users' => true,
+			'edit_user'     => true,
+		];
+
+		$state = $this->operation->resolveRollbackTarget( 'user:12', $this->context() );
+
+		$this->assertSame( 'user:12', $state->targetKey );
+		$this->assertTrue( $state->exists );
+		$this->assertContains( [ 'promote_users', 12 ], $this->capabilityPairs() );
+		$this->assertContains( [ 'edit_user', 12 ], $this->capabilityPairs() );
+	}
+
+	public function test_a_rollback_target_is_refused_without_the_promotion_capability(): void {
+		$this->seedUser( 12, [ 'editor' ] );
+		$this->capabilities = [ 'edit_user' => true ];
+
+		try {
+			$this->operation->resolveRollbackTarget( 'user:12', $this->context() );
+			$this->fail( 'A caller lacking promote_users must be refused.' );
+		} catch ( OperationException $exception ) {
+			$this->assertSame( ErrorCode::Forbidden, $exception->errorCode );
+		}
+	}
+
+	public function test_a_rollback_promise_replays_every_recorded_role(): void {
+		$this->seedUser( 12, [ 'subscriber' ] );
+		$this->capabilities = [
+			'promote_users' => true,
+			'edit_user'     => true,
+		];
+		$current = $this->operation->resolveRollbackTarget( 'user:12', $this->context() );
+
+		$promised = $this->operation->promiseRollback(
+			[
+				'user_id' => 12,
+				'roles'   => [ 'editor', 'author' ],
+			],
+			$current,
+			$this->context()
+		);
+
+		$this->assertSame( [ 'roles' => [ 'editor', 'author' ] ], $promised );
+	}
+
+	public function test_a_rollback_promise_is_empty_when_a_recorded_role_is_gone(): void {
+		$this->seedUser( 12, [ 'subscriber' ] );
+		$this->capabilities = [
+			'promote_users' => true,
+			'edit_user'     => true,
+		];
+		$current = $this->operation->resolveRollbackTarget( 'user:12', $this->context() );
+
+		$promised = $this->operation->promiseRollback(
+			[
+				'user_id' => 12,
+				'roles'   => [ 'editor', 'retired_role' ],
+			],
+			$current,
+			$this->context()
+		);
+
+		$this->assertSame( [], $promised );
+	}
+
+	/**
+	 * The lockout guard the rollback path exists to keep reachable: reversing a
+	 * promotion demotes an administrator, and the account may since have become
+	 * the last one.
+	 */
+	public function test_a_rollback_demoting_the_last_administrator_is_a_conflict(): void {
+		$this->seedUser( 12, [ 'administrator' ] );
+		$this->capabilities = [
+			'promote_users' => true,
+			'edit_user'     => true,
+		];
+		$current = $this->operation->resolveRollbackTarget( 'user:12', $this->context() );
+
+		try {
+			$this->operation->promiseRollback(
+				[
+					'user_id' => 12,
+					'roles'   => [ 'subscriber' ],
+				],
+				$current,
+				$this->context()
+			);
+			$this->fail( 'Demoting the only administrator must be refused.' );
+		} catch ( OperationException $exception ) {
+			$this->assertSame( ErrorCode::Conflict, $exception->errorCode );
+		}
+	}
+
+	/**
+	 * The capability checks the doubled user_can() recorded, as pairs.
+	 *
+	 * @return array<int, array{0: string, 1: int|null}> The pairs, in order.
+	 */
+	private function capabilityPairs(): array {
+		return array_map(
+			static fn( array $check ): array => [ $check['capability'], $check['target'] ],
+			$this->capabilityChecks
+		);
+	}
 }

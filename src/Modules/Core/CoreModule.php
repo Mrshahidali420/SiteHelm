@@ -204,7 +204,14 @@ final class CoreModule implements IntegrationModule {
 		// a rollback resolves must be built by the same code.
 		$comments = new CommentTarget();
 
-		$registry->registerWrite( CommentStatusSet::definition(), new CommentStatusSet( $comments ) );
+		// The status write also gets a PolicyEngine, for the moderate_comments
+		// re-check it performs when a rollback enters it through a stored
+		// reference: the rollback operation's own front gate is edit_post, which
+		// is not moderation authority.
+		$registry->registerWrite(
+			CommentStatusSet::definition(),
+			new CommentStatusSet( $comments, new PolicyEngine() )
+		);
 		$registry->registerWrite( CommentReply::definition(), new CommentReply( $comments ) );
 
 		// The role write lives among the content writes only because the dispatcher
