@@ -119,6 +119,23 @@ silently unbooted module.
   Diagnostics operations now do. `SchemaShape::normalize()` preserves keys, so a
   payload that passed through it can be conformed to directly.
 
+- **`ALLOWED_CAPABILITIES` (line ~41) is where three requirements are excluded, not
+  just where typos are caught.** The twelve entries are the whole vocabulary an
+  operation may ask for; anything else throws at construction. REQ-0053 (arbitrary
+  PHP), REQ-0054 (unrestricted SQL) and REQ-0055 (filesystem access) are enforced by
+  what the list omits — `unfiltered_php`, `edit_files`, `edit_plugins`, `edit_themes`,
+  `install_plugins`, `install_themes`, `update_core`, `unfiltered_upload`. Adding any
+  of them is a one-line edit with a large blast radius, and
+  `tests/Unit/Registry/ExcludedCapabilityTest.php` is what makes it visible. That file
+  also sweeps every registered id for `php` / `eval` / `exec` / `shell` / `sql`
+  segments, walking `Plugin::MODULE_CLASSES` so a module added later is covered
+  without editing it.
+- **REQ-0056 (irreversible deletion) is not asserted anywhere by sweep, on purpose.**
+  The destructive cross-field rule (line ~164) means such an operation cannot be
+  constructed, so a catalog sweep for it would pass without ever reaching the case.
+  The rule itself is pinned by
+  `OperationDefinitionTest::test_destructive_write_requires_all_policies_required`.
+
 ---
 
 ## 6. The `WriteOperation` contract
