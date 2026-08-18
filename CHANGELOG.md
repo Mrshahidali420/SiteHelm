@@ -11,6 +11,17 @@ an operation behaves.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Importing from a URL now stops downloading at the size this site will actually
+  accept.** The transfer was bounded by the plugin's built-in 8 MiB ceiling on every
+  site, so a site configured to accept 2 MiB still pulled up to 8 MiB across the
+  network and held it in memory before refusing it for size — four times the transfer
+  and four times the peak memory for a refusal that was never in doubt. Both the wire
+  limit and the check after it now use the effective cap, the smaller of the built-in
+  ceiling and the site's own upload limit. A site reporting no positive limit still
+  falls back to the built-in ceiling rather than to zero.
+
 ## [0.4.0] — 2026-08-19
 
 ### Added

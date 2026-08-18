@@ -429,6 +429,40 @@ final class MediaFetchTest extends MediaFetchTestCase {
 		$this->assertSame( $bytes, $this->fetcher()->fetch( $this->validated(), 'corr-1' ) );
 	}
 
+	public function test_the_wire_read_stops_at_the_site_limit_not_the_built_in_ceiling(): void {
+		// The defect this pins: `limit_response_size` used to be the built-in
+		// ceiling on every site, so a site that accepts 2 MiB still pulled 8 MiB
+		// across the network before MediaMimeGuard refused it for size. Four times
+		// the transfer and four times the peak memory, for the same refusal.
+		$this->uploadLimit = 2097152;
+
+		$this->fetcher()->fetch( $this->validated(), 'corr-1' );
+
+		$this->assertSame( 2097153, $this->sentArgs[0]['limit_response_size'] );
+	}
+
+	public function test_a_body_over_the_site_limit_is_refused_though_it_is_under_the_ceiling(): void {
+		// Under MAX_DECODED_BYTES, so only the site's own limit can refuse it —
+		// and it must be refused HERE rather than carried on to the guard, or the
+		// transport is handing on bytes it already knows are unusable.
+		$this->uploadLimit = 2097152;
+
+		$this->respondWith( $this->responseWith( 200, str_repeat( 'a', 2097153 ) ) );
+
+		$this->assertFetchRefused( ErrorCode::InvalidInput );
+	}
+
+	public function test_a_site_reporting_no_limit_falls_back_to_the_built_in_ceiling(): void {
+		// The fallback is the whole reason the cap is not just wp_max_upload_size().
+		// Taking a non-positive report at face value would set the wire limit to one
+		// byte and refuse every import on a site whose ini pair cannot be read.
+		$this->uploadLimit = 0;
+
+		$this->fetcher()->fetch( $this->validated(), 'corr-1' );
+
+		$this->assertSame( MediaMimeGuard::MAX_DECODED_BYTES + 1, $this->sentArgs[0]['limit_response_size'] );
+	}
+
 	public function test_both_hooks_are_registered_at_the_last_word_priority(): void {
 		// Named AND at a stated priority. The removal tests below compare added
 		// against removed, so they stay green if a hook is never added at all —
