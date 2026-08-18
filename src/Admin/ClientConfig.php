@@ -237,8 +237,13 @@ final class ClientConfig {
 					],
 					[
 						'id'      => 'bridge-cli',
-						'caption' => __( 'Or run it by hand, to check it connects', 'sitehelm' ),
+						'caption' => __( 'Or run it by hand, to check it connects (macOS, Linux, or Git Bash)', 'sitehelm' ),
 						'body'    => $this->bridge_command(),
+					],
+					[
+						'id'      => 'bridge-cli-powershell',
+						'caption' => __( 'The same check in Windows PowerShell, where the line above is a syntax error', 'sitehelm' ),
+						'body'    => $this->bridge_powershell_command(),
 					],
 					[
 						'id'      => 'bridge-remote',
@@ -365,10 +370,35 @@ final class ClientConfig {
 
 	/**
 	 * The same bridge, run by hand to see whether it connects.
+	 *
+	 * This is the POSIX form: a variable assignment prefixed to the command, which
+	 * is what a Bourne-family shell reads. It is offered beside a PowerShell form
+	 * rather than alone because the caption invites the operator to run it, and on
+	 * Windows this spelling is not a command that fails informatively — it is a
+	 * parse error, which reads as SiteHelm being broken.
 	 */
 	private function bridge_command(): string {
 		return sprintf(
 			"SITEHELM_ENDPOINT=%s \\\n  SITEHELM_AUTH=\"Basic %s\" \\\n  node %s",
+			$this->endpoint,
+			$this->credential(),
+			$this->bridge_path()
+		);
+	}
+
+	/**
+	 * The same check for Windows PowerShell.
+	 *
+	 * PowerShell has no env-prefix form, so the two values are set as session
+	 * variables on their own lines first. They last only as long as that console
+	 * window, which is the point: this snippet is a connectivity check, and the
+	 * configuration that persists is the JSON block above it.
+	 */
+	private function bridge_powershell_command(): string {
+		return sprintf(
+			'$env:SITEHELM_ENDPOINT = "%s"' . "\n"
+				. '$env:SITEHELM_AUTH = "Basic %s"' . "\n"
+				. 'node "%s"',
 			$this->endpoint,
 			$this->credential(),
 			$this->bridge_path()
