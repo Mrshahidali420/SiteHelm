@@ -10,10 +10,12 @@ declare(strict_types=1);
 namespace SiteHelm\Modules\Media;
 
 use SiteHelm\Contracts\Domain;
+use SiteHelm\Contracts\ErrorCode;
 use SiteHelm\Contracts\Mode;
 use SiteHelm\Contracts\ModuleId;
 use SiteHelm\Contracts\OperationContext;
 use SiteHelm\Contracts\OperationDefinition;
+use SiteHelm\Contracts\OperationException;
 use SiteHelm\Contracts\PreviewPolicy;
 use SiteHelm\Contracts\Risk;
 use SiteHelm\Contracts\RollbackPolicy;
@@ -103,6 +105,17 @@ final class ImageSizeList {
 	}
 
 	/**
+	 * The capability this operation declares and re-checks.
+	 *
+	 * `read` is the weakest capability on a WordPress site and this list is not
+	 * sensitive, so the re-check buys little here on its own. It is present
+	 * because the convention is worth more than the exception: every handler that
+	 * declares a capability asks for it again, so "does this one check?" is never
+	 * a question anyone has to open the file to answer.
+	 */
+	private const CAPABILITY = 'read';
+
+	/**
 	 * Constructs the handler.
 	 *
 	 * @param MediaFields $fields The normalized attachment projection, which
@@ -111,6 +124,7 @@ final class ImageSizeList {
 	public function __construct( private readonly MediaFields $fields ) {
 	}
 
+	// phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase, WordPress.Security.EscapeOutput.ExceptionNotEscaped -- OperationContext::$userId is a contract property this module does not name, and the refusal message is a literal written for end users.
 	/**
 	 * Returns every image size this site registers, sorted by name.
 	 *
@@ -121,10 +135,21 @@ final class ImageSizeList {
 	 * @param OperationContext     $context The operation context.
 	 *
 	 * @return array<string, mixed> The registered sizes.
+	 *
+	 * @throws OperationException When the caller cannot read this site.
 	 */
 	public function handle( array $input, OperationContext $context ): array {
-		unset( $input, $context );
+		unset( $input );
+
+		if ( ! user_can( $context->userId, self::CAPABILITY ) ) {
+			throw new OperationException(
+				ErrorCode::Forbidden,
+				'Listing image sizes requires an account that can read this site.',
+				'Authenticate as a user with a role on this site.'
+			);
+		}
 
 		return [ 'sizes' => $this->fields->registeredSizes() ];
 	}
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase, WordPress.Security.EscapeOutput.ExceptionNotEscaped
 }

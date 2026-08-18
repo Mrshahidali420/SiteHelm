@@ -42,6 +42,7 @@ final class AuditReadTest extends TestCase {
 		Functions\when( 'get_option' )->alias(
 			fn( string $key, mixed $fallback = false ): mixed => $this->options[ $key ] ?? $fallback
 		);
+		Functions\when( 'user_can' )->justReturn( true );
 
 		$this->handler = new AuditRead( new AuditStore(), new Installer() );
 	}
@@ -219,6 +220,46 @@ final class AuditReadTest extends TestCase {
 		$this->assertStringContainsString( 'operation_id = %s', $this->wpdb->prepared[0]['query'] );
 		$this->assertStringContainsString( 'correlation_id = %s', $this->wpdb->prepared[0]['query'] );
 		$this->assertStringContainsString( 'actor_id = %d', $this->wpdb->prepared[0]['query'] );
+	}
+
+	/**
+	 * The declared capability is re-checked in the handler, not only by the policy
+	 * engine, because this log names every actor, client and target the site has
+	 * been changed through. The message must not name the capability.
+	 */
+	public function test_a_caller_without_manage_options_is_refused(): void {
+		Functions\when( 'user_can' )->justReturn( false );
+
+		try {
+			$this->handler->handle( [], $this->makeContext() );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::Forbidden, $e->errorCode );
+			$this->assertStringNotContainsString( 'manage_options', $e->getMessage() );
+
+			return;
+		}
+
+		$this->fail( 'A caller without manage_options must be refused with ErrorCode::Forbidden.' );
+	}
+
+	/**
+	 * THE CAPABILITY IS ASKED BEFORE STORAGE IS PROBED, so the two refusals cannot
+	 * be used as an oracle: a caller who may not read the log must not be able to
+	 * learn from the error code whether the log's table was ever created.
+	 */
+	public function test_an_unauthorised_caller_learns_nothing_about_the_storage_state(): void {
+		Functions\when( 'user_can' )->justReturn( false );
+		$this->options[ Installer::STATUS_OPTION ] = Installer::STATUS_UNAVAILABLE;
+
+		try {
+			$this->handler->handle( [], $this->makeContext() );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::Forbidden, $e->errorCode );
+
+			return;
+		}
+
+		$this->fail( 'An unauthorised caller must be refused before storage is probed.' );
 	}
 
 	/**

@@ -10,8 +10,10 @@ declare(strict_types=1);
 namespace SiteHelm\Tests\Unit\Modules\Media;
 
 use Brain\Monkey\Functions;
+use SiteHelm\Contracts\ErrorCode;
 use SiteHelm\Contracts\ModuleId;
 use SiteHelm\Contracts\OperationContext;
+use SiteHelm\Contracts\OperationException;
 use SiteHelm\Contracts\PermissionMode;
 use SiteHelm\Modules\Media\ImageSizeList;
 use SiteHelm\Modules\Media\MediaFields;
@@ -30,6 +32,8 @@ final class ImageSizeListTest extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();
 		$this->handler = new ImageSizeList( new MediaFields() );
+
+		Functions\when( 'user_can' )->justReturn( true );
 	}
 
 	private function makeContext(): OperationContext {
@@ -255,5 +259,26 @@ final class ImageSizeListTest extends TestCase {
 			$result,
 			$registry->definition( 'image-size-list' )->outputSchema
 		);
+	}
+
+	/**
+	 * The declared capability is re-checked in the handler rather than left to the
+	 * policy engine. `read` makes this the mildest gate on the site, and the point
+	 * is the convention rather than this list: every handler that declares a
+	 * capability asks for it again, so nobody has to open the file to find out
+	 * whether this one does.
+	 */
+	public function test_a_caller_who_cannot_read_the_site_is_refused(): void {
+		Functions\when( 'user_can' )->justReturn( false );
+
+		try {
+			$this->handler->handle( [], $this->makeContext() );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::Forbidden, $e->errorCode );
+
+			return;
+		}
+
+		$this->fail( 'A caller who cannot read the site must be refused with ErrorCode::Forbidden.' );
 	}
 }

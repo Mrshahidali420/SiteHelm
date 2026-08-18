@@ -22,6 +22,7 @@ use SiteHelm\Contracts\PreviewPolicy;
 use SiteHelm\Contracts\Risk;
 use SiteHelm\Contracts\RollbackPolicy;
 use SiteHelm\Contracts\SnapshotPolicy;
+use SiteHelm\Modules\Diagnostics\DiagnosticsModule;
 use SiteHelm\Modules\Diagnostics\OperationSchema;
 use SiteHelm\Registry\CapabilityRegistry;
 use SiteHelm\Tests\Doubles\StubWriteOperation;
@@ -161,6 +162,33 @@ final class OperationSchemaTest extends TestCase {
 		}
 
 		$this->fail( 'A hidden operation must not be described to a caller who cannot see it.' );
+	}
+
+	/**
+	 * Interpretation I6's interim mitigation: nothing validates output at
+	 * runtime, so the declared outputSchema is checked against a real payload
+	 * here, where drift originates.
+	 *
+	 * The lookup runs against the plugin's OWN registry rather than this file's
+	 * two stubs, because the schema being conformed to is the one
+	 * DiagnosticsModule declares, and a payload built from a stub definition
+	 * would prove the shape of the stub instead.
+	 */
+	public function test_the_payload_conforms_to_the_declared_output_schema(): void {
+		$registry = new CapabilityRegistry();
+		( new DiagnosticsModule() )->register( $registry );
+
+		$this->allowCapabilities( [ 'read', 'manage_options' ] );
+
+		$data = ( new OperationSchema( $registry ) )->handle(
+			[ 'operation' => 'system-environment' ],
+			$this->context()
+		);
+
+		$this->assertConformsToOutputSchema(
+			$data,
+			$registry->definition( 'system-operation-schema' )->outputSchema
+		);
 	}
 
 	/**
