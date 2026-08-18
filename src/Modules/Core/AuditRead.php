@@ -136,6 +136,18 @@ final class AuditRead {
 	private const FILTER_KEYS = [ 'operationId', 'correlationId', 'actorId', 'since', 'until' ];
 
 	/**
+	 * The capability this operation declares and re-checks.
+	 *
+	 * Re-checked in the handler rather than trusted from the policy engine, so
+	 * that a route to the handler which is not the policy engine — a direct
+	 * invocation, a test, a second dispatcher — still meets the gate. This log
+	 * names every actor, client and target the site has been changed through,
+	 * which makes it the last read on the site that should depend on one caller
+	 * upstream having remembered to ask.
+	 */
+	private const CAPABILITY = 'manage_options';
+
+	/**
 	 * Constructs the handler.
 	 *
 	 * @param AuditStore $store     The audit event store.
@@ -148,25 +160,38 @@ final class AuditRead {
 	}
 
 	// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped
-	// phpcs:disable Generic.CodeAnalysis.UnusedFunctionParameter.FoundAfterLastUsed
+	// phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 	/**
 	 * Returns one page of audit entries, newest first.
 	 *
-	 * $context is unused: the required 'manage_options' capability is a
-	 * site-wide check with no per-row target, so PolicyEngine::authorize()
-	 * settles it entirely before Dispatcher ever calls this handler. The
-	 * parameter stays in the signature to match the uniform bare-callable
-	 * shape every registered read handler uses.
+	 * THE CAPABILITY IS ASKED AGAIN HERE, before storage is even probed. It was
+	 * previously left entirely to PolicyEngine::authorize() on the argument that
+	 * a site-wide capability with no per-row target is settled upstream — true of
+	 * the request path that exists, and an assumption about every caller that
+	 * might ever exist. The check costs one call and the log it protects names
+	 * every actor and target on the site, so the order is: capability, then
+	 * storage. A caller who may not read the log learns nothing about it, not
+	 * even whether its table was created.
 	 *
 	 * @param array<string, mixed> $input   The validated arguments.
 	 * @param OperationContext     $context The request context.
 	 *
 	 * @return array<string, mixed> Entries, total, limit, and offset.
 	 *
-	 * @throws OperationException With ErrorCode::IntegrationUnavailable when the
-	 *                           audit table was never created.
+	 * @throws OperationException With ErrorCode::Forbidden when the caller cannot
+	 *                           manage site options, or
+	 *                           ErrorCode::IntegrationUnavailable when the audit
+	 *                           table was never created.
 	 */
 	public function handle( array $input, OperationContext $context ): array {
+		if ( ! user_can( $context->userId, self::CAPABILITY ) ) {
+			throw new OperationException(
+				ErrorCode::Forbidden,
+				'Reading the change log requires the capability to manage site options.',
+				'Ask a site administrator to review the change log.'
+			);
+		}
+
 		if ( ! $this->installer->isAvailable() ) {
 			throw new OperationException(
 				ErrorCode::IntegrationUnavailable,
@@ -198,7 +223,7 @@ final class AuditRead {
 		];
 	}
 	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
-	// phpcs:enable Generic.CodeAnalysis.UnusedFunctionParameter.FoundAfterLastUsed
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 
 	/**
 	 * Projects one stored row into a client-facing entry.
