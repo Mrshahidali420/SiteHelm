@@ -548,7 +548,7 @@ the next request after the bump, so rows written before it keep a null duration
 forever — the console must never render an untimed row as `0 ms`.
 
 **Timing lives in `AuditRecorder`, not in the store.** `start()` stamps
-`microtime(true)` into a private `startedAt` map keyed by the returned row id, and
+`microtime(true)` into a private `started_at` map keyed by the returned row id, and
 `elapsed()` consumes that mark in `finish()`. Keyed, because one request can open
 several records (a batch operation opens one per element); consumed, because a
 record finalized twice must be timed once rather than re-timed from the same mark.

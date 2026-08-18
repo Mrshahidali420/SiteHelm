@@ -51,7 +51,7 @@ final class AuditRecorder {
 	 *
 	 * @var array<int, float>
 	 */
-	private array $startedAt = [];
+	private array $started_at = [];
 
 	/**
 	 * Constructs the recorder.
@@ -129,7 +129,7 @@ final class AuditRecorder {
 		// A refused insert returns 0, which is not a row and must not be timed:
 		// the next refused write would otherwise inherit this one's mark.
 		if ( $auditId > 0 ) {
-			$this->startedAt[ $auditId ] = microtime( true );
+			$this->started_at[ $auditId ] = microtime( true );
 		}
 
 		return $auditId;
@@ -188,12 +188,12 @@ final class AuditRecorder {
 	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
 	 */
 	private function elapsed( int $auditId ): ?int {
-		if ( ! isset( $this->startedAt[ $auditId ] ) ) {
+		if ( ! isset( $this->started_at[ $auditId ] ) ) {
 			return null;
 		}
 
-		$started = $this->startedAt[ $auditId ];
-		unset( $this->startedAt[ $auditId ] );
+		$started = $this->started_at[ $auditId ];
+		unset( $this->started_at[ $auditId ] );
 
 		return (int) round( ( microtime( true ) - $started ) * 1000 );
 	}
