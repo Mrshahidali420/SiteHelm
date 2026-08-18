@@ -638,7 +638,23 @@ measured ~4.4:1 on the tinted surfaces and failed.
 
 ---
 
-## 14. Standing project constraints
+## 14. Media size caps — one number, asked in two places
+
+`MediaMimeGuard::decodedByteCap()` is the only size ceiling in the media module:
+`min( MAX_DECODED_BYTES, wp_max_upload_size() )`, falling back to the built-in 8 MiB
+when the site reports nothing positive — a non-positive report is a misconfigured ini
+pair, and taking it at face value would refuse a one-byte upload.
+
+Both paths ask it. The upload path asks in `inspectBytes()`, after the base64 string has
+been bounded by `MAX_BASE64_LENGTH` (the same ceiling with 4/3 headroom, enforced by
+`SchemaValidator` before anything is allocated). The import path asks in `MediaFetch`,
+where it becomes `limit_response_size` **plus one** — plus one so an over-cap response
+arrives one byte over and is recognisable, rather than truncated to exactly the cap and
+accepted as a valid but silently corrupted file. Bounding the wire read by the effective
+cap rather than the built-in ceiling is what stops a 2 MiB site pulling 8 MiB across the
+network for a refusal it was always going to give.
+
+## 15. Standing project constraints
 
 - **No AI attribution anywhere in git** — no "Generated with Claude Code" footer,
   no session URL, no `Co-Authored-By` trailer, in any commit, PR body, PR comment,

@@ -184,6 +184,17 @@ abstract class MediaFetchTestCase extends TestCase {
 	 */
 	protected bool $curlSetoptSucceeds = true;
 
+	/**
+	 * What wp_max_upload_size() reports, in bytes.
+	 *
+	 * ZERO IS THE DEFAULT, and it is not "no limit": it is what a misconfigured
+	 * or unreadable ini pair reports, for which MediaMimeGuard falls back to its
+	 * built-in ceiling. Defaulting to it keeps every test written before sites
+	 * had a say measuring exactly what it always measured, so a test that sets
+	 * this is visibly a test about the site's own limit.
+	 */
+	protected int $uploadLimit = 0;
+
 	protected function setUp(): void {
 		parent::setUp();
 
@@ -201,6 +212,15 @@ abstract class MediaFetchTestCase extends TestCase {
 		$this->rewriteCurlArgs = null;
 		$this->dns             = [ 'cdn.example.com' => [ '93.184.216.34' ] ];
 		$this->responses       = [ $this->responseWith( 200, 'PNGBYTES' ) ];
+		$this->uploadLimit     = 0;
+
+		// Read through MediaMimeGuard::decodedByteCap(), which is what bounds both
+		// the wire read and the inspection that follows it.
+		Functions\when( 'wp_max_upload_size' )->alias(
+			function () {
+				return $this->uploadLimit;
+			}
+		);
 
 		// MediaUrlGuard's own dependencies. Faked exactly as MediaUrlGuardTest
 		// fakes them, because the guard is exercised for real here rather than

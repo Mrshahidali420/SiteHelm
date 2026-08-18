@@ -150,7 +150,7 @@ final class MediaMimeGuard {
 	 */
 	public function inspectBytes( string $filename, string $bytes ): array {
 		// 2. Size, against the smaller of the built-in cap and the site's own.
-		if ( strlen( $bytes ) > $this->decoded_byte_cap() ) {
+		if ( strlen( $bytes ) > self::decodedByteCap() ) {
 			throw new OperationException(
 				ErrorCode::InvalidInput,
 				'The uploaded content is larger than this site accepts.',
@@ -251,21 +251,32 @@ final class MediaMimeGuard {
 	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- Pairs with inspect() and inspectBytes(); the guard's public vocabulary is camelCase like the contracts it serves.
 	/**
-	 * The effective decoded-size ceiling.
+	 * The effective decoded-size ceiling: the smaller of the built-in cap and
+	 * whatever this site will actually accept.
 	 *
 	 * A site reporting no positive limit — a misconfigured or unreadable ini
 	 * pair — falls back to the built-in cap rather than to zero. Falling back to
 	 * the reported value would refuse every upload including a one-byte one,
 	 * which reads as a broken operation rather than as a size limit.
 	 *
+	 * PUBLIC AND STATIC BECAUSE THE IMPORT PATH HAS TO READ THE SAME NUMBER
+	 * BEFORE THE BYTES EXIST. MediaFetch bounds the wire read with it, so a site
+	 * whose own limit is 2 MiB stops the download at 2 MiB instead of pulling the
+	 * built-in 8 MiB across the network and then refusing it here. It depends on
+	 * nothing but wp_max_upload_size(), so there is no instance to carry: making
+	 * MediaFetch construct a guard purely to ask a question about ini settings
+	 * would be wiring in place of an answer.
+	 *
 	 * @return int The maximum permitted decoded byte count.
 	 */
-	private function decoded_byte_cap(): int {
+	public static function decodedByteCap(): int {
 		$limit = (int) wp_max_upload_size();
 
 		return $limit > 0 ? min( self::MAX_DECODED_BYTES, $limit ) : self::MAX_DECODED_BYTES;
 	}
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 
 	/**
 	 * The MIME type libmagic reports for these exact bytes.
