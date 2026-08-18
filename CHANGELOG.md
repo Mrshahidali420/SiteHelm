@@ -21,6 +21,14 @@ an operation behaves.
   limit and the check after it now use the effective cap, the smaller of the built-in
   ceiling and the site's own upload limit. A site reporting no positive limit still
   falls back to the built-in ceiling rather than to zero.
+- **Refusals on the import path no longer say "uploaded".** Six messages shared by
+  `media-upload` and `media-import` described content that was fetched from a URL as
+  though the caller had uploaded it, which reads as a refusal of some other request.
+- **The import operation states the punycode requirement up front.** An
+  internationalised domain name must be supplied already in its `xn--` form — the
+  address is never converted, because the name checked and the name dialled would then
+  be two different strings. That was learnable only from a refusal; it is now in the
+  `url` field's own description.
 
 ## [0.4.0] — 2026-08-19
 

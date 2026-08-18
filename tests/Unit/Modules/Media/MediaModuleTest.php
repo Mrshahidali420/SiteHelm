@@ -52,7 +52,7 @@ final class MediaModuleTest extends TestCase {
 	}
 
 	/**
-	 * The catalog, system-read integration health, and Dispatcher all read this
+	 * The catalog, `system-integrations`, and Dispatcher all read this
 	 * one value. Reporting active while the change-engine tables are missing
 	 * would let the media-write catalog advertise writes every invocation then
 	 * refuses — the same three-surface contradiction CoreModule avoids.

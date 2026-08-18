@@ -153,7 +153,7 @@ final class MediaMimeGuard {
 		if ( strlen( $bytes ) > self::decodedByteCap() ) {
 			throw new OperationException(
 				ErrorCode::InvalidInput,
-				'The uploaded content is larger than this site accepts.',
+				'The content is larger than this site accepts.',
 				'Reduce the file size and request a fresh preview.'
 			);
 		}
@@ -205,7 +205,7 @@ final class MediaMimeGuard {
 		if ( ! in_array( $sniffed, $this->fields->mimeAllowlist(), true ) ) {
 			throw new OperationException(
 				ErrorCode::InvalidInput,
-				'The uploaded content is not one of the file types this site accepts.',
+				'The content is not one of the file types this site accepts.',
 				'Upload a JPEG, PNG, GIF, or WebP image, or ask a site administrator which types this site accepts.'
 			);
 		}
@@ -225,7 +225,7 @@ final class MediaMimeGuard {
 		if ( '' === $declared || $declared !== $sniffed ) {
 			throw new OperationException(
 				ErrorCode::InvalidInput,
-				'The uploaded content does not match the file extension in the requested filename.',
+				'The content does not match the file extension in the requested filename.',
 				'Give the file the extension its own content requires, and request a fresh preview.'
 			);
 		}

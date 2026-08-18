@@ -139,7 +139,7 @@ final class MediaImport implements WriteOperation {
 						'type'        => 'string',
 						'format'      => 'uri',
 						'maxLength'   => 2048,
-						'description' => 'Public http or https address of the image to import. The address must resolve to a publicly reachable host.',
+						'description' => 'Public http or https address of the image to import. The address must resolve to a publicly reachable host. An internationalised domain name must be supplied already converted to punycode (its xn-- form); this operation does not convert one, because the name it checked and the name it dialled would then be two different strings.',
 					],
 					'filename'    => [
 						'type'        => 'string',

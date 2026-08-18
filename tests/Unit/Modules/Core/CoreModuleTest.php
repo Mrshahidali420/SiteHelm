@@ -45,7 +45,7 @@ final class CoreModuleTest extends TestCase {
 	}
 
 	/**
-	 * The catalog, system-read integration health, and Dispatcher all read this
+	 * The catalog, `system-integrations`, and Dispatcher all read this
 	 * one value. If it stayed 'active' while the tables were missing, the
 	 * content-write catalog would advertise every write as available and every
 	 * invocation would still refuse — three surfaces contradicting each other,

@@ -179,8 +179,8 @@ final class ElementorModuleTest extends TestCase {
  * else — no widget manager, no boot sequence. Any assertion needing those must
  * be written against the presence suite's fuller double instead.
  *
- * phpcs:disable
  */
+// phpcs:disable Generic.Files.OneObjectStructurePerFile.MultipleFound -- The double belongs beside the tests that need it; a file of its own would be autoloaded into every Elementor test, and this one exists to prove what happens when Elementor is absent.
 final class ModuleHealthElementorPlugin {
 
 	/**
@@ -190,3 +190,4 @@ final class ModuleHealthElementorPlugin {
 	 */
 	public static ?object $instance = null;
 }
+// phpcs:enable Generic.Files.OneObjectStructurePerFile.MultipleFound

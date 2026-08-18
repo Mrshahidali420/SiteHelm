@@ -70,6 +70,12 @@ final class MediaImportTest extends MediaImportTestCase {
 		$this->assertFalse( $schema['additionalProperties'] );
 		$this->assertSame( [ 'url' ], $schema['required'] );
 		$this->assertSame( 2048, $schema['properties']['url']['maxLength'] );
+
+		// The punycode requirement is a precondition, so it belongs where a client
+		// reads it before calling. Learning it only from a refusal makes an
+		// ordinary address look broken to anyone whose host is not written in
+		// ASCII.
+		$this->assertStringContainsString( 'punycode', $schema['properties']['url']['description'] );
 		$this->assertSame( 255, $schema['properties']['filename']['maxLength'] );
 		$this->assertArrayNotHasKey(
 			'mimeType',
