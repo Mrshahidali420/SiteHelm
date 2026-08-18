@@ -64,7 +64,7 @@ final class CoreModule implements IntegrationModule {
 	 * no detected version. Reporting it here rather than at each call site is
 	 * what keeps the three surfaces that read health in agreement — the
 	 * dispatcher catalog marks every core operation `available: false` with
-	 * `blockedReason: integration_unavailable`, system-read integration health
+	 * `blockedReason: integration_unavailable`, `system-integrations`
 	 * reports the module inactive, and Dispatcher refuses invocation with
 	 * `integration_unavailable`. A catalog that advertised a write the engine
 	 * would then refuse is the failure this prevents.

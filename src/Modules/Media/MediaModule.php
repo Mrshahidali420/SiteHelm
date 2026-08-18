@@ -60,8 +60,8 @@ final class MediaModule implements IntegrationModule {
 	 * third-party plugin would be, so their absence is reported the same way
 	 * CoreModule reports it: inactive, with no detected version. Reporting it
 	 * here rather than at each call site is what keeps the three surfaces that
-	 * read health in agreement — the dispatcher catalog, system-read
-	 * integration health, and Dispatcher's own refusal.
+	 * read health in agreement — the dispatcher catalog,
+	 * `system-integrations`, and Dispatcher's own refusal.
 	 *
 	 * @return array<string, mixed> Version and health.
 	 */
