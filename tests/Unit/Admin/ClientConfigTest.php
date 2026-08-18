@@ -292,6 +292,47 @@ final class ClientConfigTest extends TestCase {
 	}
 
 	/**
+	 * The by-hand check is offered in both shell dialects, because the caption
+	 * invites the operator to run it and the two spellings do not overlap: a
+	 * Bourne-family env prefix is a parse error in PowerShell, and `$env:` means
+	 * nothing to sh. Whichever machine the operator is on, one of these runs.
+	 */
+	public function testTheByHandCheckIsOfferedInBothShellDialects(): void {
+		$credential = base64_encode( 'agency:abcd efgh' );
+		$posix      = $this->body( 'bridge', 'bridge-cli', 'abcd efgh' );
+		$powershell = $this->body( 'bridge', 'bridge-cli-powershell', 'abcd efgh' );
+
+		// The POSIX form: assignments prefixed to the command, continued across
+		// lines with a trailing backslash.
+		$this->assertStringStartsWith( 'SITEHELM_ENDPOINT=' . self::ENDPOINT, $posix );
+		$this->assertStringContainsString( "\\\n", $posix );
+
+		// The PowerShell form sets each value on its own line and continues
+		// nothing, so neither spelling may appear in it.
+		$this->assertStringStartsWith( '$env:SITEHELM_ENDPOINT = "' . self::ENDPOINT . '"', $powershell );
+		$this->assertStringContainsString( '$env:SITEHELM_AUTH = "Basic ' . $credential . '"', $powershell );
+		$this->assertStringNotContainsString( "\\\n", $powershell );
+		$this->assertStringNotContainsString( 'SITEHELM_ENDPOINT=', $powershell );
+	}
+
+	/**
+	 * Both forms must launch the same file with the same credential. A check that
+	 * connects differently from the configuration beside it proves nothing about
+	 * the configuration.
+	 */
+	public function testBothByHandChecksRunTheSameBridgeAsTheStdioConfig(): void {
+		$decoded = json_decode( $this->body( 'bridge', 'bridge-json', 'abcd efgh' ), true );
+		$expected = $decoded['mcpServers'][ ClientConfig::SERVER_NAME ]['args'][0];
+
+		foreach ( [ 'bridge-cli', 'bridge-cli-powershell' ] as $block ) {
+			$body = $this->body( 'bridge', $block, 'abcd efgh' );
+
+			$this->assertStringContainsString( $expected, $body, $block );
+			$this->assertStringContainsString( base64_encode( 'agency:abcd efgh' ), $body, $block );
+		}
+	}
+
+	/**
 	 * The npx bridge stays on offer for a machine without the plugin's files, and
 	 * it is the one place a credential does belong on a command line, because
 	 * `mcp-remote` takes it no other way.
