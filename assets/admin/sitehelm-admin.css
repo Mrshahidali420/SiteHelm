@@ -28,7 +28,12 @@
 	--sh-gray-200: #e0e6e7;
 	--sh-gray-300: #c8d1d2;
 	--sh-gray-400: #9aa6a8;
-	--sh-gray-500: #6b797b;
+	/* gray-500 is the console's secondary text: table headings, card ids,
+	   stat labels, hints. It has to clear 4.5:1 on both white and gray-50,
+	   which the lighter tone it replaced did not — it measured about 4.4:1 on
+	   the tinted surfaces it was used on most. This one measures about 5.3:1
+	   there and 5.6:1 on white. */
+	--sh-gray-500: #5c6a6c;
 	--sh-gray-600: #53605f;
 	--sh-gray-700: #3a4547;
 	--sh-gray-800: #222e30;
@@ -104,17 +109,26 @@
 	padding: 14px 0;
 }
 
+/* The mark sits on the brand rather than beside it. A teal wheel drawn on the
+   admin's own white reads as one more grey chrome icon at 32px; on its own
+   deep field it reads as a product. */
 .sitehelm-appbar__mark {
 	display: block;
-	width: 32px;
-	height: 32px;
+	width: 34px;
+	height: 34px;
 	flex-shrink: 0;
-	color: var(--sh-primary);
+	padding: 5px;
+	box-sizing: border-box;
+	border-radius: 9px;
+	background: var(--sh-primary-hover);
+	color: var(--sh-white);
+	box-shadow: var(--sh-shadow-sm);
 }
 
 .sitehelm-appbar__title {
 	font-size: 18px;
 	font-weight: 700;
+	letter-spacing: -0.01em;
 	color: var(--sh-ink);
 	white-space: nowrap;
 }
@@ -369,6 +383,7 @@
 	background: var(--sh-gray-50);
 	border: 1px solid var(--sh-gray-200);
 	border-radius: var(--sh-radius);
+	transition: border-color var(--sh-ease), box-shadow var(--sh-ease);
 }
 
 .sitehelm-statcard__icon {
@@ -407,9 +422,17 @@
 
 .sitehelm-statcard__value {
 	display: block;
-	font-size: 13px;
+	margin: 1px 0 0;
+	font-size: 14.5px;
 	font-weight: 700;
+	letter-spacing: -0.01em;
+	font-variant-numeric: tabular-nums;
 	color: var(--sh-ink);
+}
+
+.sitehelm-statcard:hover {
+	border-color: var(--sh-gray-300);
+	box-shadow: var(--sh-shadow-sm);
 }
 
 /* =========================================================================
@@ -663,6 +686,12 @@
 	max-width: none;
 }
 
+.sitehelm-filters .sitehelm-select {
+	flex: 0 0 auto;
+	min-width: 170px;
+	padding: 8px 10px;
+}
+
 .sitehelm-pager {
 	display: flex;
 	flex-wrap: wrap;
@@ -913,6 +942,11 @@
 
 .sitehelm-scroll {
 	overflow-x: auto;
+	/* The activity table is the one place in the console that is read by
+	   scrolling rather than by glancing, so its head is pinned. The height is a
+	   ceiling, not a frame: a short table still ends where its rows end. */
+	max-height: 72vh;
+	overflow-y: auto;
 	border: 1px solid var(--sh-gray-200);
 	border-radius: var(--sh-radius);
 	background: var(--sh-white);
@@ -935,12 +969,23 @@
 	background: var(--sh-gray-50);
 	border-bottom: 1px solid var(--sh-gray-200);
 	white-space: nowrap;
+	position: sticky;
+	top: 0;
+	z-index: 1;
 }
 
 .sitehelm-table td {
-	padding: 10px 14px;
+	padding: 11px 14px;
 	border-bottom: 1px solid var(--sh-gray-100);
-	vertical-align: middle;
+	vertical-align: top;
+}
+
+.sitehelm-table tbody tr {
+	transition: background var(--sh-ease);
+}
+
+.sitehelm-table tbody tr:hover {
+	background: var(--sh-gray-50);
 }
 
 .sitehelm-table tr:last-child td {
@@ -956,13 +1001,90 @@
 }
 
 .sitehelm-table__sub {
+	display: block;
+	margin: 4px 0 0;
+	max-width: 46ch;
 	color: var(--sh-gray-500);
+	font-size: 12.5px;
+	line-height: 1.45;
 }
 
 .sitehelm-table__time {
 	white-space: nowrap;
 	font-variant-numeric: tabular-nums;
 	color: var(--sh-gray-600);
+}
+
+.sitehelm-table__none {
+	color: var(--sh-gray-400);
+}
+
+.sitehelm-table__num {
+	white-space: nowrap;
+	font-variant-numeric: tabular-nums;
+	color: var(--sh-gray-700);
+}
+
+/* The rollback reference: never abbreviated in the markup, only narrowed in
+   the cell. The full string stays in the element, which is what the title and
+   the copy button both read, so what is copied is always the whole value. */
+.sitehelm-ref {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	max-width: 24ch;
+}
+
+.sitehelm-ref__value {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	min-width: 0;
+}
+
+.sitehelm-copyicon {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 24px;
+	height: 24px;
+	padding: 0;
+	flex-shrink: 0;
+	background: transparent;
+	border: 1px solid transparent;
+	border-radius: var(--sh-radius-sm);
+	color: var(--sh-gray-500);
+	cursor: pointer;
+	transition: color var(--sh-ease), background var(--sh-ease), border-color var(--sh-ease);
+}
+
+.sitehelm-copyicon:hover {
+	background: var(--sh-white);
+	border-color: var(--sh-gray-300);
+	color: var(--sh-primary);
+}
+
+.sitehelm-copyicon svg {
+	width: 14px;
+	height: 14px;
+}
+
+.sitehelm-copyicon__done {
+	display: none;
+}
+
+.sitehelm-copyicon.is-flashed {
+	color: var(--sh-ok);
+	background: var(--sh-ok-light);
+	border-color: var(--sh-ok-light);
+}
+
+.sitehelm-copyicon.is-flashed .sitehelm-copyicon__rest {
+	display: none;
+}
+
+.sitehelm-copyicon.is-flashed .sitehelm-copyicon__done {
+	display: block;
 }
 
 /* =========================================================================

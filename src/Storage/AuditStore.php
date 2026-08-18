@@ -42,12 +42,16 @@ final class AuditStore {
 			'column'      => 'actor_id',
 			'placeholder' => '%d',
 		],
+		'outcome'       => [
+			'column'      => 'outcome',
+			'placeholder' => '%s',
+		],
 	];
 
 	/**
 	 * The columns an audit read returns.
 	 */
-	private const READ_COLUMNS = 'id, correlation_id, actor_id, actor_login, client_id, operation_id, target_key, plan_fingerprint, outcome, summary, snapshot_id, rollback_ref, recorded_at';
+	private const READ_COLUMNS = 'id, correlation_id, actor_id, actor_login, client_id, operation_id, target_key, plan_fingerprint, outcome, summary, snapshot_id, rollback_ref, recorded_at, duration_ms';
 
 	/**
 	 * Writes one audit event.
@@ -105,6 +109,8 @@ final class AuditStore {
 	 * @param string      $targetKey   The concrete target key, which a creation
 	 *                                 only learns after execution.
 	 * @param string      $summary     The redacted change summary as JSON.
+	 * @param int|null    $durationMs  Milliseconds from the opening row to this
+	 *                                 finalization, when the caller timed it.
 	 *
 	 * @return bool True when the row was updated.
 	 *
@@ -118,7 +124,8 @@ final class AuditStore {
 		?int $snapshotId,
 		?string $rollbackRef,
 		string $targetKey,
-		string $summary
+		string $summary,
+		?int $durationMs = null
 	): bool {
 		global $wpdb;
 
@@ -143,6 +150,13 @@ final class AuditStore {
 		if ( null !== $rollbackRef ) {
 			$data['rollback_ref'] = $rollbackRef;
 			$formats[]            = '%s';
+		}
+
+		// A negative elapsed time cannot be true and would render as a negative
+		// duration in the console, so it is dropped rather than stored.
+		if ( null !== $durationMs && $durationMs >= 0 ) {
+			$data['duration_ms'] = $durationMs;
+			$formats[]           = '%d';
 		}
 
 		$updated = $wpdb->update(
