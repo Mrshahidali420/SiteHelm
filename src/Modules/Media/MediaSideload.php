@@ -83,7 +83,7 @@ final class MediaSideload {
 			if ( strlen( $bytes ) !== $written ) {
 				throw new OperationException(
 					ErrorCode::ExecutionFailed,
-					'This site could not write the uploaded content to temporary storage.',
+					'This site could not write the content to temporary storage.',
 					'Ask a site administrator to check the site\'s available disk space, then request a fresh preview.',
 					[ 'plan approved' ]
 				);
@@ -112,7 +112,7 @@ final class MediaSideload {
 
 				throw new OperationException(
 					ErrorCode::ExecutionFailed,
-					'WordPress refused to store the uploaded content.',
+					'WordPress refused to store the content.',
 					'Ask a site administrator to check the media library settings, then request a fresh preview.',
 					[ 'plan approved' ]
 				);
@@ -141,7 +141,7 @@ final class MediaSideload {
 
 				throw new OperationException(
 					ErrorCode::ExecutionFailed,
-					'WordPress stored the uploaded content but refused to add it to the media library.',
+					'WordPress stored the content but refused to add it to the media library.',
 					'Ask a site administrator to check the media library, then request a fresh preview.',
 					[ 'plan approved', 'content stored' ]
 				);

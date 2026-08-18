@@ -59,7 +59,7 @@ final class MenusModule implements IntegrationModule {
 	 * CoreModule and MediaModule report it: inactive, with no detected version.
 	 * Reporting it here rather than at each call site is what keeps the three
 	 * surfaces that read health in agreement — the dispatcher catalog,
-	 * system-read integration health, and Dispatcher's own refusal.
+	 * `system-integrations`, and Dispatcher's own refusal.
 	 *
 	 * @return array<string, mixed> Version and health.
 	 */
