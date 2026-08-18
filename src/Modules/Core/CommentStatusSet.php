@@ -10,8 +10,8 @@ declare(strict_types=1);
 namespace SiteHelm\Modules\Core;
 
 use SiteHelm\Change\PlannedChange;
+use SiteHelm\Change\RollbackDelegate;
 use SiteHelm\Change\TargetState;
-use SiteHelm\Change\WriteOperation;
 use SiteHelm\Change\WriteOutputSchema;
 use SiteHelm\Contracts\Domain;
 use SiteHelm\Contracts\ErrorCode;
@@ -24,6 +24,7 @@ use SiteHelm\Contracts\PreviewPolicy;
 use SiteHelm\Contracts\Risk;
 use SiteHelm\Contracts\RollbackPolicy;
 use SiteHelm\Contracts\SnapshotPolicy;
+use SiteHelm\Policy\PolicyEngine;
 
 /**
  * Moves one comment between approved, pending, spam, and trash.
@@ -51,7 +52,7 @@ use SiteHelm\Contracts\SnapshotPolicy;
  *
  * @package SiteHelm
  */
-final class CommentStatusSet implements WriteOperation {
+final class CommentStatusSet implements RollbackDelegate {
 
 	/**
 	 * The one field this operation promises.
@@ -112,8 +113,12 @@ final class CommentStatusSet implements WriteOperation {
 	 * Constructs the operation.
 	 *
 	 * @param CommentTarget $targets Shared comment target resolution.
+	 * @param PolicyEngine  $policy  Capability authorization.
 	 */
-	public function __construct( private readonly CommentTarget $targets ) {
+	public function __construct(
+		private readonly CommentTarget $targets,
+		private readonly PolicyEngine $policy
+	) {
 	}
 
 	/**
@@ -282,6 +287,77 @@ final class CommentStatusSet implements WriteOperation {
 	 */
 	public function restore( array $restoreState, OperationContext $context ): string {
 		return $this->targets->restoreStatus( $restoreState );
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+
+	/**
+	 * Resolves one recorded comment for a rollback, and re-checks moderation
+	 * authority.
+	 *
+	 * The capability asked is this operation's own declared gate. That parity is
+	 * the point: `content-rollback-apply` declares `edit_post`, which is not
+	 * moderation authority, so without this a caller who may edit a post could
+	 * reverse a moderation decision through the rollback path.
+	 *
+	 * @param string           $targetKey The recorded target key.
+	 * @param OperationContext $context   The request context.
+	 *
+	 * @return TargetState The comment's current state.
+	 *
+	 * @throws OperationException With ErrorCode::TargetNotFound when the key
+	 *                           names no comment, or ErrorCode::Forbidden.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+	 * phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+	 */
+	public function resolveRollbackTarget( string $targetKey, OperationContext $context ): TargetState {
+		$comment_id = CommentFields::commentIdFromKey( $targetKey );
+
+		if ( null === $comment_id ) {
+			throw new OperationException(
+				ErrorCode::TargetNotFound,
+				'No comment on this site matches the requested identifier.',
+				'Call comment-list to see the comments this site holds, and confirm the identifier you named.'
+			);
+		}
+
+		$this->policy->authorizeTargetCapability(
+			CommentFields::CAPABILITY,
+			$comment_id,
+			'comment-status-set',
+			$context
+		);
+
+		return $this->targets->resolve( $comment_id );
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+
+	/**
+	 * The status a rollback of this snapshot would put back.
+	 *
+	 * A recorded `post-trashed` answers an empty promise, so the refusal lands at
+	 * PREVIEW rather than only at apply. CommentTarget::restoreStatus() refuses it
+	 * as well and that refusal stays — it is the backstop for a state reached any
+	 * other way — but a preview that promised a status the apply would reject is
+	 * exactly the shape this design refuses to produce.
+	 *
+	 * @param array<string, mixed> $restoreState The decoded recorded state.
+	 * @param TargetState          $current      The resolved current state.
+	 * @param OperationContext     $context      The request context.
+	 *
+	 * @return array<string, mixed> The promised status, or an empty map.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+	 */
+	public function promiseRollback( array $restoreState, TargetState $current, OperationContext $context ): array {
+		$status = $restoreState['status'] ?? null;
+
+		if ( ! is_string( $status ) || ! in_array( $status, CommentFields::SETTABLE_STATUSES, true ) ) {
+			return [];
+		}
+
+		return [ self::PROMISED_FIELD => $status ];
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
 }

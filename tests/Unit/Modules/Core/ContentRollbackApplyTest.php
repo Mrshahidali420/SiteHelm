@@ -28,6 +28,8 @@ use SiteHelm\Modules\Core\ContentFields;
 use SiteHelm\Modules\Core\ContentRollbackApply;
 use SiteHelm\Modules\Core\ContentTarget;
 use SiteHelm\Modules\Core\CoreModule;
+use SiteHelm\Modules\Core\RedirectSet;
+use SiteHelm\Modules\Core\RedirectStore;
 use SiteHelm\Policy\PolicyEngine;
 use SiteHelm\Registry\CapabilityRegistry;
 use SiteHelm\Storage\SnapshotStore;
@@ -1747,5 +1749,116 @@ final class ContentRollbackApplyTest extends TestCase {
 		$this->assertSame( 'post:42', $this->operation->applyChange( $current, $planned, $this->makeContext() ) );
 		$this->assertSame( [ [ 'subtitle', 'Recorded subtitle' ] ], $meta_writes );
 		$this->assertSame( [ [ 'category', [ 3, 5 ] ] ], $term_writes );
+	}
+
+	/**
+	 * REQ-0081: the delegated path.
+	 *
+	 * A snapshot whose target is not a post used to resolve through the post
+	 * parser and answer `target_not_found`, so the `rollbackRef` these writes hand
+	 * out could never be redeemed. These tests drive the reference the redirect
+	 * writes actually produce.
+	 */
+	private function registerRedirectOrigin(): void {
+		$this->registry->registerWrite( RedirectSet::definition(), new RedirectSet( new RedirectStore() ) );
+	}
+
+	/**
+	 * @param array<string, mixed> $table The redirect table the snapshot recorded.
+	 *
+	 * @return array<string, mixed> Snapshot-row overrides for a redirect origin.
+	 */
+	private function redirectSnapshot( array $table ): array {
+		return [
+			'operation_id'  => 'redirect-set',
+			'target_key'    => 'redirect:/old',
+			'restore_state' => (string) wp_json_encode(
+				[
+					'source'    => '/old',
+					'redirects' => $table,
+				]
+			),
+		];
+	}
+
+	public function test_a_redirect_reference_resolves_through_its_own_operation(): void {
+		$this->registerRedirectOrigin();
+		$this->queueSnapshot( $this->redirectSnapshot( [] ) );
+
+		$state = $this->operation->resolveTarget( [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+
+		$this->assertSame( 'redirect:/old', $state->targetKey );
+	}
+
+	public function test_a_delegated_plan_promises_the_recorded_row(): void {
+		$this->registerRedirectOrigin();
+		$this->queueSnapshot(
+			$this->redirectSnapshot(
+				[
+					'/old' => [
+						'source'       => '/old',
+						'target'       => '/first',
+						'status'       => 302,
+						'forwardQuery' => false,
+					],
+				]
+			),
+			2
+		);
+
+		$current = $this->operation->resolveTarget( [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+		$planned = $this->operation->planChange( $current, [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+
+		$this->assertSame(
+			[
+				'forwardQuery' => false,
+				'source'       => '/old',
+				'status'       => 302,
+				'target'       => '/first',
+			],
+			$planned->afterFields
+		);
+		$this->assertSame( self::REFERENCE, $planned->payload['rollbackRef'] );
+	}
+
+	/**
+	 * An empty promise is `rollback_unavailable` rather than an applied promise of
+	 * nothing.
+	 */
+	public function test_a_delegated_promise_of_nothing_is_rollback_unavailable(): void {
+		$this->registerRedirectOrigin();
+		$this->queueSnapshot(
+			[
+				'operation_id'  => 'redirect-set',
+				'target_key'    => 'redirect:/old',
+				'restore_state' => '{}',
+			],
+			2
+		);
+
+		$current = $this->operation->resolveTarget( [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+
+		try {
+			$this->operation->planChange( $current, [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+			$this->fail( 'A promise of nothing must be refused.' );
+		} catch ( OperationException $exception ) {
+			$this->assertSame( ErrorCode::RollbackUnavailable, $exception->errorCode );
+		}
+	}
+
+	/**
+	 * A non-post target key whose origin is NOT a delegate still takes the post
+	 * path, and still refuses. Delegation is opt-in per operation, so an origin
+	 * that has not implemented it must not silently start resolving.
+	 */
+	public function test_a_non_post_key_whose_origin_is_not_a_delegate_still_refuses(): void {
+		$this->queueSnapshot( [ 'target_key' => 'redirect:/old' ] );
+
+		try {
+			$this->operation->resolveTarget( [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+			$this->fail( 'A non-delegating origin must not resolve.' );
+		} catch ( OperationException $exception ) {
+			$this->assertSame( ErrorCode::TargetNotFound, $exception->errorCode );
+		}
 	}
 }

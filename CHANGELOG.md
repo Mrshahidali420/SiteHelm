@@ -141,6 +141,24 @@ an operation behaves.
   stored data cannot be read is refused here exactly as the full read refuses it, because a cheap
   digest of a damaged page is the one wrong answer a client would act on without hesitating.
 
+### Fixed
+
+- **Rollback now works for redirects, comments and user roles.** Reversing a change was built
+  when every change in the plugin belonged to a post, and it recovered the target by reading a
+  post out of the reference. Writes to redirects, to comment status and to a user's roles have
+  shipped since, and each of them handed back a rollback reference that could not be redeemed:
+  the reference was accepted, the target was looked for as a post, and the answer was that no
+  such target existed. The offer was real; the redemption was not. Each of those writes now
+  takes its own changes back — it recognises its own references, says what restoring them would
+  actually produce, and refuses at preview when the recorded state can no longer be reproduced
+  (a role the site has since unregistered, a comment whose parent post is in the trash) rather
+  than promising a restoration that the apply would reject. Reversing a change also asks the
+  same permission the original change asked: reversing a comment moderation now requires
+  moderation rights and reversing a role change now requires the right to promote users, where
+  before the rollback's own weaker check would have been the only gate had these references ever
+  resolved. Reversing a post edit is unchanged in every respect, including the order in which it
+  reports refusals.
+
 ## [0.3.0] — 2026-08-17
 
 ### Added

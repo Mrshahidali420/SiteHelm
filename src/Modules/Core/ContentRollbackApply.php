@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace SiteHelm\Modules\Core;
 
 use SiteHelm\Change\PlannedChange;
+use SiteHelm\Change\RollbackDelegate;
 use SiteHelm\Change\TargetState;
 use SiteHelm\Change\WriteOperation;
 use SiteHelm\Change\WriteOutputSchema;
@@ -49,6 +50,16 @@ use SiteHelm\Storage\SnapshotStore;
  * snapshot: assert_order_is_recordable() refuses a restoration that would WRITE
  * a taxonomy registered `sort => true`, paired with captureSnapshot() omitting
  * the `terms` key for such an item. Neither half is correct alone.
+ *
+ * TWO PATHS RUN THROUGH THIS CLASS. Everything above describes the POST path,
+ * which is every content write and is unchanged. A snapshot recorded by a write
+ * whose target is NOT a post — a redirect, a comment, a user account — takes the
+ * DELEGATED path instead: the origin operation implements RollbackDelegate and
+ * is asked to resolve its own target key, to authorize the caller against it,
+ * and to say what restoring the recorded state promises. The two-phase flow, the
+ * audit row, the fresh pre-rollback snapshot and the verification are the same
+ * on both. See RollbackDelegate for why the capability re-check lives inside
+ * resolution rather than beside it.
  *
  * @package SiteHelm
  */
@@ -131,6 +142,26 @@ final class ContentRollbackApply implements WriteOperation {
 	private const RESTORE_CAPABILITY = 'edit_post';
 
 	/**
+	 * The target-key prefix a post-shaped target carries.
+	 */
+	private const POST_PREFIX = 'post:';
+
+	/**
+	 * The origin operation handling this request, when the referenced snapshot
+	 * takes the delegated path, and null when it takes the post path.
+	 *
+	 * The one piece of mutable state on this class, and it exists because
+	 * readBack() and restore() receive a target key and a state map with no route
+	 * back to the rollback reference that selected the delegate. It is set — to a
+	 * delegate or explicitly back to null — as the FIRST statement of
+	 * resolveTarget(), which the engine calls before anything else in both
+	 * phases, so no later method can read a value left by an earlier request.
+	 *
+	 * @var RollbackDelegate|null
+	 */
+	private ?RollbackDelegate $delegate = null;
+
+	/**
 	 * Constructs the operation.
 	 *
 	 * @param ContentFields      $fields    The normalized field map.
@@ -159,11 +190,19 @@ final class ContentRollbackApply implements WriteOperation {
 	 * @throws OperationException With ErrorCode::TargetNotFound.
 	 */
 	public function resolveTarget( array $input, OperationContext $context ): TargetState {
-		$snapshot = $this->snapshot( (string) ( $input['rollbackRef'] ?? '' ) );
+		$this->delegate = null;
 
-		return $this->targets->resolve(
-			$this->fields->postIdFromTargetKey( (string) $snapshot['target_key'] )
-		);
+		$snapshot   = $this->snapshot( (string) ( $input['rollbackRef'] ?? '' ) );
+		$target_key = (string) $snapshot['target_key'];
+		$delegate   = $this->delegate_for( $snapshot );
+
+		if ( null !== $delegate ) {
+			$this->delegate = $delegate;
+
+			return $delegate->resolveRollbackTarget( $target_key, $context );
+		}
+
+		return $this->targets->resolve( $this->fields->postIdFromTargetKey( $target_key ) );
 	}
 
 	/**
@@ -189,6 +228,23 @@ final class ContentRollbackApply implements WriteOperation {
 
 		$this->assert_same_site( $snapshot, $context );
 		$this->assert_same_module( $snapshot );
+
+		// The delegated path branches HERE, after the two identity checks and
+		// before the post-bound ones. It runs the same origin-exists and
+		// module-compatibility refusals; what it does not run is
+		// assert_original_capability(), whose whole body is post-shaped — the
+		// delegate authorized the caller against its own target inside
+		// resolveTarget(), which is the same check asked in the vocabulary of the
+		// thing being overwritten. The post path's ORDER is untouched, so a
+		// snapshot failing more than one of its refusals still reports the first
+		// one it used to.
+		if ( null !== $this->delegate ) {
+			$this->assert_original_is_a_write( $snapshot );
+			$this->assert_module_compatibility( $snapshot, $context );
+
+			return $this->plan_delegated( $this->delegate, $snapshot, $current, $reference, $context );
+		}
+
 		$this->assert_original_capability( $snapshot, $current, $context );
 		$this->assert_module_compatibility( $snapshot, $context );
 
@@ -381,6 +437,14 @@ final class ContentRollbackApply implements WriteOperation {
 	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 	 */
 	public function captureSnapshot( TargetState $current, OperationContext $context ): ?array {
+		// A delegated rollback is reversed by the origin's own capture, for the
+		// same reason the post path below cannot use the shared snapshotOf():
+		// what a rollback must record is what the rollback is about to change,
+		// and only the operation that performs the change knows that.
+		if ( null !== $this->delegate ) {
+			return $this->delegate->captureSnapshot( $current, $context );
+		}
+
 		$snapshot = $this->targets->snapshotOf( $current );
 
 		// Guarding the null rather than indexing it blind: assigning a key to null
@@ -429,12 +493,20 @@ final class ContentRollbackApply implements WriteOperation {
 	/**
 	 * Writes the recorded prior state back and stamps the snapshot as restored.
 	 *
-	 * THE RESTORE IS PERFORMED HERE, NOT DISPATCHED TO THE ORIGIN OPERATION —
-	 * a known limitation, not an oversight. Every origin's restore() is bypassed,
-	 * so cleanup an origin does beyond writing fields back is skipped. Today only
-	 * `content-trash` has such cleanup, and ContentTrash::restore() carries the
-	 * full triage: the obvious fix, why it would introduce an irreversible loss
-	 * here, and what closing it properly requires. Read it before changing this.
+	 * ON THE POST PATH THE RESTORE IS PERFORMED HERE, NOT DISPATCHED TO THE ORIGIN
+	 * OPERATION — a known limitation, not an oversight. Every post origin's
+	 * restore() is bypassed, so cleanup an origin does beyond writing fields back
+	 * is skipped. Today only `content-trash` has such cleanup, and
+	 * ContentTrash::restore() carries the full triage: the obvious fix, why it
+	 * would introduce an irreversible loss here, and what closing it properly
+	 * requires. Read it before changing this.
+	 *
+	 * A DELEGATED restore IS dispatched to the origin, because there is nothing
+	 * here that could perform it: the recorded state is in the origin's own
+	 * vocabulary, and writing it back is the origin's own code. That is not a
+	 * gradual migration of the post path — closing the post path's limitation
+	 * still requires resolving the ContentTrash question above, and this leaves
+	 * it exactly where it was.
 	 *
 	 * @param TargetState      $current The resolved current state.
 	 * @param PlannedChange    $planned The promised restoration.
@@ -448,6 +520,22 @@ final class ContentRollbackApply implements WriteOperation {
 	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 	 */
 	public function applyChange( TargetState $current, PlannedChange $planned, OperationContext $context ): string {
+		$reference = (string) ( $planned->payload['rollbackRef'] ?? '' );
+
+		// The recorded state is re-read from the row rather than carried in the
+		// payload. The payload is hashed into the plan token's bindings and is
+		// reported back in the preview, and a recorded state is the origin's own
+		// storage vocabulary — wider than the promise, and not something a
+		// rollback needs to publish to do its job.
+		if ( null !== $this->delegate ) {
+			$snapshot   = $this->snapshot( $reference );
+			$target_key = $this->delegate->restore( $this->decode( (string) $snapshot['restore_state'] ), $context );
+
+			$this->mark_restored( $snapshot, $context );
+
+			return $target_key;
+		}
+
 		$restore_state = [
 			'post_id' => $this->fields->postIdFromTargetKey( $current->targetKey ),
 		];
@@ -476,13 +564,7 @@ final class ContentRollbackApply implements WriteOperation {
 
 		$target_key = $this->targets->restoreFields( $restore_state );
 
-		$snapshot = $this->snapshots->findByRef( (string) ( $planned->payload['rollbackRef'] ?? '' ) );
-		if ( null !== $snapshot ) {
-			$snapshot_id = (int) $snapshot['id'];
-			if ( ! $this->snapshots->markRestored( $snapshot_id, $context->requestTime ) ) {
-				$this->log_unmarked_snapshot( $snapshot_id );
-			}
-		}
+		$this->mark_restored( $this->snapshots->findByRef( $reference ), $context );
 
 		return $target_key;
 	}
@@ -502,6 +584,10 @@ final class ContentRollbackApply implements WriteOperation {
 	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 	 */
 	public function readBack( string $targetKey, OperationContext $context ): TargetState {
+		if ( null !== $this->delegate ) {
+			return $this->delegate->readBack( $targetKey, $context );
+		}
+
 		return $this->targets->verifyRead( $targetKey, $context->correlationId );
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
@@ -521,6 +607,10 @@ final class ContentRollbackApply implements WriteOperation {
 	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
 	 */
 	public function restore( array $restoreState, OperationContext $context ): string {
+		if ( null !== $this->delegate ) {
+			return $this->delegate->restore( $restoreState, $context );
+		}
+
 		return $this->targets->restoreFields( $restoreState );
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
@@ -548,6 +638,162 @@ final class ContentRollbackApply implements WriteOperation {
 		}
 
 		return $row;
+	}
+	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+
+	/**
+	 * The origin operation that will take this snapshot back, or null when the
+	 * post path handles it.
+	 *
+	 * Selected by the snapshot's OWN recorded operation id rather than by parsing
+	 * its target key, so a reference goes back to exactly the write that recorded
+	 * it. Two operations sharing a target-key shape — `redirect-set` and
+	 * `redirect-delete` do — restore through their own code, and their promises
+	 * differ: one projects a redirect row, the other projects whether the path
+	 * holds one at all.
+	 *
+	 * A post-shaped key never delegates, even if a post operation later
+	 * implements the interface. The post path is the one with the ContentTrash
+	 * limitation recorded on applyChange(), and moving it is a separate decision
+	 * rather than something this selection should make silently.
+	 *
+	 * A missing origin is NOT refused here. planChange() raises that refusal, with
+	 * the code and message it has always had, on both paths.
+	 *
+	 * @param array<string, mixed> $snapshot The snapshot row.
+	 *
+	 * @return RollbackDelegate|null The origin operation, or null.
+	 */
+	private function delegate_for( array $snapshot ): ?RollbackDelegate {
+		if ( str_starts_with( (string) $snapshot['target_key'], self::POST_PREFIX ) ) {
+			return null;
+		}
+
+		$original = (string) $snapshot['operation_id'];
+
+		if ( ! $this->registry->hasWriteOperation( $original ) ) {
+			return null;
+		}
+
+		$operation = $this->registry->writeOperation( $original );
+
+		return $operation instanceof RollbackDelegate ? $operation : null;
+	}
+
+	/**
+	 * Builds a delegated restoration.
+	 *
+	 * The promise comes from the origin, and an empty one is refused with the
+	 * same code and message the post path uses for a snapshot holding nothing
+	 * restorable — the caller's situation is identical and so is the remedy.
+	 *
+	 * No warnings are produced. The post path's warnings are about meta keys and
+	 * taxonomies dropping out of an overlay, which is a shape only that path has:
+	 * a delegate promises a complete map or it promises nothing.
+	 *
+	 * @param RollbackDelegate     $delegate  The origin operation.
+	 * @param array<string, mixed> $snapshot  The snapshot row.
+	 * @param TargetState          $current   The resolved current state.
+	 * @param string               $reference The rollback reference.
+	 * @param OperationContext     $context   The request context.
+	 *
+	 * @return PlannedChange The promised restoration.
+	 *
+	 * @throws OperationException With ErrorCode::RollbackUnavailable.
+	 *
+	 * phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+	 */
+	private function plan_delegated(
+		RollbackDelegate $delegate,
+		array $snapshot,
+		TargetState $current,
+		string $reference,
+		OperationContext $context
+	): PlannedChange {
+		$promised = $delegate->promiseRollback(
+			$this->decode( (string) $snapshot['restore_state'] ),
+			$current,
+			$context
+		);
+
+		if ( [] === $promised ) {
+			throw new OperationException(
+				ErrorCode::RollbackUnavailable,
+				'The recorded snapshot holds no value this rollback could put back, so it cannot be restored.',
+				'Recover through WordPress revisions instead.'
+			);
+		}
+		ksort( $promised, SORT_STRING );
+
+		return new PlannedChange(
+			[
+				'rollbackRef' => $reference,
+				'restore'     => $promised,
+			],
+			$promised,
+			array_keys( $promised )
+		);
+	}
+	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+
+	/**
+	 * Stamps a restored snapshot, or logs that it could not be stamped.
+	 *
+	 * @param array<string, mixed>|null $snapshot The snapshot row, when it is
+	 *                                            still readable.
+	 * @param OperationContext          $context  The request context.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+	 */
+	private function mark_restored( ?array $snapshot, OperationContext $context ): void {
+		if ( null === $snapshot ) {
+			return;
+		}
+
+		$snapshot_id = (int) $snapshot['id'];
+
+		if ( ! $this->snapshots->markRestored( $snapshot_id, $context->requestTime ) ) {
+			$this->log_unmarked_snapshot( $snapshot_id );
+		}
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+
+	/**
+	 * Refuses a reference whose origin is gone, or is not a write.
+	 *
+	 * A snapshot's origin is always a write, so a reference naming anything else
+	 * is malformed and is not something a restore may act on. The origin is also
+	 * required to still exist, so a retired operation cannot be restored blind.
+	 *
+	 * The second refusal reuses the missing-snapshot message verbatim, for the
+	 * reason assert_same_module() gives.
+	 *
+	 * @param array<string, mixed> $snapshot The snapshot row.
+	 *
+	 * @throws OperationException With ErrorCode::RollbackUnavailable when the
+	 *                           original operation no longer exists, or
+	 *                           ErrorCode::TargetNotFound when it is not a write.
+	 *
+	 * phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+	 */
+	private function assert_original_is_a_write( array $snapshot ): void {
+		$original = (string) $snapshot['operation_id'];
+
+		if ( ! $this->registry->has( $original ) ) {
+			throw new OperationException(
+				ErrorCode::RollbackUnavailable,
+				'The operation that recorded this snapshot is no longer available, so restoration cannot be authorized.',
+				'Recover through WordPress revisions instead.'
+			);
+		}
+
+		if ( Mode::Write !== $this->registry->definition( $original )->mode ) {
+			throw new OperationException(
+				ErrorCode::TargetNotFound,
+				'The referenced snapshot does not exist or is not visible to your WordPress user.',
+				'Read the audit log to find a current rollback reference.'
+			);
+		}
 	}
 	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 
@@ -657,19 +903,11 @@ final class ContentRollbackApply implements WriteOperation {
 		TargetState $current,
 		OperationContext $context
 	): void {
-		$original = (string) $snapshot['operation_id'];
-
-		if ( ! $this->registry->has( $original ) ) {
-			throw new OperationException(
-				ErrorCode::RollbackUnavailable,
-				'The operation that recorded this snapshot is no longer available, so restoration cannot be authorized.',
-				'Recover through WordPress revisions instead.'
-			);
-		}
+		$this->assert_original_is_a_write( $snapshot );
 
 		$post_id = $this->fields->postIdFromTargetKey( $current->targetKey );
 
-		if ( Mode::Write !== $this->registry->definition( $original )->mode || $post_id <= 0 ) {
+		if ( $post_id <= 0 ) {
 			throw new OperationException(
 				ErrorCode::TargetNotFound,
 				'The referenced snapshot does not exist or is not visible to your WordPress user.',

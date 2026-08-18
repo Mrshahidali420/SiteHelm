@@ -10,8 +10,8 @@ declare(strict_types=1);
 namespace SiteHelm\Modules\Core;
 
 use SiteHelm\Change\PlannedChange;
+use SiteHelm\Change\RollbackDelegate;
 use SiteHelm\Change\TargetState;
-use SiteHelm\Change\WriteOperation;
 use SiteHelm\Change\WriteOutputSchema;
 use SiteHelm\Contracts\Domain;
 use SiteHelm\Contracts\ErrorCode;
@@ -51,7 +51,7 @@ use SiteHelm\Contracts\SnapshotPolicy;
  *
  * @package SiteHelm
  */
-final class RedirectSet implements WriteOperation {
+final class RedirectSet implements RollbackDelegate {
 
 	/**
 	 * The target-key prefix for a redirect-shaped target.
@@ -599,4 +599,98 @@ final class RedirectSet implements WriteOperation {
 
 		return [ substr( $target, 0, $cut ), '' === $query ? '' : '?' . $query ];
 	}
+
+	/**
+	 * Resolves one recorded path for a rollback, and re-checks site authority.
+	 *
+	 * This operation's own resolveTarget() is not reused, only because it takes a
+	 * caller-supplied `source` through normalizePath(); a recorded target key
+	 * already holds the canonical path, and re-normalising a stored value would
+	 * let a change in the normaliser silently point a rollback at a different
+	 * path.
+	 *
+	 * @param string           $targetKey The recorded target key.
+	 * @param OperationContext $context   The request context.
+	 *
+	 * @return TargetState The redirect's current state.
+	 *
+	 * @throws OperationException With ErrorCode::Forbidden or
+	 *                           ErrorCode::TargetNotFound.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+	 * phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+	 */
+	public function resolveRollbackTarget( string $targetKey, OperationContext $context ): TargetState {
+		$this->requireCapability( $context );
+
+		$source = RedirectSnapshot::pathFromKey( $targetKey );
+
+		if ( null === $source ) {
+			throw new OperationException(
+				ErrorCode::TargetNotFound,
+				'The referenced snapshot does not exist or is not visible to your WordPress user.',
+				'Read the audit log to find a current rollback reference.'
+			);
+		}
+
+		$record = $this->store->find( $source );
+
+		return new TargetState(
+			$targetKey,
+			null !== $record,
+			$record ?? [
+				'source'       => $source,
+				'target'       => null,
+				'status'       => 0,
+				'forwardQuery' => true,
+			]
+		);
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+
+	/**
+	 * The redirect row a rollback of this snapshot would put back.
+	 *
+	 * The recorded state holds the WHOLE table, so the promise is the one row the
+	 * snapshot names — promising the table would compare a site-wide value against
+	 * a read-back that projects a single redirect. A path ABSENT from the recorded
+	 * table is promised as the absent projection this operation's own reads use,
+	 * which is how the reversal of a create is expressed: the row goes away.
+	 *
+	 * @param array<string, mixed> $restoreState The decoded recorded state.
+	 * @param TargetState          $current      The resolved current state.
+	 * @param OperationContext     $context      The request context.
+	 *
+	 * @return array<string, mixed> The promised row, or an empty map.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+	 */
+	public function promiseRollback( array $restoreState, TargetState $current, OperationContext $context ): array {
+		$source    = $restoreState['source'] ?? null;
+		$redirects = $restoreState['redirects'] ?? null;
+
+		if ( ! is_string( $source ) || '' === $source || ! is_array( $redirects ) ) {
+			return [];
+		}
+
+		$row = $redirects[ $source ] ?? null;
+
+		if ( ! is_array( $row ) ) {
+			return [
+				'source'       => $source,
+				'target'       => null,
+				'status'       => 0,
+				'forwardQuery' => true,
+			];
+		}
+
+		return [
+			'source'       => $source,
+			'target'       => is_string( $row['target'] ?? null ) ? $row['target'] : null,
+			'status'       => (int) ( $row['status'] ?? 0 ),
+			'forwardQuery' => (bool) ( $row['forwardQuery'] ?? true ),
+		];
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
 }
