@@ -11,6 +11,8 @@ an operation behaves.
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-08-19
+
 ### Added
 
 - **Activity now reads as a record rather than as a dump.** The details column stated the
@@ -166,6 +168,19 @@ an operation behaves.
   stat labels and hints shared a grey that measured about 4.4:1 against the tinted
   surfaces it was used on, below the 4.5:1 body-text threshold. It is now a darker tone
   measuring about 5.3:1 there and 5.6:1 on white.
+- **Three reads now ask for their own permission.** `audit-list`, `system-environment` and
+  `image-size-list` each declared a capability and then left the asking entirely to the
+  request path that calls them. That path does ask, so nothing was exposed; but a handler
+  reachable only one way is a guarantee about today rather than a guarantee. All three now
+  check for themselves, and `audit-list` checks before it looks at its storage, so a caller
+  who may not read the change log no longer learns whether the log exists. No refusal names
+  the capability it wanted, because a message that does is a way to enumerate what a
+  credential is missing.
+- **The Connect screen's by-hand check now runs on Windows.** The stdio card offers a command
+  to run the bridge yourself and see whether it connects; it was written in one shell dialect
+  only, and in PowerShell that spelling is not a command that fails — it is a parse error. The
+  same check is now offered in both dialects, each launching the same bridge with the same
+  credential as the configuration above it.
 - **Rollback now works for redirects, comments and user roles.** Reversing a change was built
   when every change in the plugin belonged to a post, and it recovered the target by reading a
   post out of the reference. Writes to redirects, to comment status and to a user's roles have
@@ -377,7 +392,8 @@ Arbitrary PHP execution, unrestricted SQL, unrestricted filesystem access, and i
 permanent deletion are out of scope by design and will not be added. See
 [ROADMAP.md](ROADMAP.md).
 
-[Unreleased]: https://github.com/Mrshahidali420/SiteHelm/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/Mrshahidali420/SiteHelm/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/Mrshahidali420/SiteHelm/releases/tag/v0.4.0
 [0.3.0]: https://github.com/Mrshahidali420/SiteHelm/releases/tag/v0.3.0
 [0.2.1]: https://github.com/Mrshahidali420/SiteHelm/releases/tag/v0.2.1
 [0.2.0]: https://github.com/Mrshahidali420/SiteHelm/releases/tag/v0.2.0

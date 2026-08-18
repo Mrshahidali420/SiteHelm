@@ -12,6 +12,17 @@ commitment to sequence.
 
 ---
 
+## Shipped — v0.4.0
+
+70 operations across 11 dispatchers. Block-editor reads and writes that leave every other
+block byte-identical; redirects, so a rename keeps its traffic and a retired page can answer
+410; a link check that names this site's own broken links; SEO metadata read and written
+through one vocabulary whichever plugin is installed; comment moderation; a user roster and
+one-account role changes; Elementor theme templates with their display conditions, and a
+page digest that does not grow with the page. The console's Activity screen reads as a
+record rather than a dump, and rollback now redeems the references that redirects, comments
+and role changes had been handing out.
+
 ## Shipped — v0.3.0
 
 The whole v1.1 band, below. 54 operations: Elementor element search, control-schema
