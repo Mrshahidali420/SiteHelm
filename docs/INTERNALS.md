@@ -260,9 +260,33 @@ first docblock** (after the last constant) and close it after the last method:
   that installs either MUST be `@runInSeparateProcess`, and the shared process must
   stay a site *without* the plugin. Otherwise every later test in the suite runs
   against a site that has it.
-- Related hazard, still un-swept codebase-wide: production code guarded by
-  `function_exists()` behaves differently once any test in the process has stubbed
-  that name.
+- **Related hazard, now swept: a `function_exists()` guard stops being tested the
+  moment any earlier test in the process stubs that name.** The sweep mutated all
+  23 guards in `src` (delete the guard, run the owning module's suite) and found
+  8 unpinned, including the fail-closed branch of MediaFetch's SSRF pin. All 8 are
+  pinned now. The three rules that came out of it:
+  1. **A test about an absent function belongs in a file that installs nothing.**
+     `AcfAbsentWordPressTest`, `MetaboxAbsentWordPressTest` and
+     `MediaAdminApiLoadingTest` exist for exactly that: `@runTestsInSeparateProcesses`,
+     no shared double, one guard per test.
+  2. **Self-check first, always.** Every such test opens with
+     `assertFalse( function_exists( 'x' ), 'The double must not have installed the
+     function this test is about.' )`. Without it a later edit elsewhere turns the
+     test into a tautology and nothing says so.
+  3. **A guard over an extension function needs a seam.** `function_exists()`
+     cannot be made to answer false for a loaded extension, so `MediaFetch` has two
+     `protected` one-line seams — `curlOptionsAvailable()` and
+     `applyResolveDirective()` — overridden by test subclasses to stage "curl is
+     absent" and "curl refused the option". They hold the probe and the call and no
+     decision at all; that is why the class is not `final`. The two one-liners
+     themselves stay uncoverable where ext-curl is loaded, which is the accepted
+     residue.
+  `mut/guard-sweep.php` re-runs the whole sweep (slow: a module suite per site);
+  `mut/guard-fixes.php` re-checks just the fixed sites against just their new
+  tests. Both live in the untracked `mut/` scratch directory.
+- `ABSPATH` can be pointed at `tests/Fixtures/wp-admin-stub/` in a separate-process
+  test. Each stand-in admin include defines one constant, and the constant existing
+  afterwards is the proof that the `require_once` ran.
 - `tests/TestCase.php` resets Brain Monkey and `FakeWpQuery` in `setUp()`.
 - Existing per-module test conventions: a provider/API test per vendor, a presence
   test, one test file per operation, a `…ModuleTest`, a `…DefinitionInvariantsTest`,

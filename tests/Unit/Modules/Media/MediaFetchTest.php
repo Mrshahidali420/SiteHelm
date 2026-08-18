@@ -79,6 +79,76 @@ final class MediaFetchTest extends MediaFetchTestCase {
 		$this->assertRefusalLeaksNothing( $refusal );
 	}
 
+	/**
+	 * THE SAME BRANCH AS THE TEST ABOVE, PROVED WHERE EXT-CURL IS LOADED.
+	 *
+	 * That one skips on every interpreter that has the extension, CI included, so
+	 * the probe could be deleted outright — `if ( true )` written in place of the
+	 * `function_exists()` test — and the whole suite would still pass. A mutation
+	 * sweep over every `function_exists()` guard in the plugin found exactly that:
+	 * this security branch, the one deciding whether an unpinnable fetch is refused
+	 * or completed, was the only unpinned guard anywhere on the pin path.
+	 *
+	 * Overriding the probe seam stages the same state with the extension present.
+	 * What is asserted is a pair, not just the refusal: no directive was offered to
+	 * the transport, AND no bytes came back.
+	 */
+	public function test_a_php_that_cannot_set_curl_options_refuses_rather_than_fetching_unpinned(): void {
+		$offered = [];
+
+		$fetch = new class( $this->cannedGuard(), $offered ) extends MediaFetch {
+			/**
+			 * @param MediaUrlGuard      $guard   The address policy.
+			 * @param array<int, string> $offered Collects every directive offered, by reference.
+			 */
+			public function __construct( MediaUrlGuard $guard, private array &$offered ) {
+				parent::__construct( $guard );
+			}
+
+			/**
+			 * Reports the state a PHP built without ext-curl is in.
+			 *
+			 * @return bool Always false.
+			 */
+			protected function curlOptionsAvailable(): bool {
+				return false;
+			}
+
+			/**
+			 * Records any directive that reached the transport regardless.
+			 *
+			 * Answers true, so that a pin reaching here in spite of the probe would
+			 * be counted as applied and the refusal below would NOT happen. The
+			 * failing direction is the useful one.
+			 *
+			 * @param mixed  $handle    The handle, unused: nothing is set on it.
+			 * @param string $directive The directive offered.
+			 *
+			 * @return bool Always true.
+			 */
+			protected function applyResolveDirective( &$handle, string $directive ): bool {
+				unset( $handle );
+
+				$this->offered[] = $directive;
+
+				return true;
+			}
+		};
+
+		$refusal = $this->refusal(
+			ErrorCode::ExecutionFailed,
+			fn() => $fetch->fetch( $this->validated(), 'corr-1' )
+		);
+
+		$this->assertStringContainsString( 'pinned', $refusal->getMessage() );
+		$this->assertRefusalLeaksNothing( $refusal );
+
+		// Nothing was pinned and nothing pretended to be. Without this the test
+		// would also pass over an implementation that offered the directive anyway
+		// and then refused for some unrelated reason.
+		$this->assertSame( [], $offered );
+	}
+
 	public function test_the_fetch_pins_the_request_to_the_validated_address(): void {
 		// THE DNS-rebinding defence, end to end: the decision is read mid-request
 		// from the hook core would apply it on, and the directive must name the

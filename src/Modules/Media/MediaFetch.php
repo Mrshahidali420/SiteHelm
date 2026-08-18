@@ -88,11 +88,14 @@ use SiteHelm\Contracts\OperationException;
  * because a redirect cannot be followed without it — and what it names is
  * re-validated from scratch before it is dialled.
  *
- * NOT FINAL, FOR ONE REASON ONLY: applyResolveDirective() is a seam a test
- * subclass overrides to make the option-set fail, which is the only way to prove
- * on an interpreter with ext-curl loaded that the pin flag is that call's return
- * value. See that method. Nothing else here is designed to be extended, and the
- * pin's decisions are deliberately not reachable from a subclass.
+ * NOT FINAL, FOR TWO REASONS ONLY, AND BOTH ARE THE SAME REASON. ext-curl is
+ * loaded on every interpreter this plugin is checked on, so neither of the two
+ * things the pin can fail at is observable there without a seam:
+ * applyResolveDirective() is overridden to make the option-set FAIL, proving the
+ * pin flag is that call's own return value; curlOptionsAvailable() is overridden
+ * to say curl is ABSENT, proving the fetch is then refused rather than completed
+ * unpinned. See both methods. Nothing else here is designed to be extended, and
+ * the pin's decisions are deliberately not reachable from a subclass.
  *
  * @package SiteHelm
  */
@@ -591,7 +594,7 @@ class MediaFetch {
 	 * is a fresh `wp_safe_remote_get()` call with a fresh handle, so no previous
 	 * hop's directive can survive into this one.
 	 *
-	 * Guarded on `function_exists( 'curl_setopt' )` so that a PHP without ext-curl
+	 * Guarded on curlOptionsAvailable() so that a PHP without ext-curl
 	 * gets a refusal rather than a fatal raised from inside a hook callback. Core
 	 * fires this action from the curl transport only, so a streams site never
 	 * reaches the method and keeps every other guard here plus its narrow
@@ -641,7 +644,7 @@ class MediaFetch {
 			return;
 		}
 
-		if ( ! function_exists( 'curl_setopt' ) ) {
+		if ( ! $this->curlOptionsAvailable() ) {
 			// No curl on this PHP, so nothing can be pinned. Unreachable in
 			// production, where only the curl transport fires this action at all;
 			// the flag is left false so that if it ever WERE reached, the fetch
@@ -650,6 +653,30 @@ class MediaFetch {
 		}
 
 		$this->pin_applied = $this->applyResolveDirective( $handle, $directive );
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- this class's public surface is camelCase because it is called from camelCase collaborators, and the ruleset's snake_case rule is a WordPress-core convention this plugin's own classes do not follow.
+	/**
+	 * Whether this PHP can be asked to set a curl option at all.
+	 *
+	 * THE SECOND TEST SEAM, FOR THE SAME REASON AS THE FIRST. `function_exists()`
+	 * cannot be made to answer false for a function the loaded extension defines,
+	 * and ext-curl is loaded on every interpreter this plugin is checked on — so
+	 * the branch this probe guards, the one that leaves `$pin_applied` false and
+	 * makes the fetch fail closed, had nothing pinning it. A mutation sweep over
+	 * every `function_exists()` guard in the plugin found this one unpinned while
+	 * the pin's other properties were all held, which is the worst shape for a
+	 * hole to have: a security branch that reads as covered.
+	 *
+	 * It contains the probe and nothing else, on the same principle as
+	 * applyResolveDirective(): a subclass may say that curl is absent, and may not
+	 * change what this class then DOES about it.
+	 *
+	 * @return bool Whether curl_setopt() can be called here.
+	 */
+	protected function curlOptionsAvailable(): bool {
+		return function_exists( 'curl_setopt' );
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 
@@ -664,8 +691,9 @@ class MediaFetch {
 	 * on every interpreter this plugin is checked on. Without the seam, the one
 	 * property the fail-closed pin rests on, that `$pin_applied` is this call's
 	 * own return value and not a `true` written above it, is unprovable exactly
-	 * where it is most load bearing. Overriding this method is the only reason
-	 * the class is not final.
+	 * where it is most load bearing. Overriding this method, and
+	 * curlOptionsAvailable() above for the same reason, is why the class is not
+	 * final.
 	 *
 	 * It contains the call and nothing else on purpose. Every decision about the
 	 * pin is made in pinCurlHandle() and pinDirectiveFor(), where a test can read
