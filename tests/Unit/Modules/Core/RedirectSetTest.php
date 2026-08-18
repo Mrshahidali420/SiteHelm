@@ -425,4 +425,94 @@ final class RedirectSetTest extends RedirectTestCase {
 
 		$this->seed( $rows );
 	}
+
+	/**
+	 * REQ-0081: a redirect snapshot restored through content-rollback-apply.
+	 *
+	 * The recorded state holds the WHOLE table, so the promise is the one row the
+	 * snapshot names. Promising the table would compare a site-wide value against
+	 * a read-back that projects a single redirect, and the rollback would report
+	 * success having restored nothing.
+	 */
+	public function test_a_rollback_target_resolves_a_path_that_now_holds_a_redirect(): void {
+		$this->seed( [ $this->row( '/old', '/current' ) ] );
+
+		$state = $this->operation->resolveRollbackTarget( 'redirect:/old', $this->makeContext() );
+
+		$this->assertSame( 'redirect:/old', $state->targetKey );
+		$this->assertTrue( $state->exists );
+		$this->assertSame( '/current', $state->fields['target'] );
+	}
+
+	public function test_a_rollback_target_resolves_a_path_that_holds_nothing(): void {
+		$state = $this->operation->resolveRollbackTarget( 'redirect:/old', $this->makeContext() );
+
+		$this->assertFalse( $state->exists );
+		$this->assertNull( $state->fields['target'] );
+	}
+
+	public function test_a_rollback_target_is_refused_without_manage_options(): void {
+		$this->allowed = false;
+
+		try {
+			$this->operation->resolveRollbackTarget( 'redirect:/old', $this->makeContext() );
+			$this->fail( 'A caller who may not manage options must be refused.' );
+		} catch ( OperationException $exception ) {
+			$this->assertSame( ErrorCode::Forbidden, $exception->errorCode );
+		}
+	}
+
+	public function test_a_rollback_promise_is_the_one_recorded_row(): void {
+		$state = $this->operation->resolveRollbackTarget( 'redirect:/old', $this->makeContext() );
+
+		$promised = $this->operation->promiseRollback(
+			[
+				'source'    => '/old',
+				'redirects' => [
+					'/old'   => $this->row( '/old', '/first', 302, false ),
+					'/other' => $this->row( '/other' ),
+				],
+			],
+			$state,
+			$this->makeContext()
+		);
+
+		$this->assertSame(
+			[
+				'source'       => '/old',
+				'target'       => '/first',
+				'status'       => 302,
+				'forwardQuery' => false,
+			],
+			$promised
+		);
+	}
+
+	/**
+	 * A path absent from the recorded table is how the reversal of a CREATE is
+	 * expressed: the row goes away, and the promise is the absent projection this
+	 * operation's own reads use.
+	 */
+	public function test_a_path_absent_from_the_recorded_table_promises_the_absent_projection(): void {
+		$state = $this->operation->resolveRollbackTarget( 'redirect:/old', $this->makeContext() );
+
+		$promised = $this->operation->promiseRollback(
+			[
+				'source'    => '/old',
+				'redirects' => [],
+			],
+			$state,
+			$this->makeContext()
+		);
+
+		$this->assertSame(
+			[
+				'source'       => '/old',
+				'target'       => null,
+				'status'       => 0,
+				'forwardQuery' => true,
+			],
+			$promised
+		);
+	}
 }

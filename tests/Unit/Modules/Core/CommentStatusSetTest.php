@@ -21,6 +21,7 @@ use SiteHelm\Contracts\SnapshotPolicy;
 use SiteHelm\Modules\Core\CommentFields;
 use SiteHelm\Modules\Core\CommentStatusSet;
 use SiteHelm\Modules\Core\CommentTarget;
+use SiteHelm\Policy\PolicyEngine;
 use SiteHelm\Tests\Doubles\CommentWordPressStubs;
 use SiteHelm\Tests\TestCase;
 
@@ -41,7 +42,7 @@ final class CommentStatusSetTest extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();
 		$this->installCommentStubs();
-		$this->operation = new CommentStatusSet( new CommentTarget() );
+		$this->operation = new CommentStatusSet( new CommentTarget(), new PolicyEngine() );
 	}
 
 	/**
@@ -379,5 +380,69 @@ final class CommentStatusSetTest extends TestCase {
 		$this->operation->restore( (array) $snapshot, $context );
 
 		$this->assertSame( 'approved', $this->operation->readBack( 'comment:118', $context )->fields['status'] );
+	}
+
+	/**
+	 * REQ-0081: a rollback entering through a stored reference asks for
+	 * moderation authority, which content-rollback-apply's own edit_post gate
+	 * does not supply.
+	 */
+	public function test_a_rollback_target_resolves_the_recorded_comment(): void {
+		$this->seedComment( 21 );
+
+		$state = $this->operation->resolveRollbackTarget( 'comment:21', $this->context() );
+
+		$this->assertSame( 'comment:21', $state->targetKey );
+		$this->assertTrue( $state->exists );
+		$this->assertContains( 'moderate_comments', array_column( $this->capabilityChecks, 'capability' ) );
+	}
+
+	public function test_a_rollback_target_is_refused_without_moderation_authority(): void {
+		$this->seedComment( 21 );
+		$this->mayModerate = false;
+
+		try {
+			$this->operation->resolveRollbackTarget( 'comment:21', $this->context() );
+			$this->fail( 'A caller who may not moderate must be refused.' );
+		} catch ( OperationException $exception ) {
+			$this->assertSame( ErrorCode::Forbidden, $exception->errorCode );
+		}
+	}
+
+	public function test_a_rollback_promise_is_the_recorded_status(): void {
+		$this->seedComment( 21 );
+		$current = $this->operation->resolveRollbackTarget( 'comment:21', $this->context() );
+
+		$promised = $this->operation->promiseRollback(
+			[
+				'comment_id' => 21,
+				'status'     => CommentFields::STATUS_APPROVED,
+			],
+			$current,
+			$this->context()
+		);
+
+		$this->assertSame( [ 'status' => CommentFields::STATUS_APPROVED ], $promised );
+	}
+
+	/**
+	 * `post-trashed` is a status WordPress assigns and no caller may set, and
+	 * CommentTarget::restoreStatus() refuses it. Answering an empty promise puts
+	 * that refusal at preview rather than only at apply.
+	 */
+	public function test_a_recorded_post_trashed_status_promises_nothing(): void {
+		$this->seedComment( 21 );
+		$current = $this->operation->resolveRollbackTarget( 'comment:21', $this->context() );
+
+		$promised = $this->operation->promiseRollback(
+			[
+				'comment_id' => 21,
+				'status'     => CommentFields::STATUS_POST_TRASHED,
+			],
+			$current,
+			$this->context()
+		);
+
+		$this->assertSame( [], $promised );
 	}
 }

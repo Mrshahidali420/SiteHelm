@@ -10,8 +10,8 @@ declare(strict_types=1);
 namespace SiteHelm\Modules\Core;
 
 use SiteHelm\Change\PlannedChange;
+use SiteHelm\Change\RollbackDelegate;
 use SiteHelm\Change\TargetState;
-use SiteHelm\Change\WriteOperation;
 use SiteHelm\Change\WriteOutputSchema;
 use SiteHelm\Contracts\Domain;
 use SiteHelm\Contracts\ErrorCode;
@@ -69,7 +69,7 @@ use SiteHelm\Policy\PolicyEngine;
  *
  * @package SiteHelm
  */
-final class UserRoleSet implements WriteOperation {
+final class UserRoleSet implements RollbackDelegate {
 
 	/**
 	 * The one field this operation promises.
@@ -520,4 +520,159 @@ final class UserRoleSet implements WriteOperation {
 
 		return is_array( $found ) ? count( $found ) : 0;
 	}
+
+	/**
+	 * Resolves one recorded account for a rollback, and re-checks that this
+	 * caller may change that account's role.
+	 *
+	 * BOTH capabilities are asked, and neither is implied by the rollback
+	 * operation's own front gate: `content-rollback-apply` declares `edit_post`,
+	 * so without this re-check a caller who may edit a post could reverse a role
+	 * change through the rollback path that `user-role-set` itself refuses them.
+	 * `promote_users` is the site-wide gate and `edit_user` is the target-bound
+	 * one, and the second is asked against the account rather than declared
+	 * anywhere — a meta capability with no target resolves to `do_not_allow`.
+	 *
+	 * @param string           $targetKey The recorded target key.
+	 * @param OperationContext $context   The request context.
+	 *
+	 * @return TargetState The account's current state.
+	 *
+	 * @throws OperationException With ErrorCode::TargetNotFound when the key
+	 *                           names no account, or ErrorCode::Forbidden.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+	 * phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+	 */
+	public function resolveRollbackTarget( string $targetKey, OperationContext $context ): TargetState {
+		$user_id = UserFields::userIdFromKey( $targetKey );
+
+		if ( null === $user_id ) {
+			throw new OperationException(
+				ErrorCode::TargetNotFound,
+				'No user on this site matches the requested identifier.',
+				'Call user-list to see the accounts this site holds, and confirm the identifier you named.'
+			);
+		}
+
+		$this->policy->authorizeTargetCapability(
+			UserFields::WRITE_CAPABILITY,
+			$user_id,
+			'user-role-set',
+			$context
+		);
+		$this->policy->authorizeTargetCapability(
+			UserFields::TARGET_CAPABILITY,
+			$user_id,
+			'user-role-set',
+			$context
+		);
+
+		return $this->resolveTarget( [ 'id' => $user_id ], $context );
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+
+	/**
+	 * The roles a rollback of this snapshot would put back.
+	 *
+	 * THE THREE LOCKOUT REFUSALS planChange() RAISES ARE RAISED HERE TOO, because
+	 * a rollback is a role change like any other and every one of them describes a
+	 * way to lock a site out of its own administration. Reversing a promotion is
+	 * the case that makes this concrete: the account being demoted may since have
+	 * become the only administrator, and the forward operation refuses exactly
+	 * that. A rollback path that skipped them would be the way around them.
+	 *
+	 * The role-registration check is a REFUSAL rather than a filter. `set_role()`
+	 * would store an unregistered slug, but WP_User::$roles is built by filtering
+	 * against the registered roles, so the account would read back holding fewer
+	 * roles than the rollback promised — restore a subset, verify against the
+	 * narrowed promise, report success. Saying the recorded state can no longer be
+	 * reproduced is the honest answer.
+	 *
+	 * @param array<string, mixed> $restoreState The decoded recorded state.
+	 * @param TargetState          $current      The resolved current state.
+	 * @param OperationContext     $context      The request context.
+	 *
+	 * @return array<string, mixed> The promised roles, or an empty map.
+	 *
+	 * @throws OperationException With ErrorCode::Forbidden or ErrorCode::Conflict.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+	 */
+	public function promiseRollback( array $restoreState, TargetState $current, OperationContext $context ): array {
+		$user_id  = UserFields::userIdFromKey( $current->targetKey );
+		$recorded = $restoreState['roles'] ?? null;
+
+		if ( null === $user_id || ! is_array( $recorded ) || [] === $recorded ) {
+			return [];
+		}
+
+		$roles      = array_values( array_map( 'strval', $recorded ) );
+		$registered = UserFields::registeredRoles();
+
+		foreach ( $roles as $role ) {
+			if ( ! in_array( $role, $registered, true ) ) {
+				return [];
+			}
+		}
+
+		$this->assertRollbackIsSafe( $user_id, $roles, $current, $context );
+
+		return [ self::PROMISED_FIELD => $roles ];
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+
+	/**
+	 * Refuses a rollback that would lock this site out of its own administration.
+	 *
+	 * The three refusals are planChange()'s, in its order and with its messages.
+	 * They are not shared with it as one method because the two differ in what
+	 * they compare the site against: planChange() measures a role being SET, this
+	 * measures a set of roles being RESTORED, and collapsing them would make the
+	 * forward operation's refusal depend on a shape only a rollback has.
+	 *
+	 * @param int                $user_id The account being restored.
+	 * @param array<int, string> $roles   The roles it would be restored to.
+	 * @param TargetState        $current The resolved current state.
+	 * @param OperationContext   $context The request context.
+	 *
+	 * @throws OperationException With ErrorCode::Forbidden or ErrorCode::Conflict.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+	 * phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+	 */
+	private function assertRollbackIsSafe( int $user_id, array $roles, TargetState $current, OperationContext $context ): void {
+		if ( $user_id === $context->userId ) {
+			throw new OperationException(
+				ErrorCode::Forbidden,
+				'This operation will not change the role of the account it is running as.',
+				'Ask another administrator to change your role, or change it in the WordPress users screen where the consequences of locking yourself out are visible.'
+			);
+		}
+
+		if ( is_multisite() && is_super_admin( $user_id ) ) {
+			throw new OperationException(
+				ErrorCode::Conflict,
+				'That account is a network super admin, so its capabilities come from the network rather than this site\'s role.',
+				'Change the account\'s network privileges in the network administration screens; a role change here would not alter what it may do.'
+			);
+		}
+
+		$held = array_map( 'strval', (array) ( $current->fields[ self::PROMISED_FIELD ] ?? [] ) );
+
+		if ( in_array( self::ADMINISTRATOR, $held, true )
+			&& ! in_array( self::ADMINISTRATOR, $roles, true )
+			&& $this->administratorCount() < 2 ) {
+			throw new OperationException(
+				ErrorCode::Conflict,
+				'That account is the only administrator on this site, so changing its role would leave nobody able to administer it.',
+				'Promote another account to administrator first, then change this one.'
+			);
+		}
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 }

@@ -10,8 +10,8 @@ declare(strict_types=1);
 namespace SiteHelm\Modules\Core;
 
 use SiteHelm\Change\PlannedChange;
+use SiteHelm\Change\RollbackDelegate;
 use SiteHelm\Change\TargetState;
-use SiteHelm\Change\WriteOperation;
 use SiteHelm\Change\WriteOutputSchema;
 use SiteHelm\Contracts\Domain;
 use SiteHelm\Contracts\ErrorCode;
@@ -42,7 +42,7 @@ use SiteHelm\Contracts\SnapshotPolicy;
  *
  * @package SiteHelm
  */
-final class RedirectDelete implements WriteOperation {
+final class RedirectDelete implements RollbackDelegate {
 
 	/**
 	 * The operation's registered definition.
@@ -323,5 +323,80 @@ final class RedirectDelete implements WriteOperation {
 		return RedirectSnapshot::restore( $this->store, $restoreState );
 	}
 	// phpcs:enable Generic.CodeAnalysis.UnusedFunctionParameter.FoundAfterLastUsed
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+
+	/**
+	 * Resolves one recorded path for a rollback, and re-checks site authority.
+	 *
+	 * This operation's own resolveTarget() is not reused, and here it could not
+	 * be: it refuses a path that holds no redirect, which is precisely the state
+	 * this operation leaves behind and the one a rollback of it starts from.
+	 *
+	 * @param string           $targetKey The recorded target key.
+	 * @param OperationContext $context   The request context.
+	 *
+	 * @return TargetState The path's current state.
+	 *
+	 * @throws OperationException With ErrorCode::Forbidden or
+	 *                           ErrorCode::TargetNotFound.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+	 * phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+	 */
+	public function resolveRollbackTarget( string $targetKey, OperationContext $context ): TargetState {
+		if ( ! user_can( $context->userId, 'manage_options' ) ) {
+			throw new OperationException(
+				ErrorCode::Forbidden,
+				'Your WordPress user may not change this site\'s redirects.',
+				'Ask a site administrator to grant your WordPress user the manage_options capability.'
+			);
+		}
+
+		$source = RedirectSnapshot::pathFromKey( $targetKey );
+
+		if ( null === $source ) {
+			throw new OperationException(
+				ErrorCode::TargetNotFound,
+				'The referenced snapshot does not exist or is not visible to your WordPress user.',
+				'Read the audit log to find a current rollback reference.'
+			);
+		}
+
+		$exists = null !== $this->store->find( $source );
+
+		return new TargetState( $targetKey, $exists, [ 'exists' => $exists ] );
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+
+	/**
+	 * Whether a rollback of this snapshot would leave the path holding a redirect.
+	 *
+	 * Promised in this operation's OWN read vocabulary — `exists`, the single key
+	 * readBack() projects — rather than in `redirect-set`'s four-field row, even
+	 * though the two share a recorded state. A shared snapshot does not make a
+	 * shared promise: the verifier compares the promise against whichever
+	 * operation's read-back ran, and that is this one's.
+	 *
+	 * @param array<string, mixed> $restoreState The decoded recorded state.
+	 * @param TargetState          $current      The resolved current state.
+	 * @param OperationContext     $context      The request context.
+	 *
+	 * @return array<string, mixed> The promised presence, or an empty map.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+	 */
+	public function promiseRollback( array $restoreState, TargetState $current, OperationContext $context ): array {
+		$source    = $restoreState['source'] ?? null;
+		$redirects = $restoreState['redirects'] ?? null;
+
+		if ( ! is_string( $source ) || '' === $source || ! is_array( $redirects ) ) {
+			return [];
+		}
+
+		return [ 'exists' => array_key_exists( $source, $redirects ) ];
+	}
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
 }
