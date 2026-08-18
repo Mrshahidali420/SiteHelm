@@ -13,6 +13,12 @@ an operation behaves.
 
 ### Fixed
 
+- **A part-completed taxonomy assignment now says which taxonomies were already
+  written.** `content-terms-assign` writes one taxonomy at a time, but a failure
+  reported the same two completed steps whichever write it happened on — so an
+  operator whose second taxonomy failed was told that nothing had changed, when the
+  first had already been applied. The rollback record was always complete; only the
+  account of it was not.
 - **Importing from a URL now stops downloading at the size this site will actually
   accept.** The transfer was bounded by the plugin's built-in 8 MiB ceiling on every
   site, so a site configured to accept 2 MiB still pulled up to 8 MiB across the
