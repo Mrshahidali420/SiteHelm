@@ -677,12 +677,56 @@ final class MetaboxApiTest extends TestCase {
 			false
 		);
 
+		$this->assertFalse(
+			function_exists( 'add_post_meta' ),
+			'The double must not have installed the function this test is about.'
+		);
+
 		$this->api()->writeRawRows( 'subtitle', 12, [ 'After' ] );
 
 		// THE DELETE MUST NOT HAPPEN EITHER. A guard that ran the delete and then
 		// found it could not add the rows back would turn an unavailable restore into
 		// a destroyed value.
 		$this->assertSame( 0, $this->metaboxCallCount( 'delete' ) );
+		$this->assertTrue( $this->api()->hasStoredRow( 'subtitle', 12 ) );
+	}
+
+	/**
+	 * THE OTHER HALF OF THE SAME GATE, AND IT WAS NOT PINNED. `writeRawRows()`
+	 * probes two core functions, and the test above only ever removed
+	 * `add_post_meta()` — so the `delete_post_meta()` probe could be deleted and
+	 * nothing in the suite would notice. A mutation sweep over every
+	 * `function_exists()` guard in the plugin found it, along with the fact that
+	 * deleting it is not harmless: the delete would then run against a process
+	 * where the function is undefined, which is a fatal in the middle of a restore.
+	 *
+	 * The two are gated together because a restore is a REPLACEMENT. Half of one is
+	 * a destroyed value.
+	 */
+	public function test_a_raw_write_without_the_core_delete_function_changes_nothing(): void {
+		$this->installMetabox(
+			$this->metaboxRegistry( [] ),
+			'5.9.4',
+			[ 'subtitle' => 'Before' ],
+			true,
+			true,
+			[ '12:subtitle' ],
+			true,
+			false
+		);
+
+		$this->assertFalse(
+			function_exists( 'delete_post_meta' ),
+			'The double must not have installed the function this test is about.'
+		);
+		$this->assertTrue(
+			function_exists( 'add_post_meta' ),
+			'Only the delete half may be missing, or this proves the test above instead.'
+		);
+
+		$this->api()->writeRawRows( 'subtitle', 12, [ 'After' ] );
+
+		$this->assertSame( 0, $this->metaboxCallCount( 'rawWrite' ) );
 		$this->assertTrue( $this->api()->hasStoredRow( 'subtitle', 12 ) );
 	}
 }
