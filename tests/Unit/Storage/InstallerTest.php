@@ -82,7 +82,7 @@ final class InstallerTest extends TestCase {
 
 		$this->assertTrue( ( new Installer() )->install() );
 		$this->assertCount( 3, $this->delta );
-		$this->assertSame( '1', $this->options[ Installer::DB_VERSION_OPTION ] );
+		$this->assertSame( (string) Installer::DB_VERSION, $this->options[ Installer::DB_VERSION_OPTION ] );
 		$this->assertSame( Installer::STATUS_READY, $this->options[ Installer::STATUS_OPTION ] );
 	}
 

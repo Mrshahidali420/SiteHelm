@@ -277,6 +277,37 @@ final class Ui {
 	}
 
 	/**
+	 * A copy control with no visible label, for a table cell.
+	 *
+	 * Same wiring as {@see self::copy_button()}: hidden until the script reveals
+	 * it, so a console without JavaScript shows no control that cannot work. The
+	 * name is carried on the button rather than in visible text, because in a
+	 * row of twenty-five the label would be the loudest thing on the screen.
+	 *
+	 * @param string $target_id The element holding the text to copy.
+	 * @param string $label     The button's accessible name.
+	 */
+	public static function copy_icon( string $target_id, string $label ): void {
+		printf(
+			'<button type="button" class="sitehelm-copyicon" hidden data-sitehelm-copy="%s" title="%s" aria-label="%s">'
+				. '<svg class="sitehelm-copyicon__rest" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"'
+				. ' stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">'
+				. '<rect x="5.5" y="5.5" width="8" height="8" rx="1.5"></rect>'
+				. '<path d="M10.5 3.5v-1a1 1 0 0 0-1-1h-7a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h1"></path>'
+				. '</svg>'
+				. '<svg class="sitehelm-copyicon__done" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"'
+				. ' stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">'
+				. '<path d="M3 8.5 6.5 12 13 4.5"></path>'
+				. '</svg>'
+				. '<span class="sitehelm-srt" data-sitehelm-label>%s</span></button>',
+			esc_attr( $target_id ),
+			esc_attr( $label ),
+			esc_attr( $label ),
+			esc_html( $label )
+		);
+	}
+
+	/**
 	 * A titled code block with a copy button.
 	 *
 	 * The copied text lives in a hidden textarea rather than being read back out

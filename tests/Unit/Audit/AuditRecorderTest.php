@@ -238,6 +238,56 @@ final class AuditRecorderTest extends TestCase {
 	 * an error branch — which legitimately has no handle to pass — would null
 	 * them back out and orphan the snapshot through the ordinary API.
 	 */
+	public function test_finish_times_the_record_it_opened(): void {
+		$id = $this->recorder->start(
+			$this->makeDefinition(),
+			$this->makeContext(),
+			'post:42',
+			str_repeat( 'b', 64 ),
+			null,
+			null
+		);
+
+		$this->recorder->finish( $id, AuditRecorder::OUTCOME_APPLIED, null, null, 'post:42', [], [ 'post_title' => 'x' ] );
+
+		$data = $this->wpdb->updates[0]['data'];
+		$this->assertArrayHasKey( 'duration_ms', $data );
+		$this->assertIsInt( $data['duration_ms'] );
+		$this->assertGreaterThanOrEqual( 0, $data['duration_ms'] );
+	}
+
+	/**
+	 * A record this recorder never opened cannot be timed. Reporting zero would
+	 * be a fabricated measurement rather than a missing one — and the same rule
+	 * covers finalizing one record twice, which is timed once.
+	 */
+	public function test_finish_reports_no_duration_for_a_record_it_did_not_open(): void {
+		$this->recorder->finish( 7, AuditRecorder::OUTCOME_APPLIED, null, null, 'post:42', [], [ 'post_title' => 'x' ] );
+
+		$this->assertArrayNotHasKey( 'duration_ms', $this->wpdb->updates[0]['data'] );
+	}
+
+	/**
+	 * One request can perform several writes. A single stored mark would time
+	 * the wrong record — the second finalization would report the first
+	 * record's elapsed time, and the first would report nothing.
+	 */
+	public function test_two_records_opened_in_one_request_are_timed_independently(): void {
+		$first = $this->recorder->start( $this->makeDefinition(), $this->makeContext(), 'post:42', str_repeat( 'b', 64 ), null, null );
+
+		$this->wpdb->insert_id = 2;
+
+		$second = $this->recorder->start( $this->makeDefinition(), $this->makeContext(), 'post:43', str_repeat( 'b', 64 ), null, null );
+
+		$this->assertNotSame( $first, $second );
+
+		$this->recorder->finish( $second, AuditRecorder::OUTCOME_APPLIED, null, null, 'post:43', [], [ 'post_title' => 'x' ] );
+		$this->recorder->finish( $first, AuditRecorder::OUTCOME_APPLIED, null, null, 'post:42', [], [ 'post_title' => 'x' ] );
+
+		$this->assertArrayHasKey( 'duration_ms', $this->wpdb->updates[0]['data'] );
+		$this->assertArrayHasKey( 'duration_ms', $this->wpdb->updates[1]['data'] );
+	}
+
 	public function test_finish_does_not_clear_the_recovery_handle_it_was_not_given(): void {
 		$this->recorder->finish( 7, AuditRecorder::OUTCOME_EXECUTION_FAILED, null, null, 'post:42', [], [ 'post_title' => 'x' ] );
 

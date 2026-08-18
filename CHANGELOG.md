@@ -13,6 +13,20 @@ an operation behaves.
 
 ### Added
 
+- **Activity now reads as a record rather than as a dump.** The details column stated the
+  raw redacted JSON the audit store keeps; it now reads in English — "post title 21 → 36",
+  or simply "roles changed" where the recorded sizes are equal and therefore say nothing.
+  No unit is invented: the store deliberately records a size and never a value, and a
+  character count and an array length are the same integer there. A summary that does not
+  parse is still shown exactly as stored, because an unreadable record is a fact worth
+  seeing rather than hiding behind a friendly nothing.
+- **Every operation is timed, and the time is shown.** Each record now carries how long it
+  took, in milliseconds under a second and in seconds above it. Records written before
+  this release have no measurement and show a dash rather than a zero.
+- **Activity can be narrowed to one outcome.** A closed list — applied, restored, the
+  three failures, and still-running — alongside the existing operation and correlation
+  filters, and it survives into the pagination links like the others.
+
 - **User administration — `user-list` and `user-role-set`.** The people who can reach a
   site can now be read and, one account at a time, re-roled. The listing answers accounts
   by role or search term, newest registration first, and carries the role slugs this
@@ -143,6 +157,15 @@ an operation behaves.
 
 ### Fixed
 
+- **The rollback reference in Activity can be read and taken.** It was the one string on
+  the screen an operator has to carry somewhere else, and it was the one being clipped.
+  The cell now narrows the value visually while keeping it whole in the page, with the
+  full reference on hover and a copy control in the row — so what is copied is always the
+  entire reference, never the part that happened to fit.
+- **Secondary text in the console meets AA contrast.** Table headings, card identifiers,
+  stat labels and hints shared a grey that measured about 4.4:1 against the tinted
+  surfaces it was used on, below the 4.5:1 body-text threshold. It is now a darker tone
+  measuring about 5.3:1 there and 5.6:1 on white.
 - **Rollback now works for redirects, comments and user roles.** Reversing a change was built
   when every change in the plugin belonged to a post, and it recovered the target by reading a
   post out of the reference. Writes to redirects, to comment status and to a user's roles have

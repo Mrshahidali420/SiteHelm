@@ -43,6 +43,17 @@ final class AuditRecorder {
 	private const MAX_LOGIN_LENGTH = 60;
 
 	/**
+	 * Monotonic-ish start marks, keyed by audit row identifier.
+	 *
+	 * One request can perform several writes — a batch operation opens and
+	 * closes a record per element — so a single stored mark would time the
+	 * wrong one. Keying by row identifier keeps each write's clock its own.
+	 *
+	 * @var array<int, float>
+	 */
+	private array $started_at = [];
+
+	/**
 	 * Constructs the recorder.
 	 *
 	 * @param AuditStore    $store    The audit event store.
@@ -97,7 +108,7 @@ final class AuditRecorder {
 		?int $snapshotId,
 		?string $rollbackRef
 	): int {
-		return $this->store->insert(
+		$auditId = $this->store->insert(
 			[
 				'correlation_id'   => $context->correlationId,
 				'site_id'          => $context->siteId,
@@ -114,6 +125,14 @@ final class AuditRecorder {
 				'recorded_at'      => $context->requestTime,
 			]
 		);
+
+		// A refused insert returns 0, which is not a row and must not be timed:
+		// the next refused write would otherwise inherit this one's mark.
+		if ( $auditId > 0 ) {
+			$this->started_at[ $auditId ] = microtime( true );
+		}
+
+		return $auditId;
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
@@ -148,8 +167,35 @@ final class AuditRecorder {
 			$snapshotId,
 			$rollbackRef,
 			$targetKey,
-			$this->redactor->summarize( $beforeFields, $afterFields )
+			$this->redactor->summarize( $beforeFields, $afterFields ),
+			$this->elapsed( $auditId )
 		);
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+
+	/**
+	 * Milliseconds since this record was opened, consuming the start mark.
+	 *
+	 * A record finalized twice is timed once: the second call finds no mark and
+	 * reports null, which finish() reads as "leave the stored duration alone"
+	 * rather than overwriting a real measurement with a fabricated zero.
+	 *
+	 * @param int $auditId The audit row identifier.
+	 *
+	 * @return int|null The elapsed milliseconds, or null when this row was
+	 *                  never opened by this recorder.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+	 */
+	private function elapsed( int $auditId ): ?int {
+		if ( ! isset( $this->started_at[ $auditId ] ) ) {
+			return null;
+		}
+
+		$started = $this->started_at[ $auditId ];
+		unset( $this->started_at[ $auditId ] );
+
+		return (int) round( ( microtime( true ) - $started ) * 1000 );
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
 
