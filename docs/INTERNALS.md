@@ -95,6 +95,24 @@ silently unbooted module.
   ranges without joining `PLUGIN_BACKED_MODULES` — the key that rule would demand
   (`seo`) names nothing installable.
 - Read definitions use all three policies as `NotApplicable` and `isReadOnly: true`.
+- **A schema keyword is only worth declaring if `SchemaValidator` applies it.** The
+  validator is not a general JSON Schema implementation; it applies exactly `type`,
+  `enum`, `minimum`, `maximum`, `minLength`, `maxLength`, `pattern`, `minItems`,
+  `maxItems`, `items`, `properties`, `required` and `additionalProperties`.
+  `description` and `format` are annotations and constrain nothing. Anything else
+  written into a schema is decorative, and worse than absent: the schema is
+  published, so a declared bound tells an agent that a check exists. Five keywords
+  were in exactly that state until 2026-08-19 — `minLength`, `minItems`, `maxItems`,
+  `maximum`, `pattern`. `SchemaKeywordCoverageTest` now walks every registered input
+  schema and fails on the first keyword the validator does not apply, so the next
+  one is caught when it is written rather than when it is needed.
+- `pattern` is stored unanchored, in JSON Schema's own form (`^[A-Za-z0-9_-]{1,64}$`,
+  not `/…/`), and applied as a search with `#` delimiters. An uncompilable pattern is
+  reported as a defect in the schema rather than passing every value; the catalog's
+  patterns are pinned as compilable by the same test.
+- An array over its declared `maxItems` is refused **whole**, without walking the
+  entries — the point of an upper bound is to stop the work, not to produce a longer
+  list of violations.
 - **A declared capability is re-checked in the handler, not only on the definition.**
   Every handler that declares one opens with
   `if ( ! user_can( $context->userId, self::CAPABILITY ) ) { throw ... Forbidden }`,

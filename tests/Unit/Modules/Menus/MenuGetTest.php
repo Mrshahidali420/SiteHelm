@@ -341,20 +341,29 @@ final class MenuGetTest extends TestCase {
 	}
 
 	/**
-	 * `''` is the one argument the schema does NOT stop: SchemaValidator
-	 * implements no minLength, so an empty string reaches handle(). This asserts
-	 * that, so the empty-key refusal below is known to be covering a live path
-	 * rather than a second unreachable one.
+	 * `''` used to be the one argument the schema did NOT stop: the declaration
+	 * carried `minLength: 1` and SchemaValidator ignored it, so an empty string
+	 * reached handle() and was refused there.
 	 *
-	 * Mutation that breaks this: teaching SchemaValidator to enforce minLength.
+	 * It is now stopped at the gateway, which changes what the handler's own
+	 * empty-key refusal is for: it covers a direct call, not a request. That
+	 * refusal is deliberately kept — an operation that only behaves when something
+	 * upstream filters for it is one bad edit away from a different answer — but
+	 * this test asserts the gateway's answer, because the gateway is what a caller
+	 * meets.
+	 *
+	 * Mutation that breaks this: removing `minLength` from MenuGet::definition(),
+	 * or dropping the minLength branch from SchemaValidator.
 	 */
-	public function test_an_empty_key_passes_input_validation_and_reaches_the_handler(): void {
-		$validated = ( new SchemaValidator() )->validate(
-			[ 'menu' => '' ],
-			MenuGet::definition()->inputSchema
-		);
+	public function test_an_empty_key_is_refused_by_input_validation(): void {
+		$this->assertSame( 1, MenuGet::definition()->inputSchema['properties']['menu']['minLength'] );
 
-		$this->assertSame( [ 'menu' => '' ], $validated );
+		try {
+			( new SchemaValidator() )->validate( [ 'menu' => '' ], MenuGet::definition()->inputSchema );
+			$this->fail( 'SchemaValidator must refuse an empty menu argument before handle() runs.' );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::InvalidInput, $e->errorCode );
+		}
 	}
 
 	/**

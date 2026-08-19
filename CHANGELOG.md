@@ -13,6 +13,18 @@ an operation behaves.
 
 ### Fixed
 
+- **Five constraints the operation schemas declared are now actually applied.** The
+  gateway validator applied `type`, `enum`, `minimum`, `maxLength` and the structural
+  keywords, and silently ignored `minLength`, `maximum`, `pattern`, `minItems` and
+  `maxItems` — 44 declarations across 22 files. A published schema is what an agent
+  reads to learn what a site accepts, so a declared bound that is never checked is
+  worse than an absent one: a well-behaved client stops checking for itself.
+  `maxItems` was the only declared upper bound on array size anywhere in the catalog,
+  so every batch operation accepted a list of any length and discovered the size only
+  while walking it; an over-long array is now refused whole, before the walk. A new
+  registry-wide test fails on the next keyword written into a schema that the
+  validator does not apply.
+
 - **A part-completed taxonomy assignment now says which taxonomies were already
   written.** `content-terms-assign` writes one taxonomy at a time, but a failure
   reported the same two completed steps whichever write it happened on — so an
