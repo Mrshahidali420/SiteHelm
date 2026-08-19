@@ -949,6 +949,7 @@
                     },
                     "meta": {
                         "type": "array",
+                        "maxItems": 50,
                         "description": "Custom fields to write. Every key must appear in the site's metadata allowlist; if any does not, none are written.",
                         "items": {
                             "type": "object",
@@ -1036,6 +1037,7 @@
                     },
                     "terms": {
                         "type": "array",
+                        "maxItems": 25,
                         "description": "One entry per taxonomy to replace. Taxonomies not named here are left unchanged; an empty term list removes the item's terms in that taxonomy.",
                         "items": {
                             "type": "object",
@@ -1047,6 +1049,7 @@
                                 },
                                 "termIds": {
                                     "type": "array",
+                                    "maxItems": 200,
                                     "description": "Identifiers of existing terms in that taxonomy. An empty list removes them all.",
                                     "items": {
                                         "type": "integer",
@@ -1202,6 +1205,7 @@
                     },
                     "removeAttributes": {
                         "type": "array",
+                        "maxItems": 64,
                         "items": {
                             "type": "string",
                             "maxLength": 128

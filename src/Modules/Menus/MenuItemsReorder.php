@@ -106,6 +106,7 @@ final class MenuItemsReorder implements WriteOperation {
 					],
 					'items' => [
 						'type'        => 'array',
+						'maxItems'    => MenuFields::MAX_REORDERED_ITEMS,
 						'description' => 'The items to reposition. Every entry must name an item of this menu; one invalid entry refuses the whole request.',
 						'items'       => [
 							'type'                 => 'object',

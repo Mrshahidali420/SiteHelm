@@ -93,6 +93,24 @@ final class ContentTermsAssign implements WriteOperation {
 	private const MAX_TAXONOMY_LENGTH = 32;
 
 	/**
+	 * The most taxonomies one request may replace.
+	 *
+	 * One entry per taxonomy registered for the content type, and a site with
+	 * more registered taxonomies than this on a single type is not one a caller
+	 * is recategorising in a single unattended write.
+	 */
+	private const MAX_TAXONOMIES = 25;
+
+	/**
+	 * The most terms one taxonomy may be given in one request.
+	 *
+	 * Each identifier is resolved and checked for membership of the taxonomy
+	 * before anything is written, and the whole assignment is rolled back as one
+	 * unit, so the list is bounded by what a rollback can be trusted to carry.
+	 */
+	private const MAX_TERM_IDS = 200;
+
+	/**
 	 * The operation's registered definition, beside the code that produces
 	 * the payload. Static because a definition is a constant declaration: it
 	 * takes no dependencies, and the registry reads it without constructing
@@ -117,6 +135,7 @@ final class ContentTermsAssign implements WriteOperation {
 					],
 					'terms' => [
 						'type'        => 'array',
+						'maxItems'    => self::MAX_TAXONOMIES,
 						'description' => 'One entry per taxonomy to replace. Taxonomies not named here are left unchanged; an empty term list removes the item\'s terms in that taxonomy.',
 						'items'       => [
 							'type'                 => 'object',
@@ -128,6 +147,7 @@ final class ContentTermsAssign implements WriteOperation {
 								],
 								'termIds'  => [
 									'type'        => 'array',
+									'maxItems'    => self::MAX_TERM_IDS,
 									'description' => 'Identifiers of existing terms in that taxonomy. An empty list removes them all.',
 									'items'       => [
 										'type'    => 'integer',
