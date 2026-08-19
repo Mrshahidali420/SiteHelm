@@ -20,6 +20,7 @@ use SiteHelm\Change\PreviewRenderer;
 use SiteHelm\Change\SnapshotLifecycle;
 use SiteHelm\Change\StateFingerprint;
 use SiteHelm\Change\TargetState;
+use SiteHelm\Change\WriteSettlement;
 use SiteHelm\Change\WriteVerifier;
 use SiteHelm\Contracts\Domain;
 use SiteHelm\Contracts\ErrorCode;
@@ -76,7 +77,7 @@ final class ChangeEnginePlanTest extends TestCase {
 			new StateFingerprint( $normalizer ),
 			new PreviewRenderer(),
 			new Installer(),
-			new WriteVerifier( $normalizer ),
+			new WriteSettlement( new WriteVerifier( $normalizer ), new AuditRecorder( new AuditStore(), new AuditRedactor() ), $normalizer ),
 			new SnapshotLifecycle( new SnapshotStore(), $normalizer ),
 			new PlanAdmission( new PlanStore(), $normalizer, new StateFingerprint( $normalizer ) )
 		);
