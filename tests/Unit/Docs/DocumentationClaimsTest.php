@@ -24,11 +24,10 @@ use SiteHelm\Registry\CapabilityRegistry;
  * is the copy a reader believes. This test fails that edit rather than shipping
  * a README that undersells the plugin by four operations.
  *
- * `tasks/todo.md` is deliberately excluded. It is a historical record that says
- * so in its own heading, and four of the paths it names were removed when the
- * repository was published — deliberately, and with a note beneath them saying
- * so. Holding a frozen record to the current tree would fail it forever for
- * being accurate about a tree that no longer exists.
+ * Only the published documents are swept. Working notes kept beside the code but
+ * outside the repository are historical records of a tree that has since moved
+ * on, and holding a frozen record to the current tree would fail it forever for
+ * being accurate about the day it was written.
  *
  * @package SiteHelm
  */

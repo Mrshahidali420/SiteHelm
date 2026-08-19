@@ -13,3 +13,7 @@ vendor/
 build/
 .phpunit.result.cache
 .superpowers/
+
+# Agent workflow artifacts — kept locally, not part of the published plugin
+tasks/
+docs/superpowers/
