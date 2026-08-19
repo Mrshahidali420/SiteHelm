@@ -109,6 +109,36 @@ final class SnapshotLifecycleTest extends TestCase {
 		);
 	}
 
+	/**
+	 * NOT ASKED, not merely not stored. A deletion sweep found this guard
+	 * unpinned because deleting it reaches the same VERDICT by a different
+	 * route: the stub's snapshot happens to be null in every other fixture, so
+	 * the null check below returns the same empty result and every assertion
+	 * still holds. Give the operation something to hand back and the two
+	 * routes separate — a row is written for an operation whose contract says
+	 * no recoverable state exists, and the operation is interrogated for state
+	 * it declared it does not have.
+	 *
+	 * `NotApplicable` is a statement about the operation, not about this
+	 * particular target, so the question must not be asked at all.
+	 */
+	public function test_a_not_applicable_policy_never_asks_the_operation_for_a_snapshot(): void {
+		$operation           = new StubWriteOperation();
+		$operation->snapshot = [ 'post_title' => 'Original title' ];
+
+		$captured = $this->lifecycle->capture(
+			$this->makeDefinition( SnapshotPolicy::NotApplicable, RollbackPolicy::NotApplicable ),
+			$operation,
+			new TargetState( 'post:42', true, [ 'post_title' => 'Original title' ] ),
+			$this->makeContext()
+		);
+
+		$this->assertSame( 0, $operation->snapshotCalls );
+		$this->assertSame( [], $this->wpdb->inserts );
+		$this->assertNull( $captured['restore'] );
+		$this->assertNull( $captured['id'] );
+		$this->assertNull( $captured['reference'] );
+	}
 	private function makeDefinition(
 		SnapshotPolicy $snapshot = SnapshotPolicy::Required,
 		RollbackPolicy $rollback = RollbackPolicy::Supported

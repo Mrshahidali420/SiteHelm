@@ -95,7 +95,7 @@ final class ChangeEngineApplyTest extends TestCase {
 		parent::tearDown();
 	}
 
-	private function makeDefinition(): OperationDefinition {
+	private function makeDefinition( SnapshotPolicy $snapshot_policy = SnapshotPolicy::Required ): OperationDefinition {
 		return new OperationDefinition(
 			id: 'content-update',
 			domain: Domain::Content,
@@ -118,7 +118,7 @@ final class ChangeEngineApplyTest extends TestCase {
 			isDestructive: false,
 			isIdempotent: true,
 			previewPolicy: PreviewPolicy::Required,
-			snapshotPolicy: SnapshotPolicy::Required,
+			snapshotPolicy: $snapshot_policy,
 			rollbackPolicy: RollbackPolicy::Supported,
 			module: ModuleId::Core,
 			supportedVersions: [ 'wordpress' => '>=6.6' ],
@@ -1212,5 +1212,61 @@ final class ChangeEngineApplyTest extends TestCase {
 		// that never happened.
 		$this->assertSame( 0, $this->operation->applyCalls );
 		$this->assertSame( [], $this->wpdb->inserts );
+	}
+	/**
+	 * ASSERTED ON THE SUCCESS PATH, which is where this warning lives and why
+	 * no test had reached it. A deletion sweep found the branch unpinned:
+	 * delete it and the write still lands, the response still says applied, and
+	 * every other assertion in this file still holds — the operator is simply
+	 * never told that the audit row for the change they just made was left
+	 * open, recording that the write started and never that it finished.
+	 *
+	 * Only the audit finish uses `update()` on this path — the plan token is
+	 * consumed through `query()` and both rows arrive through `insert()` — so
+	 * failing every update isolates exactly the call under test.
+	 */
+	public function test_an_audit_row_that_cannot_be_finalized_warns_without_failing_the_write(): void {
+		$this->wpdb->failUpdate = true;
+
+		$result = $this->apply();
+
+		$this->assertSame( 1, $this->operation->applyCalls );
+		$this->assertContains(
+			'The audit record was created but its outcome could not be updated.',
+			$result->warnings
+		);
+	}
+
+	/**
+	 * A write whose snapshot policy is Supported rather than Required may land
+	 * with nothing captured — `captureSnapshot()` returning null is a legal
+	 * answer there, unlike under Required, where it refuses. What must not
+	 * happen is that it lands SILENTLY: an operator told nothing would assume
+	 * the rollback offered for every other write is available for this one too.
+	 *
+	 * A deletion sweep found this branch unpinned as well; every other test in
+	 * this file drives a Required definition, where the refusal above it fires
+	 * first and the branch is unreachable.
+	 */
+	public function test_a_supported_snapshot_that_captured_nothing_warns_that_rollback_is_unavailable(): void {
+		$this->operation->snapshot = null;
+
+		$this->wpdb->rowQueue       = [ $this->planRow() ];
+		$this->wpdb->queryRowsQueue = [ 1 ];
+
+		$result = $this->engine->apply(
+			$this->makeDefinition( SnapshotPolicy::Supported ),
+			$this->operation,
+			[ 'id' => 42, 'title' => 'Edited title' ],
+			self::TOKEN,
+			$this->makeContext()
+		);
+
+		$this->assertSame( 1, $this->operation->applyCalls );
+		$this->assertNull( $result->rollbackRef );
+		$this->assertContains(
+			'No snapshot was captured for this change, so no rollback reference is offered.',
+			$result->warnings
+		);
 	}
 }
