@@ -1,4 +1,20 @@
-# Current Task: Design an Extensible WordPress MCP Competitor
+# Phase Log — Phases 1 to 3a (historical)
+
+**This file is a record of how the plugin was planned and built through Phase 3a,
+and it stops there on purpose.** It was last current on 2026-07-26. Everything
+after Phase 3a is tracked in documents that are kept up to date as work lands:
+
+| For | Read |
+|---|---|
+| What shipped, and when | `CHANGELOG.md` |
+| What is built and what is still under consideration | `ROADMAP.md` |
+| How the plugin actually works, and the rules new code must follow | `docs/INTERNALS.md` |
+| Every V1 requirement and its status | `docs/product/v1-requirements-matrix.csv` |
+
+Do not extend the log below with new phases. A task list that is nine phases
+behind reads as the current plan to whoever opens it first, which is worse than
+no task list at all — this header exists so that cannot happen again. Phase work
+since 3a is recorded in the pull request that landed it.
 
 ## Completed Design Work
 
