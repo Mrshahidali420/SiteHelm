@@ -120,8 +120,9 @@ final class ElementorElementUpdate implements WriteOperation {
 					ElementorWriteFields::INPUT_DOCUMENT   => $shared[ ElementorWriteFields::INPUT_DOCUMENT ],
 					ElementorWriteFields::INPUT_ELEMENT_ID => $shared[ ElementorWriteFields::INPUT_ELEMENT_ID ],
 					ElementorElementAddInput::INPUT_SETTINGS => [
-						'type'        => 'object',
-						'description' => 'The settings to change, keyed by setting name. A setting the request does not name keeps the value the page already holds. The widget accepts only the settings it declares.',
+						'type'          => 'object',
+						'maxProperties' => ElementorElementAddInput::MAX_SETTINGS,
+						'description'   => 'The settings to change, keyed by setting name. A setting the request does not name keeps the value the page already holds. The widget accepts only the settings it declares.',
 					],
 				],
 				'required'             => [

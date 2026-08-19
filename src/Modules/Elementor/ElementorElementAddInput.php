@@ -66,6 +66,21 @@ final class ElementorElementAddInput {
 	public const INPUT_SETTINGS = 'settings';
 
 	/**
+	 * The most settings one element may be given in one request.
+	 *
+	 * A widget accepts only the settings it declares, and `assertKnownKeys()`
+	 * refuses the rest — but that is a check on which names are legitimate, not
+	 * on how many may arrive, and it does not run at all for an element whose
+	 * widget type is unknown. No widget in Elementor's own library exposes
+	 * anything approaching this many controls in one panel, so a request past it
+	 * is not somebody configuring a widget.
+	 *
+	 * SHARED by every operation that takes an element's settings, because the
+	 * bound belongs to the field rather than to any one of the four.
+	 */
+	public const MAX_SETTINGS = 200;
+
+	/**
 	 * The element kinds an Elementor document is built from.
 	 *
 	 * CLOSED, and closed deliberately. Elementor renders nothing at all for an

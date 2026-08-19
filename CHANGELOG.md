@@ -13,6 +13,15 @@ an operation behaves.
 
 ### Fixed
 
+- **Every map a request can carry now has an upper bound too.** Six operations
+  accept a free-form object whose keys are the site's own vocabulary — a widget's
+  settings, a block's attributes, a typography entry — and none of them said how
+  many members one request could carry. Elementor's known-key check is not that
+  bound: it refuses names a widget does not declare, and it does not run at all
+  when the widget type is unknown. `maxProperties` is now both applied by the
+  validator and declared on all six, two of them from limits their handlers were
+  already enforcing without publishing. An over-large object is refused whole.
+
 - **Every list a request can carry now has an upper bound.** Eight arrays across
   `content-block-update`, `content-meta-update`, `content-terms-assign`,
   `elementor-theme-conditions-set`, `menu-item-create`, `menu-item-update` and
