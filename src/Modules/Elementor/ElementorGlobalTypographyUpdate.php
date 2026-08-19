@@ -152,8 +152,9 @@ final class ElementorGlobalTypographyUpdate implements WriteOperation {
 									'pattern'   => ElementorKit::ENTRY_ID_PATTERN,
 								],
 								self::ENTRY_SETTINGS => [
-									'type'        => 'object',
-									'description' => 'Typography settings to merge into the entry. Every key must be a `typography_` name — read the site\'s own vocabulary with elementor-control-schema. Values are scalars, or the `{ "unit": "px", "size": 16 }` form Elementor\'s size controls store. Settings the request does not name are left as they are.',
+									'type'          => 'object',
+									'maxProperties' => self::MAX_SETTINGS,
+									'description'   => 'Typography settings to merge into the entry. Every key must be a `typography_` name — read the site\'s own vocabulary with elementor-control-schema. Values are scalars, or the `{ "unit": "px", "size": 16 }` form Elementor\'s size controls store. Settings the request does not name are left as they are.',
 								],
 								self::ENTRY_TITLE    => [
 									'type'        => 'string',

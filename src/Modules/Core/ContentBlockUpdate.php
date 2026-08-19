@@ -109,8 +109,9 @@ final class ContentBlockUpdate implements WriteOperation {
 						'description' => 'The block name expected at that address, such as "core/paragraph". The request is refused if a different block is there.',
 					],
 					'attributes'       => [
-						'type'        => 'object',
-						'description' => 'Attributes to set, merged into the block\'s existing attributes.',
+						'type'          => 'object',
+						'maxProperties' => self::MAX_ATTRIBUTES,
+						'description'   => 'Attributes to set, merged into the block\'s existing attributes.',
 					],
 					'removeAttributes' => [
 						'type'        => 'array',

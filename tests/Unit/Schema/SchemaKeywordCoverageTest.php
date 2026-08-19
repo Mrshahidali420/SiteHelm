@@ -45,6 +45,7 @@ final class SchemaKeywordCoverageTest extends TestCase {
 		'items',
 		'maxItems',
 		'maxLength',
+		'maxProperties',
 		'maximum',
 		'minItems',
 		'minLength',

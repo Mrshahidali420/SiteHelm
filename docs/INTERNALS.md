@@ -125,6 +125,22 @@ silently unbooted module.
   Where a handler already enforced a limit the schema stayed silent about —
   `ElementorThemeConditions::MAX_CONDITIONS` — the schema now names the same
   constant rather than a second copy of the number.
+- **Every open-ended object a caller can send declares `maxProperties`.** Six input
+  objects are deliberately open — `type: object` with no `properties` — because
+  their keys are the site's vocabulary rather than the gateway's: a widget's
+  control names, a block's attributes, a typography entry's settings. The gateway
+  cannot enumerate those keys, but it can say how many of them one request may
+  carry, and until 2026-08-19 it did not. `assertKnownKeys()` is not that bound:
+  it refuses names a widget does not declare, which is a check on legitimacy
+  rather than on volume, and it does not run at all when the widget type is
+  unknown. `SchemaValidator` refuses an over-large object whole, for the same
+  reason as `maxItems` — an object past its bound is not a request to inspect
+  member by member. `ElementorElementAddInput::MAX_SETTINGS` is shared by the
+  four operations that take an element's settings, because the bound belongs to
+  the field rather than to any one of them; `ContentBlockUpdate::MAX_ATTRIBUTES`
+  and the typography module's `MAX_SETTINGS` were already enforced in their
+  handlers and are now published from those same constants.
+  `SchemaObjectBoundsTest` keeps this closed the way the array sweep does.
 - **A declared capability is re-checked in the handler, not only on the definition.**
   Every handler that declares one opens with
   `if ( ! user_can( $context->userId, self::CAPABILITY ) ) { throw ... Forbidden }`,
