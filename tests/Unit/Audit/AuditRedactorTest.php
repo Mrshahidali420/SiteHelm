@@ -219,4 +219,28 @@ final class AuditRedactorTest extends TestCase {
 		$this->assertSame( 2, $decoded['metrics']['post_title']['before'] );
 		$this->assertSame( 8, $decoded['metrics']['post_title']['after'] );
 	}
+	/**
+	 * `false` MEASURES AS ONE, not as nothing. A deletion sweep found this
+	 * branch unpinned, and it is not the harmless half of the pair: delete it
+	 * and `true` still measures 1 — `(string) true` is `'1'` — while `false`
+	 * falls to `mb_strlen( '' )` and measures 0.
+	 *
+	 * Zero is the signature of an absent or emptied field, which is what the
+	 * before/after sizes exist to distinguish. An audit record is read after
+	 * the fact by someone asking what a change did; a setting switched OFF must
+	 * not leave the same trace as a field whose content was deleted.
+	 */
+	public function test_a_boolean_measures_as_one_whichever_way_it_points(): void {
+		$decoded = json_decode(
+			$this->redactor->summarize(
+				[ 'ping_status' => true ],
+				[ 'ping_status' => false ]
+			),
+			true
+		);
+
+		$this->assertSame( [ 'ping_status' ], $decoded['changed'] );
+		$this->assertSame( 1, $decoded['metrics']['ping_status']['before'] );
+		$this->assertSame( 1, $decoded['metrics']['ping_status']['after'] );
+	}
 }

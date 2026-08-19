@@ -164,4 +164,46 @@ final class InstallerTest extends TestCase {
 		$this->assertFalse( $installer->maybeUpgrade() );
 		$this->assertSame( Installer::STATUS_UNAVAILABLE, $this->options[ Installer::STATUS_OPTION ] );
 	}
+
+	/**
+	 * ONLY A FAILURE IS WORTH LOGGING, and a deletion sweep found the branch that
+	 * decides so unpinned — nothing in the suite observed either half of it.
+	 * Disable it and the one durable record that storage is down stops being
+	 * written at all; invert it and the same alarming line lands on every
+	 * successful activation and every version bump after. Both are wrong, and
+	 * before this test neither changed a single assertion in this file.
+	 *
+	 * The line is not decoration. It is what an operator has to tell them the
+	 * change, audit, and rollback surfaces are down — written to a log nobody
+	 * reads until something is wrong. A record that never appears is a silent
+	 * outage; one that appears when nothing is wrong is worse than none, because
+	 * the next real one is indistinguishable from the noise around it.
+	 *
+	 * `error_log()` cannot be faked the way the WordPress functions here are, so
+	 * it is redirected to a file for the duration and the file is read afterwards.
+	 * Both halves are asserted in one test on purpose: what matters is not that
+	 * the message can be produced but that the two outcomes produce DIFFERENT
+	 * logs, which is precisely what the deleted branch stops being true.
+	 */
+	public function test_only_a_failed_install_is_recorded_in_the_server_log(): void {
+		$log      = (string) tempnam( sys_get_temp_dir(), 'sitehelm-log-' );
+		$previous = (string) ini_get( 'error_log' );
+
+		ini_set( 'error_log', $log );
+
+		try {
+			$this->assertFalse( ( new Installer() )->install(), 'No tables were staged, so this install must fail.' );
+			$failed = (string) file_get_contents( $log );
+
+			$this->allTablesPresent();
+			$this->assertTrue( ( new Installer() )->install(), 'Every table is staged, so this install must succeed.' );
+			$after = (string) file_get_contents( $log );
+		} finally {
+			ini_set( 'error_log', $previous );
+			unlink( $log );
+		}
+
+		$this->assertStringContainsString( 'the change, audit, and rollback surfaces are unavailable', $failed );
+		$this->assertSame( $failed, $after, 'The successful install appended a line of its own.' );
+	}
 }

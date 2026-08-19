@@ -527,6 +527,60 @@ first docblock** (after the last constant) and close it after the last method:
     are asked on the capture path and again on the restore path, character for
     character — so they need the by-line pass, splicing by line INDEX with each
     line's expected text asserted first.
+- **RUN THE WHOLE SUITE WITH `-d memory_limit=512M`.** It peaks at 128 MB, which
+  is PHP's default limit, so it intermittently tips over and dies with
+  `Allowed memory size … exhausted` partway through — a fatal, exit 255, and no
+  failing test named. Green runs report `Memory: 128.00 MB`, which is the margin
+  being zero rather than a coincidence.
+- **A PIN WITH NO NAMEABLE FAILING TEST IS NOT A PIN.** The above is how the
+  fifth and sixth sweeps produced pins that a direct re-run could not reproduce.
+  Three lines in `src/Storage/Installer.php` were reported pinned and all three
+  in fact SURVIVED; one line in `AuditRedactor` did the same. The runner had
+  read an out-of-memory fatal as a test failure. **A flaky pin is worse than a
+  flaky failure, because it silently reports a gap as closed while it is still
+  open** — and one of these four had already been written up in a source comment
+  as tested, which is the exact defect this audit series exists to remove.
+  The scratch sweep runner therefore captures the failing test name and its
+  first failure line for every pin, treats an out-of-memory fatal as
+  inconclusive rather than as a pin, and a pin it cannot put a test name to must
+  be re-run alone before it is believed. Only the whole-suite tier can fail this
+  way, so the suspect population is exactly the pins labelled *by a test outside
+  the named suites*; sweeps run before the runner recorded reasons carry that
+  risk for those pins and only those.
+- **A fifth sweep covered audit and redaction** — `src/Audit/*.php`. **7 guards,
+  5 pinned**, PHP 8.3.32.
+  - `AuditRedactor::measure()`'s boolean branch was a real gap. Delete it and
+    `true` still measures 1 (`(string) true` is `'1'`) while `false` falls to
+    `mb_strlen( '' )` and measures 0 — and zero is the signature of an absent or
+    emptied field, which is the one distinction the before/after sizes exist to
+    draw. A setting switched OFF must not leave the same trace as a field whose
+    content was deleted.
+  - Its sibling null branch is an **equivalent mutant**: `(string) null` is the
+    empty string, so the fallthrough measures 0 by a longer road. Confirmed by
+    three independent whole-suite runs. **The honest remedy for an equivalent
+    mutant is a comment paragraph, never a contrived test**, and one sits in
+    `measure()` saying so.
+- **A sixth sweep covered storage** — `src/Storage/*.php`. **15 guards, 12
+  pinned**, PHP 8.3.32. All three misses were in `Installer`, and all three were
+  invisible for the same structural reason: `InstallerTest::setUp()` fakes
+  `dbDelta`, so the `function_exists()` early return in `schema_api_loaded()` is
+  taken in every test and nothing below it is ever reached.
+  - `install()`'s schema-API check and the `ABSPATH` check beneath it are one
+    decision written in two places. Disable either and the code reaches an
+    undefined function or an undefined constant — an uncaught `Error` on a
+    request WordPress has not booted (activation hooks, WP-CLI, anything before
+    `wp-load.php` finishes), where the design calls for a clean `false` and a
+    recorded unavailable status. `InstallerSchemaApiTest` pins both, in its own
+    process, asserting BOTH preconditions first: neither `dbDelta` nor a
+    constant can be un-defined once set, so a test that quietly lost either
+    would pass while proving nothing.
+  - `record_status()`'s failure-only log line. Disable it and the one durable
+    record that storage is down stops being written; invert it and the same
+    alarming line lands on every successful activation. `error_log()` cannot be
+    faked the way the WordPress functions here are, so the test redirects it
+    with `ini_set( 'error_log', … )` and reads the file. **A separate-process
+    test must redirect it too** — the child talks to PHPUnit over stdout, and a
+    stray log line there is reported as a PHPUnit exception, not as output.
 - `ABSPATH` can be pointed at `tests/Fixtures/wp-admin-stub/` in a separate-process
   test. Each stand-in admin include defines one constant, and the constant existing
   afterwards is the proof that the `require_once` ran.
