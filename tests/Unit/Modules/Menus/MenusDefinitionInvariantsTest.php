@@ -13,6 +13,7 @@ use Brain\Monkey\Functions;
 use SiteHelm\Change\WriteOutputSchema;
 use SiteHelm\Contracts\OperationDefinition;
 use SiteHelm\Modules\Menus\MenusModule;
+use SiteHelm\Modules\Menus\MenuFields;
 use SiteHelm\Registry\CapabilityRegistry;
 use SiteHelm\Tests\TestCase;
 
@@ -133,6 +134,59 @@ final class MenusDefinitionInvariantsTest extends TestCase {
 				"Operation '{$definition->id}' must declare inputSchema additionalProperties false. For a write that flag is the difference between rejecting an argument the schema never declared and silently accepting it on a live-site mutation; SchemaValidator has no other signal that the argument list is closed."
 			);
 		}
+	}
+
+	/**
+	 * Every operation that names a menu bounds the string that names it.
+	 *
+	 * Four of the six take a `menu` argument, and none of them bounded it. A menu
+	 * is a `nav_menu` term, and all three ways to name one — identifier, slug,
+	 * name — resolve against `wp_terms`, whose `name` and `slug` columns are both
+	 * varchar(200); a longer string cannot match a menu that exists, so accepting
+	 * it only means carrying it to the lookup before finding that out. Every other
+	 * string this module accepts already carries a bound.
+	 *
+	 * ASSERTED OVER THE REGISTRY rather than named operation by operation, because
+	 * the failure this catches is a FIFTH operation taking `menu` and forgetting
+	 * the bound — which a per-operation test would not be present to notice.
+	 */
+	public function test_every_operation_naming_a_menu_bounds_the_name(): void {
+		$unbounded = [];
+
+		foreach ( $this->registeredDefinitions( $this->registryWithMenusModule() ) as $definition ) {
+			$menu = $definition->inputSchema['properties']['menu'] ?? null;
+
+			if ( ! is_array( $menu ) ) {
+				continue;
+			}
+
+			if ( MenuFields::MAX_MENU_REFERENCE_LENGTH !== ( $menu['maxLength'] ?? null ) ) {
+				$unbounded[] = $definition->id;
+			}
+		}
+
+		// The list is the point of the assertion: an empty registry, or a rename of
+		// the `menu` argument, would leave $unbounded empty and this test green
+		// while checking nothing.
+		$this->assertSame( [], $unbounded );
+		$this->assertCount( 4, $this->operationsNamingAMenu() );
+	}
+
+	/**
+	 * Which registered operations take a `menu` argument at all.
+	 *
+	 * @return string[] Their identifiers.
+	 */
+	private function operationsNamingAMenu(): array {
+		$ids = [];
+
+		foreach ( $this->registeredDefinitions( $this->registryWithMenusModule() ) as $definition ) {
+			if ( isset( $definition->inputSchema['properties']['menu'] ) ) {
+				$ids[] = $definition->id;
+			}
+		}
+
+		return $ids;
 	}
 
 	/**

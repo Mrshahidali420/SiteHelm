@@ -19,6 +19,13 @@ an operation behaves.
   operator whose second taxonomy failed was told that nothing had changed, when the
   first had already been applied. The rollback record was always complete; only the
   account of it was not.
+- **A menu name too long to belong to any menu is now refused before the lookup.**
+  The four operations that take a `menu` argument — `menu-get`, `menu-item-create`,
+  `menu-items-reorder`, `menu-location-assign` — accepted a string of any length. A menu
+  is a `nav_menu` term, and all three ways to name one resolve against columns bounded at
+  200 characters, so a longer string could never have matched one. It is now rejected by
+  the argument schema, which says the bound, instead of by a not-found result after the
+  search.
 - **Importing from a URL now stops downloading at the size this site will actually
   accept.** The transfer was bounded by the plugin's built-in 8 MiB ceiling on every
   site, so a site configured to accept 2 MiB still pulled up to 8 MiB across the
