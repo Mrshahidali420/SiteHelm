@@ -78,6 +78,13 @@ final class AuditRedactor {
 	 * @return int The size.
 	 */
 	private function measure( mixed $value ): int {
+		// THE NULL BRANCH IS AN EQUIVALENT MUTANT and a deletion sweep is expected
+		// to survive it rather than pin it: `(string) null` is the empty string,
+		// so the fallthrough measures 0 by a longer road. It stays because it
+		// says what the zero MEANS — an absent value has no size — where the
+		// arithmetic below only happens to agree. There is no test to write for
+		// a branch that changes no answer; this paragraph is the record instead.
+		// Its sibling below is NOT equivalent: see the boolean test.
 		if ( null === $value ) {
 			return 0;
 		}
