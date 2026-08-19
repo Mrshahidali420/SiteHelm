@@ -134,8 +134,42 @@ final class SchemaValidator {
 		if ( isset( $spec['minimum'] ) && is_numeric( $value ) && $value < $spec['minimum'] ) {
 			$violations[] = "property '{$key}' must be >= {$spec['minimum']}";
 		}
+		if ( isset( $spec['maximum'] ) && is_numeric( $value ) && $value > $spec['maximum'] ) {
+			$violations[] = "property '{$key}' must be <= {$spec['maximum']}";
+		}
+		if ( isset( $spec['minLength'] ) && is_string( $value ) && strlen( $value ) < $spec['minLength'] ) {
+			$violations[] = "property '{$key}' is shorter than minimum length {$spec['minLength']}";
+		}
 		if ( isset( $spec['maxLength'] ) && is_string( $value ) && strlen( $value ) > $spec['maxLength'] ) {
 			$violations[] = "property '{$key}' exceeds maximum length {$spec['maxLength']}";
+		}
+		// The pattern is stored unanchored, in JSON Schema's own form, and is
+		// applied with JSON Schema's own semantics: a search, not a full match.
+		// Every pattern the catalog declares anchors itself. A pattern that does
+		// not compile is a defect in the schema rather than in the request, so it
+		// is reported as such rather than silently passing every value; the
+		// catalog's patterns are pinned as compilable by
+		// SchemaKeywordCoverageTest.
+		if ( isset( $spec['pattern'] ) && is_string( $value ) && is_string( $spec['pattern'] ) ) {
+			// phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- a pattern that does not compile is a defect in the schema, not in the request, so the compile warning would repeat on every request naming that property while telling the operator nothing the refusal below does not; the false return is handled on the line below.
+			$matched = @preg_match( '#' . str_replace( '#', '\\#', $spec['pattern'] ) . '#D', $value );
+
+			if ( false === $matched ) {
+				$violations[] = "property '{$key}' is declared with a pattern this site cannot apply";
+			} elseif ( 1 !== $matched ) {
+				$violations[] = "property '{$key}' does not match the required format";
+			}
+		}
+		if ( isset( $spec['minItems'] ) && is_array( $value ) && count( $value ) < $spec['minItems'] ) {
+			$violations[] = "property '{$key}' must have at least {$spec['minItems']} entries";
+		}
+		// RETURNS RATHER THAN CONTINUES. The point of an upper bound on entries is
+		// to stop the work, so an over-long array is refused whole instead of being
+		// walked entry by entry to collect violations nobody will read.
+		if ( isset( $spec['maxItems'] ) && is_array( $value ) && count( $value ) > $spec['maxItems'] ) {
+			$violations[] = "property '{$key}' must have at most {$spec['maxItems']} entries";
+
+			return $violations;
 		}
 		if ( 'array' === $type && isset( $spec['items'] ) && is_array( $value ) ) {
 			foreach ( $value as $index => $item ) {
