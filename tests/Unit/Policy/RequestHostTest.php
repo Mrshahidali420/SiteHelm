@@ -68,6 +68,25 @@ final class RequestHostTest extends TestCase {
 		$this->assertTrue( RequestHost::matches( 'example.com' ) );
 	}
 
+	/**
+	 * `$_SERVER` is an array anything running on the site can write to, and a
+	 * non-string landing in `HTTP_HOST` is not hypothetical enough to leave
+	 * unhandled: `normalize()` would hand it to `strtolower()`, and a TypeError
+	 * on the write-authorisation path is a fatal rather than a refusal.
+	 *
+	 * A deletion sweep found this the unpinned half of its guard. The other half
+	 * — the empty string — is belt-and-braces with the normalised check below
+	 * it, which already answers null for a host that reduces to nothing, so
+	 * deleting the whole guard changed the answer only for the non-string case.
+	 * That is the case with no test, so this is it.
+	 */
+	public function test_a_host_header_that_is_not_a_string_is_treated_as_absent(): void {
+		$_SERVER['HTTP_HOST'] = [ 'evil.example' ];
+
+		$this->assertNull( RequestHost::current() );
+		$this->assertTrue( RequestHost::matches( 'example.com' ) );
+	}
+
 	public function test_a_different_domain_does_not_match(): void {
 		$this->arriveAt( 'old-agency-site.com' );
 

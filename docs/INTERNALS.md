@@ -473,6 +473,30 @@ first docblock** (after the last constant) and close it after the last method:
   second way); report an unparseable mutant as SKIPPED, never as pinned; print
   `PHP_VERSION`; and count what the sweep did NOT cover rather than letting a
   partial run read as a complete one.
+- **A third sweep covered the authorisation core** — `PolicyEngine`,
+  `RequestHost`, `CapabilityRegistry`, `Dispatcher`, `ContextFactory`. **31
+  guards, 29 pinned**, on PHP 8.3.32. It ran in TWO TIERS: the three owning
+  suites first, then the WHOLE suite for anything that survived them, because a
+  guard in this layer is often pinned by a module test rather than by its own and
+  reporting that as a gap is a false alarm that costs more than the extra
+  minutes. `PolicyEngine`'s target-bound re-check is one such: pinned only from
+  outside `tests/Unit/Policy`. The two that did not pin were both **assertions
+  too weak to name the guard they were about**, the same defect as the SSRF one
+  above:
+  - **`CapabilityRegistry::registerWrite()`'s mode refusal.** Its test asserted
+    only `InvalidArgumentException`. **Every refusal in that class raises that
+    one class, so the class alone identifies nothing** — and because
+    `OperationDefinition` forces a read to carry `PreviewPolicy::NotApplicable`,
+    deleting the mode refusal simply let the preview refusal two lines below
+    throw instead. The test asserts the message now.
+  - **`RequestHost::current()`'s header guard, and only half of it.** The
+    empty-string arm is belt-and-braces with the normalised check below it, which
+    already answers null for a host that reduces to nothing; the `! is_string`
+    arm is the load-bearing one and had no test. `$_SERVER` is an array anything
+    on the site can write to, and a non-string reaching `normalize()` is a
+    **TypeError on the write-authorisation path — a fatal, not a refusal.** There
+    is a test for it now. **When a guard is a disjunction, ask which arm the
+    sweep actually pinned**; a half-covered guard reports as covered.
 - `ABSPATH` can be pointed at `tests/Fixtures/wp-admin-stub/` in a separate-process
   test. Each stand-in admin include defines one constant, and the constant existing
   afterwards is the proof that the `require_once` ran.
