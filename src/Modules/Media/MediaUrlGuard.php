@@ -636,6 +636,15 @@ final class MediaUrlGuard {
 	 * would be refused as private — or, worse in the other direction, an IPv4
 	 * address would match an IPv6 range.
 	 *
+	 * THE BYTE-ALIGNED EARLY RETURN IS NOT A DECISION, it is a bounds guard, and
+	 * a deletion sweep is expected to survive it rather than pin it. When the
+	 * prefix ends on a byte boundary the partial-byte arithmetic below would
+	 * reach the same verdict by accident — the mask works out to zero, so the
+	 * comparison reduces to `0 === 0` — but for `::/128` and `::1/128` the
+	 * offset it reads is one past the end of the address, which is an
+	 * out-of-range read that PHP warns about. There is no test to write for a
+	 * branch that changes no answer; this paragraph is the record instead.
+	 *
 	 * @param string $packed  The address to test, already in packed binary form.
 	 * @param string $network The network base address, in text form.
 	 * @param int    $bits    The prefix length in bits.
