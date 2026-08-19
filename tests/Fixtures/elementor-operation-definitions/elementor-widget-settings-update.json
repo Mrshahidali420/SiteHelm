@@ -16,6 +16,7 @@
             },
             "settings": {
                 "type": "object",
+                "maxProperties": 200,
                 "description": "The settings to change, keyed by setting name as the widget declares it. A setting the request does not name keeps the value the page already holds."
             },
             "device": {

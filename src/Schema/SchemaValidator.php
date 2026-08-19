@@ -171,6 +171,14 @@ final class SchemaValidator {
 
 			return $violations;
 		}
+		// REFUSED WHOLE, for the same reason as maxItems above: an object larger
+		// than its declared bound is not a request to inspect member by member.
+		if ( isset( $spec['maxProperties'] ) && 'object' === $type && is_array( $value )
+			&& count( $value ) > $spec['maxProperties'] ) {
+			$violations[] = "property '{$key}' must have at most {$spec['maxProperties']} members";
+
+			return $violations;
+		}
 		if ( 'array' === $type && isset( $spec['items'] ) && is_array( $value ) ) {
 			foreach ( $value as $index => $item ) {
 				$violations = array_merge( $violations, $this->check_value( "{$key}[{$index}]", $item, $spec['items'] ) );

@@ -184,8 +184,9 @@ final class ElementorElementAdd implements WriteOperation {
 						'description' => 'Which widget to add, as elementor-widget-availability reports it. Required when elType is "widget", and not accepted for any other kind.',
 					],
 					ElementorElementAddInput::INPUT_SETTINGS => [
-						'type'        => 'object',
-						'description' => 'The new element\'s settings, keyed by setting name. Omit it entirely for an element with no settings of its own. A widget accepts only the settings it declares.',
+						'type'          => 'object',
+						'maxProperties' => ElementorElementAddInput::MAX_SETTINGS,
+						'description'   => 'The new element\'s settings, keyed by setting name. Omit it entirely for an element with no settings of its own. A widget accepts only the settings it declares.',
 					],
 				],
 				'required'             => [ ElementorWriteFields::INPUT_DOCUMENT, ElementorElementAddInput::INPUT_EL_TYPE ],

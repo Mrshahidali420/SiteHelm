@@ -1201,6 +1201,7 @@
                     },
                     "attributes": {
                         "type": "object",
+                        "maxProperties": 64,
                         "description": "Attributes to set, merged into the block's existing attributes."
                     },
                     "removeAttributes": {

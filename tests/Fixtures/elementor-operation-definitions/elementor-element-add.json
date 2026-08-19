@@ -42,6 +42,7 @@
             },
             "settings": {
                 "type": "object",
+                "maxProperties": 200,
                 "description": "The new element's settings, keyed by setting name. Omit it entirely for an element with no settings of its own. A widget accepts only the settings it declares."
             }
         },
