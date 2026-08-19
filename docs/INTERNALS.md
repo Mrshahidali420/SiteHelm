@@ -497,6 +497,36 @@ first docblock** (after the last constant) and close it after the last method:
     **TypeError on the write-authorisation path — a fatal, not a refusal.** There
     is a test for it now. **When a guard is a disjunction, ask which arm the
     sweep actually pinned**; a half-covered guard reports as covered.
+- **A fourth sweep covered the write pipeline** — `ChangeEngine`,
+  `PlanAdmission`, `SnapshotLifecycle`, `PreviewRenderer`, `WriteSettlement`,
+  `WriteVerifier`. **34 guards, 29 pinned**, on PHP 8.3.32, same two tiers
+  (`tests/Unit/Change` first, then the whole suite). All five misses were a
+  different defect from #61's and #62's weak assertions: they were branches **no
+  test reached at all**, and four of the five sit on the path where the write
+  SUCCEEDS, which is exactly where a test author stops looking.
+  - **`PreviewRenderer`'s two scalar branches.** Delete them and nothing
+    crashes; the value falls through to the text path, so the confirmation text
+    an operator approves renders `true` as `"1"`, `false` as `""` and `42` as
+    `"42"`. `""` reads as *cleared* rather than *off*. A degraded rendering at
+    the approval step is not cosmetic — it is the step the whole plan-token
+    design exists to protect.
+  - **`WriteSettlement`'s two applied-path warnings.** The audit row that could
+    not be finalised, and the Supported-policy write that captured no snapshot.
+    The second was unreachable from `ChangeEngineApplyTest` at all, because
+    every fixture there drives a `Required` definition where the refusal above
+    it fires first; `makeDefinition()` takes a snapshot policy now.
+  - **`SnapshotLifecycle::capture()`'s `NotApplicable` early return.** Deleting
+    it reached the same VERDICT by a different route — the stub's snapshot is
+    null in every other fixture, so the null check below returned the same empty
+    result — which is what let it hide. **A guard that is right for the wrong
+    reason still passes; give the collaborator something to return and the two
+    routes separate.** With data to hand back, the deleted guard interrogates an
+    operation for state its contract says does not exist, and writes a snapshot
+    row for it.
+  - Six anchors in `SnapshotLifecycle` are not unique — the same three questions
+    are asked on the capture path and again on the restore path, character for
+    character — so they need the by-line pass, splicing by line INDEX with each
+    line's expected text asserted first.
 - `ABSPATH` can be pointed at `tests/Fixtures/wp-admin-stub/` in a separate-process
   test. Each stand-in admin include defines one constant, and the constant existing
   afterwards is the proof that the `require_once` ran.
