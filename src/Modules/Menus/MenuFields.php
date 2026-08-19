@@ -48,6 +48,21 @@ final class MenuFields {
 	/**
 	 * The target-key prefix for a menu-shaped target.
 	 */
+	/**
+	 * The longest string that can name a menu.
+	 *
+	 * A menu is a `nav_menu` term, and every one of the three ways to name one —
+	 * identifier, slug, name — resolves against `wp_terms`, whose `name` and
+	 * `slug` columns are both varchar(200). A longer string therefore cannot
+	 * match any menu that exists; accepting it only means carrying it as far as
+	 * the lookup before finding that out.
+	 *
+	 * SHARED RATHER THAN COPIED into the four schemas that need it, because the
+	 * bound is a fact about the storage and not a policy any one operation gets
+	 * to hold a different opinion about.
+	 */
+	public const MAX_MENU_REFERENCE_LENGTH = 200;
+
 	public const MENU_PREFIX = 'menu:';
 
 	/**

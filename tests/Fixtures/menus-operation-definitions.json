@@ -93,6 +93,7 @@
                     "menu": {
                         "type": "string",
                         "minLength": 1,
+                        "maxLength": 200,
                         "description": "The menu to read, named by its identifier, its slug, or its name."
                     }
                 },
@@ -205,6 +206,7 @@
                     "menu": {
                         "type": "string",
                         "minLength": 1,
+                        "maxLength": 200,
                         "description": "Identifier, slug, or name of the menu the item is added to."
                     },
                     "type": {
@@ -432,6 +434,7 @@
                     "menu": {
                         "type": "string",
                         "minLength": 1,
+                        "maxLength": 200,
                         "description": "The menu to reorder, named by its identifier, its slug, or its name."
                     },
                     "items": {
@@ -531,6 +534,7 @@
                             "string",
                             "null"
                         ],
+                        "maxLength": 200,
                         "description": "The menu to display in that location, named by its identifier, its slug, or its name. Send null to leave the location with no menu."
                     }
                 },

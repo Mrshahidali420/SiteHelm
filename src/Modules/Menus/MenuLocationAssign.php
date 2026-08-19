@@ -109,6 +109,7 @@ final class MenuLocationAssign implements WriteOperation {
 					],
 					'menu'     => [
 						'type'        => [ 'string', 'null' ],
+						'maxLength'   => MenuFields::MAX_MENU_REFERENCE_LENGTH,
 						'description' => 'The menu to display in that location, named by its identifier, its slug, or its name. Send null to leave the location with no menu.',
 					],
 				],
