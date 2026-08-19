@@ -252,8 +252,10 @@
                     },
                     "classes": {
                         "type": "array",
+                        "maxItems": 50,
                         "items": {
-                            "type": "string"
+                            "type": "string",
+                            "maxLength": 200
                         },
                         "description": "CSS class names applied to the item."
                     },
@@ -359,8 +361,10 @@
                     },
                     "classes": {
                         "type": "array",
+                        "maxItems": 50,
                         "items": {
-                            "type": "string"
+                            "type": "string",
+                            "maxLength": 200
                         },
                         "description": "CSS class names applied to the item. The supplied list replaces the item's current one."
                     },
@@ -439,6 +443,7 @@
                     },
                     "items": {
                         "type": "array",
+                        "maxItems": 200,
                         "description": "The items to reposition. Every entry must name an item of this menu; one invalid entry refuses the whole request.",
                         "items": {
                             "type": "object",

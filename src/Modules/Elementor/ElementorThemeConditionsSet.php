@@ -102,6 +102,7 @@ final class ElementorThemeConditionsSet implements WriteOperation {
 					],
 					self::INPUT_CONDITIONS => [
 						'type'        => 'array',
+						'maxItems'    => ElementorThemeConditions::MAX_CONDITIONS,
 						'items'       => [
 							'type'      => 'string',
 							'maxLength' => ElementorThemeConditions::CONDITION_MAX_LENGTH,

@@ -114,6 +114,7 @@ final class ContentBlockUpdate implements WriteOperation {
 					],
 					'removeAttributes' => [
 						'type'        => 'array',
+						'maxItems'    => self::MAX_ATTRIBUTES,
 						'items'       => [
 							'type'      => 'string',
 							'maxLength' => 128,

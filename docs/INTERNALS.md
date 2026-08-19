@@ -113,6 +113,18 @@ silently unbooted module.
 - An array over its declared `maxItems` is refused **whole**, without walking the
   entries — the point of an upper bound is to stop the work, not to produce a longer
   list of violations.
+- **Every array a caller can send declares `maxItems`, at every depth.** Eight did
+  not until 2026-08-19, so their size was discovered by running out of something
+  rather than by refusing. `SchemaArrayBoundsTest` sweeps the registered input
+  schemas recursively and fails on the first array with no bound; it descends into
+  nested arrays because `content-terms-assign` is the case that shows why — the
+  outer list was one entry per taxonomy, and the unbounded list was `termIds`
+  inside it. Bounds live as named constants on the declaring class, or on the
+  module's shared fields class when more than one operation needs the same one
+  (`MenuFields::MAX_ITEM_CLASSES`, `MAX_ITEM_CLASS_LENGTH`, `MAX_REORDERED_ITEMS`).
+  Where a handler already enforced a limit the schema stayed silent about —
+  `ElementorThemeConditions::MAX_CONDITIONS` — the schema now names the same
+  constant rather than a second copy of the number.
 - **A declared capability is re-checked in the handler, not only on the definition.**
   Every handler that declares one opens with
   `if ( ! user_can( $context->userId, self::CAPABILITY ) ) { throw ... Forbidden }`,
