@@ -80,6 +80,15 @@ final class MenuLocationAssign implements WriteOperation {
 	private const LOCATION_PREFIX = 'menu-location:';
 
 	/**
+	 * The longest theme location slug this operation will accept.
+	 *
+	 * A location slug is a key a theme registers in code, so it is short by
+	 * construction; the bound matches the one menu references already carry
+	 * rather than inventing a second number for the same shape of identifier.
+	 */
+	private const MAX_LOCATION_LENGTH = MenuFields::MAX_MENU_REFERENCE_LENGTH;
+
+	/**
 	 * The operation's registered definition.
 	 *
 	 * `menu` is declared `[ 'string', 'null' ]` because null is a VALUE this
@@ -105,6 +114,7 @@ final class MenuLocationAssign implements WriteOperation {
 					'location' => [
 						'type'        => 'string',
 						'minLength'   => 1,
+						'maxLength'   => self::MAX_LOCATION_LENGTH,
 						'description' => 'The theme location slug to assign, as menu-list reports it.',
 					],
 					'menu'     => [

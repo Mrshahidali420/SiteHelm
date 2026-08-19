@@ -13,6 +13,13 @@ an operation behaves.
 
 ### Fixed
 
+- **Every string a request can carry now has an upper bound too.** Ninety-four of
+  the catalog's string arguments already declared a maximum length; five did not,
+  including the redirect target, whose limit the handler was already enforcing
+  without ever publishing it. All five are now declared, from what the storage can
+  actually hold rather than from a round number. With lists, maps and strings all
+  bounded, no argument the gateway accepts is unbounded in size.
+
 - **Every map a request can carry now has an upper bound too.** Six operations
   accept a free-form object whose keys are the site's own vocabulary — a widget's
   settings, a block's attributes, a typography entry — and none of them said how

@@ -91,6 +91,7 @@ final class RedirectSet implements RollbackDelegate {
 					],
 					'target'       => [
 						'type'        => [ 'string', 'null' ],
+						'maxLength'   => RedirectStore::MAX_TARGET_LENGTH,
 						'description' => 'Where to send the visitor: a path on this site, or an absolute http or https URL on any host. A target may carry its own query string, which wins over the visitor\'s where the two name the same argument. Send null when the status is 410 and the page has no successor.',
 					],
 					'status'       => [

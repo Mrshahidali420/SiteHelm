@@ -141,6 +141,19 @@ silently unbooted module.
   and the typography module's `MAX_SETTINGS` were already enforced in their
   handlers and are now published from those same constants.
   `SchemaObjectBoundsTest` keeps this closed the way the array sweep does.
+- **Every string a caller can send declares `maxLength`, or an `enum`.** Ninety-four
+  already did, so the five that did not — `acf-group-list.group`,
+  `menu-item-create.type` and `.object`, `menu-location-assign.location`, and
+  `redirect-set.target` — were misses rather than decisions. A string constrained
+  by `enum` counts as bounded, because the longest thing it can legitimately hold
+  is its longest member. Bounds come from what the storage can actually hold:
+  `MenuFields::MAX_OBJECT_NAME_LENGTH` is 32 because WordPress refuses to register
+  a taxonomy longer than that, and `redirect-set.target` now publishes the
+  `RedirectStore::MAX_TARGET_LENGTH` its handler was already enforcing.
+  `SchemaStringBoundsTest` sweeps for the next one, and also asserts that no
+  declared maximum sits below its own minimum. A nullable string is left alone
+  when it is null: `redirect-set.target` is how a 410 says the page has no
+  successor, and a length keyword must not turn that into a violation.
 - **A declared capability is re-checked in the handler, not only on the definition.**
   Every handler that declares one opens with
   `if ( ! user_can( $context->userId, self::CAPABILITY ) ) { throw ... Forbidden }`,
