@@ -15,9 +15,13 @@ export PATH="/c/Users/SHAHID ALI/AppData/Roaming/Composer/bin:$PATH"
 php vendor/bin/phpunit tests/Unit/Modules/Seo        # ONE path per invocation
 php vendor/bin/phpcs  src/Modules/Seo
 php vendor/bin/phpcbf src/Modules/Seo
-php mut/php81.php                                    # local PHP 8.1-syntax scanner
+php mut/php81.php                                    # 8.1-syntax scanner — see below
 ```
 
+- **`mut/` is gitignored scratch and is NOT part of this repository.** Anything
+  under it — the 8.1-syntax scanner above included — exists on one machine only,
+  so treat a `mut/` path as a note about what was run, never as something to go
+  looking for. The 8.1 gate that everyone has is CI's `Tests (PHP 8.1)` job.
 - **Passing several paths to phpunit in one invocation silently skips files.** One
   path per call.
 - The full suite exceeds the 600 s Bash timeout and gets backgrounded. Prefer
@@ -417,9 +421,12 @@ first docblock** (after the last constant) and close it after the last method:
      decision at all; that is why the class is not `final`. The two one-liners
      themselves stay uncoverable where ext-curl is loaded, which is the accepted
      residue.
-  `mut/guard-sweep.php` re-runs the whole sweep (slow: a module suite per site);
-  `mut/guard-fixes.php` re-checks just the fixed sites against just their new
-  tests. Both live in the untracked `mut/` scratch directory.
+  The sweep was driven by two throwaway scripts in a local scratch directory that
+  is NOT part of this repository, so there is nothing here to re-run: one walked
+  every guard and ran the owning module's suite against each (slow — a suite per
+  site), the other re-checked only the fixed sites against only their new tests.
+  Either is a short afternoon to rewrite from this list; neither is a file to go
+  looking for.
 - `ABSPATH` can be pointed at `tests/Fixtures/wp-admin-stub/` in a separate-process
   test. Each stand-in admin include defines one constant, and the constant existing
   afterwards is the proof that the `require_once` ran.
