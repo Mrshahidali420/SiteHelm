@@ -278,10 +278,20 @@ final class CapabilityRegistryTest extends TestCase {
 		$registry->registerWrite( $this->makeWriteDefinition( 'content-update' ), new StubWriteOperation() );
 	}
 
+	/**
+	 * ASSERTED ON ITS MESSAGE, NOT MERELY ON THE EXCEPTION TYPE. A deletion
+	 * sweep showed why: `OperationDefinition` forces a read to carry
+	 * `PreviewPolicy::NotApplicable`, so with the mode refusal deleted the
+	 * preview refusal two lines below throws the same `InvalidArgumentException`
+	 * for a different reason and the test passes anyway. Every refusal in this
+	 * class raises one exception class, which makes the class alone worthless as
+	 * an identification.
+	 */
 	public function test_register_write_rejects_a_read_definition(): void {
 		$registry = new CapabilityRegistry();
 
 		$this->expectException( InvalidArgumentException::class );
+		$this->expectExceptionMessage( 'is not a write and cannot register a write operation' );
 		$registry->registerWrite( $this->makeWriteDefinition( 'content-get', Mode::Read ), new StubWriteOperation() );
 	}
 
