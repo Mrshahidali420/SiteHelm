@@ -447,6 +447,32 @@ first docblock** (after the last constant) and close it after the last method:
   site), the other re-checked only the fixed sites against only their new tests.
   Either is a short afternoon to rewrite from this list; neither is a file to go
   looking for.
+- **A second sweep covered the SSRF surface itself** — every single-line `if` in
+  `MediaUrlGuard` and `MediaFetch` rewritten to `if ( false )`, 39 guards on PHP
+  8.3.32, 37 pinned. Two did not pin, and the difference between them is the
+  point:
+  - **`MediaUrlGuard::validate()`'s core-baseline refusal was a real gap.** Its
+    test stubbed `wp_http_validate_url()` to false and then asserted only that
+    *a* refusal happened, which the scheme allowlist supplies on its own once
+    core's answer is discarded. **An assertion that something refused cannot pin
+    which guard refused**; the test now asserts the message. The guard is load
+    bearing for a reason the comment beside it used to get wrong: not this URL,
+    but the site-level policy no later check can see —
+    `WP_HTTP_BLOCK_EXTERNAL` and the `http_request_host_is_external` filter.
+  - **`MediaUrlGuard::in_range()`'s `0 === $rest` early return is equivalent by
+    arithmetic and is documented rather than tested.** On a byte-aligned prefix
+    the mask below it works out to zero and the comparison reduces to
+    `0 === 0`, so the branch changes no answer; it exists to avoid reading one
+    byte past the end of the address on `::/128` and `::1/128`. **An equivalent
+    mutant is a sweep outcome, not a coverage gap** — the honest remedy is a
+    docblock paragraph, never a contrived test.
+  The rules the sweep itself had to follow are the ones already recorded for
+  mutation work: require exactly one anchor match or splice by line INDEX with
+  the expected text asserted first (five `MediaFetch` guards repeat their text
+  verbatim across the three HTTP filter callbacks and are only reachable the
+  second way); report an unparseable mutant as SKIPPED, never as pinned; print
+  `PHP_VERSION`; and count what the sweep did NOT cover rather than letting a
+  partial run read as a complete one.
 - `ABSPATH` can be pointed at `tests/Fixtures/wp-admin-stub/` in a separate-process
   test. Each stand-in admin include defines one constant, and the constant existing
   afterwards is the proof that the `require_once` ran.

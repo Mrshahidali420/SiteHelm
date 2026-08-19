@@ -186,12 +186,24 @@ final class MediaUrlGuardTest extends TestCase {
 	}
 
 	public function test_a_url_core_rejects_is_refused(): void {
-		// Core's gate is kept as the FIRST check so this plugin is never weaker
-		// than the platform. Delete it and this URL sails through every check
-		// below it, because nothing else about it is wrong.
+		// ASSERTED ON ITS MESSAGE, NOT MERELY ON THE REFUSAL. A deletion sweep
+		// disproved the comment that used to stand here, which claimed this URL
+		// would sail through every check below. It does not: with core's answer
+		// discarded the guard carries a non-string forward, the scheme allowlist
+		// refuses it anyway with the wrong diagnosis ("Only http and https
+		// addresses can be imported from"), and a test that asked only whether
+		// SOMETHING refused could not tell which check had done the refusing.
+		//
+		// The gate is load bearing all the same, and not because of this URL.
+		// `wp_http_validate_url()` enforces site-level policy that no check
+		// below it can see — `WP_HTTP_BLOCK_EXTERNAL` and the
+		// `http_request_host_is_external` filter — so a site that has forbidden
+		// outbound requests is obeyed here or nowhere.
 		Functions\when( 'wp_http_validate_url' )->justReturn( false );
 
-		$this->assertRefused( 'https://cdn.example.com/a.png' );
+		$refusal = $this->assertRefused( 'https://cdn.example.com/a.png' );
+
+		$this->assertStringContainsString( 'refused by this site before it was examined', $refusal->getMessage() );
 	}
 
 	public function test_a_value_that_is_not_a_url_at_all_is_refused(): void {
