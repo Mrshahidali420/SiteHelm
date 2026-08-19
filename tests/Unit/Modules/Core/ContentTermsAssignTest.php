@@ -1190,6 +1190,50 @@ final class ContentTermsAssignTest extends TestCase {
 	}
 
 	/**
+	 * A request naming two taxonomies is two writes, and the first one has already
+	 * landed when the second fails. The step list is the only place the response
+	 * says so — the envelope's other members describe the operation as a whole —
+	 * so a fixed list of two steps told an operator that nothing had changed at the
+	 * exact moment something had.
+	 *
+	 * `category` is written first and succeeds; `post_tag` is asked for term 9 and
+	 * the storage drops it, which is what a term that stopped resolving between the
+	 * plan and the write looks like from here.
+	 */
+	public function test_a_failure_on_the_second_taxonomy_reports_the_first_as_written(): void {
+		$this->granted = [ 'assign_terms' ];
+		$context       = $this->makeContext();
+		$current       = $this->operation->resolveTarget( [ 'id' => 42 ], $context );
+		$planned       = $this->operation->planChange(
+			$current,
+			$this->input(
+				[
+					$this->entry( 'category', [ 7 ] ),
+					$this->entry( 'post_tag', [ 9 ] ),
+				]
+			),
+			$context
+		);
+
+		$this->ttIdOffset     = 0;
+		$this->droppedOnWrite = [ 9 ];
+
+		try {
+			$this->operation->applyChange( $current, $planned, $context );
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			$this->assertSame(
+				[ 'plan approved', 'snapshot captured', 'assigned category' ],
+				$e->completedSteps
+			);
+		}
+
+		// And the write really did land, so the step list is describing the site
+		// rather than merely counting loop iterations.
+		$this->assertSame( [ 7 ], $this->terms['category'] );
+	}
+
+	/**
 	 * THE RE-READ IS THE SUCCESS SIGNAL, and this is the test that can see it. The
 	 * write returns exactly what it was asked for — the return is computed before
 	 * anything hooked on the write runs, and the offset is 0 so the two id spaces
