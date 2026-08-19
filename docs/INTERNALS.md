@@ -227,6 +227,15 @@ Facts that are not visible from the signatures:
 - **`afterFields` must promise EVERY field `readBack()` projects, not only the
   changed ones.** `WriteVerifier` compares the promise against the full projection;
   a partial promise reports a correct write as not applied.
+- **`applyChange()` returning is the seam.** Everything before it decides whether
+  the write may happen and lives in `ChangeEngine::apply()`; everything after it
+  only describes a write that is already stored — `readBack()`, classification,
+  the adjusted-field and unpromised-field warnings, the audit row's closing
+  outcome, the result — and lives in `WriteSettlement`. Nothing in
+  `WriteSettlement` may prevent a write, and no path through it may leave the
+  audit row open. The failure tail is the other half: `compensate_and_finalize()`
+  stays on the engine, because compensating a partial write is authority over
+  state, not description of it.
 - `restore()` receives the recorded state **alone** — no target — so the snapshot
   must carry whatever identifies the target (e.g. `post_id`).
 - **A `restore()` that DELETES rather than rewrites must be able to prove what it
