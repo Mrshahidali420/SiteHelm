@@ -79,6 +79,16 @@ final class DocumentationClaimsTest extends TestCase {
 
 				++$checked;
 
+				// Present on THIS machine is not the question — present in the
+				// repository is. A path under a gitignored directory resolves for
+				// whoever wrote it and for nobody who clones, which is the harder
+				// version of the same dead end and the one a local run would
+				// otherwise hide.
+				if ( $this->isIgnored( $root, $reference ) ) {
+					$missing[] = "{$document}: {$reference} (gitignored — exists for its author only)";
+					continue;
+				}
+
 				if ( ! file_exists( $root . '/' . $reference ) ) {
 					$missing[] = "{$document}: {$reference}";
 				}
@@ -96,6 +106,44 @@ final class DocumentationClaimsTest extends TestCase {
 			$missing,
 			'Documentation names paths that no longer resolve. Update the document, or the note beside the path.'
 		);
+	}
+	// phpcs:enable WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
+
+	// phpcs:disable WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reading a repository file from disk, not a remote URL.
+	/**
+	 * Whether a documented path lives under a directory git does not track.
+	 *
+	 * Only the plain trailing-slash entries are read. A directory entry is the
+	 * whole of what this needs to answer, and reading the pattern language
+	 * properly would be a gitignore implementation rather than a test.
+	 *
+	 * @param string $root      Repository root.
+	 * @param string $reference Path as the document writes it, relative to root.
+	 */
+	private function isIgnored( string $root, string $reference ): bool {
+		$ignore = file_get_contents( $root . '/.gitignore' );
+
+		if ( ! is_string( $ignore ) ) {
+			return false;
+		}
+
+		foreach ( explode( "\n", $ignore ) as $line ) {
+			$line = trim( $line );
+
+			if ( '' === $line || str_starts_with( $line, '#' ) || ! str_ends_with( $line, '/' ) ) {
+				continue;
+			}
+
+			if ( str_contains( $line, '*' ) || str_contains( $line, '!' ) ) {
+				continue;
+			}
+
+			if ( str_starts_with( $reference, ltrim( $line, '/' ) ) ) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 	// phpcs:enable WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
 
