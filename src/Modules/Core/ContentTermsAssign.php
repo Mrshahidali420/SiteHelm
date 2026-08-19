@@ -404,6 +404,19 @@ final class ContentTermsAssign implements WriteOperation {
 	public function applyChange( TargetState $current, PlannedChange $planned, OperationContext $context ): string {
 		$post_id = $this->fields->postIdFromTargetKey( $current->targetKey );
 
+		// GROWS WITH THE LOOP. A request naming three taxonomies is three writes,
+		// and each one lands before the next is attempted, so a failure on the
+		// second leaves the first already written. Reporting the same two steps
+		// whichever iteration failed told that operator the opposite of what had
+		// happened: nothing changed, when something had. The rollback record was
+		// always complete — only the account of it was not.
+		//
+		// The taxonomy name is safe to name here because it is not free caller
+		// text: planChange() has already refused any taxonomy the post type does
+		// not carry, so every name that reaches this loop is one the site itself
+		// registered.
+		$completed = [ 'plan approved', 'snapshot captured' ];
+
 		foreach ( (array) ( $planned->payload[ self::PROMISED_FIELD ] ?? [] ) as $taxonomy => $wanted ) {
 			$written = wp_set_object_terms( $post_id, $wanted, (string) $taxonomy );
 			$stored  = is_wp_error( $written )
@@ -415,7 +428,7 @@ final class ContentTermsAssign implements WriteOperation {
 					ErrorCode::ExecutionFailed,
 					'WordPress refused to assign the requested terms.',
 					'Generate a fresh preview and retry; the prior terms remain recorded for rollback.',
-					[ 'plan approved', 'snapshot captured' ]
+					$completed
 				);
 			}
 
@@ -427,9 +440,11 @@ final class ContentTermsAssign implements WriteOperation {
 					ErrorCode::ExecutionFailed,
 					'WordPress stored a different set of terms than the approved plan promised.',
 					'Generate a fresh preview and retry; the prior terms remain recorded for rollback.',
-					[ 'plan approved', 'snapshot captured' ]
+					$completed
 				);
 			}
+
+			$completed[] = sprintf( 'assigned %s', (string) $taxonomy );
 		}
 
 		return $this->fields->targetKey( $post_id );

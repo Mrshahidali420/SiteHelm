@@ -233,6 +233,19 @@ No envelope may expose secrets, authorization headers, filesystem paths, SQL,
 stack traces, resolved IPs, redirect targets, or transport error strings. Never
 interpolate `$wpdb->last_error`.
 
+**`completedSteps` must grow with the loop in any operation that writes more than
+once.** `[ 'plan approved', 'snapshot captured' ]` is correct only for a single-write
+operation; in a loop it reports the same thing whichever iteration failed, telling an
+operator that nothing changed at the exact moment something had. `AcfFieldUpdate` and
+`ContentTermsAssign` both start from that pair and append one entry per completed
+write (`wrote <field>`, `assigned <taxonomy>`). Naming the thing written is only safe
+because both validate it against what the site itself registered before the loop
+begins; a value taken straight from the payload does not belong in an envelope.
+
+A loop that only VERIFIES is a different case and needs no accumulation — the
+Elementor batch writes the whole document once and then checks each entry, so
+`document written` already describes what landed however far the check gets.
+
 **Guard order for a per-post read or write** — the module convention, each step
 chosen for a reason:
 
