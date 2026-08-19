@@ -172,10 +172,12 @@ final class MenuItemCreate implements WriteOperation {
 					],
 					'type'        => [
 						'type'        => 'string',
+						'maxLength'   => MenuFields::MAX_OBJECT_NAME_LENGTH,
 						'description' => 'What the item points at: "custom" for a link typed by hand, a post type such as "page" or "post", or "category", "tag", or "taxonomy" for an archive. Defaults to "custom".',
 					],
 					'object'      => [
 						'type'        => 'string',
+						'maxLength'   => MenuFields::MAX_OBJECT_NAME_LENGTH,
 						'description' => 'The concrete post type or taxonomy name, required only when "type" is the generic "post_type", "taxonomy", or "term".',
 					],
 					'objectId'    => [

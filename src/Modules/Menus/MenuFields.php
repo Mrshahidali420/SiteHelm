@@ -89,6 +89,16 @@ final class MenuFields {
 	public const MAX_REORDERED_ITEMS = 200;
 
 	/**
+	 * The longest post type or taxonomy name a menu item may name.
+	 *
+	 * WordPress refuses to register a post type longer than 20 characters or a
+	 * taxonomy longer than 32, so a longer argument cannot name anything this
+	 * site has. The ceiling of the two is used rather than one bound per field,
+	 * because `type` and `object` both draw on the same vocabulary.
+	 */
+	public const MAX_OBJECT_NAME_LENGTH = 32;
+
+	/**
 	 * The target-key prefix for a menu-shaped target.
 	 */
 	public const MENU_PREFIX = 'menu:';

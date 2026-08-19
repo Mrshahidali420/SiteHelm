@@ -80,6 +80,15 @@ final class AcfGroupList {
 	public const OUTPUT_SCHEMA_ID = 'urn:sitehelm:schema:acf-group-list:output:1';
 
 	/**
+	 * The longest field-group key this operation will look for.
+	 *
+	 * An ACF key is a short generated identifier — `group_` and a hex suffix —
+	 * so an argument longer than this is not a key this site could have stored,
+	 * and the listing has nothing to narrow itself to.
+	 */
+	private const MAX_GROUP_KEY_LENGTH = 200;
+
+	/**
 	 * The operation's registered definition, beside the code that produces the
 	 * payload. Static because a definition is a constant declaration: it takes no
 	 * dependencies, and the registry reads it without constructing the operation.
@@ -98,6 +107,7 @@ final class AcfGroupList {
 					'group' => [
 						'type'        => 'string',
 						'minLength'   => 1,
+						'maxLength'   => self::MAX_GROUP_KEY_LENGTH,
 						'description' => 'Restrict the listing to the one field group with this key, such as group_5f3a1b2c. Omit to list every group.',
 					],
 				],

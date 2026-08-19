@@ -5,6 +5,7 @@
             "group": {
                 "type": "string",
                 "minLength": 1,
+                "maxLength": 200,
                 "description": "Restrict the listing to the one field group with this key, such as group_5f3a1b2c. Omit to list every group."
             }
         },
