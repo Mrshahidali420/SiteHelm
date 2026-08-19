@@ -188,7 +188,11 @@ final class MenuItemUpdate implements WriteOperation {
 					],
 					'classes'     => [
 						'type'        => 'array',
-						'items'       => [ 'type' => 'string' ],
+						'maxItems'    => MenuFields::MAX_ITEM_CLASSES,
+						'items'       => [
+							'type'      => 'string',
+							'maxLength' => MenuFields::MAX_ITEM_CLASS_LENGTH,
+						],
 						'description' => 'CSS class names applied to the item. The supplied list replaces the item\'s current one.',
 					],
 					'description' => [

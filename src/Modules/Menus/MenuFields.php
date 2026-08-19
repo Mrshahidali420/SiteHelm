@@ -46,9 +46,6 @@ final class MenuFields {
 	public const LOCATIONS_THEME_MOD = 'nav_menu_locations';
 
 	/**
-	 * The target-key prefix for a menu-shaped target.
-	 */
-	/**
 	 * The longest string that can name a menu.
 	 *
 	 * A menu is a `nav_menu` term, and every one of the three ways to name one —
@@ -63,6 +60,37 @@ final class MenuFields {
 	 */
 	public const MAX_MENU_REFERENCE_LENGTH = 200;
 
+	/**
+	 * The most CSS classes one menu item may be given.
+	 *
+	 * Core stores the classes as a single post meta value and themes print them
+	 * into one `class` attribute, so the list is a display detail rather than a
+	 * collection anything iterates. A caller sending more than this is not
+	 * styling an item; it is filling a row.
+	 */
+	public const MAX_ITEM_CLASSES = 50;
+
+	/**
+	 * The longest single CSS class name a menu item may be given.
+	 *
+	 * Bounding the list without bounding its entries would leave the request
+	 * unbounded in the way that actually costs something, which is total length.
+	 */
+	public const MAX_ITEM_CLASS_LENGTH = 200;
+
+	/**
+	 * The most items one reorder may reposition.
+	 *
+	 * A reorder names the items it moves, and every entry is resolved, checked
+	 * for membership of the menu, and recorded for restore before anything is
+	 * written. A navigation menu longer than this is not one a visitor reads,
+	 * and the whole batch is applied inside a single request.
+	 */
+	public const MAX_REORDERED_ITEMS = 200;
+
+	/**
+	 * The target-key prefix for a menu-shaped target.
+	 */
 	public const MENU_PREFIX = 'menu:';
 
 	/**

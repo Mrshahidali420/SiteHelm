@@ -85,6 +85,15 @@ final class ContentMetaUpdate implements WriteOperation {
 	private const MAX_VALUE_LENGTH = 65535;
 
 	/**
+	 * The most custom fields one request may write.
+	 *
+	 * Every entry is checked against the allowlist, read for its restore value,
+	 * and written inside one request, and the operation is all-or-nothing: a
+	 * longer list only makes the refusal that one bad key causes more expensive.
+	 */
+	private const MAX_FIELDS = 50;
+
+	/**
 	 * The operation's registered definition, beside the code that produces
 	 * the payload. Static because a definition is a constant declaration: it
 	 * takes no dependencies, and the registry reads it without constructing
@@ -109,6 +118,7 @@ final class ContentMetaUpdate implements WriteOperation {
 					],
 					'meta' => [
 						'type'        => 'array',
+						'maxItems'    => self::MAX_FIELDS,
 						'description' => 'Custom fields to write. Every key must appear in the site\'s metadata allowlist; if any does not, none are written.',
 						'items'       => [
 							'type'                 => 'object',

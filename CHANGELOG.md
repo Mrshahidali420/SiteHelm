@@ -13,6 +13,17 @@ an operation behaves.
 
 ### Fixed
 
+- **Every list a request can carry now has an upper bound.** Eight arrays across
+  `content-block-update`, `content-meta-update`, `content-terms-assign`,
+  `elementor-theme-conditions-set`, `menu-item-create`, `menu-item-update` and
+  `menu-items-reorder` accepted a list of any length, so their size was discovered
+  by running out of time or memory rather than by being refused. One of them —
+  the term identifiers inside `content-terms-assign` — sat one level down, inside
+  an entry of another list. `elementor-theme-conditions-set` already enforced its
+  limit in the handler and simply never published it; the schema now names the same
+  constant. A new registry-wide test sweeps every input schema recursively and
+  fails on the first array that declares no bound.
+
 - **Five constraints the operation schemas declared are now actually applied.** The
   gateway validator applied `type`, `enum`, `minimum`, `maxLength` and the structural
   keywords, and silently ignored `minLength`, `maximum`, `pattern`, `minItems` and
