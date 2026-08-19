@@ -192,6 +192,34 @@ final class PreviewRendererTest extends TestCase {
 		$this->assertStringContainsString( 'terms: (absent) -> (1 item)', $human );
 	}
 
+	/**
+	 * ASSERTED WITHOUT THE QUOTES, which is the whole point. A deletion sweep
+	 * found both scalar branches unpinned: delete them and the value falls
+	 * through to the text path, where `true` becomes `"1"`, `false` becomes `""`
+	 * and `42` becomes `"42"`. Nothing crashes and every other assertion in this
+	 * file still holds — but this is the confirmation text an operator reads
+	 * before approving a write, and `"1"` does not say what `true` says.
+	 */
+	public function test_booleans_and_numbers_render_unquoted_and_not_as_text(): void {
+		$planned = new PlannedChange(
+			[],
+			[
+				'ping_status' => true,
+				'sticky'      => false,
+				'menu_order'  => 42,
+				'ratio'       => 1.5,
+			],
+			[ 'ping_status', 'sticky', 'menu_order', 'ratio' ]
+		);
+
+		$human = $this->renderer->render( 'content-update', $this->currentState(), $planned )['human'];
+
+		$this->assertStringContainsString( 'ping_status: (absent) -> true', $human );
+		$this->assertStringContainsString( 'sticky: (absent) -> false', $human );
+		$this->assertStringContainsString( 'menu_order: (absent) -> 42', $human );
+		$this->assertStringContainsString( 'ratio: (absent) -> 1.5', $human );
+	}
+
 	public function test_a_no_op_plan_states_that_nothing_changes(): void {
 		$planned = new PlannedChange(
 			[ 'title' => 'Original title' ],
