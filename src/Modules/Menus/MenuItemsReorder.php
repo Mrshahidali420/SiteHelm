@@ -101,6 +101,7 @@ final class MenuItemsReorder implements WriteOperation {
 					'menu'  => [
 						'type'        => 'string',
 						'minLength'   => 1,
+						'maxLength'   => MenuFields::MAX_MENU_REFERENCE_LENGTH,
 						'description' => 'The menu to reorder, named by its identifier, its slug, or its name.',
 					],
 					'items' => [

@@ -167,6 +167,7 @@ final class MenuItemCreate implements WriteOperation {
 					'menu'        => [
 						'type'        => 'string',
 						'minLength'   => 1,
+						'maxLength'   => MenuFields::MAX_MENU_REFERENCE_LENGTH,
 						'description' => 'Identifier, slug, or name of the menu the item is added to.',
 					],
 					'type'        => [
