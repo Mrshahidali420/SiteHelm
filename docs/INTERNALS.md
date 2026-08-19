@@ -286,6 +286,17 @@ promiseRollback( array $restoreState, TargetState $current, OperationContext $c 
 
 Implemented by `UserRoleSet`, `CommentStatusSet`, `RedirectSet`, `RedirectDelete`.
 
+- **The rollback's refusals live in `RollbackAdmission`, its promise lives in
+  `ContentRollbackApply::planChange()`.** Everything that can stop a restoration —
+  wrong site, wrong module, origin gone or not a write, caller lacks the
+  target-bound capability, recording module moved version, promised taxonomy
+  stores term order — is a method on `RollbackAdmission`, and every one of them
+  either throws or returns nothing. `planChange()` decides only what would be put
+  back. **The call ORDER stays with `planChange()`**, because a snapshot failing
+  more than one refusal must keep reporting the first one it always reported.
+  `RollbackAdmission` is built in the operation's constructor rather than injected:
+  it has no state and nothing worth substituting, and the recovery path should not
+  offer a seam a test could widen the gate through.
 - **`content-rollback-apply` selects the delegate by the snapshot's own
   `operation_id`,** not by parsing the target key — `redirect-set` and
   `redirect-delete` share a recorded state but restore through their own code and
