@@ -225,6 +225,30 @@ Facts that are not visible from the signatures:
   a partial promise reports a correct write as not applied.
 - `restore()` receives the recorded state **alone** — no target — so the snapshot
   must carry whatever identifies the target (e.g. `post_id`).
+- **A `restore()` that DELETES rather than rewrites must be able to prove what it
+  is deleting.** A rewrite is bounded by the target it names; a deletion is only
+  as safe as its ownership evidence. `MenuItemCreate` is the one write in this
+  shape: it reverses itself by removing the item it added, and it force-deletes
+  because a trashed `nav_menu_item` keeps its term relationship and would still
+  appear in the menu the rollback just reported as restored. There is no trash to
+  undo a wrong deletion from, so the evidence has to hold.
+  - Within one request the evidence is exact: `applyChange()` records the
+    identifier it created, and `owned_addition()` deletes that item or nothing.
+  - **Across requests it is not.** A rollback in a later request has only the
+    difference between the menu now and the snapshot, and nothing durable marks
+    which member of it is ours. More than one candidate already refuses. Exactly
+    one candidate is still assumed to be ours, and it is not ours if our item was
+    removed by hand and a different one was added after the snapshot.
+  - Two fixes exist and neither is free, which is why the code still carries the
+    assumption rather than a half-chosen answer. **Marking the item** — stamping
+    `$context->correlationId` on the created item, which is already threaded
+    through `captureSnapshot()` and `applyChange()` — makes ownership exact, but
+    introduces the first plugin-owned post meta on user content; every
+    `sitehelm_` key today is an option, not meta. **Refusing outright** when
+    nothing records the identifier costs no new data, but it withdraws the
+    ordinary cross-request rollback, which works today, to close a narrow race.
+  - Until one is chosen, any NEW write that reverses itself by deletion should
+    refuse rather than infer. Read this bullet before adding one.
 - **A write whose target is NOT a post must also implement `RollbackDelegate`**
   (`src/Change/RollbackDelegate.php`) or the `rollbackRef` it hands out cannot be
   redeemed. `content-rollback-apply` resolves a `post:` target key through the
