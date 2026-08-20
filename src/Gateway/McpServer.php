@@ -176,8 +176,12 @@ final class McpServer {
 	 */
 	private function toolCall( mixed $id, array $params, string $clientId ): array {
 		$tool = $params['name'] ?? '';
-		// Validate the type before any interpolation: a non-string name would
-		// otherwise emit a PHP warning naming this file.
+		// This guard exists for the MESSAGE, not for safety. The membership test
+		// below is strict, so a non-string name never reaches anything that
+		// interpolates it — it would simply fall through as an unknown tool. What
+		// it would NOT get is an accurate reason: a client that sent a number
+		// would be told to call tools/list for the available dispatchers, and
+		// would find its tool sitting right there in the answer.
 		if ( ! is_string( $tool ) ) {
 			return $this->error( $id, -32602, 'Invalid params: tool name must be a string.' );
 		}
