@@ -43,3 +43,12 @@ if ( ! class_exists( 'WP_User' ) ) {
 if ( ! class_exists( 'WP_User_Query' ) ) {
 	class_alias( \SiteHelm\Tests\Doubles\FakeWpUserQuery::class, 'WP_User_Query' );
 }
+
+/*
+ * WP_Hook is the class the notice pruner type-checks $wp_filter's entries
+ * against, so it is aliased here under the same guard and for the same reasons
+ * as the four above.
+ */
+if ( ! class_exists( 'WP_Hook' ) ) {
+	class_alias( \SiteHelm\Tests\Doubles\FakeWpHook::class, 'WP_Hook' );
+}
