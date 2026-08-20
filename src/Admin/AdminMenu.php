@@ -132,6 +132,10 @@ final class AdminMenu {
 		add_action( 'admin_menu', [ $this, 'add_pages' ] );
 		add_action( 'admin_enqueue_scripts', [ $this, 'enqueue_assets' ] );
 		add_action( 'admin_post_' . ConnectScreen::ACTION_CREATE_PASSWORD, [ new ConnectScreen(), 'handle_create_password' ] );
+
+		// Other plugins' banners are pruned from our screens only. See the class
+		// for the rule and for why it fails open.
+		( new ForeignNotices() )->register();
 	}
 
 	/**
@@ -219,9 +223,15 @@ final class AdminMenu {
 	 * `$_GET['page']` read, because the suffix is the value WordPress itself
 	 * decided this request resolves to.
 	 *
+	 * Public because it is the definition of "a SiteHelm screen" and more than
+	 * one thing needs it: the asset enqueue here, and the notice pruning that
+	 * must not touch any other page in wp-admin. Two copies of that test could
+	 * disagree, and the copy that drifted wider would silently start hiding
+	 * notices on pages this plugin does not own.
+	 *
 	 * @param string $hook_suffix The current admin page's hook suffix.
 	 */
-	private static function is_console_screen( string $hook_suffix ): bool {
+	public static function is_console_screen( string $hook_suffix ): bool {
 		return str_contains( $hook_suffix, '_page_' . self::PAGE_CONNECT )
 			|| 'toplevel_page_' . self::PAGE_CONNECT === $hook_suffix;
 	}

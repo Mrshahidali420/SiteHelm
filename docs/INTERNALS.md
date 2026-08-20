@@ -928,7 +928,42 @@ accepted as a valid but silently corrupted file. Bounding the wire read by the e
 cap rather than the built-in ceiling is what stops a 2 MiB site pulling 8 MiB across the
 network for a refusal it was always going to give.
 
-## 15. Standing project constraints
+## 15. Foreign admin notices on console screens
+
+`src/Admin/ForeignNotices.php` removes other plugins' and themes' admin notices from
+SiteHelm's own screens, and from nowhere else. It exists because on a real site the
+banners of every other installed plugin consumed the whole first viewport of the
+console, pushing the connection verdict below the fold.
+
+The rule, and each part of it is load-bearing:
+
+- Registered on `admin_head`, which runs after every plugin has registered its
+  notices and before any of the four notice hooks fires. Removing a callback from a
+  hook that is already running is the one case `remove_action()` does not do what it
+  reads like.
+- All four hooks are pruned — `admin_notices`, `all_admin_notices`,
+  `user_admin_notices`, `network_admin_notices`. The loudest banners use the second.
+- A notice is removed only if its callback's **defining file** sits under
+  `WP_PLUGIN_DIR`, `WPMU_PLUGIN_DIR`, or `get_theme_root()`, and **not** under
+  SiteHelm's own directory. Core's notices are outside all three and always survive.
+- **It fails open.** If Reflection cannot determine a callback's origin, the notice
+  is kept. A stray banner is recoverable by the person reading the page; a swallowed
+  security warning is not.
+- Scope is gated by `AdminMenu::is_console_screen()`, which is `public static` for
+  exactly this reason: two copies of "is this a SiteHelm screen" could drift, and the
+  wider copy would start hiding notices on pages this plugin does not own.
+- `sitehelm_hide_foreign_notices` returning false restores every notice.
+
+**Testing this class needs production geometry, not just fixtures.** Both roots are
+constructor-injectable because the rule is "which directory is this defined in", so a
+test that cannot place a callback in a chosen directory can only assert the code runs.
+The trap: the fixtures first placed SiteHelm's own root *beside* the plugins root, and
+the own-directory check could then be deleted with every test still green — the own
+notice was outside every removable root and survived by accident. On a real site the
+plugin is *inside* `wp-content/plugins`, so that check is the only thing stopping it
+deleting its own banners. The fixture tree now nests them the same way.
+
+## 16. Standing project constraints
 
 - **No AI attribution anywhere in git** — no "Generated with Claude Code" footer,
   no session URL, no `Co-Authored-By` trailer, in any commit, PR body, PR comment,

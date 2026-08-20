@@ -84,6 +84,20 @@
 	border-radius: 3px;
 }
 
+/* wp-admin paints checked radios and checkboxes in its own blue, which on the
+   client picker put a WordPress-blue dot inside a teal console. accent-color
+   hands the native control the brand colour without replacing it, so it keeps
+   its platform focus ring, its high-contrast rendering and its forced-colors
+   behaviour — all of which a hand-drawn substitute loses. */
+.sitehelm-app input[type="radio"],
+.sitehelm-app input[type="checkbox"] {
+	accent-color: var(--sh-primary);
+}
+
+.sitehelm-app input[type="radio"]:checked::before {
+	background-color: var(--sh-primary);
+}
+
 /* =========================================================================
  * App bar
  * ========================================================================= */

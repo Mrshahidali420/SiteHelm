@@ -283,6 +283,45 @@ final class McpServerTest extends TestCase {
 	}
 
 	/**
+	 * A request with no usable method is malformed, not merely unrecognised.
+	 *
+	 * JSON-RPC separates the two on purpose. -32601 says "I understood your
+	 * request and do not offer that method", which invites the client to try a
+	 * different name. -32600 says "this is not a well-formed request", which is
+	 * the truth when `method` is absent or is not a string, and is the only one
+	 * of the two that tells the client to look at how it is building the
+	 * envelope rather than at what it is asking for.
+	 *
+	 * Nothing covered this before: the guard could be deleted and every one of
+	 * these payloads simply fell through to the method lookup and came back
+	 * -32601, which no test contradicted.
+	 *
+	 * @dataProvider unusable_method_provider
+	 *
+	 * @param array<string, mixed> $message A request whose method cannot be read.
+	 */
+	public function test_a_request_without_a_usable_method_is_jsonrpc_invalid_request( array $message ): void {
+		$response = $this->server->handle( $message );
+
+		$this->assertSame( -32600, $response['error']['code'] );
+		$this->assertStringContainsString( 'Invalid request', $response['error']['message'] );
+	}
+
+	/**
+	 * Requests whose method cannot be read as a string.
+	 *
+	 * @return array<string, array{0: array<string, mixed>}>
+	 */
+	public function unusable_method_provider(): array {
+		return [
+			'absent' => [ [ 'jsonrpc' => '2.0', 'id' => 61 ] ],
+			'null'   => [ [ 'jsonrpc' => '2.0', 'id' => 62, 'method' => null ] ],
+			'int'    => [ [ 'jsonrpc' => '2.0', 'id' => 63, 'method' => 7 ] ],
+			'array'  => [ [ 'jsonrpc' => '2.0', 'id' => 64, 'method' => [ 'tools/list' ] ] ],
+		];
+	}
+
+	/**
 	 * Test that ping returns empty result.
 	 */
 	public function test_ping_returns_empty_result(): void {
@@ -391,7 +430,18 @@ final class McpServerTest extends TestCase {
 	}
 
 	/**
-	 * C2: a non-string tool name must be rejected before any interpolation.
+	 * C2: a non-string tool name must be told what is actually wrong with it.
+	 *
+	 * THE MESSAGE IS THE ASSERTION HERE, and the code alone is not, because the
+	 * membership test underneath this guard returns the same -32602 for a name
+	 * it does not recognise. An earlier version of this test checked only the
+	 * code, so deleting the guard entirely changed nothing it could see — a
+	 * deletion sweep found it surviving and this is the repair.
+	 *
+	 * The difference matters to whoever is holding the failing client. Falling
+	 * through tells them the tool is unknown and to call tools/list, which they
+	 * then do, and find their tool listed. The reason they never get is that
+	 * they sent it as a number.
 	 *
 	 * @dataProvider non_string_tool_name_provider
 	 *
@@ -409,7 +459,13 @@ final class McpServerTest extends TestCase {
 				],
 			]
 		);
+
 		$this->assertSame( -32602, $response['error']['code'] );
+		$this->assertStringContainsString(
+			'tool name must be a string',
+			$response['error']['message'],
+			'A malformed name was reported as an unknown tool, which sends the client looking in the wrong place.'
+		);
 	}
 
 	/**
