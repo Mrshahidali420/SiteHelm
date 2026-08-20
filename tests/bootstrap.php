@@ -52,3 +52,18 @@ if ( ! class_exists( 'WP_User_Query' ) ) {
 if ( ! class_exists( 'WP_Hook' ) ) {
 	class_alias( \SiteHelm\Tests\Doubles\FakeWpHook::class, 'WP_Hook' );
 }
+
+/*
+ * The REST transport names WP_REST_Request in its signature and returns a
+ * WP_REST_Response, so both are aliased here under the same guard and for the
+ * same reasons as the classes above. Without them handleRequest() cannot be
+ * called from a unit test at all, which is how its rate-limit branch went
+ * unobserved.
+ */
+if ( ! class_exists( 'WP_REST_Request' ) ) {
+	class_alias( \SiteHelm\Tests\Doubles\FakeWpRestRequest::class, 'WP_REST_Request' );
+}
+
+if ( ! class_exists( 'WP_REST_Response' ) ) {
+	class_alias( \SiteHelm\Tests\Doubles\FakeWpRestResponse::class, 'WP_REST_Response' );
+}

@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace SiteHelm\Admin;
 
 use SiteHelm\Audit\AuditRecorder;
+use SiteHelm\Gateway\RestTransport;
 use SiteHelm\Storage\AuditStore;
 
 /**
@@ -322,14 +323,41 @@ final class ActivityScreen {
 
 		$this->render_duration_cell( $row );
 
-		printf(
-			'<td>%s</td>',
-			esc_html( isset( $row['actor_login'] ) ? (string) $row['actor_login'] : '' )
-		);
+		$this->render_actor_cell( $row );
 
 		$this->render_rollback_cell( $row );
 
 		echo '</tr>';
+	}
+
+	/**
+	 * The actor cell: which account acted, and which client acted as it.
+	 *
+	 * Both halves matter and neither substitutes for the other. Every MCP
+	 * connection authenticates as a WordPress user, so the login alone cannot
+	 * tell an operator whether a change came from their editor, a scheduled
+	 * job, or a connection they have forgotten about. The client name is the
+	 * only thing in the record that distinguishes them.
+	 *
+	 * @param array<string, mixed> $row One audit row.
+	 */
+	private function render_actor_cell( array $row ): void {
+		$login  = isset( $row['actor_login'] ) ? (string) $row['actor_login'] : '';
+		$client = isset( $row['client_id'] ) ? (string) $row['client_id'] : '';
+
+		// A client that never named itself is reported as such rather than
+		// left blank: an empty half-cell reads as missing data, while the
+		// truth is that the connection declined to identify itself, which is
+		// the thing worth noticing.
+		$client_text = ( '' === $client || RestTransport::UNKNOWN_CLIENT === $client )
+			? __( 'unidentified client', 'sitehelm' )
+			: $client;
+
+		printf(
+			'<td>%s<span class="sitehelm-table__sub">%s</span></td>',
+			esc_html( $login ),
+			esc_html( $client_text )
+		);
 	}
 
 	/**

@@ -585,6 +585,15 @@ first docblock** (after the last constant) and close it after the last method:
   test. Each stand-in admin include defines one constant, and the constant existing
   afterwards is the proof that the `require_once` ran.
 - `tests/TestCase.php` resets Brain Monkey and `FakeWpQuery` in `setUp()`.
+- **A WordPress *class* named in a signature needs a `class_alias` in
+  `tests/bootstrap.php`; Brain Monkey only fakes functions.** The aliases are
+  process-global and permanent, each guarded by `class_exists()` so a real
+  class wins if one is ever loaded. `WP_REST_Request` and `WP_REST_Response`
+  were the last two missing, and their absence is why
+  `RestTransport::handleRequest()` could not be called from a unit test at all
+  — which is how its rate-limit branch went unobserved while
+  `withinRateLimit()` itself was well covered. **A guard is only tested through
+  the entry point that consults it.**
 - Existing per-module test conventions: a provider/API test per vendor, a presence
   test, one test file per operation, a `…ModuleTest`, a `…DefinitionInvariantsTest`,
   and a golden fixture directory `tests/Fixtures/<module>-operation-definitions/`
@@ -892,6 +901,42 @@ the same integer. `ActivityScreen::change_text()` therefore renders the pair bar
 (`post title 21 → 36`) and never names a unit. When before and after measure the
 same the pair says nothing, and the field is reported as "changed". A summary that
 does not parse is shown **verbatim**: an unreadable record is a fact worth seeing.
+
+**Client identity is resolved in `RestTransport`, and it is the only source of
+`client_id`.** `ContextFactory` passes the value straight through to
+`OperationContext`, and `AuditRecorder::start()` writes it verbatim, so anything
+not cleaned at the transport reaches the column uncleaned. Precedence, in
+`RestTransport::resolveClientId()`:
+
+1. the `mcp-client-name` request header (proprietary to this plugin);
+2. the name declared in `initialize.params.clientInfo.name` on an earlier message;
+3. `RestTransport::UNKNOWN_CLIENT` (`'unknown-client'`).
+
+**The declared name must be remembered, and this is not an optimization.**
+Nothing is audited on `initialize` — `McpServer::handle()` consumes `$clientId`
+in the `tools/call` branch alone — so the message that carries the declaration
+and the messages that produce audit rows are disjoint, and each POST is
+stateless. The name is therefore stored as `sitehelm_client_<userId>` for
+`CLIENT_MEMORY_SECONDS` (3600) and read back on later messages. Before this
+existed, every standards-compliant MCP client — which is all of them, since the
+header is ours alone — was recorded as `unknown-client` forever, and it read as
+working because the header path was correct.
+
+Both sources go through `normalizeClientId()`: control characters stripped
+(the value is rendered in the console), then `mb_substr()` to 191 characters,
+matching `client_id varchar(191)`. `mb_substr`, not `substr`, for the reason
+`AuditRecorder::login()` gives about `actor_login` — a byte-boundary cut stores
+invalid UTF-8 and a strict server refuses the whole row, costing the audit
+record rather than truncating a name. A declaration that is not a non-empty
+string is ignored rather than adopted: `handle()` types `$clientId` as `string`
+under `declare(strict_types=1)`, so adopting an integer would fatal the request.
+
+**The Activity screen's "Who" cell carries both halves.** Every connection
+authenticates as a WordPress user, so the login alone cannot distinguish an
+editor from a scheduled job from a forgotten connection. A row whose client is
+empty or the fallback is rendered as *unidentified client* rather than left
+blank — a blank half-cell reads as missing data when the fact is that the
+connection declined to name itself.
 
 **The rollback reference is never abbreviated in the markup.** `.sitehelm-ref`
 narrows the cell with `text-overflow: ellipsis`; the full value stays in the
