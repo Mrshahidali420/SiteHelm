@@ -358,7 +358,57 @@ final class ActivityScreenTest extends TestCase {
 	public function testAChangeWithNoRecordedFieldsAddsNoSubLine(): void {
 		$html = $this->render( 1, [ $this->row( [ 'summary' => '{"changed":[],"metrics":{}}' ] ) ] );
 
-		$this->assertStringNotContainsString( 'sitehelm-table__sub', $html );
+		// Anchored to the operation cell rather than to the sub-line class on
+		// its own: the actor cell carries a sub-line of its own, so a bare
+		// absence check would pass or fail for reasons unrelated to changes.
+		$this->assertStringContainsString( '<code>content-post-update</code></td>', $html );
+	}
+
+	/**
+	 * Every connection authenticates as a WordPress user, so the login alone
+	 * cannot tell an operator which client made the change. Both belong in the
+	 * cell, and the client must not be dropped in favour of the login.
+	 */
+	public function testTheActorCellNamesBothTheAccountAndTheClient(): void {
+		$html = $this->render( 1, [ $this->row( [ 'actor_login' => 'agency', 'client_id' => 'cursor' ] ) ] );
+
+		$this->assertStringContainsString( 'agency<span class="sitehelm-table__sub">cursor</span>', $html );
+	}
+
+	/**
+	 * A connection that never named itself is said to be unidentified rather
+	 * than rendered as a blank half-cell, which would read as missing data.
+	 *
+	 * @dataProvider provideUnidentifiedClients
+	 *
+	 * @param string $client_id The stored client identifier.
+	 */
+	public function testAClientThatNeverNamedItselfIsReportedAsUnidentified( string $client_id ): void {
+		$html = $this->render( 1, [ $this->row( [ 'client_id' => $client_id ] ) ] );
+
+		$this->assertStringContainsString( 'agency<span class="sitehelm-table__sub">unidentified client</span>', $html );
+	}
+
+	/**
+	 * Stored values that name no client.
+	 *
+	 * @return array<string, array{string}>
+	 */
+	public static function provideUnidentifiedClients(): array {
+		return [
+			'the fallback' => [ 'unknown-client' ],
+			'empty'        => [ '' ],
+		];
+	}
+
+	/**
+	 * A client name is caller-supplied, so it is escaped where it is shown.
+	 */
+	public function testAClientNameIsEscapedBeforeItIsShown(): void {
+		$html = $this->render( 1, [ $this->row( [ 'client_id' => '<script>alert(1)</script>' ] ) ] );
+
+		$this->assertStringNotContainsString( '<script>alert(1)</script>', $html );
+		$this->assertStringContainsString( '&lt;script&gt;', $html );
 	}
 
 	public function testManyChangedFieldsAreCountedRatherThanListedInFull(): void {
