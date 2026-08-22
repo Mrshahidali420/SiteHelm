@@ -1197,6 +1197,45 @@
 }
 
 /* =========================================================================
+ * Write access: the one switch on Status
+ * ========================================================================= */
+
+.sitehelm-writemode {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 16px;
+	padding: 16px 18px;
+	border: 1px solid var(--sh-gray-200);
+	border-left: 4px solid var(--sh-ok);
+	border-radius: var(--sh-radius);
+	background: var(--sh-white);
+}
+
+.sitehelm-writemode--paused {
+	border-left-color: var(--sh-warn);
+	background: var(--sh-warn-light);
+}
+
+.sitehelm-writemode__state {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	font-size: 13px;
+	color: var(--sh-gray-700);
+}
+
+.sitehelm-writemode__state strong {
+	font-size: 15px;
+	color: var(--sh-ink);
+}
+
+.sitehelm-writemode__form {
+	margin: 0;
+	flex: 0 0 auto;
+}
+
+/* =========================================================================
  * Responsive
  * ========================================================================= */
 
