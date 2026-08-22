@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace SiteHelm\Admin;
 
+use SiteHelm\Bootstrap\Extensions;
 use SiteHelm\Contracts\ModuleHealth;
 use SiteHelm\Contracts\ModuleId;
 use SiteHelm\Gateway\McpServer;
@@ -111,6 +112,7 @@ final class StatusScreen {
 		$this->render_environment();
 		$this->render_storage();
 		$this->render_retention();
+		Extensions::status_sections();
 
 		Ui::app_close();
 	}

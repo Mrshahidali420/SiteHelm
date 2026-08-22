@@ -1394,6 +1394,53 @@ change; labels, slugs and one new screen did.
 
 ---
 
+## 30. Extension points and SiteHelm Pro
+
+Added 2026-08-23 (REQ-0099). The free plugin exposes three hooks, all named in
+`src/Bootstrap/Extensions.php`; SiteHelm Pro is a separate add-on plugin whose source
+lives in `pro/` of this repository and is **never** packed into the free zip
+(`tools/build-plugin-zip.php` packs only `src/`, `assets/`, `bridge/`, `vendor/`).
+
+| Hook | Kind | Fires | Contract |
+|------|------|-------|----------|
+| `sitehelm_modules` | filter on `[]` | `Plugin::register()` before the module loader | Return class names; each must exist and implement `IntegrationModule`. Additive only — a built-in module cannot be removed or reordered; an invalid entry is dropped and `error_log`ged; duplicates are ignored. |
+| `sitehelm_register_operations` | action `($registry)` | after the built-in modules registered | Register operations into an existing module's id. Runs inside a try/catch: a throwing handler is logged (`SiteHelm add-on handler on … failed: …`) and the boot continues. |
+| `sitehelm_status_sections` | action | foot of the Health tab, after the retention section | Render `Ui::section_open/close` blocks. Same containment as above. |
+
+The hook names are string literals on both sides by contract: the add-on registers its
+handlers at `plugins_loaded` priority 5, before the free plugin's autoloader has run at
+priority 10, so it cannot read `Extensions::*`. `ProPluginTest` pins `ProPlugin::HOOK_*`
+to `Extensions::*`; change one and that test fails.
+
+**Pro plugin layout** (`pro/`): `sitehelm-pro.php` (header, `Requires Plugins: sitehelm`,
+boots `ProPlugin` at priority 5 and shows an admin notice if `sitehelm_boot()` is absent),
+`src/Bootstrap/ProPlugin.php` (wires the three hooks plus
+`admin_post_sitehelm_pro_licence`), `src/Licence/{LicenceKey,Licence}.php`,
+`src/Admin/{LicenceAction,LicenceSection}.php`, `tools/make-licence.php`,
+`composer.json` (PSR-4 `SiteHelm\Pro\` → `src/`). The root `composer.json` maps the
+same namespace under `autoload-dev` so the one PHPUnit run covers both; `phpcs.xml.dist`
+lints `pro/src` and allows the `sitehelm-pro` text domain; `phpunit.xml.dist` counts
+`pro/src` toward coverage.
+
+**Licence keys** are signed offline — no licence server, nothing phones home.
+Format `SHP1.<base64url payload>.<base64url Ed25519 signature>`; payload
+`{"site":"<host>|*","plan":"pro","exp":"Y-m-d"|null,"id":"<order>"}`. The public key is
+`LicenceKey::PUBLIC_KEY` (hex); the secret stays outside the repository
+(`SITEHELM_LICENCE_SECRET` env for the issuing tool). `LicenceKey::parse()` returns the
+payload or `null` — never throws — and lower-cases the site. `Licence` reads option
+`sitehelm_pro_licence` (stored as typed, autoload off) and answers one of
+`missing | invalid | other_site | expired | active`; the host compare is
+`Licence::host()` = `home_url` host, lower-cased, leading `www.` stripped; `*` fits any
+host; `exp` equal to today is still active. **Every Pro unit calls `Licence::gate()`
+itself** (throws `OperationException(IntegrationUnavailable, …)` with the Health-tab
+remediation) — the bootstrap only wires. Issue keys with
+`php pro/tools/make-licence.php keygen` / `issue --site=… [--exp=…]`.
+
+Testing pattern: generate a throw-away pair with `sodium_crypto_sign_keypair()` in
+`setUp()`, inject the public half and a fixed `$today` closure into `new Licence(...)`,
+and store keys issued with the secret half into `AdminWordPressStubs::$options`. The
+shared stubs do not double `delete_option` — add it locally.
+
 ## 28. Standing project constraints
 
 - **No AI attribution anywhere in git** — no "Generated with Claude Code" footer,

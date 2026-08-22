@@ -17,7 +17,7 @@
         "psr-4": { "SiteHelm\\": "src/" }
     },
     "autoload-dev": {
-        "psr-4": { "SiteHelm\\Tests\\": "tests/" }
+        "psr-4": { "SiteHelm\\Tests\\": "tests/", "SiteHelm\\Pro\\": "pro/src/" }
     },
     "config": {
         "allow-plugins": {
