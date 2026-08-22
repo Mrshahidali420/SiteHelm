@@ -13,6 +13,10 @@ an operation behaves.
 
 ### Added
 
+- **A Site Health test** under Tools → Site Health that says whether client
+  credentials reach WordPress on this server, with the .htaccess fix when they do not
+  and a warning when application passwords are switched off.
+
 - **Connect and Status links on the Plugins screen**, beside Deactivate, for the
   moment after activation.
 

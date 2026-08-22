@@ -1251,7 +1251,23 @@ tested directly.
 
 ---
 
-## 25. Standing project constraints
+## 25. Site Health test
+
+`SiteHealth::register()` (called from `AdminMenu::register()`) filters `site_status_tests`
+and `add_test()` adds a **direct** test keyed `SiteHealth::TEST`
+(`sitehelm_authorization_header`), creating the `direct` section if the list lacks one.
+`run()` executes `ConnectionProbe` and maps its state to the Site Health result array
+(`label`, `status`, `badge` {label "SiteHelm", colour}, `description`, `actions`, `test`):
+`OK` → `good`/blue; `STRIPPED` → `critical`/red with `ConnectionProbe::HEADER_FIX` in a
+`<pre><code>`; `UNREACHABLE` → `recommended`/orange, calm wording; `SKIPPED` (application
+passwords off) → `critical`/red. Every result's `actions` links to the Status screen. The
+constructor takes an optional `ConnectionProbe`, so tests script the loopback without
+touching the transport. `ConnectionProbe::HEADER_FIX` is public and shared with
+`StatusScreen::render_probe_advice()`; it has no copy anywhere else.
+
+---
+
+## 26. Standing project constraints
 
 - **No AI attribution anywhere in git** — no "Generated with Claude Code" footer,
   no session URL, no `Co-Authored-By` trailer, in any commit, PR body, PR comment,

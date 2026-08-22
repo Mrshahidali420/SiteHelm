@@ -54,6 +54,11 @@ final class ConnectionProbe {
 	public const PROBE_LOGIN = 'sitehelm-probe';
 
 	/**
+	 * The Apache rules that pass the Authorization header through to PHP.
+	 */
+	public const HEADER_FIX = "RewriteEngine On\nRewriteCond %{HTTP:Authorization} .\nRewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]";
+
+	/**
 	 * The REST error code WordPress returns when no one is signed in.
 	 */
 	private const NOT_LOGGED_IN = 'rest_not_logged_in';

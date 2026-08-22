@@ -50,11 +50,6 @@ final class StatusScreen {
 	private ConnectionProbe $probe;
 
 	/**
-	 * The Apache rules that pass the Authorization header through to PHP.
-	 */
-	private const HEADER_FIX = "RewriteEngine On\nRewriteCond %{HTTP:Authorization} .\nRewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]";
-
-	/**
 	 * Constructs the screen.
 	 *
 	 * @param array<string, array{version: ?string, health: string}> $health The loader's health map.
@@ -252,7 +247,7 @@ final class StatusScreen {
 			printf(
 				'<p class="sitehelm-note sitehelm-probe-advice">%s</p><pre class="sitehelm-probe-fix"><code>%s</code></pre>',
 				esc_html__( 'This server drops the Authorization header before WordPress sees it, so every client will be told its credentials are wrong. On Apache, add these lines to the top of .htaccess, above the WordPress block; on other servers, ask your host to pass the header through to PHP.', 'sitehelm' ),
-				esc_html( self::HEADER_FIX )
+				esc_html( ConnectionProbe::HEADER_FIX )
 			);
 			return;
 		}
