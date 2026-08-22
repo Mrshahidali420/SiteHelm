@@ -139,6 +139,13 @@ final class ActivityScreen {
 			$filters['correlationId'] = $correlation;
 		}
 
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- As above; a client name narrows the view and grants nothing.
+		$client = isset( $_GET['client'] ) ? sanitize_text_field( wp_unslash( (string) $_GET['client'] ) ) : '';
+
+		if ( '' !== $client ) {
+			$filters['clientId'] = $client;
+		}
+
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- As above; an outcome narrows the view and grants nothing.
 		$outcome = isset( $_GET['outcome'] ) ? sanitize_key( wp_unslash( (string) $_GET['outcome'] ) ) : '';
 
@@ -224,6 +231,15 @@ final class ActivityScreen {
 			esc_html__( 'Filter by correlation id', 'sitehelm' ),
 			esc_attr( (string) ( $filters['correlationId'] ?? '' ) ),
 			esc_attr__( 'Correlation id', 'sitehelm' )
+		);
+
+		printf(
+			'<label class="sitehelm-srt" for="sitehelm-filter-client">%s</label>'
+				. '<input class="sitehelm-field__input" type="search" id="sitehelm-filter-client" name="client"'
+				. ' value="%s" placeholder="%s">',
+			esc_html__( 'Filter by client', 'sitehelm' ),
+			esc_attr( (string) ( $filters['clientId'] ?? '' ) ),
+			esc_attr__( 'Client, such as claude-code', 'sitehelm' )
 		);
 
 		$this->render_outcome_filter( (string) ( $filters['outcome'] ?? '' ) );
@@ -363,14 +379,31 @@ final class ActivityScreen {
 		// left blank: an empty half-cell reads as missing data, while the
 		// truth is that the connection declined to identify itself, which is
 		// the thing worth noticing.
-		$client_text = ( '' === $client || RestTransport::UNKNOWN_CLIENT === $client )
-			? __( 'unidentified client', 'sitehelm' )
-			: $client;
+		if ( '' === $client || RestTransport::UNKNOWN_CLIENT === $client ) {
+			printf(
+				'<td>%s<span class="sitehelm-table__sub">%s</span></td>',
+				esc_html( $login ),
+				esc_html__( 'unidentified client', 'sitehelm' )
+			);
+			return;
+		}
 
+		// A named client is a link to everything that client did: "what has
+		// Cursor been doing on this site" is the question the column exists to
+		// answer, and one click should answer it.
 		printf(
-			'<td>%s<span class="sitehelm-table__sub">%s</span></td>',
+			'<td>%s<span class="sitehelm-table__sub"><a href="%s">%s</a></span></td>',
 			esc_html( $login ),
-			esc_html( $client_text )
+			esc_url(
+				add_query_arg(
+					[
+						'page'   => AdminMenu::PAGE_ACTIVITY,
+						'client' => $client,
+					],
+					admin_url( 'admin.php' )
+				)
+			),
+			esc_html( $client )
 		);
 	}
 
@@ -656,6 +689,10 @@ final class ActivityScreen {
 
 		if ( isset( $filters['correlationId'] ) ) {
 			$args['correlation'] = (string) $filters['correlationId'];
+		}
+
+		if ( isset( $filters['clientId'] ) ) {
+			$args['client'] = (string) $filters['clientId'];
 		}
 
 		if ( isset( $filters['outcome'] ) ) {

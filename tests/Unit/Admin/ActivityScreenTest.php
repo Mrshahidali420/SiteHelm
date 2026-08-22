@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace SiteHelm\Tests\Unit\Admin;
 
 use SiteHelm\Admin\ActivityScreen;
+use SiteHelm\Admin\AdminMenu;
 use SiteHelm\Audit\AuditRecorder;
 use SiteHelm\Storage\AuditStore;
 use SiteHelm\Tests\Doubles\AdminDied;
@@ -466,7 +467,35 @@ final class ActivityScreenTest extends TestCase {
 	public function testTheActorCellNamesBothTheAccountAndTheClient(): void {
 		$html = $this->render( 1, [ $this->row( [ 'actor_login' => 'agency', 'client_id' => 'cursor' ] ) ] );
 
-		$this->assertStringContainsString( 'agency<span class="sitehelm-table__sub">cursor</span>', $html );
+		$this->assertStringContainsString( 'agency<span class="sitehelm-table__sub"><a href="', $html );
+		$this->assertStringContainsString( '">cursor</a></span>', $html );
+	}
+
+	/**
+	 * "What has this client been doing?" is the question the column exists to
+	 * answer, so a named client links to its own filtered view.
+	 */
+	public function testANamedClientLinksToEverythingThatClientDid(): void {
+		$html = $this->render( 1, [ $this->row( [ 'client_id' => 'cursor' ] ) ] );
+
+		$this->assertStringContainsString( 'page=' . AdminMenu::PAGE_ACTIVITY . '&client=cursor">cursor</a>', $html );
+	}
+
+	public function testAnUnidentifiedClientIsNotALink(): void {
+		$html = $this->render( 1, [ $this->row( [ 'client_id' => '' ] ) ] );
+
+		$this->assertStringContainsString( '<span class="sitehelm-table__sub">unidentified client</span>', $html );
+		$this->assertStringNotContainsString( 'client=', $html );
+	}
+
+	public function testAClientFilterIsPassedToTheStoreAndRefilled(): void {
+		$_GET['client'] = 'claude-code';
+
+		$html = $this->render( 1, [ $this->row() ] );
+
+		$this->assertStringContainsString( 'client_id =', $this->wpdb->prepared[0]['query'] );
+		$this->assertContains( 'claude-code', $this->wpdb->prepared[0]['args'] );
+		$this->assertStringContainsString( 'name="client" value="claude-code"', $html );
 	}
 
 	/**

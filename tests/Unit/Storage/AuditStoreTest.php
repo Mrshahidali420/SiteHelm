@@ -178,6 +178,7 @@ final class AuditStoreTest extends TestCase {
 				'operationId'   => 'content-update',
 				'correlationId' => 'corr-1',
 				'actorId'       => '7',
+				'clientId'      => 'cursor',
 				'since'         => 1_700_000_000,
 				'until'         => 1_900_000_000,
 				'DROP TABLE'    => 'x',
@@ -188,12 +189,12 @@ final class AuditStoreTest extends TestCase {
 
 		$prepared = $this->wpdb->prepared[0];
 		$this->assertStringContainsString(
-			'operation_id = %s AND correlation_id = %s AND actor_id = %d AND recorded_at >= %d AND recorded_at <= %d',
+			'operation_id = %s AND correlation_id = %s AND actor_id = %d AND client_id = %s AND recorded_at >= %d AND recorded_at <= %d',
 			$prepared['query']
 		);
 		$this->assertStringNotContainsString( 'DROP TABLE', $prepared['query'] );
 		$this->assertSame(
-			[ 'content-update', 'corr-1', 7, 1_700_000_000, 1_900_000_000, 10, 0 ],
+			[ 'content-update', 'corr-1', 7, 'cursor', 1_700_000_000, 1_900_000_000, 10, 0 ],
 			$prepared['args']
 		);
 	}

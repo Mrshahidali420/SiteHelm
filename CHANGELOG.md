@@ -13,6 +13,9 @@ an operation behaves.
 
 ### Added
 
+- **Filter the Activity screen by client.** A "Filter by client" field joins the
+  operation, correlation and outcome filters, and every named client in the actor
+  column is now a link to everything that client did on the site.
 - **See and revoke issued credentials on the Connect screen.** A new "Issued
   credentials" section lists every application password SiteHelm has created for
   the accounts you can act for — which account it acts as, when it was created,
