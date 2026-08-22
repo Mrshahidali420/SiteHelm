@@ -325,8 +325,8 @@
 	align-items: center;
 	justify-content: center;
 	gap: 7px;
-	flex: 1;
-	padding: 14px 16px;
+	flex: 0 0 auto;
+	padding: 14px 22px;
 	margin-bottom: -1px;
 	white-space: nowrap;
 	color: var(--sh-gray-600);
@@ -1902,4 +1902,135 @@
 	.sitehelm-switch__track::after {
 		transition: none;
 	}
+}
+
+/* ------------------------------------------------------------------ */
+/* Home: the "what changed lately" feed and the where-to-go cards.     */
+/* ------------------------------------------------------------------ */
+
+.sitehelm-feed {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	border: 1px solid var(--sh-gray-200);
+	border-radius: var(--sh-radius);
+	overflow: hidden;
+}
+
+.sitehelm-feed__item {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	margin: 0;
+	padding: 10px 14px;
+	font-size: 13px;
+	background: var(--sh-white);
+}
+
+.sitehelm-feed__item + .sitehelm-feed__item {
+	border-top: 1px solid var(--sh-gray-200);
+}
+
+.sitehelm-feed__time {
+	flex: 0 0 auto;
+	min-width: 92px;
+	font-size: 12px;
+	color: var(--sh-gray-500);
+	font-variant-numeric: tabular-nums;
+}
+
+.sitehelm-feed__text {
+	flex: 1 1 auto;
+	color: var(--sh-gray-800);
+}
+
+.sitehelm-section__more {
+	margin: 10px 0 0;
+	font-size: 13px;
+}
+
+.sitehelm-place__action {
+	margin: auto 0 0;
+	padding-top: 10px;
+	border-top: 1px solid var(--sh-gray-200);
+}
+
+/* ------------------------------------------------------------------ */
+/* Permissions: the four-level control on each card.                   */
+/* ------------------------------------------------------------------ */
+
+.sitehelm-levels {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px 10px;
+	margin-top: 4px;
+	padding-top: 10px;
+	border-top: 1px solid var(--sh-gray-200);
+}
+
+.sitehelm-levels__label {
+	font-size: 12px;
+	font-weight: 600;
+	color: var(--sh-gray-600);
+}
+
+.sitehelm-levels__seg .sitehelm-seg__btn:hover {
+	background: var(--sh-gray-100);
+	color: var(--sh-gray-800);
+}
+
+.sitehelm-levels__seg .sitehelm-seg__btn.is-current,
+.sitehelm-levels__seg .sitehelm-seg__btn.is-current:hover {
+	background: var(--sh-primary);
+	color: var(--sh-white);
+}
+
+.sitehelm-levels__hint {
+	flex-basis: 100%;
+	font-size: 12px;
+	color: var(--sh-gray-500);
+}
+
+.sitehelm-levels__hint--custom {
+	color: var(--sh-warning-dark, #b45309);
+}
+
+.sitehelm-finetune {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px 12px;
+	margin: 18px 0 0;
+	padding: 12px 14px;
+	font-size: 13px;
+	color: var(--sh-gray-600);
+	background: var(--sh-gray-50);
+	border: 1px dashed var(--sh-gray-300);
+	border-radius: var(--sh-radius);
+}
+
+/* Tools: the "this is the advanced page" callout. */
+.sitehelm-advanced {
+	margin-top: 12px;
+}
+
+.sitehelm-advanced a {
+	font-weight: 600;
+	margin-left: 4px;
+}
+
+/* History: the sentence first, the record beneath it. */
+.sitehelm-table__what {
+	min-width: 260px;
+}
+
+.sitehelm-table__sentence {
+	display: block;
+	font-weight: 500;
+	color: var(--sh-gray-800);
+}
+
+.sitehelm-table__what .sitehelm-table__sub code {
+	font-size: 11px;
 }

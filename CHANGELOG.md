@@ -11,7 +11,29 @@ an operation behaves.
 
 ## [Unreleased]
 
+### Added
+
+- **A Home tab.** The console now opens on a plain-language summary: one sentence on how the
+  week went, three tiles (changes this week, could not be done, undone), the last five things
+  an app did, and a "Connect an app" prompt when nothing has happened yet.
+- **Permission levels.** Each module card on the Permissions tab carries four buttons — Off,
+  Read, Edit, Full — in place of the single on/off switch. Read allows only reads; Edit adds
+  writes that are neither destructive nor high risk; Full allows everything. A module whose
+  per-operation switches match no level reads "Custom", and a link leads to the Tools tab for
+  fine-tuning.
+
 ### Changed
+
+- **Tabs speak the owner's language.** Modules is now Permissions, Operations is Tools,
+  Activity is History, Status is Health, and the Connect tab is "Connect an app" at
+  `?page=sitehelm-connect` (the console's first page is now `?page=sitehelm`, Home).
+- **History reads as sentences** — "claude-code changed the page *About us*" — with the
+  operation id kept in small print underneath; the columns are When, What happened,
+  Outcome, Took, Who, Undo.
+- **The Tools tab opens with an "advanced" note** saying most owners only need the
+  Permissions tab.
+- **Tabs no longer stretch to fill the bar**, so the row can take more tabs and scrolls when
+  it must.
 
 - **The admin console's look.** A new design throughout: indigo accents, Geist headings,
   one white content panel under the tab bar, headline stat tiles, and a "Get help" menu in

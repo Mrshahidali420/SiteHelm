@@ -121,7 +121,7 @@ final class ActivityScreenTest extends TestCase {
 
 		$this->assertStringContainsString( 'Nothing recorded yet', $html );
 		$this->assertStringContainsString( 'No operation has been performed yet', $html );
-		$this->assertStringContainsString( 'Connect a client on the Connect screen', $html );
+		$this->assertStringContainsString( 'Connect an app on the Connect tab', $html );
 	}
 
 	public function testTheVerdictCountsTheRecordedOperations(): void {
@@ -456,7 +456,7 @@ final class ActivityScreenTest extends TestCase {
 		// Anchored to the operation cell rather than to the sub-line class on
 		// its own: the actor cell carries a sub-line of its own, so a bare
 		// absence check would pass or fail for reasons unrelated to changes.
-		$this->assertStringContainsString( '<code>content-post-update</code></td>', $html );
+		$this->assertStringContainsString( '<code>content-post-update</code> · <code>post:41</code></span></td>', $html );
 	}
 
 	/**
@@ -540,7 +540,7 @@ final class ActivityScreenTest extends TestCase {
 		$html = $this->render( 1, [ $this->row( [ 'summary' => $summary ] ) ] );
 
 		$this->assertStringContainsString( 'and 2 more fields', $html );
-		$this->assertStringNotContainsString( 'e changed', $html );
+		$this->assertStringNotContainsString( ', d changed', $html );
 	}
 
 	/**

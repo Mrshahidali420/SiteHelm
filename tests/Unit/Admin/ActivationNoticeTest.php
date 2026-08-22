@@ -56,7 +56,7 @@ final class ActivationNoticeTest extends TestCase {
 
 	public function testLoadingAConsoleScreenDisarmsTheNoticeWithoutShowingIt(): void {
 		ActivationNotice::arm();
-		Functions\when( 'get_current_screen' )->justReturn( (object) [ 'id' => 'toplevel_page_' . AdminMenu::PAGE_CONNECT ] );
+		Functions\when( 'get_current_screen' )->justReturn( (object) [ 'id' => 'toplevel_page_' . AdminMenu::PAGE_HOME ] );
 
 		$this->assertSame( '', $this->render() );
 		$this->assertArrayNotHasKey( ActivationNotice::TRANSIENT, AdminWordPressStubs::$transients );

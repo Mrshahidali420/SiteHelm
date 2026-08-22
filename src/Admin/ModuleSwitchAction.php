@@ -10,16 +10,18 @@ declare(strict_types=1);
 namespace SiteHelm\Admin;
 
 use SiteHelm\Contracts\ModuleId;
+use SiteHelm\Contracts\OperationDefinition;
 use SiteHelm\Policy\OperationSwitches;
+use SiteHelm\Policy\PermissionLevel;
 use SiteHelm\Registry\CapabilityRegistry;
 
 /**
- * Answers a module card's switch.
+ * Answers a Permissions card's level control.
  *
- * The same option the Operations screen edits one row at a time: switching a
- * module off adds every operation it registered to the switched-off list, and
- * switching it on removes them. Nothing else in the list is touched, so a
- * single operation an operator turned off in another module stays off.
+ * The same option the Tools screen edits one operation at a time: the chosen
+ * level decides, for every operation the module registered, whether it is on
+ * the switched-off list. Nothing else in the list is touched, so a single
+ * operation an operator turned off in another module stays off.
  *
  * @package SiteHelm
  */
@@ -42,8 +44,16 @@ final class ModuleSwitchAction {
 
 	/**
 	 * The form field present when the module is to be on.
+	 *
+	 * Kept for a browser without script and for older forms: on means Full,
+	 * absent means Off. FIELD_LEVEL, when present, wins.
 	 */
 	public const FIELD_ON = 'sitehelm_module_on';
+
+	/**
+	 * The form field naming the permission level chosen for the module.
+	 */
+	public const FIELD_LEVEL = 'sitehelm_module_level';
 
 	/**
 	 * The query argument the Modules screen reads to report the outcome.
@@ -101,17 +111,32 @@ final class ModuleSwitchAction {
 	 * @return list<string>
 	 */
 	public static function module_ids( CapabilityRegistry $registry, ModuleId $module ): array {
-		$ids = [];
+		return array_map(
+			static fn( OperationDefinition $definition ): string => $definition->id,
+			self::module_definitions( $registry, $module )
+		);
+	}
+
+	/**
+	 * Every operation a module registered.
+	 *
+	 * @param CapabilityRegistry $registry The registry.
+	 * @param ModuleId           $module   The module.
+	 *
+	 * @return list<OperationDefinition>
+	 */
+	public static function module_definitions( CapabilityRegistry $registry, ModuleId $module ): array {
+		$definitions = [];
 
 		foreach ( CapabilityRegistry::DISPATCHERS as $dispatcher ) {
 			foreach ( $registry->forDispatcher( $dispatcher ) as $definition ) {
 				if ( $definition->module === $module ) {
-					$ids[] = $definition->id;
+					$definitions[] = $definition;
 				}
 			}
 		}
 
-		return $ids;
+		return $definitions;
 	}
 
 	/**
@@ -126,17 +151,30 @@ final class ModuleSwitchAction {
 
 		// phpcs:disable WordPress.Security.NonceVerification.Missing -- check_admin_referer() above verified this POST.
 		$module = ModuleId::tryFrom( isset( $_POST[ self::FIELD_MODULE ] ) ? sanitize_key( wp_unslash( (string) $_POST[ self::FIELD_MODULE ] ) ) : '' );
+		$level  = isset( $_POST[ self::FIELD_LEVEL ] ) ? sanitize_key( wp_unslash( (string) $_POST[ self::FIELD_LEVEL ] ) ) : '';
 		$is_on  = isset( $_POST[ self::FIELD_ON ] );
 		// phpcs:enable WordPress.Security.NonceVerification.Missing
 
-		if ( null !== $module ) {
-			$ids      = self::module_ids( $this->registry, $module );
-			$disabled = $this->switches->disabled();
+		if ( ! PermissionLevel::is_level( $level ) ) {
+			$level = $is_on ? PermissionLevel::FULL : PermissionLevel::OFF;
+		}
 
+		if ( null !== $module ) {
+			$definitions = self::module_definitions( $this->registry, $module );
+			$ids         = array_map( static fn( OperationDefinition $definition ): string => $definition->id, $definitions );
+			$enabled     = PermissionLevel::enabled_ids( $level, $definitions );
+
+			// Everything outside this module is left exactly as it was; inside
+			// it, the level decides each operation afresh.
 			OperationSwitches::save(
-				$is_on
-					? array_values( array_diff( $disabled, $ids ) )
-					: array_merge( $disabled, $ids )
+				array_values(
+					array_unique(
+						array_merge(
+							array_diff( $this->switches->disabled(), $ids ),
+							array_diff( $ids, $enabled )
+						)
+					)
+				)
 			);
 		}
 
