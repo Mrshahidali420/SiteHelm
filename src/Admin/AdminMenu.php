@@ -9,6 +9,8 @@ declare(strict_types=1);
 
 namespace SiteHelm\Admin;
 
+use SiteHelm\Gateway\ContextFactory;
+use SiteHelm\Gateway\Dispatcher;
 use SiteHelm\Registry\CapabilityRegistry;
 
 /**
@@ -115,14 +117,27 @@ final class AdminMenu {
 	private array $health;
 
 	/**
+	 * The dispatcher the gateway serves from, when the console may write through it.
+	 *
+	 * Null means the console is read-only: no rollback button is bound. The
+	 * Activity screen still renders the button markup, but the POST would land
+	 * on an unbound admin_post action, which WordPress ignores.
+	 *
+	 * @var Dispatcher|null
+	 */
+	private ?Dispatcher $dispatcher;
+
+	/**
 	 * Constructs the console.
 	 *
-	 * @param CapabilityRegistry                                     $registry The registry the gateway is serving from.
-	 * @param array<string, array{version: ?string, health: string}> $health   The loader's health map.
+	 * @param CapabilityRegistry                                     $registry   The registry the gateway is serving from.
+	 * @param array<string, array{version: ?string, health: string}> $health     The loader's health map.
+	 * @param Dispatcher|null                                        $dispatcher The gateway's dispatcher, for console rollback; null binds none.
 	 */
-	public function __construct( CapabilityRegistry $registry, array $health = [] ) {
-		$this->registry = $registry;
-		$this->health   = $health;
+	public function __construct( CapabilityRegistry $registry, array $health = [], ?Dispatcher $dispatcher = null ) {
+		$this->registry   = $registry;
+		$this->health     = $health;
+		$this->dispatcher = $dispatcher;
 	}
 
 	/**
@@ -132,6 +147,16 @@ final class AdminMenu {
 		add_action( 'admin_menu', [ $this, 'add_pages' ] );
 		add_action( 'admin_enqueue_scripts', [ $this, 'enqueue_assets' ] );
 		add_action( 'admin_post_' . ConnectScreen::ACTION_CREATE_PASSWORD, [ new ConnectScreen(), 'handle_create_password' ] );
+
+		// Console rollback goes through the same dispatcher the gateway serves
+		// from, so the console can restore nothing an agent could not, and every
+		// restoration is recorded and verified the same way.
+		if ( null !== $this->dispatcher ) {
+			add_action(
+				'admin_post_' . RollbackAction::ACTION,
+				[ new RollbackAction( [ $this->dispatcher, 'dispatch' ], new ContextFactory(), $this->health ), 'handle' ]
+			);
+		}
 
 		// Other plugins' banners are pruned from our screens only. See the class
 		// for the rule and for why it fails open.

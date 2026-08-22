@@ -58,12 +58,20 @@ final class ActivityScreen {
 	private AuditStore $store;
 
 	/**
+	 * The rollback controls this screen carries.
+	 *
+	 * @var RollbackPanel
+	 */
+	private RollbackPanel $panel;
+
+	/**
 	 * Constructs the screen.
 	 *
 	 * @param AuditStore|null $store The store to read, or null for the default.
 	 */
 	public function __construct( ?AuditStore $store = null ) {
 		$this->store = $store ?? new AuditStore();
+		$this->panel = new RollbackPanel();
 	}
 
 	/**
@@ -87,6 +95,12 @@ final class ActivityScreen {
 		);
 
 		$this->render_verdict( $total, $filters );
+
+		// A rollback taken from this screen reports back here, and asks for its
+		// second click here, above the rows it concerns.
+		$this->panel->render_notice();
+		$this->panel->render_confirm();
+
 		$this->render_filters( $filters );
 
 		if ( [] === $rows ) {
@@ -396,7 +410,14 @@ final class ActivityScreen {
 
 		Ui::copy_icon( $id, __( 'Copy rollback reference', 'sitehelm' ) );
 
-		echo '</span></td>';
+		echo '</span>';
+
+		// The reference is for an agent to redeem; the button is for the person
+		// reading this row. Both restore the same snapshot through the same
+		// engine, so neither can do what the other cannot.
+		$this->panel->render_button( $reference );
+
+		echo '</td>';
 	}
 
 	/**
