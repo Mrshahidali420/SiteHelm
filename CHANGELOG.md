@@ -13,6 +13,12 @@ an operation behaves.
 
 ### Added
 
+- **The Status screen now tests whether the Authorization header reaches WordPress.**
+  A loopback to the endpoint with a login that cannot exist tells a server that passes
+  the header through from one that strips it (Apache as CGI/FastCGI), which is the
+  commonest reason a fresh credential is "wrong"; when it is stripped the screen gives
+  the three .htaccess lines that fix it.
+
 - **Export the Activity log as CSV.** The Activity screen's filter row now ends in
   an Export CSV link that downloads every row matching the filters shown, newest
   first, up to 10,000 rows (the file says so on its last line when it stops there).
