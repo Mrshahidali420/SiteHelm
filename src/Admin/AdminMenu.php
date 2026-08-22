@@ -162,6 +162,7 @@ final class AdminMenu {
 		add_action( 'admin_post_' . RetentionAction::ACTION, [ new RetentionAction(), 'handle' ] );
 		add_action( 'admin_post_' . ExportAction::ACTION, [ new ExportAction(), 'handle' ] );
 		add_action( 'admin_post_' . OperationsAction::ACTION, [ new OperationsAction( $this->registry ), 'handle' ] );
+		add_action( 'admin_post_' . ModuleSwitchAction::ACTION, [ new ModuleSwitchAction( $this->registry, $this->switches ), 'handle' ] );
 		add_action( 'wp_dashboard_setup', [ new DashboardWidget(), 'add_widget' ] );
 		PluginLinks::register();
 		( new SiteHealth() )->register();
@@ -188,7 +189,7 @@ final class AdminMenu {
 	public function add_pages(): void {
 		$screens = [
 			self::PAGE_CONNECT    => new ConnectScreen(),
-			self::PAGE_MODULES    => new ModulesScreen( $this->registry, $this->health ),
+			self::PAGE_MODULES    => new ModulesScreen( $this->registry, $this->health, $this->switches ),
 			self::PAGE_OPERATIONS => new OperationsScreen( $this->registry, $this->health, $this->switches ),
 			self::PAGE_ACTIVITY   => new ActivityScreen(),
 			self::PAGE_STATUS     => new StatusScreen( $this->health ),

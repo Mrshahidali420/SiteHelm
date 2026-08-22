@@ -930,6 +930,22 @@
 	word-break: break-all;
 }
 
+/* The module switch: one control per card, on its own line at the foot. */
+.sitehelm-card__switch {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin-top: 4px;
+	padding-top: 10px;
+	border-top: 1px solid var(--sh-gray-200);
+}
+
+.sitehelm-card__switch-label {
+	font-size: 12px;
+	font-weight: 600;
+	color: var(--sh-gray-600);
+}
+
 /* What a blocked module is waiting on: a sentence and the one link that fixes it. */
 .sitehelm-card__waiting {
 	margin: 0;
