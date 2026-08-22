@@ -1141,7 +1141,24 @@ screen had no answer to "which clients can still reach this site?". Three classe
 
 ---
 
-## 20. Standing project constraints
+## 20. Dashboard widget — the console at a glance
+
+`DashboardWidget` (`wp_dashboard_setup`, bound unconditionally by `AdminMenu::register`)
+registers `wp_add_dashboard_widget( 'sitehelm_dashboard', 'SiteHelm', … )` only when
+`current_user_can( AdminMenu::CAPABILITY )`, and `render()` re-checks. Three facts, no
+controls: write access (`WriteModeAction::is_paused()`, links to Status), the count of
+`Credentials::for_users( ConnectScreen::selectable_users() )` (links to Connect), and the
+`RECENT = 5` newest audit rows via `AuditStore::query( [], 5, 0 )` (time / operation /
+client / outcome badge, links to Activity). Every switch stays on the console behind its
+own nonce. Constructor `(?AuditStore, ?Credentials)` for tests. For this,
+`ConnectScreen::selectable_users()` and `ActivityScreen::tone_for()/label_for()` became
+`public static`. The console stylesheet is also enqueued on `index.php`
+(`DashboardWidget::HOOK_SUFFIX`), and the CSS tokens are declared on `.sitehelm-widget`
+as well as `.sitehelm-app` because the widget renders outside the app shell.
+
+---
+
+## 21. Standing project constraints
 
 - **No AI attribution anywhere in git** — no "Generated with Claude Code" footer,
   no session URL, no `Co-Authored-By` trailer, in any commit, PR body, PR comment,
