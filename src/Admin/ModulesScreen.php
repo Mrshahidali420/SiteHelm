@@ -11,6 +11,10 @@ namespace SiteHelm\Admin;
 
 use SiteHelm\Contracts\ModuleHealth;
 use SiteHelm\Contracts\ModuleId;
+use SiteHelm\Modules\Acf\AcfPresence;
+use SiteHelm\Modules\Elementor\ElementorPresence;
+use SiteHelm\Modules\Metabox\MetaboxPresence;
+use SiteHelm\Modules\Seo\SeoPresence;
 use SiteHelm\Registry\CapabilityRegistry;
 
 /**
@@ -150,6 +154,10 @@ final class ModulesScreen {
 
 		printf( '<p class="sitehelm-card__desc">%s</p>', esc_html( self::module_summary( $module ) ) );
 
+		if ( ModuleHealth::Active->value !== $state ) {
+			$this->render_waiting_on( $module, $state );
+		}
+
 		echo '<p class="sitehelm-card__meta">';
 
 		printf(
@@ -177,6 +185,80 @@ final class ModulesScreen {
 		}
 
 		echo '</p></article>';
+	}
+
+	/**
+	 * What a module that is not active is waiting on, and where to go to fix it.
+	 *
+	 * The page promises to say "what the rest are waiting on", and a badge
+	 * reading "Not active" does not keep that promise: the operator still has
+	 * to know which plugin, which version, and which screen. A module backed by
+	 * a third-party plugin names the plugin and the version floor and links to
+	 * the Plugins screen. A module backed by WordPress itself can only be
+	 * blocked by SiteHelm's own storage, so it points at Status instead.
+	 *
+	 * The version floors are the Presence constants the gates actually enforce,
+	 * never literals, so the floor this card advertises and the floor that
+	 * blocks the module are the same number by construction.
+	 *
+	 * @param ModuleId $module The module.
+	 * @param string   $state  Its recorded health value.
+	 */
+	private function render_waiting_on( ModuleId $module, string $state ): void {
+		$requirement = self::requirement_for( $module );
+
+		if ( '' === $requirement ) {
+			$text = __( 'Waiting on SiteHelm storage.', 'sitehelm' );
+			$href = admin_url( 'admin.php?page=' . AdminMenu::PAGE_STATUS );
+			$link = __( 'See Status', 'sitehelm' );
+		} else {
+			$text = ModuleHealth::VersionBlocked->value === $state
+				? sprintf(
+					/* translators: %s: a plugin name and minimum version, such as "Elementor 3.0.0". */
+					__( 'Update to %s or newer.', 'sitehelm' ),
+					$requirement
+				)
+				: sprintf(
+					/* translators: %s: a plugin name and minimum version, such as "Elementor 3.0.0". */
+					__( 'Activate %s or newer.', 'sitehelm' ),
+					$requirement
+				);
+			$href = admin_url( 'plugins.php' );
+			$link = __( 'Open Plugins', 'sitehelm' );
+		}
+
+		printf(
+			'<p class="sitehelm-card__waiting">%s <a href="%s">%s</a></p>',
+			esc_html( $text ),
+			esc_url( $href ),
+			esc_html( $link )
+		);
+	}
+
+	/**
+	 * The plugin and version floor a module depends on, or an empty string for
+	 * a module that depends on WordPress alone.
+	 *
+	 * @param ModuleId $module The module.
+	 */
+	public static function requirement_for( ModuleId $module ): string {
+		switch ( $module ) {
+			case ModuleId::Elementor:
+				return 'Elementor ' . ElementorPresence::MIN_VERSION;
+			case ModuleId::Acf:
+				return 'Advanced Custom Fields ' . AcfPresence::MIN_VERSION;
+			case ModuleId::Metabox:
+				return 'Meta Box ' . MetaboxPresence::MIN_VERSION;
+			case ModuleId::Seo:
+				return sprintf(
+					/* translators: 1: Yoast SEO minimum version, 2: Rank Math minimum version. */
+					__( 'Yoast SEO %1$s or Rank Math %2$s', 'sitehelm' ),
+					SeoPresence::YOAST_MIN_VERSION,
+					SeoPresence::RANK_MATH_MIN_VERSION
+				);
+			default:
+				return '';
+		}
 	}
 
 	/**
@@ -255,11 +337,11 @@ final class ModulesScreen {
 	public static function module_summary( ModuleId $module ): string {
 		switch ( $module ) {
 			case ModuleId::Core:
-				return __( 'Read, create and edit posts, pages and terms, and move them between statuses.', 'sitehelm' );
+				return __( 'Read, create and edit posts, pages, terms, comments and users; manage redirects and links; read the activity log and roll a change back.', 'sitehelm' );
 			case ModuleId::Diagnostics:
 				return __( 'Report what this site is running and why an operation was refused.', 'sitehelm' );
 			case ModuleId::Media:
-				return __( 'List and inspect attachments, upload files, and import an image from a URL.', 'sitehelm' );
+				return __( 'List and inspect attachments, upload or resize files, and import an image from a URL.', 'sitehelm' );
 			case ModuleId::Menus:
 				return __( 'Read navigation menus and add, move or remove the items in them.', 'sitehelm' );
 			case ModuleId::Elementor:

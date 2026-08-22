@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace SiteHelm\Tests\Unit\Admin;
 
+use SiteHelm\Admin\AdminMenu;
 use SiteHelm\Admin\ModulesScreen;
 use SiteHelm\Contracts\Domain;
 use SiteHelm\Contracts\Mode;
@@ -14,6 +15,9 @@ use SiteHelm\Contracts\PreviewPolicy;
 use SiteHelm\Contracts\Risk;
 use SiteHelm\Contracts\RollbackPolicy;
 use SiteHelm\Contracts\SnapshotPolicy;
+use SiteHelm\Modules\Acf\AcfPresence;
+use SiteHelm\Modules\Elementor\ElementorPresence;
+use SiteHelm\Modules\Seo\SeoPresence;
 use SiteHelm\Registry\CapabilityRegistry;
 use SiteHelm\Tests\Doubles\AdminDied;
 use SiteHelm\Tests\Doubles\AdminWordPressStubs;
@@ -291,5 +295,80 @@ final class ModulesScreenTest extends TestCase {
 
 		$this->assertStringNotContainsString( '<script>', $html );
 		$this->assertStringContainsString( '&lt;script&gt;', $html );
+	}
+
+	/**
+	 * The page promises to say what a blocked module is waiting on. A card that
+	 * only reads "Not active" breaks that promise, so an inactive module names
+	 * the plugin, the floor, and the screen where it is switched on.
+	 */
+	public function testAnInactiveModuleNamesThePluginAndFloorItIsWaitingOnAndLinksToPlugins(): void {
+		$html = $this->render(
+			[
+				ModuleId::Elementor->value => [
+					'version' => null,
+					'health'  => ModuleHealth::Inactive->value,
+				],
+			]
+		);
+
+		$this->assertStringContainsString( 'Activate Elementor ' . ElementorPresence::MIN_VERSION . ' or newer.', $html );
+		$this->assertStringContainsString( 'href="https://example.test/wp-admin/plugins.php"', $html );
+		$this->assertStringContainsString( '>Open Plugins</a>', $html );
+	}
+
+	public function testAVersionBlockedModuleAsksForAnUpdateRatherThanAnActivation(): void {
+		$html = $this->render(
+			[
+				ModuleId::Acf->value => [
+					'version' => '5.8.0',
+					'health'  => ModuleHealth::VersionBlocked->value,
+				],
+			]
+		);
+
+		$this->assertStringContainsString( 'Update to Advanced Custom Fields ' . AcfPresence::MIN_VERSION . ' or newer.', $html );
+		$this->assertStringNotContainsString( 'Activate Advanced Custom Fields', $html );
+	}
+
+	/**
+	 * A module backed by WordPress itself has no plugin to activate. The only
+	 * thing that blocks it is SiteHelm's own storage, so sending an operator to
+	 * the Plugins screen would send them to the wrong place.
+	 */
+	public function testAnInactiveCoreModulePointsAtStatusRatherThanAtPlugins(): void {
+		$health = $this->allActive();
+
+		$health[ ModuleId::Core->value ] = [
+			'version' => null,
+			'health'  => ModuleHealth::Inactive->value,
+		];
+
+		$html = $this->render( $health );
+
+		$this->assertStringContainsString( 'Waiting on SiteHelm storage.', $html );
+		$this->assertStringContainsString( 'href="https://example.test/wp-admin/admin.php?page=' . AdminMenu::PAGE_STATUS . '"', $html );
+		$this->assertStringNotContainsString( 'plugins.php', $html );
+	}
+
+	public function testTheSeoModuleNamesEitherPluginItAccepts(): void {
+		$html = $this->render(
+			[
+				ModuleId::Seo->value => [
+					'version' => null,
+					'health'  => ModuleHealth::Inactive->value,
+				],
+			]
+		);
+
+		$this->assertStringContainsString( 'Yoast SEO ' . SeoPresence::YOAST_MIN_VERSION, $html );
+		$this->assertStringContainsString( 'Rank Math ' . SeoPresence::RANK_MATH_MIN_VERSION, $html );
+	}
+
+	public function testAnActiveModuleCarriesNoWaitingLine(): void {
+		$html = $this->render( $this->allActive() );
+
+		$this->assertStringNotContainsString( 'sitehelm-card__waiting', $html );
+		$this->assertStringNotContainsString( 'Open Plugins', $html );
 	}
 }
