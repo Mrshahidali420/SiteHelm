@@ -903,6 +903,13 @@ to its own filtered view; an unidentified client (`''` or
 `RestTransport::UNKNOWN_CLIENT`) is plain text, because linking to "everything the
 unidentified did" would mix every unnamed connection into one view.
 
+**Period filter.** `?period=` is one of `ActivityScreen::PERIODS` (`1h`, `24h`, `7d`,
+`30d` → seconds); `filters()` keeps the key as `period` (so pager and export links can
+carry it — `FILTER_ARGS` maps `period → period`) and sets `since = time() - seconds`,
+which the store already honoured as `recorded_at >= %d`. An unknown period is dropped,
+and the select shows "Any time". `page_url()` now iterates `FILTER_ARGS` instead of
+naming each arg, so a new filter needs only the map entry and the `filters()` branch.
+
 **The summary is a size, never a value, and carries no unit.**
 `AuditRedactor::measure()` returns `0` for null, `count()` for arrays, `1` for
 bools and `mb_strlen()` otherwise — so a character count and an array length are
@@ -1175,7 +1182,92 @@ is that a change older than the window can no longer be rolled back.
 
 ---
 
-## 22. Standing project constraints
+## 22. Activity export — the Activity screen downloads what it shows
+
+`ExportAction` (`admin_post_sitehelm_export_activity`, always bound) answers the
+**Export CSV** link `ActivityScreen::render_filters()` places at the right of the filter
+row (`.sitehelm-filters__export`, `margin-left: auto`). `ExportAction::url($filters)` maps
+the store filters back to query args through `ActivityScreen::FILTER_ARGS`
+(`operation`, `correlation`, `client`, `outcome`) and wraps them in
+`wp_nonce_url(…, 'sitehelm_export_activity')`, so what is downloaded is what the screen
+shows — every matching row, not one page. `handle()`: capability → `check_admin_referer`
+→ `ActivityScreen::filters()` (public static now, as is `change_text()`) → filename
+`sitehelm-activity-Ymd-His.csv` → the injectable `$send(string $filename, callable $write)`,
+whose default sends `nocache_headers()` + CSV headers, opens `php://output` and exits.
+`write()` pages the store `AuditStore::MAX_LIMIT` (100) rows at a time, newest first,
+stopping when a page comes back short; at `MAX_ROWS` (10 000) it appends one last line
+"Export stopped at 10,000 rows. Narrow the filters to export the rest." rather than let
+a truncated file pass for a complete one. Columns: `recorded_at` (`wp_date`
+`Y-m-d H:i:s`), `operation_id`, `target_key`, `outcome`, `actor_login`, `client_id`,
+`correlation_id`, `duration_ms`, `changes` (`change_text()` of the summary),
+`rollback_ref`. **Every cell beginning with `=`, `+`, `-`, `@`, tab or CR is prefixed
+with `'`** (`disarm()`): a target key or summary can carry text a client chose, and a
+formula in a post title is an attack on whoever opens the file. Tests inject `$send`
+with a `php://memory` stream; `AdminWordPressStubs` gained a `wp_nonce_url` stub that
+appends `&_wpnonce=<action>`.
+
+---
+
+## 23. Connection probe — does the Authorization header reach WordPress?
+
+The commonest "my credential does not work" on shared hosting is Apache running PHP as
+CGI/FastCGI and dropping the `Authorization` header; WordPress then sees an anonymous
+request and answers `rest_not_logged_in`, which to a client is indistinguishable from a
+wrong password. `ConnectionProbe` (`src/Admin/ConnectionProbe.php`) settles it from the
+Status screen: a loopback `wp_remote_post` to `ConnectScreen::endpoint()` with
+`Authorization: Basic base64('sitehelm-probe:probe')` (a login this plugin never creates),
+5 s timeout, `sslverify` from `https_local_ssl_verify`. Verdicts (`run(): string`):
+**OK** — body is a REST error whose `code` is anything but `rest_not_logged_in` and the
+HTTP status is 401/403 (WordPress read the header and judged it); **STRIPPED** — `code`
+is `rest_not_logged_in`; **UNREACHABLE** — `wp_remote_post` returned a `WP_Error`, or the
+body was not a REST error (HTML from a WAF, a 200, …); **SKIPPED** — application
+passwords are unavailable, so no header would be honoured and nothing is sent. The
+transport is an injectable callable `(string $url, string $authorization): ?array{code,body}`
+so the probe never touches `WP_Error` itself; `AdminWordPressStubs` stubs
+`wp_remote_post` (static `$probeResponse`, default a 401 `invalid_username`),
+`is_wp_error` (a `Throwable` stands in), and the two `wp_remote_retrieve_*`.
+`StatusScreen` takes `?ConnectionProbe` as its second constructor argument and runs it
+once per render: a fifth Readiness card "Authorization header" (Reaches WordPress /
+Stripped by the server / Could not be tested / Not tested), and below the grid
+`render_probe_advice()`: for STRIPPED, a `.sitehelm-note.sitehelm-probe-advice` saying
+every client will be told its credentials are wrong, plus `<pre class="sitehelm-probe-fix">`
+with `StatusScreen::HEADER_FIX` (`RewriteEngine On` / `RewriteCond %{HTTP:Authorization} .`
+/ `RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]`); for UNREACHABLE, a
+calm note that local and firewalled hosts often cannot reach themselves and this alone
+does not mean clients will fail. No transport error string ever reaches the page.
+The probe costs one loopback per Status view; Status is not a hot page and the timeout
+bounds it.
+
+---
+
+## 24. Plugins-screen links
+
+`PluginLinks::register()` (called from `AdminMenu::register()`, guarded by
+`defined('SITEHELM_PLUGIN_FILE')`) filters `plugin_action_links_<basename>` and
+`PluginLinks::add()` prepends `sitehelm-connect` ("Connect" → `?page=sitehelm`) and
+`sitehelm-status` ("Status" → `?page=sitehelm-status`) to the row, only when the viewer
+holds `AdminMenu::CAPABILITY`; otherwise the row is returned untouched. Pure function,
+tested directly.
+
+---
+
+## 25. Site Health test
+
+`SiteHealth::register()` (called from `AdminMenu::register()`) filters `site_status_tests`
+and `add_test()` adds a **direct** test keyed `SiteHealth::TEST`
+(`sitehelm_authorization_header`), creating the `direct` section if the list lacks one.
+`run()` executes `ConnectionProbe` and maps its state to the Site Health result array
+(`label`, `status`, `badge` {label "SiteHelm", colour}, `description`, `actions`, `test`):
+`OK` → `good`/blue; `STRIPPED` → `critical`/red with `ConnectionProbe::HEADER_FIX` in a
+`<pre><code>`; `UNREACHABLE` → `recommended`/orange, calm wording; `SKIPPED` (application
+passwords off) → `critical`/red. Every result's `actions` links to the Status screen. The
+constructor takes an optional `ConnectionProbe`, so tests script the loopback without
+touching the transport. `ConnectionProbe::HEADER_FIX` is public and shared with
+`StatusScreen::render_probe_advice()`; it has no copy anywhere else.
+
+---
+
+## 26. Standing project constraints
 
 - **No AI attribution anywhere in git** — no "Generated with Claude Code" footer,
   no session URL, no `Co-Authored-By` trailer, in any commit, PR body, PR comment,

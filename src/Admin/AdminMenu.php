@@ -150,7 +150,10 @@ final class AdminMenu {
 		add_action( 'admin_post_' . WriteModeAction::ACTION, [ new WriteModeAction(), 'handle' ] );
 		add_action( 'admin_post_' . RevokeAction::ACTION, [ new RevokeAction(), 'handle' ] );
 		add_action( 'admin_post_' . RetentionAction::ACTION, [ new RetentionAction(), 'handle' ] );
+		add_action( 'admin_post_' . ExportAction::ACTION, [ new ExportAction(), 'handle' ] );
 		add_action( 'wp_dashboard_setup', [ new DashboardWidget(), 'add_widget' ] );
+		PluginLinks::register();
+		( new SiteHealth() )->register();
 
 		// Console rollback goes through the same dispatcher the gateway serves
 		// from, so the console can restore nothing an agent could not, and every

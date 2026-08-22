@@ -39,6 +39,17 @@ final class AdminWordPressStubs {
 	public static bool $isSsl = true;
 
 	/**
+	 * What wp_remote_post() answers the connection probe with. The default is
+	 * the answer of a server that passes the Authorization header through.
+	 *
+	 * @var mixed
+	 */
+	public static mixed $probeResponse = [
+		'response' => [ 'code' => 401 ],
+		'body'     => '{"code":"invalid_username","message":"Unknown username.","data":{"status":401}}',
+	];
+
+	/**
 	 * Options the doubled `get_option()` returns, keyed by name.
 	 *
 	 * @var array<string, mixed>
@@ -110,6 +121,10 @@ final class AdminWordPressStubs {
 		self::$refererChecks = [];
 		self::$canManage            = true;
 		self::$isSsl                = true;
+		self::$probeResponse        = [
+			'response' => [ 'code' => 401 ],
+			'body'     => '{"code":"invalid_username","message":"Unknown username.","data":{"status":401}}',
+		];
 		self::$options              = [];
 		self::$transients           = [];
 		self::$deletedTransients    = [];
@@ -166,6 +181,14 @@ final class AdminWordPressStubs {
 			static fn( int $id ) => isset( self::$users[ $id ] ) ? self::user( $id ) : false
 		);
 		Functions\when( 'is_ssl' )->alias( static fn(): bool => self::$isSsl );
+		Functions\when( 'wp_remote_post' )->alias( static fn(): mixed => self::$probeResponse );
+		Functions\when( 'is_wp_error' )->alias( static fn( mixed $thing ): bool => $thing instanceof \Throwable );
+		Functions\when( 'wp_remote_retrieve_response_code' )->alias(
+			static fn( mixed $response ): int => (int) ( $response['response']['code'] ?? 0 )
+		);
+		Functions\when( 'wp_remote_retrieve_body' )->alias(
+			static fn( mixed $response ): string => (string) ( $response['body'] ?? '' )
+		);
 
 		Functions\when( 'wp_die' )->alias(
 			static function ( $message = '' ): void {
@@ -228,6 +251,7 @@ final class AdminWordPressStubs {
 		Functions\when( 'wp_unslash' )->returnArg( 1 );
 		Functions\when( 'absint' )->alias( static fn( $value ): int => abs( (int) $value ) );
 		Functions\when( 'wp_nonce_field' )->justReturn( '' );
+		Functions\when( 'wp_nonce_url' )->alias( static fn( string $url, $action = -1 ): string => $url . '&_wpnonce=' . $action );
 		Functions\when( 'check_admin_referer' )->alias(
 			static function ( string $action ): bool {
 				self::$refererChecks[] = $action;

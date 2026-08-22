@@ -47,6 +47,7 @@ final class PluginTest extends TestCase {
 
 	public function test_an_admin_request_registers_the_console(): void {
 		Functions\when( 'is_admin' )->justReturn( true );
+		Functions\when( 'plugin_basename' )->returnArg();
 		Actions\expectAdded( 'admin_menu' )->once();
 
 		Plugin::instance()->register();

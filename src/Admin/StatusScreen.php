@@ -43,12 +43,21 @@ final class StatusScreen {
 	private array $health;
 
 	/**
+	 * The loopback that tells whether an Authorization header reaches WordPress.
+	 *
+	 * @var ConnectionProbe
+	 */
+	private ConnectionProbe $probe;
+
+	/**
 	 * Constructs the screen.
 	 *
 	 * @param array<string, array{version: ?string, health: string}> $health The loader's health map.
+	 * @param ConnectionProbe|null                                   $probe  The probe; null for the default.
 	 */
-	public function __construct( array $health = [] ) {
+	public function __construct( array $health = [], ?ConnectionProbe $probe = null ) {
 		$this->health = $health;
+		$this->probe  = $probe ?? new ConnectionProbe();
 	}
 
 	/**
@@ -168,6 +177,7 @@ final class StatusScreen {
 	private function render_readiness(): void {
 		$blocked = $this->blocked_count();
 		$storage = $this->storage_ready();
+		$probe   = $this->probe->run();
 
 		Ui::section_open( __( 'Readiness', 'sitehelm' ), '' );
 
@@ -200,10 +210,54 @@ final class StatusScreen {
 					'value' => is_ssl() ? __( 'HTTPS', 'sitehelm' ) : __( 'Not HTTPS', 'sitehelm' ),
 					'ok'    => is_ssl(),
 				],
+				[
+					'label' => __( 'Authorization header', 'sitehelm' ),
+					'value' => self::probe_label( $probe ),
+					'ok'    => ConnectionProbe::OK === $probe,
+				],
 			]
 		);
 
+		$this->render_probe_advice( $probe );
+
 		Ui::section_close();
+	}
+
+	/**
+	 * The probe's outcome, as the card states it.
+	 *
+	 * @param string $state One of the ConnectionProbe state constants.
+	 */
+	private static function probe_label( string $state ): string {
+		return match ( $state ) {
+			ConnectionProbe::OK          => __( 'Reaches WordPress', 'sitehelm' ),
+			ConnectionProbe::STRIPPED    => __( 'Stripped by the server', 'sitehelm' ),
+			ConnectionProbe::UNREACHABLE => __( 'Could not be tested', 'sitehelm' ),
+			default                      => __( 'Not tested', 'sitehelm' ),
+		};
+	}
+
+	/**
+	 * What to do about a probe that did not come back clean.
+	 *
+	 * @param string $state One of the ConnectionProbe state constants.
+	 */
+	private function render_probe_advice( string $state ): void {
+		if ( ConnectionProbe::STRIPPED === $state ) {
+			printf(
+				'<p class="sitehelm-note sitehelm-probe-advice">%s</p><pre class="sitehelm-probe-fix"><code>%s</code></pre>',
+				esc_html__( 'This server drops the Authorization header before WordPress sees it, so every client will be told its credentials are wrong. On Apache, add these lines to the top of .htaccess, above the WordPress block; on other servers, ask your host to pass the header through to PHP.', 'sitehelm' ),
+				esc_html( ConnectionProbe::HEADER_FIX )
+			);
+			return;
+		}
+
+		if ( ConnectionProbe::UNREACHABLE === $state ) {
+			printf(
+				'<p class="sitehelm-note sitehelm-probe-advice">%s</p>',
+				esc_html__( 'This site could not reach its own endpoint to test the header. That is common on local and firewalled hosts and does not by itself mean clients will fail; the Connect screen tells you for certain the first time one signs in.', 'sitehelm' )
+			);
+		}
 	}
 
 	/**
