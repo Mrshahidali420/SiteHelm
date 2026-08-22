@@ -38,9 +38,14 @@ final class AdminMenu {
 	public const CAPABILITY = 'manage_options';
 
 	/**
-	 * The top-level page slug, which is also the Connect screen.
+	 * The top-level page slug, which is also the Home screen.
 	 */
-	public const PAGE_CONNECT = 'sitehelm';
+	public const PAGE_HOME = 'sitehelm';
+
+	/**
+	 * The Connect screen's page slug.
+	 */
+	public const PAGE_CONNECT = 'sitehelm-connect';
 
 	/**
 	 * The Activity screen's page slug.
@@ -67,33 +72,39 @@ final class AdminMenu {
 	 *
 	 * One list, read by both the WordPress submenu and the console's own tab bar,
 	 * so a screen can never exist in one and not the other. The order runs from
-	 * what a person does first to what they consult afterwards: connect the
-	 * client, see what it can reach, look up an operation, then read back what
-	 * happened and why.
+	 * what a person does first to what they consult afterwards: see how things
+	 * are, connect an app, decide what it may do, then read back what happened
+	 * and whether the site is healthy. The labels are a site owner's words; the
+	 * slugs and the screen classes keep their original names, so bookmarks and
+	 * tests survive the renaming. The tab bar scrolls when more screens arrive.
 	 *
 	 * @return array<string, array{label: string, icon: string}> Page slug to label and dashicon class.
 	 */
 	public static function tabs(): array {
 		return [
+			self::PAGE_HOME       => [
+				'label' => __( 'Home', 'sitehelm' ),
+				'icon'  => 'dashicons-admin-home',
+			],
 			self::PAGE_CONNECT    => [
-				'label' => __( 'Connect', 'sitehelm' ),
+				'label' => __( 'Connect an app', 'sitehelm' ),
 				'icon'  => 'dashicons-admin-links',
 			],
 			self::PAGE_MODULES    => [
-				'label' => __( 'Modules', 'sitehelm' ),
-				'icon'  => 'dashicons-screenoptions',
+				'label' => __( 'Permissions', 'sitehelm' ),
+				'icon'  => 'dashicons-lock',
 			],
 			self::PAGE_OPERATIONS => [
-				'label' => __( 'Operations', 'sitehelm' ),
-				'icon'  => 'dashicons-list-view',
+				'label' => __( 'Tools', 'sitehelm' ),
+				'icon'  => 'dashicons-admin-tools',
 			],
 			self::PAGE_ACTIVITY   => [
-				'label' => __( 'Activity', 'sitehelm' ),
+				'label' => __( 'History', 'sitehelm' ),
 				'icon'  => 'dashicons-backup',
 			],
 			self::PAGE_STATUS     => [
-				'label' => __( 'Status', 'sitehelm' ),
-				'icon'  => 'dashicons-shield-alt',
+				'label' => __( 'Health', 'sitehelm' ),
+				'icon'  => 'dashicons-heart',
 			],
 		];
 	}
@@ -188,6 +199,7 @@ final class AdminMenu {
 	 */
 	public function add_pages(): void {
 		$screens = [
+			self::PAGE_HOME       => new HomeScreen(),
 			self::PAGE_CONNECT    => new ConnectScreen(),
 			self::PAGE_MODULES    => new ModulesScreen( $this->registry, $this->health, $this->switches ),
 			self::PAGE_OPERATIONS => new OperationsScreen( $this->registry, $this->health, $this->switches ),
@@ -199,15 +211,15 @@ final class AdminMenu {
 			__( 'SiteHelm', 'sitehelm' ),
 			__( 'SiteHelm', 'sitehelm' ),
 			self::CAPABILITY,
-			self::PAGE_CONNECT,
-			[ $screens[ self::PAGE_CONNECT ], 'render' ],
+			self::PAGE_HOME,
+			[ $screens[ self::PAGE_HOME ], 'render' ],
 			self::menu_icon(),
 			58
 		);
 
 		foreach ( self::tabs() as $slug => $tab ) {
 			add_submenu_page(
-				self::PAGE_CONNECT,
+				self::PAGE_HOME,
 				sprintf(
 					/* translators: %s: screen name, such as Activity. */
 					__( 'SiteHelm %s', 'sitehelm' ),
@@ -277,8 +289,8 @@ final class AdminMenu {
 	 * @param string $hook_suffix The current admin page's hook suffix.
 	 */
 	public static function is_console_screen( string $hook_suffix ): bool {
-		return str_contains( $hook_suffix, '_page_' . self::PAGE_CONNECT )
-			|| 'toplevel_page_' . self::PAGE_CONNECT === $hook_suffix;
+		return str_contains( $hook_suffix, '_page_' . self::PAGE_HOME )
+			|| 'toplevel_page_' . self::PAGE_HOME === $hook_suffix;
 	}
 
 	/**

@@ -115,8 +115,8 @@ final class ConnectScreen {
 		Ui::app_open( AdminMenu::PAGE_CONNECT );
 
 		Ui::page_head(
-			__( 'Connect', 'sitehelm' ),
-			__( 'Point an AI client at this site. Everything below is generated from this site\'s own settings.', 'sitehelm' )
+			__( 'Connect an app', 'sitehelm' ),
+			__( 'Point an AI app such as Claude or ChatGPT at this site. Everything below is generated from this site\'s own settings.', 'sitehelm' )
 		);
 
 		$this->render_verdict( $last );

@@ -1281,8 +1281,9 @@ dismissible `notice-info` with an "Open Connect" button. Shown at most once per 
 
 ## 27. Operation switches
 
-The operator can turn any registered operation off from the Operations screen, or a whole
-module's operations at once from the Modules screen. Both edit the same option.
+The operator can turn any registered operation off from the Tools tab (`OperationsScreen`),
+or set a whole module's permission level from the Permissions tab (`ModulesScreen`). Both
+edit the same option.
 
 - **Store** — `Policy\OperationSwitches`, option `sitehelm_disabled_operations`: a list of
   switched-**off** operation ids (never "enabled" ids, so an operation a module adds in an
@@ -1323,20 +1324,73 @@ module's operations at once from the Modules screen. Both edit the same option.
   `sitehelm-note--ok` status.
 - **JS** — `initSwitches(form)` / `syncSwitchCounts` / `syncSwitchRow` in
   `sitehelm-admin.js`; counts are always recomputed from the checkboxes.
-- **Module switch** — `Admin\ModuleSwitchAction` (`admin_post_sitehelm_module_switch`;
-  `ACTION`/`NONCE` `sitehelm_module_switch`, `FIELD_MODULE` `sitehelm_module` = a `ModuleId`
-  value, `FIELD_ON` `sitehelm_module_on` present = on, `ARG_STATE` `sitehelm_module`,
-  `STATE_SAVED`). Ctor `($registry, ?$switches, ?$redirect)`. Off = stored list ∪
-  `module_ids(registry, module)`; on = stored list minus them; nothing else in the list is
-  touched, and an unknown module value changes nothing. `ModulesScreen($registry, $health,
-  $switches)` renders, on every card whose module registered at least one operation, a
-  `<form class="sitehelm-card__switch" data-sitehelm-autosubmit>` holding hidden
-  `action`/`sitehelm_module`/nonce, one `.sitehelm-switch` checkbox (checked while **any** of
-  the module's operations is on) and an Apply button `[data-sitehelm-autosubmit-apply]` that
-  JS hides; any `[data-sitehelm-autosubmit]` form submits itself on change. The card's meta
-  reads "N of M operations on" when some are off, else "M operations". `render_saved_note()`
-  prints the same `sitehelm-note--ok` status after the redirect. Wired in
-  `AdminMenu::register()` / `add_pages()`.
+- **Module level (the Permissions tab)** — `Admin\ModuleSwitchAction`
+  (`admin_post_sitehelm_module_switch`; `ACTION`/`NONCE` `sitehelm_module_switch`,
+  `FIELD_MODULE` `sitehelm_module` = a `ModuleId` value, `FIELD_LEVEL` `sitehelm_module_level`
+  = a `Policy\PermissionLevel` constant, `FIELD_ON` `sitehelm_module_on` kept as the
+  script-less fallback — present = Full, absent = Off, `FIELD_LEVEL` wins when it is a known
+  level; an unknown level falls back the same way — `ARG_STATE` `sitehelm_module`,
+  `STATE_SAVED`). Ctor `($registry, ?$switches, ?$redirect)`. The handler computes
+  `PermissionLevel::enabled_ids(level, module_definitions(registry, module))`, removes those
+  ids from the stored off-list and adds every other id of the module; nothing outside the
+  module is touched, and an unknown module value changes nothing. `ModulesScreen($registry,
+  $health, $switches)` renders, on every card whose module registered at least one
+  operation, a `<form class="sitehelm-levels">` holding hidden `action`/`sitehelm_module`/
+  nonce and one `<button type="submit" name="sitehelm_module_level" value="…">` per level
+  inside `.sitehelm-levels__seg` (the current level carries `is-current`; the button's
+  `title` is the level's description), then a `.sitehelm-levels__hint` sentence (the
+  description of the current level, or `--custom` + "Custom" when the module's switches
+  match no recipe) and a `.sitehelm-finetune` link to the Tools tab for per-operation
+  switches. The card's meta reads "N of M operations on" when some are off, else "M
+  operations". `render_saved_note()` prints the same `sitehelm-note--ok` status after the
+  redirect. Wired in `AdminMenu::register()` / `add_pages()`.
+- **`Policy\PermissionLevel`** — four recipes over a module's definitions: `OFF` (nothing),
+  `READ` (read-only operations), `EDIT` (writes that are neither destructive nor `Risk::High`,
+  plus reads), `FULL` (everything); `CUSTOM` is never stored — `level_of(definitions,
+  switches)` returns it when the enabled set equals no recipe, and `enabled_ids(CUSTOM, …)`
+  is `[]` like any unknown level. `levels()` is the button order (OFF, READ, EDIT, FULL);
+  `is_level` accepts only those four; `allows(level, definition)` is the per-definition
+  predicate; `label()`/`description()` are the translated sentences. A module with only
+  reads shows the same set for READ/EDIT/FULL, so `level_of` reports the lowest matching
+  level (READ) — tests pin this.
+
+---
+
+## 29. The blog-owner console — tabs, Home and the Phrasebook
+
+The console was re-cut for a non-technical site owner on 2026-08-22. Class names did not
+change; labels, slugs and one new screen did.
+
+| Tab label | Slug (`AdminMenu::PAGE_*`) | Screen class |
+|---|---|---|
+| Home | `PAGE_HOME` = `sitehelm` | `HomeScreen` |
+| Connect an app | `PAGE_CONNECT` = `sitehelm-connect` | `ConnectScreen` |
+| Permissions | `PAGE_MODULES` = `sitehelm-modules` | `ModulesScreen` |
+| Tools | `PAGE_OPERATIONS` = `sitehelm-operations` | `OperationsScreen` |
+| History | `PAGE_ACTIVITY` = `sitehelm-activity` | `ActivityScreen` |
+| Health | `PAGE_STATUS` = `sitehelm-status` | `StatusScreen` |
+
+- **Home** (`HomeScreen($store = new AuditStore())`, `RECENT` = 5, `WINDOW` = 7 days) runs
+  six `AuditStore` queries in a fixed order — this-week count, failures this week, restores
+  this week, … then the recent sample and the "lately" list — and says it in one sentence:
+  "All good" / "N changes this week, nothing failed." or "N things could not be done this
+  week", three `.sitehelm-statcard` tiles, a `.sitehelm-feed` of the last five sentences,
+  and a "Connect an app" call to action when the log is empty. Tests drive it with
+  `FakeWpdb` queues in exactly that order (`varQueue` then `resultQueue`).
+- **`Admin\Phrasebook`** turns an audit row into a sentence: `sentence(row)` =
+  client + verb (past tense; "could not …" on failure, "started to …" on pending,
+  "restored …" on `OUTCOME_RESTORED` and "could not restore …" on
+  `OUTCOME_RESTORE_FAILED`) + target title (`get_post` title when the target is a post,
+  otherwise the kind word from a small map, raw kind when unknown). `verb(operation)` maps
+  the operation-id suffix (`create/update/delete/publish/…`, `predelete` counts as change);
+  `client('')` reads "An app". History uses it for the "What happened" column and keeps the
+  raw operation id in a `.sitehelm-table__sub code` underneath.
+- **History columns** are When / What happened / Outcome / Took / Who / Undo; the empty
+  state says "Connect an app on the Connect tab".
+- **Tools** opens with a `.sitehelm-advanced` callout ("most owners only need Permissions")
+  and keeps the per-operation switches of §27.
+- **The tab row does not stretch** (`.sitehelm-appnav__item { flex: 0 0 auto }`) — more
+  tabs are planned and the row scrolls instead of squeezing.
 
 ---
 
