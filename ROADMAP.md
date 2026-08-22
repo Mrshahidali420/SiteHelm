@@ -21,7 +21,7 @@ row lands under the Free and Pro rule below.
 
 | # | Area | What it gives you | Tier | Priority |
 |---|---|---|---|---|
-| REQ-0099 | Core | **Pro foundation** — a `pro/` overlay that loads only when present, a per-site licence check every Pro unit asks itself, and a Licence card on the Health tab; the free plugin carries no Pro file, no nag and no crippled operation | — | must |
+| REQ-0099 | Core | **Pro foundation** — SiteHelm Pro as a separate add-on plugin that registers its modules through the free plugin's extension points (a folder inside the free plugin would not survive a WordPress.org update), a per-site licence key signed offline and checked by every Pro unit itself, and a Licence card on the Health tab; the free plugin carries no Pro file, no nag and no crippled operation | — | must |
 | REQ-0098 | Integrations | **Deep SEO for Rank Math and Yoast** — today both providers stop at per-post metadata. This adds: the plugin's own SEO and readability **scores** and analysis flags, per post and across the site; term (category/tag) metadata; per-post **schema** type and fields; a strict allowlist of the plugin's **settings** (title and description templates, separator, per-post-type index rules, sitemap inclusions, breadcrumbs, social defaults, the site's knowledge-graph name and logo); Rank Math's **redirections and 404 log** (Yoast's where the site has it); an **SEO audit** of the whole site — missing or duplicate titles and descriptions, noindexed pages that should not be, posts under a score, thin descriptions, missing focus keyword — with bulk fixes proposed as one previewed, reversible change each | Free: scores and audit read, term metadata · Pro: settings, schema, redirections and 404s, bulk fixes | must |
 | REQ-0062 | Core | **Site settings** — read and change a strict allowlist of options (title, tagline, timezone, date and time formats, posts per page, front page and posts page, permalink structure, default comment settings, search-engine visibility), each previewed, snapshotted and reversible; nothing outside the allowlist is reachable | Free | should |
 | REQ-0083 | Integrations | **Every mainstream SEO plugin** through the one SEO vocabulary that already serves Yoast and Rank Math: All in One SEO, SEOPress, The SEO Framework, Slim SEO, SureRank — a client writes a title and description the same way whichever plugin the site runs; the REQ-0098 depth follows for each where the plugin stores it | Free: per-post metadata for all of them · Pro: the depth | should |
@@ -143,8 +143,8 @@ tool — and you should be very sure about who is holding the credentials for it
 
 ## Free and Pro
 
-SiteHelm stays one plugin with one code path. Pro is an overlay (REQ-0099) of extra
-operations and console features that load only when present, licensed per site; the free
+SiteHelm stays one plugin with one code path. Pro is a separate add-on plugin (REQ-0099)
+of extra operations and console features, licensed per site; the free
 plugin never carries a Pro file, a nag, or a crippled operation. Pro is not "for agencies":
 it is for anyone who runs a site they care about — a solo owner with one blog or shop is the
 first customer. The rule for the split:
