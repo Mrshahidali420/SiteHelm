@@ -1267,7 +1267,19 @@ touching the transport. `ConnectionProbe::HEADER_FIX` is public and shared with
 
 ---
 
-## 26. Standing project constraints
+## 26. Activation notice
+
+`ActivationNotice::arm()` (called from `sitehelm_activate()` in `sitehelm.php`) sets the
+transient `sitehelm_activated` for `ActivationNotice::TTL` (600 s). `ActivationNotice::register()`
+(called from `AdminMenu::register()`) hooks `admin_notices`; `render()` returns silently
+when the transient is absent or the viewer lacks `AdminMenu::CAPABILITY` (the notice stays
+armed for an operator who can act), otherwise deletes the transient and, unless
+`get_current_screen()->id` is a console screen (`AdminMenu::is_console_screen()`), prints a
+dismissible `notice-info` with an "Open Connect" button. Shown at most once per activation.
+
+---
+
+## 27. Standing project constraints
 
 - **No AI attribution anywhere in git** — no "Generated with Claude Code" footer,
   no session URL, no `Co-Authored-By` trailer, in any commit, PR body, PR comment,
