@@ -11,7 +11,8 @@
  * Tokens
  * ========================================================================= */
 
-.sitehelm-app {
+.sitehelm-app,
+.sitehelm-widget {
 	--sh-primary: #0e7c86;
 	--sh-primary-hover: #0b4f55;
 	--sh-primary-light: #e8f4f5;
@@ -1285,4 +1286,80 @@
 		transition-duration: 0.01ms !important;
 		animation-duration: 0.01ms !important;
 	}
+}
+
+/* =========================================================================
+ * Dashboard widget
+ * ========================================================================= */
+
+.sitehelm-widget {
+	color: var(--sh-gray-700);
+}
+
+.sitehelm-widget__facts {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px 20px;
+	margin: 0 0 12px;
+	padding: 0;
+	list-style: none;
+}
+
+.sitehelm-widget__facts li {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin: 0;
+	font-weight: 600;
+}
+
+.sitehelm-widget__facts a,
+.sitehelm-widget__more a {
+	color: var(--sh-primary);
+	text-decoration: none;
+}
+
+.sitehelm-widget__facts a:hover,
+.sitehelm-widget__more a:hover {
+	color: var(--sh-primary-hover);
+	text-decoration: underline;
+}
+
+.sitehelm-widget__recent {
+	margin: 0;
+	padding: 0;
+	list-style: none;
+	border-top: 1px solid var(--sh-gray-100);
+}
+
+.sitehelm-widget__recent li {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 6px 10px;
+	margin: 0;
+	padding: 7px 0;
+	border-bottom: 1px solid var(--sh-gray-100);
+}
+
+.sitehelm-widget__recent code {
+	font-size: 12px;
+	background: var(--sh-primary-light);
+	color: var(--sh-primary-hover);
+}
+
+.sitehelm-widget__time,
+.sitehelm-widget__who {
+	color: var(--sh-gray-500);
+	font-size: 12px;
+	font-variant-numeric: tabular-nums;
+}
+
+.sitehelm-widget__recent .sitehelm-badge {
+	margin-left: auto;
+}
+
+.sitehelm-widget__empty,
+.sitehelm-widget__more {
+	margin: 10px 0 0;
 }

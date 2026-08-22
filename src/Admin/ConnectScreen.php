@@ -124,7 +124,7 @@ final class ConnectScreen {
 		$this->render_readiness( [] !== $last );
 		$this->render_endpoint( $endpoint );
 		$this->render_credential( $handoff );
-		( new CredentialsPanel( $this->credentials ) )->render( $this->selectable_users() );
+		( new CredentialsPanel( $this->credentials ) )->render( self::selectable_users() );
 		$this->render_clients( $endpoint, $handoff );
 
 		( new ConnectHelp() )->render();
@@ -401,7 +401,7 @@ final class ConnectScreen {
 	 * one, so the field states the account instead.
 	 */
 	private function render_user_field(): void {
-		$users = $this->selectable_users();
+		$users = self::selectable_users();
 
 		echo '<div class="sitehelm-field">';
 
@@ -446,7 +446,7 @@ final class ConnectScreen {
 	 *
 	 * @return array<int, object>
 	 */
-	private function selectable_users(): array {
+	public static function selectable_users(): array {
 		$current = wp_get_current_user();
 		$others  = [];
 
