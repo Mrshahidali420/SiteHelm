@@ -13,6 +13,10 @@ an operation behaves.
 
 ### Added
 
+- **A SiteHelm widget on the wp-admin Dashboard.** Whether writes are paused,
+  how many credentials are issued, and the five most recent operations with their
+  client and outcome — each linked to the console screen that explains it. It shows
+  nothing to anyone who cannot open the console, and offers no controls.
 - **Filter the Activity screen by client.** A "Filter by client" field joins the
   operation, correlation and outcome filters, and every named client in the actor
   column is now a link to everything that client did on the site.
