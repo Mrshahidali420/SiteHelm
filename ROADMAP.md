@@ -16,18 +16,22 @@ commitment to sequence.
 
 Decided 2026-08-23 after a survey of what AI-connected WordPress tooling offers today. Each
 row is scoped, reversible and goes through the same preview / snapshot / rollback pipeline
-as everything shipped. Order is the intended sequence.
+as everything shipped. Order is the intended sequence; the **Tier** column says where the
+row lands under the Free and Pro rule below.
 
-| # | Area | What it gives you | Priority |
-|---|---|---|---|
-| REQ-0062 | Core | **Site settings** — read and change a strict allowlist of options (title, tagline, timezone, date and time formats, posts per page, front page and posts page, permalink structure, default comment settings, search-engine visibility), each previewed, snapshotted and reversible; nothing outside the allowlist is reachable | should |
-| REQ-0083 | Integrations | **Every mainstream SEO plugin** through the one SEO vocabulary that already serves Yoast and Rank Math: All in One SEO, SEOPress, The SEO Framework, Slim SEO, SureRank — a client writes a title and description the same way whichever plugin the site runs | should |
-| REQ-0084 | Integrations | **Forms** — list the site's forms and read their fields and recent entries for Contact Form 7, WPForms, Gravity Forms, Fluent Forms, Ninja Forms, Formidable, Forminator, SureForms; form embedding by shortcode; no entry deletion | should |
-| REQ-0057 | Integrations | **WooCommerce** — products (read, create, update, price and stock), categories, and read-only orders and customers; every write previewed and reversible | should |
-| REQ-0085 | Core | **Plugins and themes** — list what is installed and what has an update; activate, deactivate and update a plugin or theme (reversible by construction: the previous state is the rollback); installing from WordPress.org only, never an arbitrary zip | could |
-| REQ-0086 | Diagnostics | **Site check-up** — read-only performance and security findings (page weight, caching headers, outdated software, file permissions, debug flags, exposed version strings) stated as plain findings the owner can act on | could |
-| REQ-0087 | Console | **Per-app permissions** — the Permissions tab's Off / Read / Edit / Full levels set per connected app, so a content assistant may edit while a reporting tool may only read | should |
-| REQ-0088 | Console | **Scheduled write windows and an approval queue** — an owner can require a human tap before any destructive change, or confine writes to hours they choose | could |
+| # | Area | What it gives you | Tier | Priority |
+|---|---|---|---|---|
+| REQ-0099 | Core | **Pro foundation** — a `pro/` overlay that loads only when present, a per-site licence check every Pro unit asks itself, and a Licence card on the Health tab; the free plugin carries no Pro file, no nag and no crippled operation | — | must |
+| REQ-0098 | Integrations | **Deep SEO for Rank Math and Yoast** — today both providers stop at per-post metadata. This adds: the plugin's own SEO and readability **scores** and analysis flags, per post and across the site; term (category/tag) metadata; per-post **schema** type and fields; a strict allowlist of the plugin's **settings** (title and description templates, separator, per-post-type index rules, sitemap inclusions, breadcrumbs, social defaults, the site's knowledge-graph name and logo); Rank Math's **redirections and 404 log** (Yoast's where the site has it); an **SEO audit** of the whole site — missing or duplicate titles and descriptions, noindexed pages that should not be, posts under a score, thin descriptions, missing focus keyword — with bulk fixes proposed as one previewed, reversible change each | Free: scores and audit read, term metadata · Pro: settings, schema, redirections and 404s, bulk fixes | must |
+| REQ-0062 | Core | **Site settings** — read and change a strict allowlist of options (title, tagline, timezone, date and time formats, posts per page, front page and posts page, permalink structure, default comment settings, search-engine visibility), each previewed, snapshotted and reversible; nothing outside the allowlist is reachable | Free | should |
+| REQ-0083 | Integrations | **Every mainstream SEO plugin** through the one SEO vocabulary that already serves Yoast and Rank Math: All in One SEO, SEOPress, The SEO Framework, Slim SEO, SureRank — a client writes a title and description the same way whichever plugin the site runs; the REQ-0098 depth follows for each where the plugin stores it | Free: per-post metadata for all of them · Pro: the depth | should |
+| REQ-0084 | Integrations | **Forms** — list the site's forms and read their fields and recent entries for Contact Form 7, WPForms, Gravity Forms, Fluent Forms, Ninja Forms, Formidable, Forminator, SureForms; form embedding by shortcode; no entry deletion | Free: Contact Form 7 · Pro: the rest | should |
+| REQ-0057 | Integrations | **WooCommerce** — products (read, create, update, price and stock), categories, and read-only orders and customers; every write previewed and reversible | Pro | should |
+| REQ-0092 | Core | **Site-wide content search and bulk change** — find every post, page and Elementor element that mentions a phrase, then change them as one previewed, reversible change | Free: search · Pro: bulk change | should |
+| REQ-0085 | Core | **Plugins and themes** — list what is installed and what has an update; activate, deactivate and update a plugin or theme (reversible by construction: the previous state is the rollback); installing from WordPress.org only, never an arbitrary zip | Free: list and update status · Pro: act | could |
+| REQ-0086 | Diagnostics | **Site check-up** — read-only performance and security findings (page weight, caching headers, outdated software, file permissions, debug flags, exposed version strings) stated as plain findings the owner can act on | Pro | could |
+| REQ-0087 | Console | **Per-app permissions** — the Permissions tab's Off / Read / Edit / Full levels set per connected app, so a content assistant may edit while a reporting tool may only read | Pro | should |
+| REQ-0088 | Console | **Scheduled write windows and an approval queue** — an owner can require a human tap before any destructive change, or confine writes to hours they choose | Pro | could |
 
 ## Shipped — v0.5.0
 
@@ -111,7 +115,6 @@ the survey also found and SiteHelm will not do.
 | REQ-0089 | Integrations | Popular theme settings — Astra, Kadence, GeneratePress, Blocksy: read and change the customizer options those themes expose, reversibly | could |
 | REQ-0090 | Integrations | Elementor add-on packs (Essential Addons, Premium Addons, Ultimate Addons) — their widgets discoverable through the existing Elementor control-schema operations | could |
 | REQ-0091 | Integrations | Block-library plugins (Spectra, Kadence Blocks, GenerateBlocks) — their blocks discoverable and editable through the block-editor operations | could |
-| REQ-0092 | Core | Site-wide content search — find the posts, pages and Elementor elements that mention a phrase, before a bulk change | could |
 | REQ-0093 | Core | Project memory — a client can store and recall short site notes (brand voice, conventions, decisions) between sessions, scoped per site and visible in the console | could |
 | REQ-0094 | Console | An AI chat inside wp-admin that drives the same operations, for owners who do not run a desktop MCP client | could |
 | REQ-0095 | Console | Saved prompts and templates — reusable instructions and page blueprints an owner can hand to any connected app | could |
@@ -140,28 +143,39 @@ tool — and you should be very sure about who is holding the credentials for it
 
 ## Free and Pro
 
-SiteHelm stays one plugin with one code path. A Pro tier, when it ships, is an overlay of
-extra modules and console features that load only when present, licensed per site; the free
-plugin never carries a Pro file, a nag, or a crippled operation. The rule for the split:
+SiteHelm stays one plugin with one code path. Pro is an overlay (REQ-0099) of extra
+operations and console features that load only when present, licensed per site; the free
+plugin never carries a Pro file, a nag, or a crippled operation. Pro is not "for agencies":
+it is for anyone who runs a site they care about — a solo owner with one blog or shop is the
+first customer. The rule for the split:
 
-- **Free** is everything a single site owner needs to let one AI client run their site
-  safely: every module shipped through v0.5.0 (content, media, menus, Elementor, ACF, Meta
-  Box, SEO for Yoast and Rank Math, comments, users, redirects, diagnostics), the whole
-  console (Home, Connect, Permissions, Tools, History, Health), rollback, write-pause,
-  retention, unlimited connected apps, REQ-0062 site settings, and REQ-0083's Slim SEO
-  provider.
-- **Pro** is breadth across the plugin ecosystem and control for teams and agencies:
-  WooCommerce (REQ-0057); form builders beyond Contact Form 7 (REQ-0084); SEO plugins
-  beyond Yoast, Rank Math and Slim SEO (REQ-0083); plugin and theme management (REQ-0085);
-  the site check-up (REQ-0086); per-app permissions (REQ-0087); approval queue and write
-  windows (REQ-0088); theme, add-on and block-library integrations (REQ-0089–0091); project
-  memory, in-admin chat, saved prompts, stock images, export/import (REQ-0093–0097);
-  multisite (REQ-0064); longer History retention; priority support.
+- **Free** is everything a site owner needs to let one AI client *run* the site safely,
+  and it is a complete product on its own: every module shipped through v0.5.0 (content,
+  media, menus, Elementor, ACF, Meta Box, SEO metadata for Yoast and Rank Math, comments,
+  users, redirects, diagnostics), the whole console (Home, Connect, Permissions, Tools,
+  History, Health), rollback, write-pause, retention, unlimited connected apps; plus
+  REQ-0062 site settings, per-post SEO metadata for every plugin in REQ-0083, the SEO
+  scores and site audit *read* of REQ-0098, Contact Form 7, content search, and the
+  plugins-and-themes list.
+- **Pro** is what a serious owner reaches for once the site is running — the things that
+  *grow* it, *protect* it, and save the hours: the deep SEO suite (settings, schema,
+  redirections and 404s, bulk fixes across the site — REQ-0098, and the same depth for the
+  other SEO plugins in REQ-0083); WooCommerce (REQ-0057); form builders beyond Contact
+  Form 7 (REQ-0084); bulk content change (REQ-0092); acting on plugins and themes
+  (REQ-0085); the site check-up (REQ-0086); per-app permissions (REQ-0087); approval
+  queue and write windows (REQ-0088); theme, add-on and block-library integrations
+  (REQ-0089–0091); project memory, in-admin chat, saved prompts, stock images,
+  export/import (REQ-0093–0097); multisite (REQ-0064); History retention beyond 30 days;
+  priority support.
 - **Never paywalled:** safety. Preview, snapshot, rollback, the capability checks, the host
-  guard and the Permissions levels are identical in both tiers.
+  guard and the Permissions levels are identical in both tiers. A reading operation that
+  exists in Free is never moved behind Pro later.
 
-Pricing and the licensing service are decided at the time the first Pro module is ready,
-not before.
+**Value rule.** Pro is one tier with everything in it — no Pro / Agency / Enterprise ladder
+that hides features behind the top price. A single-site licence is priced as a solo-owner
+purchase, below the other tooling's single-site price, with a lifetime option. Sites
+beyond the first cost less, not more. The exact figures and the licensing service are
+decided when REQ-0099 ships.
 
 ## How work gets prioritised
 
