@@ -7,6 +7,7 @@ namespace SiteHelm\Tests\Unit\Admin;
 use SiteHelm\Admin\OperationsScreen;
 use SiteHelm\Contracts\Domain;
 use SiteHelm\Contracts\Mode;
+use SiteHelm\Contracts\ModuleHealth;
 use SiteHelm\Contracts\ModuleId;
 use SiteHelm\Contracts\OperationDefinition;
 use SiteHelm\Contracts\PreviewPolicy;
@@ -118,13 +119,36 @@ final class OperationsScreenTest extends TestCase {
 	/**
 	 * Renders the screen over the given registry.
 	 *
-	 * @param CapabilityRegistry $registry The registry to catalogue.
+	 * Every module is reported active unless a map is given, so the existing
+	 * tests — which are about the catalogue, not about availability — keep
+	 * describing a site where everything runs.
+	 *
+	 * @param CapabilityRegistry                                          $registry The registry to catalogue.
+	 * @param array<string, array{version: ?string, health: string}>|null $health   The loader's map, or null for all active.
 	 */
-	private function render( CapabilityRegistry $registry ): string {
+	private function render( CapabilityRegistry $registry, ?array $health = null ): string {
 		ob_start();
-		( new OperationsScreen( $registry ) )->render();
+		( new OperationsScreen( $registry, $health ?? $this->allActive() ) )->render();
 
 		return (string) ob_get_clean();
+	}
+
+	/**
+	 * Every module reported active.
+	 *
+	 * @return array<string, array{version: ?string, health: string}>
+	 */
+	private function allActive(): array {
+		$health = [];
+
+		foreach ( ModuleId::cases() as $module ) {
+			$health[ $module->value ] = [
+				'version' => '1.0.0',
+				'health'  => ModuleHealth::Active->value,
+			];
+		}
+
+		return $health;
 	}
 
 	public function testAVisitorWithoutTheCapabilityIsStoppedRatherThanShownTheCatalogue(): void {
@@ -314,7 +338,7 @@ final class OperationsScreenTest extends TestCase {
 
 		$html = $this->render( $registry );
 
-		$this->assertStringContainsString( 'data-sitehelm-haystack="content-read-one reads one post."', $html );
+		$this->assertStringContainsString( 'data-sitehelm-haystack="content-read-one reads one post. core content"', $html );
 	}
 
 	public function testAnOperationDescriptionIsEscapedBeforeItReachesThePage(): void {
@@ -328,5 +352,65 @@ final class OperationsScreenTest extends TestCase {
 
 		$this->assertStringNotContainsString( '<script>alert(1)</script>', $html );
 		$this->assertStringContainsString( '&lt;script&gt;', $html );
+	}
+
+	/**
+	 * A `fields-write` row could belong to ACF or to Meta Box, and an operator
+	 * handing out access should not have to know the id prefixes to tell which.
+	 */
+	public function testEachRowNamesTheModuleTheOperationBelongsTo(): void {
+		$registry = new CapabilityRegistry();
+		$registry->register( $this->readDefinition( 'content-read-one', Domain::Content ), static fn(): array => [] );
+
+		$html = $this->render( $registry );
+
+		$this->assertStringContainsString( '<th scope="col">Module</th>', $html );
+		$this->assertStringContainsString( '<td>Core content</td>', $html );
+	}
+
+	/**
+	 * The catalogue stays complete, so a row the site cannot run is still
+	 * listed — but it is marked in words, dimmed, and counted in the verdict,
+	 * so the operator sees which rows are promises rather than abilities.
+	 */
+	public function testAnOperationWhoseModuleIsNotActiveIsMarkedDimmedAndCounted(): void {
+		$registry = new CapabilityRegistry();
+		$registry->register( $this->readDefinition( 'content-read-one', Domain::Content ), static fn(): array => [] );
+		$registry->registerWrite( $this->writeDefinition( 'content-write-one' ), new StubWriteOperation() );
+
+		$health = $this->allActive();
+		unset( $health[ ModuleId::Core->value ] );
+
+		$html = $this->render( $registry, $health );
+
+		$this->assertStringContainsString( 'class="sitehelm-table__row--muted"', $html );
+		$this->assertStringContainsString( 'Core content <span class="sitehelm-badge">Not active</span>', $html );
+		$this->assertStringContainsString( '2 cannot run on this site yet', $html );
+		$this->assertStringContainsString( '<code>content-read-one</code>', $html );
+	}
+
+	public function testASiteWhereEveryModuleIsActiveShowsNoAvailabilityMarkers(): void {
+		$registry = new CapabilityRegistry();
+		$registry->register( $this->readDefinition( 'content-read-one', Domain::Content ), static fn(): array => [] );
+
+		$html = $this->render( $registry );
+
+		$this->assertStringNotContainsString( 'Not active', $html );
+		$this->assertStringNotContainsString( 'sitehelm-table__row--muted', $html );
+		$this->assertStringNotContainsString( 'cannot run on this site', $html );
+	}
+
+	/**
+	 * A module missing from the loader's map never booted, which for the
+	 * operator is the same answer as not active: the row will not run.
+	 */
+	public function testAnOperationWhoseModuleNeverBootedReadsAsNotActive(): void {
+		$registry = new CapabilityRegistry();
+		$registry->register( $this->readDefinition( 'content-read-one', Domain::Content ), static fn(): array => [] );
+
+		$html = $this->render( $registry, [] );
+
+		$this->assertStringContainsString( '>Not active</span>', $html );
+		$this->assertStringContainsString( '1 cannot run on this site yet', $html );
 	}
 }

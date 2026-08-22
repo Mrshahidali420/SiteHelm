@@ -929,6 +929,28 @@
 	word-break: break-all;
 }
 
+/* What a blocked module is waiting on: a sentence and the one link that fixes it. */
+.sitehelm-card__waiting {
+	margin: 0;
+	padding: 8px 10px;
+	border-left: 3px solid var(--sh-warn);
+	background: var(--sh-white);
+	font-size: 13px;
+	color: var(--sh-gray-700);
+	text-wrap: pretty;
+}
+
+.sitehelm-card__waiting a {
+	font-weight: 600;
+	white-space: nowrap;
+}
+
+/* A sentence that follows a verdict and points somewhere else. */
+.sitehelm-followup {
+	margin: -14px 0 22px;
+	font-size: 13px;
+}
+
 /* =========================================================================
  * Facts and tables
  * ========================================================================= */
@@ -1004,6 +1026,16 @@
 
 .sitehelm-table tr:last-child td {
 	border-bottom: none;
+}
+
+/* A row whose module is not active on this site. Dimmed, never hidden: the
+ * catalogue's point is completeness, and the "Not active" badge says why. */
+.sitehelm-table__row--muted td {
+	color: var(--sh-gray-500);
+}
+
+.sitehelm-table__row--muted code {
+	color: var(--sh-gray-500);
 }
 
 .sitehelm-table code {

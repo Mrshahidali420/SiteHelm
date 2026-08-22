@@ -85,6 +85,15 @@ final class StatusScreen {
 					number_format_i18n( $blocked )
 				)
 			);
+
+			// The count is the part that belongs here; the reason lives one
+			// screen over, and an operator who has just read "2 are not active"
+			// should not have to guess where that is explained.
+			printf(
+				'<p class="sitehelm-followup"><a href="%s">%s</a></p>',
+				esc_url( admin_url( 'admin.php?page=' . AdminMenu::PAGE_MODULES ) ),
+				esc_html__( 'See which modules, and what each one is waiting on', 'sitehelm' )
+			);
 		}
 
 		$this->render_readiness();

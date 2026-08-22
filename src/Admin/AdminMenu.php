@@ -145,7 +145,7 @@ final class AdminMenu {
 		$screens = [
 			self::PAGE_CONNECT    => new ConnectScreen(),
 			self::PAGE_MODULES    => new ModulesScreen( $this->registry, $this->health ),
-			self::PAGE_OPERATIONS => new OperationsScreen( $this->registry ),
+			self::PAGE_OPERATIONS => new OperationsScreen( $this->registry, $this->health ),
 			self::PAGE_ACTIVITY   => new ActivityScreen(),
 			self::PAGE_STATUS     => new StatusScreen( $this->health ),
 		];
