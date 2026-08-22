@@ -1143,6 +1143,27 @@
 	vertical-align: middle;
 }
 
+.sitehelm-inline-form--flush {
+	margin: 0;
+}
+
+.sitehelm-btn--danger {
+	border-color: var(--sh-danger);
+	color: var(--sh-danger);
+}
+
+.sitehelm-btn--danger:hover,
+.sitehelm-btn--danger:focus-visible {
+	background: var(--sh-danger-light);
+	border-color: var(--sh-danger);
+	color: var(--sh-danger);
+}
+
+.sitehelm-credentials td:last-child {
+	width: 1%;
+	white-space: nowrap;
+}
+
 .sitehelm-confirm {
 	padding: 20px 22px;
 	background: var(--sh-warn-light);

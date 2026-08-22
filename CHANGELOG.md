@@ -13,6 +13,13 @@ an operation behaves.
 
 ### Added
 
+- **See and revoke issued credentials on the Connect screen.** A new "Issued
+  credentials" section lists every application password SiteHelm has created for
+  the accounts you can act for — which account it acts as, when it was created,
+  when it was last used — each with a **Revoke** button. Revoking cuts that client
+  off at WordPress sign-in; nothing already recorded is touched. Only
+  SiteHelm-named passwords are listed or revocable, and the handler enforces the
+  same account boundary as minting.
 - **Pause all writes from the Status screen.** A "Write access" section shows whether
   connected clients may change anything, with one button: "Pause all writes" puts
   the gateway in read-only mode so every write from every client is refused at the
