@@ -1158,7 +1158,24 @@ as well as `.sitehelm-app` because the widget renders outside the app shell.
 
 ---
 
-## 21. Standing project constraints
+## 21. Record retention — the Status screen sets the pruning window
+
+`Retention::RETENTION_OPTION` (`sitehelm_retention_days`, default 30, clamped 1–365) had
+no UI; the daily cron read it and nothing wrote it. `RetentionAction`
+(`admin_post_sitehelm_retention`, always bound): capability → nonce `sitehelm_retention` →
+field `sitehelm_retention_days` (absint). **A value < 1 (empty, garbage) changes nothing
+and redirects without a state** — an empty field is not a request for one day. Otherwise
+`update_option` with the same clamp the pruner applies, then `?sitehelm_retention=saved`.
+`RetentionAction::days()` reads the option with that clamp for the screen.
+`StatusScreen::render_retention()` — section "Record retention", after Storage:
+`.sitehelm-inline-form.sitehelm-retention` with `<input type="number" min max>` and Save;
+the saved note counts days via `_n()`. Wording says "activity log and the snapshots behind
+each rollback", never "retention" alone, because the consequence an operator cares about
+is that a change older than the window can no longer be rolled back.
+
+---
+
+## 22. Standing project constraints
 
 - **No AI attribution anywhere in git** — no "Generated with Claude Code" footer,
   no session URL, no `Co-Authored-By` trailer, in any commit, PR body, PR comment,
