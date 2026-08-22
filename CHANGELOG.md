@@ -13,6 +13,12 @@ an operation behaves.
 
 ### Added
 
+- **Pause all writes from the Status screen.** A "Write access" section shows whether
+  connected clients may change anything, with one button: "Pause all writes" puts
+  the gateway in read-only mode so every write from every client is refused at the
+  gate before any module runs; "Resume writes" lets them through again. Reads keep
+  working either way, nothing already recorded is touched, and resuming never
+  rewrites a mode the operator set some other way.
 - **Roll a change back from the Activity screen.** Every applied row now carries a
   "Roll back" button beside its reference. The first click asks the change engine
   for a preview and shows a confirm panel — target, reference, a field-by-field

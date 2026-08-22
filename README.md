@@ -145,12 +145,13 @@ That is the whole install. SiteHelm registers one REST route and one admin menu 
 
 ### The console
 
-Four screens, all read-only except the one button that mints a credential:
+Five screens. Three controls, each a form that goes through the same checks as a client would: mint a credential, pause every write, roll one change back.
 
 - **Connect** — the endpoint, an application password created in place and shown once, and a config snippet for Claude Code, Cursor, or any other MCP client.
-- **Activity** — every operation a client has performed, newest first, with its target, outcome, actor and rollback reference. Filterable by operation or correlation id.
-- **Status** — which modules are active, which are version-blocked, which are absent, and whether the storage tables exist.
-- **Operations** — the full catalogue of what a connected client can ask this site to do, grouped by tool, marked read or write, preview-required, destructive or high risk.
+- **Activity** — every operation a client has performed, newest first, with its target, outcome, actor, client and rollback reference. Filterable by operation or correlation id. Each applied row has a **Roll back** button: a preview of what would change first, then a confirm, and the restoration runs through the same engine and is itself recorded.
+- **Status** — which modules are active, which are version-blocked, which are absent, whether the storage tables exist, and the **Write access** switch that pauses every write from every client at the gate.
+- **Modules** — one card per integration, naming what a blocked one is waiting on.
+- **Operations** — the full catalogue of what a connected client can ask this site to do, grouped by tool and module, marked read or write, preview-required, destructive or high risk.
 
 If PHP or WordPress is below the floor, the plugin refuses to boot and shows an admin notice instead of fataling.
 

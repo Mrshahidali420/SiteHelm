@@ -96,11 +96,64 @@ final class StatusScreen {
 			);
 		}
 
+		$this->render_write_access();
 		$this->render_readiness();
 		$this->render_environment();
 		$this->render_storage();
 
 		Ui::app_close();
+	}
+
+	/**
+	 * The one switch on the console: whether connected clients may write.
+	 *
+	 * Shown as a state and a single button that flips it, never as a choice of
+	 * modes, because only one stored mode behaves differently at the gate.
+	 */
+	private function render_write_access(): void {
+		$paused = WriteModeAction::is_paused();
+
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Reading an outcome from a redirect this plugin produced; it reports and grants nothing.
+		$state = isset( $_GET[ WriteModeAction::ARG_STATE ] ) ? sanitize_key( wp_unslash( (string) $_GET[ WriteModeAction::ARG_STATE ] ) ) : '';
+
+		Ui::section_open(
+			__( 'Write access', 'sitehelm' ),
+			__( 'Applies to every connected client at once. Reads keep working either way.', 'sitehelm' )
+		);
+
+		if ( WriteModeAction::STATE_PAUSED === $state ) {
+			printf(
+				'<div class="sitehelm-note sitehelm-note--ok" role="status"><p>%s</p></div>',
+				esc_html__( 'Writes are now paused. Every write a client asks for is refused at the gate until you resume.', 'sitehelm' )
+			);
+		} elseif ( WriteModeAction::STATE_RESUMED === $state ) {
+			printf(
+				'<div class="sitehelm-note sitehelm-note--ok" role="status"><p>%s</p></div>',
+				esc_html__( 'Writes are allowed again.', 'sitehelm' )
+			);
+		}
+
+		printf(
+			'<div class="sitehelm-writemode sitehelm-writemode--%s"><div class="sitehelm-writemode__state"><strong>%s</strong><span>%s</span></div>',
+			$paused ? 'paused' : 'open',
+			$paused ? esc_html__( 'Writes paused', 'sitehelm' ) : esc_html__( 'Writes allowed', 'sitehelm' ),
+			$paused
+				? esc_html__( 'Clients can read, and every write is refused before any module runs. Nothing already recorded is affected.', 'sitehelm' )
+				: esc_html__( 'Clients may change content through the normal preview-then-apply path, and every change is recorded and can be rolled back.', 'sitehelm' )
+		);
+
+		printf( '<form method="post" action="%s" class="sitehelm-writemode__form">', esc_url( admin_url( 'admin-post.php' ) ) );
+		wp_nonce_field( WriteModeAction::NONCE );
+		printf(
+			'<input type="hidden" name="action" value="%s"><input type="hidden" name="%s" value="%s"><button type="submit" class="sitehelm-btn%s">%s</button></form></div>',
+			esc_attr( WriteModeAction::ACTION ),
+			esc_attr( WriteModeAction::FIELD ),
+			esc_attr( $paused ? WriteModeAction::RESUME : WriteModeAction::PAUSE ),
+			$paused ? ' sitehelm-btn--primary' : '',
+			$paused ? esc_html__( 'Resume writes', 'sitehelm' ) : esc_html__( 'Pause all writes', 'sitehelm' )
+		);
+
+		Ui::section_close();
 	}
 
 	/**

@@ -8,6 +8,8 @@ use SiteHelm\Admin\AdminMenu;
 use SiteHelm\Admin\StatusScreen;
 use SiteHelm\Contracts\ModuleHealth;
 use SiteHelm\Contracts\ModuleId;
+use SiteHelm\Contracts\PermissionMode;
+use SiteHelm\Gateway\ContextFactory;
 use SiteHelm\Gateway\McpServer;
 use SiteHelm\Storage\Installer;
 use SiteHelm\Tests\Doubles\AdminDied;
@@ -172,5 +174,40 @@ final class StatusScreenTest extends TestCase {
 		$html = $this->render( $this->allActive() );
 
 		$this->assertStringContainsString( 'Yes, this site is served over HTTPS', $html );
+	}
+
+	public function testWriteAccessOffersToPauseWhenWritesAreAllowed(): void {
+		$html = $this->render( $this->allActive() );
+
+		$this->assertStringContainsString( 'sitehelm-writemode--open', $html );
+		$this->assertStringContainsString( 'Writes allowed', $html );
+		$this->assertStringContainsString( 'name="action" value="sitehelm_write_mode"', $html );
+		$this->assertStringContainsString( 'name="sitehelm_write_mode" value="pause"', $html );
+		$this->assertStringContainsString( '>Pause all writes</button>', $html );
+		$this->assertStringNotContainsString( 'value="resume"', $html );
+	}
+
+	public function testWriteAccessOffersToResumeWhenWritesArePaused(): void {
+		AdminWordPressStubs::$options[ ContextFactory::MODE_OPTION ] = PermissionMode::ReadOnly->value;
+
+		$html = $this->render( $this->allActive() );
+
+		$this->assertStringContainsString( 'sitehelm-writemode--paused', $html );
+		$this->assertStringContainsString( 'Writes paused', $html );
+		$this->assertStringContainsString( 'name="sitehelm_write_mode" value="resume"', $html );
+		$this->assertStringContainsString( '>Resume writes</button>', $html );
+		$this->assertStringNotContainsString( 'value="pause"', $html );
+	}
+
+	public function testAJustTakenPauseOrResumeIsReported(): void {
+		$_GET['sitehelm_write_mode'] = 'paused';
+		$html                        = $this->render( $this->allActive() );
+		$this->assertStringContainsString( 'Writes are now paused.', $html );
+
+		$_GET['sitehelm_write_mode'] = 'resumed';
+		$html                        = $this->render( $this->allActive() );
+		$this->assertStringContainsString( 'Writes are allowed again.', $html );
+
+		$_GET = [];
 	}
 }
