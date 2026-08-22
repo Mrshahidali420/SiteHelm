@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace SiteHelm\Tests\Unit\Admin;
 
 use SiteHelm\Admin\AdminMenu;
+use SiteHelm\Admin\ConnectionProbe;
 use SiteHelm\Admin\RetentionAction;
 use SiteHelm\Admin\StatusScreen;
 use SiteHelm\Contracts\ModuleHealth;
@@ -231,5 +232,44 @@ final class StatusScreenTest extends TestCase {
 		$html = $this->render( $this->allActive() );
 
 		$this->assertStringContainsString( 'Records are now kept for 14 days.', $html );
+	}
+
+	public function testReadinessSaysWhenTheAuthorizationHeaderReachesWordPress(): void {
+		$html = $this->render( $this->allActive() );
+
+		$this->assertStringContainsString( 'Authorization header', $html );
+		$this->assertStringContainsString( 'Reaches WordPress', $html );
+		$this->assertStringNotContainsString( 'sitehelm-probe-advice', $html );
+	}
+
+	public function testAStrippedHeaderIsNamedAndTheApacheFixIsGiven(): void {
+		AdminWordPressStubs::$probeResponse = [
+			'response' => [ 'code' => 401 ],
+			'body'     => '{"code":"rest_not_logged_in"}',
+		];
+
+		$html = $this->render( $this->allActive() );
+
+		$this->assertStringContainsString( 'Stripped by the server', $html );
+		$this->assertStringContainsString( 'drops the Authorization header', $html );
+		$this->assertStringContainsString( 'E=HTTP_AUTHORIZATION:%{HTTP:Authorization}', $html );
+	}
+
+	public function testAnUnreachableLoopbackIsReportedWithoutAlarm(): void {
+		AdminWordPressStubs::$probeResponse = new \RuntimeException( 'cURL error 7' );
+
+		$html = $this->render( $this->allActive() );
+
+		$this->assertStringContainsString( 'Could not be tested', $html );
+		$this->assertStringContainsString( 'could not reach its own endpoint', $html );
+		$this->assertStringNotContainsString( 'cURL error', $html );
+	}
+
+	public function testAnInjectedProbeDrivesTheCard(): void {
+		ob_start();
+		( new StatusScreen( $this->allActive(), new ConnectionProbe( static fn(): ?array => null ) ) )->render();
+		$html = (string) ob_get_clean();
+
+		$this->assertStringContainsString( 'Could not be tested', $html );
 	}
 }
