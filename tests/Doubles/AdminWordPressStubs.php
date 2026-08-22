@@ -188,6 +188,12 @@ final class AdminWordPressStubs {
 		Functions\when( 'get_option' )->alias(
 			static fn( string $name, $default_value = false ) => self::$options[ $name ] ?? $default_value
 		);
+		Functions\when( 'update_option' )->alias(
+			static function ( string $name, $value ): bool {
+				self::$options[ $name ] = $value;
+				return true;
+			}
+		);
 		Functions\when( 'get_transient' )->alias(
 			static fn( string $key ) => self::$transients[ $key ] ?? false
 		);

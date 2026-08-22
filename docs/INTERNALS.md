@@ -1080,7 +1080,29 @@ verified and itself re-restorable like any write.
 
 ---
 
-## 18. Standing project constraints
+## 18. Write access — the console's one switch
+
+`WriteModeAction` (`admin_post_sitehelm_write_mode`, always bound by `AdminMenu`)
+writes the option the gateway already reads, `ContextFactory::MODE_OPTION`
+(`sitehelm_permission_mode`). `PolicyEngine` refuses every `Mode::Write` operation
+when the stored mode is `read-only`; `safe-write` and `trusted-write` are not
+distinguished anywhere in the gateway today.
+
+- **Two states, not three.** The Status screen's "Write access" section shows
+  `sitehelm-writemode--open` / `--paused` with one button: `pause` stores
+  `read-only`; `resume` stores `safe-write` **only if currently paused** (a
+  `trusted-write` site that is resumed keeps `trusted-write` — do not offer a third
+  option until the gate treats it differently). Unknown values change nothing.
+- Capability `AdminMenu::CAPABILITY`, nonce `sitehelm_write_mode`, field
+  `sitehelm_write_mode`, redirect to Status with `sitehelm_write_mode=paused|resumed`.
+- `WriteModeAction::current()` / `is_paused()` read the option with the same
+  fallback as `ContextFactory::create()`, so the console cannot disagree with the
+  gateway about the mode.
+- Stub: `AdminWordPressStubs` now has `update_option` (writes `self::$options`).
+
+---
+
+## 19. Standing project constraints
 
 - **No AI attribution anywhere in git** — no "Generated with Claude Code" footer,
   no session URL, no `Co-Authored-By` trailer, in any commit, PR body, PR comment,
