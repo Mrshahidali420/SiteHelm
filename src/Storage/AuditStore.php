@@ -42,6 +42,10 @@ final class AuditStore {
 			'column'      => 'actor_id',
 			'placeholder' => '%d',
 		],
+		'clientId'      => [
+			'column'      => 'client_id',
+			'placeholder' => '%s',
+		],
 		'outcome'       => [
 			'column'      => 'outcome',
 			'placeholder' => '%s',
