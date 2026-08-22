@@ -149,6 +149,7 @@ final class AdminMenu {
 		add_action( 'admin_post_' . ConnectScreen::ACTION_CREATE_PASSWORD, [ new ConnectScreen(), 'handle_create_password' ] );
 		add_action( 'admin_post_' . WriteModeAction::ACTION, [ new WriteModeAction(), 'handle' ] );
 		add_action( 'admin_post_' . RevokeAction::ACTION, [ new RevokeAction(), 'handle' ] );
+		add_action( 'wp_dashboard_setup', [ new DashboardWidget(), 'add_widget' ] );
 
 		// Console rollback goes through the same dispatcher the gateway serves
 		// from, so the console can restore nothing an agent could not, and every
@@ -209,7 +210,7 @@ final class AdminMenu {
 	 * @param string $hook_suffix The current admin page's hook suffix.
 	 */
 	public function enqueue_assets( string $hook_suffix ): void {
-		if ( ! self::is_console_screen( $hook_suffix ) ) {
+		if ( ! self::is_console_screen( $hook_suffix ) && DashboardWidget::HOOK_SUFFIX !== $hook_suffix ) {
 			return;
 		}
 

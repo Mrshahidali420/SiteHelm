@@ -712,7 +712,7 @@ final class ActivityScreen {
 	 *
 	 * @param string $outcome The recorded outcome.
 	 */
-	private static function tone_for( string $outcome ): string {
+	public static function tone_for( string $outcome ): string {
 		switch ( $outcome ) {
 			case AuditRecorder::OUTCOME_APPLIED:
 			case AuditRecorder::OUTCOME_RESTORED:
@@ -737,7 +737,7 @@ final class ActivityScreen {
 	 *
 	 * @param string $outcome The recorded outcome.
 	 */
-	private static function label_for( string $outcome ): string {
+	public static function label_for( string $outcome ): string {
 		$labels = [
 			AuditRecorder::OUTCOME_STARTED             => __( 'Started', 'sitehelm' ),
 			AuditRecorder::OUTCOME_APPLIED             => __( 'Applied', 'sitehelm' ),
