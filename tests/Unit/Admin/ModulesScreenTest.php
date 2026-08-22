@@ -6,6 +6,7 @@ namespace SiteHelm\Tests\Unit\Admin;
 
 use SiteHelm\Admin\AdminMenu;
 use SiteHelm\Admin\ModulesScreen;
+use SiteHelm\Admin\ModuleSwitchAction;
 use SiteHelm\Contracts\Domain;
 use SiteHelm\Contracts\Mode;
 use SiteHelm\Contracts\ModuleHealth;
@@ -18,6 +19,7 @@ use SiteHelm\Contracts\SnapshotPolicy;
 use SiteHelm\Modules\Acf\AcfPresence;
 use SiteHelm\Modules\Elementor\ElementorPresence;
 use SiteHelm\Modules\Seo\SeoPresence;
+use SiteHelm\Policy\OperationSwitches;
 use SiteHelm\Registry\CapabilityRegistry;
 use SiteHelm\Tests\Doubles\AdminDied;
 use SiteHelm\Tests\Doubles\AdminWordPressStubs;
@@ -370,5 +372,58 @@ final class ModulesScreenTest extends TestCase {
 
 		$this->assertStringNotContainsString( 'sitehelm-card__waiting', $html );
 		$this->assertStringNotContainsString( 'Open Plugins', $html );
+	}
+
+	/**
+	 * A registry with two Core operations and one Media operation.
+	 */
+	private function switchRegistry(): CapabilityRegistry {
+		$registry = new CapabilityRegistry();
+		$registry->register( $this->definition( 'content-one', Domain::Content, ModuleId::Core ), static fn(): array => [] );
+		$registry->register( $this->definition( 'content-two', Domain::Content, ModuleId::Core ), static fn(): array => [] );
+		$registry->register( $this->definition( 'media-one', Domain::Media, ModuleId::Media ), static fn(): array => [] );
+
+		return $registry;
+	}
+
+	public function testAModuleWithOperationsCarriesASwitchPostedToTheModuleAction(): void {
+		$html = $this->render( $this->allActive(), $this->switchRegistry() );
+
+		$this->assertStringContainsString( 'value="' . ModuleSwitchAction::ACTION . '"', $html );
+		$this->assertStringContainsString( 'name="' . ModuleSwitchAction::FIELD_MODULE . '" value="' . ModuleId::Core->value . '"', $html );
+		$this->assertStringContainsString( 'name="' . ModuleSwitchAction::FIELD_ON . '" value="1" checked', $html );
+		// Three modules registered nothing here, so only two cards carry a switch.
+		$this->assertSame( 2, substr_count( $html, 'data-sitehelm-autosubmit>' ) );
+	}
+
+	public function testAModuleWhoseOperationsAreAllOffReadsOffAndCountsThem(): void {
+		AdminWordPressStubs::$options[ OperationSwitches::OPTION ] = [ 'content-one', 'content-two' ];
+
+		$html = $this->render( $this->allActive(), $this->switchRegistry() );
+
+		$this->assertStringContainsString( 'name="' . ModuleSwitchAction::FIELD_ON . '" value="1" data-sitehelm-switch', $html );
+		$this->assertStringContainsString( '0 of 2 operations on', $html );
+		$this->assertStringContainsString( '>1 operation<', $html );
+	}
+
+	public function testAHalfSwitchedModuleStillReadsOnWithTheCountBesideIt(): void {
+		AdminWordPressStubs::$options[ OperationSwitches::OPTION ] = [ 'content-two' ];
+
+		$html = $this->render( $this->allActive(), $this->switchRegistry() );
+
+		$this->assertStringContainsString( '1 of 2 operations on', $html );
+		$this->assertSame( 2, substr_count( $html, 'value="1" checked' ) );
+	}
+
+	public function testTheSavedNoteAppearsOnlyAfterTheRedirect(): void {
+		$this->assertStringNotContainsString( 'sitehelm-note--ok', $this->render() );
+
+		$_GET[ ModuleSwitchAction::ARG_STATE ] = ModuleSwitchAction::STATE_SAVED;
+
+		try {
+			$this->assertStringContainsString( 'sitehelm-note--ok', $this->render() );
+		} finally {
+			unset( $_GET[ ModuleSwitchAction::ARG_STATE ] );
+		}
 	}
 }

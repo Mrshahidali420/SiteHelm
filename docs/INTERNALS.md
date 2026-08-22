@@ -1281,7 +1281,8 @@ dismissible `notice-info` with an "Open Connect" button. Shown at most once per 
 
 ## 27. Operation switches
 
-The operator can turn any registered operation off from the Operations screen.
+The operator can turn any registered operation off from the Operations screen, or a whole
+module's operations at once from the Modules screen. Both edit the same option.
 
 - **Store** — `Policy\OperationSwitches`, option `sitehelm_disabled_operations`: a list of
   switched-**off** operation ids (never "enabled" ids, so an operation a module adds in an
@@ -1317,6 +1318,20 @@ The operator can turn any registered operation off from the Operations screen.
   `sitehelm-note--ok` status.
 - **JS** — `initSwitches(form)` / `syncSwitchCounts` / `syncSwitchRow` in
   `sitehelm-admin.js`; counts are always recomputed from the checkboxes.
+- **Module switch** — `Admin\ModuleSwitchAction` (`admin_post_sitehelm_module_switch`;
+  `ACTION`/`NONCE` `sitehelm_module_switch`, `FIELD_MODULE` `sitehelm_module` = a `ModuleId`
+  value, `FIELD_ON` `sitehelm_module_on` present = on, `ARG_STATE` `sitehelm_module`,
+  `STATE_SAVED`). Ctor `($registry, ?$switches, ?$redirect)`. Off = stored list ∪
+  `module_ids(registry, module)`; on = stored list minus them; nothing else in the list is
+  touched, and an unknown module value changes nothing. `ModulesScreen($registry, $health,
+  $switches)` renders, on every card whose module registered at least one operation, a
+  `<form class="sitehelm-card__switch" data-sitehelm-autosubmit>` holding hidden
+  `action`/`sitehelm_module`/nonce, one `.sitehelm-switch` checkbox (checked while **any** of
+  the module's operations is on) and an Apply button `[data-sitehelm-autosubmit-apply]` that
+  JS hides; any `[data-sitehelm-autosubmit]` form submits itself on change. The card's meta
+  reads "N of M operations on" when some are off, else "M operations". `render_saved_note()`
+  prints the same `sitehelm-note--ok` status after the redirect. Wired in
+  `AdminMenu::register()` / `add_pages()`.
 
 ---
 

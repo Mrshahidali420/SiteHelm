@@ -15,6 +15,7 @@ use SiteHelm\Modules\Acf\AcfPresence;
 use SiteHelm\Modules\Elementor\ElementorPresence;
 use SiteHelm\Modules\Metabox\MetaboxPresence;
 use SiteHelm\Modules\Seo\SeoPresence;
+use SiteHelm\Policy\OperationSwitches;
 use SiteHelm\Registry\CapabilityRegistry;
 
 /**
@@ -25,11 +26,13 @@ use SiteHelm\Registry\CapabilityRegistry;
  * ACF's need ACF. When that thing is absent the whole group is unavailable, and
  * an agent asking for any operation in it gets the same refusal.
  *
- * The cards are a readout, not a control panel. SiteHelm does not let a person
- * switch a module on, because nothing here is a preference — a module is active
+ * Whether a module is ACTIVE is a readout, not a control: a module is active
  * exactly when the plugin behind it is running, and the only way to change that
- * is on the Plugins screen. A toggle that could not change the answer would be
- * a lie that looks like a setting.
+ * is on the Plugins screen. What each card does offer is the operator's own
+ * choice — one switch that turns every operation the module registered on or
+ * off together, the same switches the Operations screen shows one row at a
+ * time and stored in the same option. A module switched off is still listed
+ * here as active or not; its operations simply leave the catalogue.
  *
  * Health is the map the loader produced while booting the request that is
  * serving this page, so what this screen reports and what the gateway answers
@@ -54,14 +57,23 @@ final class ModulesScreen {
 	private array $health;
 
 	/**
+	 * Which operations the operator has switched off.
+	 *
+	 * @var OperationSwitches
+	 */
+	private OperationSwitches $switches;
+
+	/**
 	 * Constructs the screen.
 	 *
 	 * @param CapabilityRegistry                                     $registry The registry the gateway is serving from.
 	 * @param array<string, array{version: ?string, health: string}> $health   The loader's health map.
+	 * @param OperationSwitches|null                                 $switches The operator's switches; null reads the option.
 	 */
-	public function __construct( CapabilityRegistry $registry, array $health = [] ) {
+	public function __construct( CapabilityRegistry $registry, array $health = [], ?OperationSwitches $switches = null ) {
 		$this->registry = $registry;
 		$this->health   = $health;
+		$this->switches = $switches ?? new OperationSwitches();
 	}
 
 	/**
@@ -79,7 +91,10 @@ final class ModulesScreen {
 			__( 'Which groups of operations this site can run, and what the rest are waiting on.', 'sitehelm' )
 		);
 
+		$this->render_saved_note();
+
 		$counts  = $this->counts();
+		$off     = $this->off_counts();
 		$active  = $this->active_count();
 		$total   = count( ModuleId::cases() );
 		$blocked = $total - $active;
@@ -110,7 +125,7 @@ final class ModulesScreen {
 		Ui::section_open(
 			__( 'Capability packs', 'sitehelm' ),
 			__(
-				'A module is active when the plugin behind it is running. SiteHelm cannot tell an installed but deactivated plugin apart from one that was never installed, so both read as not active. A module that is not active still lists its operations in the catalogue, so an agent is told the operation exists and why it cannot run it.',
+				'A module is active when the plugin behind it is running. SiteHelm cannot tell an installed but deactivated plugin apart from one that was never installed, so both read as not active. A module that is not active still lists its operations in the catalogue, so an agent is told the operation exists and why it cannot run it. The switch on each card turns every operation in the module on or off together; the Operations screen does the same one operation at a time.',
 				'sitehelm'
 			)
 		);
@@ -118,7 +133,7 @@ final class ModulesScreen {
 		echo '<div class="sitehelm-cards">';
 
 		foreach ( ModuleId::cases() as $module ) {
-			$this->render_card( $module, $counts[ $module->value ] ?? 0 );
+			$this->render_card( $module, $counts[ $module->value ] ?? 0, $off[ $module->value ] ?? 0 );
 		}
 
 		echo '</div>';
@@ -128,12 +143,30 @@ final class ModulesScreen {
 	}
 
 	/**
+	 * The confirmation after a module switch was saved.
+	 */
+	private function render_saved_note(): void {
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Reading an outcome from a redirect this plugin produced; it reports and grants nothing.
+		$state = isset( $_GET[ ModuleSwitchAction::ARG_STATE ] ) ? sanitize_key( wp_unslash( (string) $_GET[ ModuleSwitchAction::ARG_STATE ] ) ) : '';
+
+		if ( ModuleSwitchAction::STATE_SAVED !== $state ) {
+			return;
+		}
+
+		printf(
+			'<div class="sitehelm-note sitehelm-note--ok" role="status"><p>%s</p></div>',
+			esc_html__( 'Saved. Clients see the new list on their next call; nothing already running is interrupted.', 'sitehelm' )
+		);
+	}
+
+	/**
 	 * One module's card.
 	 *
 	 * @param ModuleId $module The module to report on.
 	 * @param int      $count  How many operations the module contributed.
+	 * @param int      $off    How many of those the operator has switched off.
 	 */
-	private function render_card( ModuleId $module, int $count ): void {
+	private function render_card( ModuleId $module, int $count, int $off = 0 ): void {
 		$entry   = $this->health[ $module->value ] ?? null;
 		$state   = is_array( $entry ) && isset( $entry['health'] ) ? (string) $entry['health'] : '';
 		$version = is_array( $entry ) && isset( $entry['version'] ) && is_string( $entry['version'] )
@@ -163,11 +196,18 @@ final class ModulesScreen {
 		printf(
 			'<span>%s</span>',
 			esc_html(
-				sprintf(
-					/* translators: %s: number of operations. */
-					_n( '%s operation', '%s operations', $count, 'sitehelm' ),
-					number_format_i18n( $count )
-				)
+				$off > 0
+					? sprintf(
+						/* translators: 1: number of operations switched on, 2: total number of operations. */
+						__( '%1$s of %2$s operations on', 'sitehelm' ),
+						number_format_i18n( $count - $off ),
+						number_format_i18n( $count )
+					)
+					: sprintf(
+						/* translators: %s: number of operations. */
+						_n( '%s operation', '%s operations', $count, 'sitehelm' ),
+						number_format_i18n( $count )
+					)
 			)
 		);
 
@@ -184,7 +224,56 @@ final class ModulesScreen {
 			);
 		}
 
-		echo '</p></article>';
+		echo '</p>';
+
+		if ( $count > 0 ) {
+			$this->render_switch( $module, $count > $off );
+		}
+
+		echo '</article>';
+	}
+
+	/**
+	 * The card's switch: one form, one checkbox, posted on change.
+	 *
+	 * The checkbox is on while at least one of the module's operations is on,
+	 * so a module the operator half-switched off on the Operations screen still
+	 * reads as on here, with the count beside it saying how many. Switching it
+	 * off turns every operation off; switching it on turns every one back on.
+	 * The Apply button is for a browser without script; with script the form
+	 * posts itself on change and the button is hidden.
+	 *
+	 * @param ModuleId $module The module.
+	 * @param bool     $is_on  Whether any of its operations is on.
+	 */
+	private function render_switch( ModuleId $module, bool $is_on ): void {
+		printf(
+			'<form method="post" action="%s" class="sitehelm-card__switch" data-sitehelm-autosubmit>',
+			esc_url( admin_url( 'admin-post.php' ) )
+		);
+		printf( '<input type="hidden" name="action" value="%s">', esc_attr( ModuleSwitchAction::ACTION ) );
+		printf( '<input type="hidden" name="%s" value="%s">', esc_attr( ModuleSwitchAction::FIELD_MODULE ), esc_attr( $module->value ) );
+		wp_nonce_field( ModuleSwitchAction::NONCE );
+
+		printf(
+			'<label class="sitehelm-switch"><input type="checkbox" name="%s" value="1"%s data-sitehelm-switch>'
+				. '<span class="sitehelm-switch__track" aria-hidden="true"></span>'
+				. '<span class="sitehelm-srt">%s</span></label>'
+				. '<span class="sitehelm-card__switch-label" aria-hidden="true">%s</span>'
+				. '<button type="submit" class="sitehelm-btn sitehelm-btn--small" data-sitehelm-autosubmit-apply>%s</button>'
+				. '</form>',
+			esc_attr( ModuleSwitchAction::FIELD_ON ),
+			$is_on ? ' checked' : '',
+			esc_html(
+				sprintf(
+					/* translators: %s: a module name. */
+					__( 'Allow every %s operation', 'sitehelm' ),
+					self::module_label( $module )
+				)
+			),
+			esc_html__( 'Operations on', 'sitehelm' ),
+			esc_html__( 'Apply', 'sitehelm' )
+		);
 	}
 
 	/**
@@ -277,6 +366,26 @@ final class ModulesScreen {
 			foreach ( $this->registry->forDispatcher( $dispatcher ) as $definition ) {
 				$key            = $definition->module->value;
 				$counts[ $key ] = ( $counts[ $key ] ?? 0 ) + 1;
+			}
+		}
+
+		return $counts;
+	}
+
+	/**
+	 * How many of each module's operations the operator has switched off.
+	 *
+	 * @return array<string, int> Module identifier to switched-off count.
+	 */
+	private function off_counts(): array {
+		$counts = [];
+
+		foreach ( CapabilityRegistry::DISPATCHERS as $dispatcher ) {
+			foreach ( $this->registry->forDispatcher( $dispatcher ) as $definition ) {
+				if ( ! $this->switches->isEnabled( $definition->id ) ) {
+					$key            = $definition->module->value;
+					$counts[ $key ] = ( $counts[ $key ] ?? 0 ) + 1;
+				}
 			}
 		}
 
