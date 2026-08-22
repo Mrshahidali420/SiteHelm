@@ -903,6 +903,13 @@ to its own filtered view; an unidentified client (`''` or
 `RestTransport::UNKNOWN_CLIENT`) is plain text, because linking to "everything the
 unidentified did" would mix every unnamed connection into one view.
 
+**Period filter.** `?period=` is one of `ActivityScreen::PERIODS` (`1h`, `24h`, `7d`,
+`30d` → seconds); `filters()` keeps the key as `period` (so pager and export links can
+carry it — `FILTER_ARGS` maps `period → period`) and sets `since = time() - seconds`,
+which the store already honoured as `recorded_at >= %d`. An unknown period is dropped,
+and the select shows "Any time". `page_url()` now iterates `FILTER_ARGS` instead of
+naming each arg, so a new filter needs only the map entry and the `filters()` branch.
+
 **The summary is a size, never a value, and carries no unit.**
 `AuditRedactor::measure()` returns `0` for null, `count()` for arrays, `1` for
 bools and `mb_strlen()` otherwise — so a character count and an array length are
