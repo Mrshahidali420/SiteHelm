@@ -228,6 +228,7 @@ final class AdminWordPressStubs {
 		Functions\when( 'wp_unslash' )->returnArg( 1 );
 		Functions\when( 'absint' )->alias( static fn( $value ): int => abs( (int) $value ) );
 		Functions\when( 'wp_nonce_field' )->justReturn( '' );
+		Functions\when( 'wp_nonce_url' )->alias( static fn( string $url, $action = -1 ): string => $url . '&_wpnonce=' . $action );
 		Functions\when( 'check_admin_referer' )->alias(
 			static function ( string $action ): bool {
 				self::$refererChecks[] = $action;

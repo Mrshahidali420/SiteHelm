@@ -1175,7 +1175,33 @@ is that a change older than the window can no longer be rolled back.
 
 ---
 
-## 22. Standing project constraints
+## 22. Activity export — the Activity screen downloads what it shows
+
+`ExportAction` (`admin_post_sitehelm_export_activity`, always bound) answers the
+**Export CSV** link `ActivityScreen::render_filters()` places at the right of the filter
+row (`.sitehelm-filters__export`, `margin-left: auto`). `ExportAction::url($filters)` maps
+the store filters back to query args through `ActivityScreen::FILTER_ARGS`
+(`operation`, `correlation`, `client`, `outcome`) and wraps them in
+`wp_nonce_url(…, 'sitehelm_export_activity')`, so what is downloaded is what the screen
+shows — every matching row, not one page. `handle()`: capability → `check_admin_referer`
+→ `ActivityScreen::filters()` (public static now, as is `change_text()`) → filename
+`sitehelm-activity-Ymd-His.csv` → the injectable `$send(string $filename, callable $write)`,
+whose default sends `nocache_headers()` + CSV headers, opens `php://output` and exits.
+`write()` pages the store `AuditStore::MAX_LIMIT` (100) rows at a time, newest first,
+stopping when a page comes back short; at `MAX_ROWS` (10 000) it appends one last line
+"Export stopped at 10,000 rows. Narrow the filters to export the rest." rather than let
+a truncated file pass for a complete one. Columns: `recorded_at` (`wp_date`
+`Y-m-d H:i:s`), `operation_id`, `target_key`, `outcome`, `actor_login`, `client_id`,
+`correlation_id`, `duration_ms`, `changes` (`change_text()` of the summary),
+`rollback_ref`. **Every cell beginning with `=`, `+`, `-`, `@`, tab or CR is prefixed
+with `'`** (`disarm()`): a target key or summary can carry text a client chose, and a
+formula in a post title is an attack on whoever opens the file. Tests inject `$send`
+with a `php://memory` stream; `AdminWordPressStubs` gained a `wp_nonce_url` stub that
+appends `&_wpnonce=<action>`.
+
+---
+
+## 23. Standing project constraints
 
 - **No AI attribution anywhere in git** — no "Generated with Claude Code" footer,
   no session URL, no `Co-Authored-By` trailer, in any commit, PR body, PR comment,

@@ -13,6 +13,11 @@ an operation behaves.
 
 ### Added
 
+- **Export the Activity log as CSV.** The Activity screen's filter row now ends in
+  an Export CSV link that downloads every row matching the filters shown, newest
+  first, up to 10,000 rows (the file says so on its last line when it stops there).
+  Cells that a spreadsheet would read as formulas are neutralised.
+
 - **Set how long records are kept, on the Status screen.** The pruning window
   (1–365 days, default 30) that governs the activity log and the snapshots behind
   each rollback was previously only reachable by editing an option; it is now one
