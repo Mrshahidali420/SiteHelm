@@ -179,6 +179,12 @@ final class AdminWordPressStubs {
 		Functions\when( 'rest_url' )->alias(
 			static fn( string $path = '' ): string => 'https://example.test/wp-json/' . $path
 		);
+		Functions\when( 'home_url' )->alias(
+			static fn( string $path = '' ): string => 'https://example.test' . $path
+		);
+		Functions\when( 'wp_parse_url' )->alias( 'parse_url' );
+		Functions\when( 'wp_generate_uuid4' )->justReturn( '00000000-0000-4000-8000-000000000000' );
+		Functions\when( 'wp_safe_redirect' )->justReturn( true );
 		Functions\when( 'get_option' )->alias(
 			static fn( string $name, $default_value = false ) => self::$options[ $name ] ?? $default_value
 		);

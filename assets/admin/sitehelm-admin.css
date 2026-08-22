@@ -1134,6 +1134,69 @@
 }
 
 /* =========================================================================
+ * Console rollback: the row button, the confirm panel, the diff table
+ * ========================================================================= */
+
+.sitehelm-inline-form {
+	display: inline-block;
+	margin: 0 0 0 8px;
+	vertical-align: middle;
+}
+
+.sitehelm-confirm {
+	padding: 20px 22px;
+	background: var(--sh-warn-light);
+	border: 1px solid #edd6ac;
+	border-left: 4px solid var(--sh-warn);
+	border-radius: var(--sh-radius);
+	color: var(--sh-ink);
+}
+
+.sitehelm-confirm__title {
+	margin: 0 0 6px;
+	font-size: 17px;
+	font-weight: 600;
+	color: var(--sh-ink);
+}
+
+.sitehelm-confirm__lede,
+.sitehelm-confirm__none {
+	margin: 0 0 14px;
+	font-size: 13px;
+	color: var(--sh-gray-700);
+}
+
+.sitehelm-confirm .sitehelm-scroll {
+	max-height: 40vh;
+}
+
+.sitehelm-confirm .sitehelm-note {
+	margin-top: 14px;
+}
+
+.sitehelm-confirm__warnings {
+	margin: 0;
+	padding-left: 18px;
+}
+
+.sitehelm-confirm__actions {
+	display: flex;
+	gap: 8px;
+	margin-top: 14px;
+}
+
+.sitehelm-diff__before {
+	color: var(--sh-gray-500);
+	text-decoration: line-through;
+	word-break: break-word;
+}
+
+.sitehelm-diff__after {
+	font-weight: 600;
+	word-break: break-word;
+}
+
+/* =========================================================================
  * Responsive
  * ========================================================================= */
 
