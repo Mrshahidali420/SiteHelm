@@ -1240,7 +1240,18 @@ bounds it.
 
 ---
 
-## 24. Standing project constraints
+## 24. Plugins-screen links
+
+`PluginLinks::register()` (called from `AdminMenu::register()`, guarded by
+`defined('SITEHELM_PLUGIN_FILE')`) filters `plugin_action_links_<basename>` and
+`PluginLinks::add()` prepends `sitehelm-connect` ("Connect" → `?page=sitehelm`) and
+`sitehelm-status` ("Status" → `?page=sitehelm-status`) to the row, only when the viewer
+holds `AdminMenu::CAPABILITY`; otherwise the row is returned untouched. Pure function,
+tested directly.
+
+---
+
+## 25. Standing project constraints
 
 - **No AI attribution anywhere in git** — no "Generated with Claude Code" footer,
   no session URL, no `Co-Authored-By` trailer, in any commit, PR body, PR comment,
