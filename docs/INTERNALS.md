@@ -1308,11 +1308,16 @@ module's operations at once from the Modules screen. Both edit the same option.
   (no form on an empty registry). Each group `<section data-sitehelm-group>` has a
   `[data-sitehelm-switch-count]` badge ("N of M on", label template in
   `data-sitehelm-count-label`) and a hidden `[data-sitehelm-switch-actions]` span with
-  `[data-sitehelm-switch-all="on|off"]` buttons revealed by JS. Each row
-  `[data-sitehelm-switch-row]` starts with a `.sitehelm-switch` label (`--warn` for
-  destructive / high-risk) holding the real checkbox `name="sitehelm_operations[]"
-  value="<id>" data-sitehelm-switch` under a drawn track; off rows carry
-  `sitehelm-table__row--off`. A sticky `.sitehelm-savebar[data-sitehelm-savebar]` holds the
+  `[data-sitehelm-switch-all="on|off"]` segmented buttons (`.sitehelm-seg__btn--on|--off`)
+  revealed by JS, and a `[data-sitehelm-collapse]` chevron button in the heading that JS
+  toggles `is-collapsed` on the section with (hides `.sitehelm-tools`). The operations are a
+  `.sitehelm-tools` card grid: each card is a `<label class="sitehelm-tool" data-sitehelm-switch-row>`
+  (`sitehelm-tool--muted` when the module is not active, `is-off` when switched off) holding
+  a `.sitehelm-switch` span (`--warn` for destructive / high-risk) with the real checkbox
+  `name="sitehelm_operations[]" value="<id>" data-sitehelm-switch` under a drawn track, then
+  `.sitehelm-tool__info` — `__name` (`<code>id</code>` + kind badges), `__desc`, `__meta`
+  (`__module` text + `<code class="sitehelm-tool__slug">` required capability). Clicking
+  anywhere on the card flips its checkbox. A sticky `.sitehelm-savebar[data-sitehelm-savebar]` holds the
   `[data-sitehelm-switch-summary]` ("N of M operations on") and the submit button; JS adds
   `is-dirty` on change. After the redirect `render_saved_note()` prints one
   `sitehelm-note--ok` status.
@@ -1344,5 +1349,17 @@ module's operations at once from the Modules screen. Both edit the same option.
   behind a strict guard. No allowlist, no site configuration.
 - The reference plugin used for research may be read but must **never be named** in
   a comment, docblock, commit message, PR, release note, or any shipped file.
-- Brand palette (Helm teal-blue): primary `#0E7C86`, deep hull `#0B4F55`, accent
-  `#23A6B3`, surface tint `#E8F4F5`, ink `#0F1B1D`. WCAG 2.1 AA.
+- Console palette (since the 2026-08-22 design port): indigo primary `#6366f1`, hover
+  `#4f46e5`, light `#eef2ff`; success `#10b981`/`#ecfdf5`, warning `#f59e0b`/`#fffbeb`,
+  danger `#ef4444`/`#fef2f2`; Tailwind gray scale `#f9fafb`…`#111827`; radii 10/6/14;
+  headings in **Geist** (`assets/admin/fonts/Geist-Variable.woff2`, SIL OFL, licence file
+  beside it) with `letter-spacing:-0.01em`. All tokens are `--sh-*` on
+  `.sitehelm-app, .sitehelm-widget`. The plugin icon/marketing palette (Helm teal
+  `#0E7C86` / `#0B4F55` / `#23A6B3`) is unchanged. WCAG 2.1 AA on text.
+- Console shell (`Ui::app_open`): `.wrap.sitehelm-app` → srt `<h1>` → `.sitehelm-appbar`
+  (brand mark/title/version pill; actions = `.sitehelm-endpoint` copy row +
+  `.sitehelm-helpmenu` "Get help" dropdown that opens on `:hover`/`:focus-within`, links to
+  README, CHANGELOG, issues) → `.sitehelm-appnav-wrap` tab bar → `<div class="sitehelm-content">`
+  white panel (24px, radius-lg) that `app_close()` closes together with the wrap. Stat tiles
+  (`Ui::stat_grid`) render value **above** label in `.sitehelm-statcard__body` beside a 52px
+  tinted icon, inside one gray `.sitehelm-statgrid` strip.

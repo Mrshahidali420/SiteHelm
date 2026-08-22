@@ -52,13 +52,16 @@ final class Ui {
 
 		self::app_bar();
 		self::app_nav( $active_slug );
+
+		// The screen's content sits on one white panel below the tab bar.
+		echo '<div class="sitehelm-content">';
 	}
 
 	/**
 	 * Close the shell opened by {@see self::app_open()}.
 	 */
 	public static function app_close(): void {
-		echo '</div>';
+		echo '</div></div>';
 	}
 
 	/**
@@ -88,7 +91,42 @@ final class Ui {
 
 		self::copy_button( 'sitehelm-appbar-endpoint', __( 'Copy endpoint', 'sitehelm' ) );
 
-		echo '</div></div></div>';
+		echo '</div>';
+
+		self::help_menu();
+
+		echo '</div></div>';
+	}
+
+	/**
+	 * The "Get help" menu: a button that opens on hover or focus, no script needed.
+	 */
+	private static function help_menu(): void {
+		$links = [
+			[ 'dashicons-book', __( 'Documentation', 'sitehelm' ), 'https://github.com/Mrshahidali420/SiteHelm#readme' ],
+			[ 'dashicons-megaphone', __( "What's new", 'sitehelm' ), 'https://github.com/Mrshahidali420/SiteHelm/blob/main/CHANGELOG.md' ],
+			[ 'dashicons-sos', __( 'Report a problem', 'sitehelm' ), 'https://github.com/Mrshahidali420/SiteHelm/issues' ],
+		];
+
+		printf(
+			'<div class="sitehelm-helpmenu"><button type="button" class="sitehelm-helpmenu__toggle" aria-haspopup="true">'
+				. '<span class="dashicons dashicons-editor-help" aria-hidden="true"></span>%s'
+				. '<span class="dashicons dashicons-arrow-down-alt2 sitehelm-helpmenu__caret" aria-hidden="true"></span>'
+				. '</button><div class="sitehelm-helpmenu__dropdown">',
+			esc_html__( 'Get help', 'sitehelm' )
+		);
+
+		foreach ( $links as [ $icon, $label, $url ] ) {
+			printf(
+				'<a class="sitehelm-helpmenu__item" href="%s" target="_blank" rel="noopener noreferrer">'
+					. '<span class="dashicons %s" aria-hidden="true"></span>%s</a>',
+				esc_url( $url ),
+				esc_attr( $icon ),
+				esc_html( $label )
+			);
+		}
+
+		echo '</div></div>';
 	}
 
 	/**
@@ -227,13 +265,14 @@ final class Ui {
 		foreach ( $cards as $card ) {
 			printf(
 				'<div class="sitehelm-statcard"><span class="sitehelm-statcard__icon sitehelm-statcard__icon--%s"'
-					. ' aria-hidden="true">%s</span><span><span class="sitehelm-statcard__label">%s</span>'
-					. '<span class="sitehelm-statcard__value">%s</span></span></div>',
+					. ' aria-hidden="true">%s</span><span class="sitehelm-statcard__body">'
+					. '<span class="sitehelm-statcard__value">%s</span>'
+					. '<span class="sitehelm-statcard__label">%s</span></span></div>',
 				$card['ok'] ? 'ok' : 'warn',
 				// The two glyphs are literals defined below, not caller input.
 				self::stat_icon( (bool) $card['ok'] ), // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
-				esc_html( $card['label'] ),
-				esc_html( $card['value'] )
+				esc_html( $card['value'] ),
+				esc_html( $card['label'] )
 			);
 		}
 
