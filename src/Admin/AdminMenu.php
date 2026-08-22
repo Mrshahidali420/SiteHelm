@@ -11,6 +11,7 @@ namespace SiteHelm\Admin;
 
 use SiteHelm\Gateway\ContextFactory;
 use SiteHelm\Gateway\Dispatcher;
+use SiteHelm\Policy\OperationSwitches;
 use SiteHelm\Registry\CapabilityRegistry;
 
 /**
@@ -128,16 +129,25 @@ final class AdminMenu {
 	private ?Dispatcher $dispatcher;
 
 	/**
+	 * The operator's per-operation switches, shared with the gateway.
+	 *
+	 * @var OperationSwitches
+	 */
+	private OperationSwitches $switches;
+
+	/**
 	 * Constructs the console.
 	 *
 	 * @param CapabilityRegistry                                     $registry   The registry the gateway is serving from.
 	 * @param array<string, array{version: ?string, health: string}> $health     The loader's health map.
 	 * @param Dispatcher|null                                        $dispatcher The gateway's dispatcher, for console rollback; null binds none.
+	 * @param OperationSwitches|null                                 $switches   The gateway's per-operation switches; null reads the option afresh.
 	 */
-	public function __construct( CapabilityRegistry $registry, array $health = [], ?Dispatcher $dispatcher = null ) {
+	public function __construct( CapabilityRegistry $registry, array $health = [], ?Dispatcher $dispatcher = null, ?OperationSwitches $switches = null ) {
 		$this->registry   = $registry;
 		$this->health     = $health;
 		$this->dispatcher = $dispatcher;
+		$this->switches   = $switches ?? new OperationSwitches();
 	}
 
 	/**
@@ -151,6 +161,7 @@ final class AdminMenu {
 		add_action( 'admin_post_' . RevokeAction::ACTION, [ new RevokeAction(), 'handle' ] );
 		add_action( 'admin_post_' . RetentionAction::ACTION, [ new RetentionAction(), 'handle' ] );
 		add_action( 'admin_post_' . ExportAction::ACTION, [ new ExportAction(), 'handle' ] );
+		add_action( 'admin_post_' . OperationsAction::ACTION, [ new OperationsAction( $this->registry ), 'handle' ] );
 		add_action( 'wp_dashboard_setup', [ new DashboardWidget(), 'add_widget' ] );
 		PluginLinks::register();
 		( new SiteHealth() )->register();
@@ -178,7 +189,7 @@ final class AdminMenu {
 		$screens = [
 			self::PAGE_CONNECT    => new ConnectScreen(),
 			self::PAGE_MODULES    => new ModulesScreen( $this->registry, $this->health ),
-			self::PAGE_OPERATIONS => new OperationsScreen( $this->registry, $this->health ),
+			self::PAGE_OPERATIONS => new OperationsScreen( $this->registry, $this->health, $this->switches ),
 			self::PAGE_ACTIVITY   => new ActivityScreen(),
 			self::PAGE_STATUS     => new StatusScreen( $this->health ),
 		];

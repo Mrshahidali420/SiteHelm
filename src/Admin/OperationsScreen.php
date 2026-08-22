@@ -13,16 +13,19 @@ use SiteHelm\Contracts\ModuleHealth;
 use SiteHelm\Contracts\OperationDefinition;
 use SiteHelm\Contracts\PreviewPolicy;
 use SiteHelm\Contracts\Risk;
+use SiteHelm\Policy\OperationSwitches;
 use SiteHelm\Registry\CapabilityRegistry;
 
 /**
- * The full list of what an agent connected to this site is able to do.
+ * The full list of what an agent connected to this site is able to do, and
+ * the switch that turns each entry off.
  *
  * Consent is only meaningful if the thing being consented to can be read. An
  * operator handing an AI client the keys to a client's site should be able to
  * see the entire surface in one place, grouped the way the protocol groups it,
- * and see for each entry whether it writes, whether it must be previewed first,
- * and what capability a user needs before it will run at all.
+ * see for each entry whether it writes, whether it must be previewed first,
+ * and what capability a user needs before it will run at all — and be able to
+ * switch off anything they do not want reachable, one operation at a time.
  *
  * @package SiteHelm
  */
@@ -48,14 +51,30 @@ final class OperationsScreen {
 	private array $health;
 
 	/**
+	 * The operator's per-operation switches.
+	 *
+	 * @var OperationSwitches
+	 */
+	private OperationSwitches $switches;
+
+	/**
+	 * The switched-off identifiers, read once per render.
+	 *
+	 * @var list<string>
+	 */
+	private array $disabled = [];
+
+	/**
 	 * Constructs the screen.
 	 *
 	 * @param CapabilityRegistry                                     $registry The registry the gateway is serving from.
 	 * @param array<string, array{version: ?string, health: string}> $health   The loader's health map.
+	 * @param OperationSwitches|null                                 $switches The per-operation switches; null reads the option.
 	 */
-	public function __construct( CapabilityRegistry $registry, array $health = [] ) {
+	public function __construct( CapabilityRegistry $registry, array $health = [], ?OperationSwitches $switches = null ) {
 		$this->registry = $registry;
 		$this->health   = $health;
+		$this->switches = $switches ?? new OperationSwitches();
 	}
 
 	/**
@@ -66,15 +85,18 @@ final class OperationsScreen {
 			wp_die( esc_html__( 'You do not have permission to view SiteHelm.', 'sitehelm' ) );
 		}
 
+		$this->disabled = $this->switches->disabled();
+
 		$groups      = $this->groups();
 		$total       = array_sum( array_map( 'count', $groups ) );
 		$unavailable = $this->unavailable_count( $groups );
+		$off         = $this->off_count( $groups );
 
 		Ui::app_open( AdminMenu::PAGE_OPERATIONS );
 
 		Ui::page_head(
 			__( 'Operations', 'sitehelm' ),
-			__( 'Everything a connected client can ask this site to do. Nothing outside this list is reachable.', 'sitehelm' )
+			__( 'Everything a connected client can ask this site to do. Nothing outside this list is reachable, and anything switched off here is not reachable either.', 'sitehelm' )
 		);
 
 		$detail = sprintf(
@@ -82,6 +104,14 @@ final class OperationsScreen {
 			_n( 'across %s tool', 'across %s tools', count( $groups ), 'sitehelm' ),
 			number_format_i18n( count( $groups ) )
 		);
+
+		if ( $off > 0 ) {
+			$detail .= ' · ' . sprintf(
+				/* translators: %s: number of operations the operator has switched off. */
+				_n( '%s switched off', '%s switched off', $off, 'sitehelm' ),
+				number_format_i18n( $off )
+			);
+		}
 
 		if ( $unavailable > 0 ) {
 			$detail .= ' · ' . sprintf(
@@ -101,11 +131,29 @@ final class OperationsScreen {
 			$detail
 		);
 
+		$this->render_saved_note();
+
+		if ( [] === $groups ) {
+			Ui::app_close();
+			return;
+		}
+
+		printf(
+			'<form method="post" action="%s" class="sitehelm-switches" data-sitehelm-switches>',
+			esc_url( admin_url( 'admin-post.php' ) )
+		);
+		printf( '<input type="hidden" name="action" value="%s">', esc_attr( OperationsAction::ACTION ) );
+		wp_nonce_field( OperationsAction::NONCE );
+
 		$this->render_search();
 
 		foreach ( $groups as $dispatcher => $definitions ) {
 			$this->render_group( (string) $dispatcher, $definitions );
 		}
+
+		$this->render_save_bar( $total, $total - $off );
+
+		echo '</form>';
 
 		Ui::app_close();
 	}
@@ -142,6 +190,23 @@ final class OperationsScreen {
 	}
 
 	/**
+	 * The confirmation after the switches were saved.
+	 */
+	private function render_saved_note(): void {
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Reading an outcome from a redirect this plugin produced; it reports and grants nothing.
+		$state = isset( $_GET[ OperationsAction::ARG_STATE ] ) ? sanitize_key( wp_unslash( (string) $_GET[ OperationsAction::ARG_STATE ] ) ) : '';
+
+		if ( OperationsAction::STATE_SAVED !== $state ) {
+			return;
+		}
+
+		printf(
+			'<div class="sitehelm-note sitehelm-note--ok" role="status"><p>%s</p></div>',
+			esc_html__( 'Saved. Clients see the new list on their next call; nothing already running is interrupted.', 'sitehelm' )
+		);
+	}
+
+	/**
 	 * The filter field, revealed by script.
 	 *
 	 * Rendered hidden because it filters rows by hiding them, which nothing but
@@ -164,18 +229,45 @@ final class OperationsScreen {
 	/**
 	 * One dispatcher and its operations.
 	 *
+	 * The heading carries how many of the group's operations are on, and two
+	 * script-only buttons that switch the whole group at once. They are hidden
+	 * without script because they only flip checkboxes the operator can still
+	 * reach one by one.
+	 *
 	 * @param string                $dispatcher  The dispatcher name.
 	 * @param OperationDefinition[] $definitions Its registered operations.
 	 */
 	private function render_group( string $dispatcher, array $definitions ): void {
+		$on = count( $definitions ) - $this->off_count( [ $definitions ] );
+
 		printf(
-			'<section class="sitehelm-section" data-sitehelm-group><h2 class="sitehelm-section__head"><code>%s</code></h2>',
-			esc_html( $dispatcher )
+			'<section class="sitehelm-section sitehelm-switchgroup" data-sitehelm-group>'
+				. '<div class="sitehelm-switchgroup__head">'
+				. '<h2 class="sitehelm-section__head"><code>%1$s</code></h2>'
+				. '<span class="sitehelm-switchgroup__count" data-sitehelm-switch-count data-sitehelm-count-label="%2$s">%3$s</span>'
+				. '<span class="sitehelm-switchgroup__actions" hidden data-sitehelm-switch-actions>'
+				. '<button type="button" class="sitehelm-btn sitehelm-btn--small" data-sitehelm-switch-all="on">%4$s</button>'
+				. '<button type="button" class="sitehelm-btn sitehelm-btn--small" data-sitehelm-switch-all="off">%5$s</button>'
+				. '</span></div>',
+			esc_html( $dispatcher ),
+			/* translators: 1: number of operations switched on in a group, 2: number of operations in the group. */
+			esc_attr__( '%1$s of %2$s on', 'sitehelm' ),
+			esc_html(
+				sprintf(
+					/* translators: 1: number of operations switched on in a group, 2: number of operations in the group. */
+					__( '%1$s of %2$s on', 'sitehelm' ),
+					number_format_i18n( $on ),
+					number_format_i18n( count( $definitions ) )
+				)
+			),
+			esc_html__( 'All on', 'sitehelm' ),
+			esc_html__( 'All off', 'sitehelm' )
 		);
 
-		echo '<div class="sitehelm-scroll"><table class="sitehelm-table"><thead><tr>';
+		echo '<div class="sitehelm-scroll"><table class="sitehelm-table sitehelm-table--switches"><thead><tr>';
 
 		$headings = [
+			__( 'On', 'sitehelm' ),
 			__( 'Operation', 'sitehelm' ),
 			__( 'What it does', 'sitehelm' ),
 			__( 'Module', 'sitehelm' ),
@@ -206,13 +298,23 @@ final class OperationsScreen {
 	private function render_operation( OperationDefinition $definition ): void {
 		$module_label = ModulesScreen::module_label( $definition->module );
 		$is_active    = $this->is_active( $definition );
+		$is_on        = $this->is_on( $definition );
+
+		$classes = [];
+		if ( ! $is_active ) {
+			$classes[] = 'sitehelm-table__row--muted';
+		}
+		if ( ! $is_on ) {
+			$classes[] = 'sitehelm-table__row--off';
+		}
 
 		printf(
-			'<tr data-sitehelm-haystack="%s"%s>',
+			'<tr data-sitehelm-haystack="%s" data-sitehelm-switch-row%s>',
 			esc_attr( strtolower( $definition->id . ' ' . $definition->description . ' ' . $module_label ) ),
-			$is_active ? '' : ' class="sitehelm-table__row--muted"'
+			[] === $classes ? '' : ' class="' . esc_attr( implode( ' ', $classes ) ) . '"'
 		);
 
+		echo '<td>' . $this->switch_cell( $definition, $is_on ) . '</td>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Composed from escaped attributes and text.
 		printf( '<td><code>%s</code></td>', esc_html( $definition->id ) );
 		printf( '<td>%s</td>', esc_html( $definition->description ) );
 
@@ -229,6 +331,69 @@ final class OperationsScreen {
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 
 	/**
+	 * The switch for one operation.
+	 *
+	 * A real checkbox under a styled track, so the form posts without script,
+	 * the keyboard reaches it, and a screen reader announces it as the on/off
+	 * control it is. Destructive and high-risk operations get a warning track
+	 * colour when on, so the rows worth a second look stand out in a long list.
+	 *
+	 * @param OperationDefinition $definition The operation.
+	 * @param bool                $is_on      Whether it is currently on.
+	 *
+	 * @return string Escaped HTML.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+	 */
+	private function switch_cell( OperationDefinition $definition, bool $is_on ): string {
+		$is_warn = $definition->isDestructive || Risk::High === $definition->risk;
+
+		return sprintf(
+			'<label class="sitehelm-switch%s"><input type="checkbox" name="%s[]" value="%s"%s data-sitehelm-switch>'
+				. '<span class="sitehelm-switch__track" aria-hidden="true"></span>'
+				. '<span class="sitehelm-srt">%s</span></label>',
+			$is_warn ? ' sitehelm-switch--warn' : '',
+			esc_attr( OperationsAction::FIELD ),
+			esc_attr( $definition->id ),
+			$is_on ? ' checked' : '',
+			esc_html(
+				sprintf(
+					/* translators: %s: operation identifier. */
+					__( 'Allow %s', 'sitehelm' ),
+					$definition->id
+				)
+			)
+		);
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+
+	/**
+	 * The save bar at the foot of the form.
+	 *
+	 * @param int $total The number of operations on the page.
+	 * @param int $on    How many of them are on.
+	 */
+	private function render_save_bar( int $total, int $on ): void {
+		printf(
+			'<div class="sitehelm-savebar" data-sitehelm-savebar>'
+				. '<span class="sitehelm-savebar__summary" data-sitehelm-switch-summary data-sitehelm-count-label="%1$s">%2$s</span>'
+				. '<button type="submit" class="sitehelm-btn sitehelm-btn--primary">%3$s</button>'
+				. '</div>',
+			/* translators: 1: number of operations switched on, 2: total number of operations. */
+			esc_attr__( '%1$s of %2$s operations on', 'sitehelm' ),
+			esc_html(
+				sprintf(
+					/* translators: 1: number of operations switched on, 2: total number of operations. */
+					__( '%1$s of %2$s operations on', 'sitehelm' ),
+					number_format_i18n( $on ),
+					number_format_i18n( $total )
+				)
+			),
+			esc_html__( 'Save changes', 'sitehelm' )
+		);
+	}
+
+	/**
 	 * Whether the module behind an operation is active on this site.
 	 *
 	 * Read from the loader's own map, so the answer is the one the gateway gives.
@@ -243,6 +408,15 @@ final class OperationsScreen {
 
 		return ModuleHealth::Active->value === $state;
 	}
+
+	/**
+	 * Whether the operator has left an operation on.
+	 *
+	 * @param OperationDefinition $definition The operation.
+	 */
+	private function is_on( OperationDefinition $definition ): bool {
+		return ! in_array( $definition->id, $this->disabled, true );
+	}
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 
 	/**
@@ -256,6 +430,25 @@ final class OperationsScreen {
 		foreach ( $groups as $definitions ) {
 			foreach ( $definitions as $definition ) {
 				if ( ! $this->is_active( $definition ) ) {
+					++$count;
+				}
+			}
+		}
+
+		return $count;
+	}
+
+	/**
+	 * How many listed operations the operator has switched off.
+	 *
+	 * @param array<int|string, OperationDefinition[]> $groups The grouped catalogue.
+	 */
+	private function off_count( array $groups ): int {
+		$count = 0;
+
+		foreach ( $groups as $definitions ) {
+			foreach ( $definitions as $definition ) {
+				if ( ! $this->is_on( $definition ) ) {
 					++$count;
 				}
 			}
