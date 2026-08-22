@@ -6,6 +6,7 @@ namespace SiteHelm\Tests\Unit\Admin;
 
 use SiteHelm\Admin\ClientConfig;
 use SiteHelm\Admin\ConnectScreen;
+use SiteHelm\Admin\Credentials;
 use SiteHelm\Gateway\RestTransport;
 use SiteHelm\Storage\AuditStore;
 use SiteHelm\Tests\Doubles\AdminDied;
@@ -48,7 +49,7 @@ final class ConnectScreenTest extends TestCase {
 		$this->wpdb->resultQueue[] = $rows;
 
 		ob_start();
-		( new ConnectScreen( new AuditStore() ) )->render();
+		( new ConnectScreen( new AuditStore(), new Credentials( static fn(): array => [], static fn(): bool => true ) ) )->render();
 
 		return (string) ob_get_clean();
 	}
@@ -61,7 +62,7 @@ final class ConnectScreenTest extends TestCase {
 		ob_start();
 
 		try {
-			( new ConnectScreen( new AuditStore() ) )->render();
+			( new ConnectScreen( new AuditStore(), new Credentials( static fn(): array => [], static fn(): bool => true ) ) )->render();
 		} finally {
 			ob_end_clean();
 		}

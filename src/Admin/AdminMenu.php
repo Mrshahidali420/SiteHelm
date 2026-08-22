@@ -148,6 +148,7 @@ final class AdminMenu {
 		add_action( 'admin_enqueue_scripts', [ $this, 'enqueue_assets' ] );
 		add_action( 'admin_post_' . ConnectScreen::ACTION_CREATE_PASSWORD, [ new ConnectScreen(), 'handle_create_password' ] );
 		add_action( 'admin_post_' . WriteModeAction::ACTION, [ new WriteModeAction(), 'handle' ] );
+		add_action( 'admin_post_' . RevokeAction::ACTION, [ new RevokeAction(), 'handle' ] );
 
 		// Console rollback goes through the same dispatcher the gateway serves
 		// from, so the console can restore nothing an agent could not, and every

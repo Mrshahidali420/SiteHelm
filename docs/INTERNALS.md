@@ -1102,7 +1102,39 @@ distinguished anywhere in the gateway today.
 
 ---
 
-## 19. Standing project constraints
+## 19. Issued credentials — the Connect screen lists and revokes
+
+Until now a credential minted on Connect was shown once and then invisible; the
+screen had no answer to "which clients can still reach this site?". Three classes:
+
+- `Credentials` — a seam over `WP_Application_Passwords` with two injectable
+  callables (`$lister` → `get_user_application_passwords($user_id)`, `$delete` →
+  `delete_application_password($user_id, $uuid)`). **There is no double for that
+  static class, so every test injects closures.** `for_users(array $users)` returns
+  only passwords whose `name === ConnectScreen::PASSWORD_NAME`, newest first, as
+  `{user_id, login, uuid, created, last_used, last_ip}`. `revoke($user_id, $uuid)`
+  refuses (without calling delete) any uuid that is not a SiteHelm-named password
+  on that user — a forged form cannot use this route to revoke something this
+  plugin never made.
+- `RevokeAction` (`admin_post_sitehelm_revoke_password`, always bound by
+  `AdminMenu`): capability → nonce `sitehelm_revoke_password` → fields
+  `sitehelm_revoke_user` (absint) / `sitehelm_revoke_uuid` (sanitize_key) →
+  **the same boundary as minting:** `wp_die` 403 unless the target is the current
+  user or `current_user_can('edit_user', $id)`. Redirects to Connect with
+  `sitehelm_revoked=done|failed`.
+- `CredentialsPanel::render(array $users)` — section "Issued credentials" (not
+  "Connected …": `ConnectScreenTest` asserts the word *Connected* is absent until
+  a client has called), fed `ConnectScreen::selectable_users()`, rendered after
+  the create-password card. Table `.sitehelm-table.sitehelm-credentials`
+  (Acts as / Created `wp_date('Y-m-d H:i')` / Last used `human_time_diff` or
+  "Never" / Revoke inline form with `.sitehelm-btn--danger`); `Ui::empty_state`
+  when nothing is listed.
+- `ConnectScreen::__construct(?AuditStore, ?Credentials)` — tests must pass a
+  `Credentials` with closures, or rendering hits the undefined WP class.
+
+---
+
+## 20. Standing project constraints
 
 - **No AI attribution anywhere in git** — no "Generated with Claude Code" footer,
   no session URL, no `Co-Authored-By` trailer, in any commit, PR body, PR comment,
