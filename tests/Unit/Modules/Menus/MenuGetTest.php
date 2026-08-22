@@ -488,6 +488,7 @@ final class MenuGetTest extends TestCase {
 	 */
 	public function test_every_schema_reference_resolves_from_the_schema_response(): void {
 		Functions\when( 'get_bloginfo' )->justReturn( '6.8.1' );
+		Functions\when( 'get_option' )->justReturn( [] );
 		// The lookup requires `read`; the menu operation requires
 		// `edit_theme_options` to be visible at all. Both must be held here or
 		// the response under test is a refusal instead of a schema.

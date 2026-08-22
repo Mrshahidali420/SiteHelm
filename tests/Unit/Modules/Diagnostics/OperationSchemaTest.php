@@ -24,6 +24,7 @@ use SiteHelm\Contracts\RollbackPolicy;
 use SiteHelm\Contracts\SnapshotPolicy;
 use SiteHelm\Modules\Diagnostics\DiagnosticsModule;
 use SiteHelm\Modules\Diagnostics\OperationSchema;
+use SiteHelm\Policy\OperationSwitches;
 use SiteHelm\Registry\CapabilityRegistry;
 use SiteHelm\Tests\Doubles\StubWriteOperation;
 use SiteHelm\Tests\TestCase;
@@ -43,6 +44,8 @@ final class OperationSchemaTest extends TestCase {
 
 	protected function setUp(): void {
 		parent::setUp();
+
+		Functions\when( 'get_option' )->justReturn( [] );
 
 		$this->registry = new CapabilityRegistry();
 		$this->lookup   = new OperationSchema( $this->registry );
@@ -205,6 +208,29 @@ final class OperationSchemaTest extends TestCase {
 		$this->assertSame( $unknown->errorCode, $hidden->errorCode );
 		$this->assertSame( $unknown->getMessage(), $hidden->getMessage() );
 		$this->assertSame( $unknown->remediation, $hidden->remediation );
+	}
+
+	/**
+	 * An operation the operator switched off is as unknown here as it is to the
+	 * catalogue and the dispatcher; otherwise this lookup would describe what
+	 * the other two hide.
+	 */
+	public function test_a_switched_off_operation_is_indistinguishable_from_an_absent_one(): void {
+		$lookup = new OperationSchema(
+			$this->registry,
+			new OperationSwitches( static fn(): array => [ 'system-environment' ] )
+		);
+
+		try {
+			$lookup->handle( [ 'operation' => 'system-environment' ], $this->context() );
+			$this->fail( 'A switched-off operation must be refused.' );
+		} catch ( OperationException $e ) {
+			$unknown = $this->refusalFor( 'content-obliterate' );
+			$this->assertSame( $unknown->errorCode, $e->errorCode );
+			$this->assertSame( $unknown->getMessage(), $e->getMessage() );
+		}
+
+		$this->assertSame( 'system-environment', $this->lookup->handle( [ 'operation' => 'system-environment' ], $this->context() )['operation'] );
 	}
 
 	/**

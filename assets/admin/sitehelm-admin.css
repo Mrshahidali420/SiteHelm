@@ -1394,3 +1394,143 @@
 	font-size: 12px;
 	overflow-x: auto;
 }
+
+/* ------------------------------------------------------------------ *
+ * Operation switches
+ * ------------------------------------------------------------------ */
+
+.sitehelm-switchgroup__head {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px 14px;
+	margin: 0 0 10px;
+}
+
+.sitehelm-switchgroup__head .sitehelm-section__head {
+	margin: 0;
+}
+
+.sitehelm-switchgroup__count {
+	font-size: 12px;
+	font-weight: 600;
+	color: var(--sh-gray-600);
+	background: var(--sh-gray-100);
+	border-radius: 999px;
+	padding: 2px 10px;
+}
+
+.sitehelm-switchgroup__actions {
+	display: inline-flex;
+	gap: 6px;
+	margin-left: auto;
+}
+
+.sitehelm-table--switches th:first-child,
+.sitehelm-table--switches td:first-child {
+	width: 52px;
+	padding-right: 4px;
+}
+
+/* The switch: a real checkbox under a drawn track, so it posts, focuses and
+ * announces itself as a checkbox while looking like the on/off control it is. */
+.sitehelm-switch {
+	position: relative;
+	display: inline-block;
+	width: 38px;
+	height: 22px;
+	vertical-align: middle;
+	cursor: pointer;
+}
+
+.sitehelm-switch input {
+	position: absolute;
+	inset: 0;
+	width: 100%;
+	height: 100%;
+	margin: 0;
+	opacity: 0;
+	cursor: pointer;
+	z-index: 1;
+}
+
+.sitehelm-switch__track {
+	position: absolute;
+	inset: 0;
+	background: var(--sh-gray-300);
+	border-radius: 11px;
+	transition: background var(--sh-ease);
+}
+
+.sitehelm-switch__track::after {
+	content: "";
+	position: absolute;
+	top: 3px;
+	left: 3px;
+	width: 16px;
+	height: 16px;
+	border-radius: 50%;
+	background: #fff;
+	box-shadow: 0 1px 3px rgba(15, 27, 29, 0.3);
+	transition: transform var(--sh-ease);
+}
+
+.sitehelm-switch input:checked + .sitehelm-switch__track {
+	background: var(--sh-primary);
+}
+
+.sitehelm-switch--warn input:checked + .sitehelm-switch__track {
+	background: var(--sh-danger);
+}
+
+.sitehelm-switch input:checked + .sitehelm-switch__track::after {
+	transform: translateX(16px);
+}
+
+.sitehelm-switch input:focus-visible + .sitehelm-switch__track {
+	box-shadow: 0 0 0 2px #fff, 0 0 0 4px var(--sh-primary);
+}
+
+/* A row the operator has switched off. Dimmed and struck, never hidden: it is
+ * still registered, and the point of the list is that nothing is hidden. */
+.sitehelm-table__row--off td:not(:first-child) {
+	color: var(--sh-gray-500);
+}
+
+.sitehelm-table__row--off td:nth-child(2) code {
+	color: var(--sh-gray-500);
+	text-decoration: line-through;
+}
+
+.sitehelm-savebar {
+	position: sticky;
+	bottom: 0;
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	margin: 24px 0 0;
+	padding: 12px 16px;
+	background: #fff;
+	border: 1px solid var(--sh-gray-200);
+	border-radius: var(--sh-radius);
+	box-shadow: 0 -4px 16px rgba(15, 27, 29, 0.06);
+	z-index: 2;
+}
+
+.sitehelm-savebar__summary {
+	font-size: 13px;
+	font-weight: 600;
+	color: var(--sh-gray-700);
+}
+
+.sitehelm-savebar.is-dirty {
+	border-color: var(--sh-accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.sitehelm-switch__track,
+	.sitehelm-switch__track::after {
+		transition: none;
+	}
+}

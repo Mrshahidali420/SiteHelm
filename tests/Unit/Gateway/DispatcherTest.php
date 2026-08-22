@@ -24,6 +24,7 @@ use SiteHelm\Contracts\Risk;
 use SiteHelm\Contracts\RollbackPolicy;
 use SiteHelm\Contracts\SnapshotPolicy;
 use SiteHelm\Gateway\Dispatcher;
+use SiteHelm\Policy\OperationSwitches;
 use SiteHelm\Policy\PolicyEngine;
 use SiteHelm\Registry\CapabilityRegistry;
 use SiteHelm\Registry\CatalogBuilder;
@@ -793,4 +794,44 @@ final class DispatcherTest extends TestCase {
 			$this->assertStringNotContainsString( 'id=42', $e->getMessage() );
 		}
 	}
+
+	/**
+	 * An operation the operator switched off is refused exactly the way an
+	 * unknown one is: same code, same message, so the refusal tells a client
+	 * nothing about whether the operation exists behind the switch.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+	 */
+	public function test_a_switched_off_operation_is_refused_like_an_unknown_one(): void {
+		$switches   = new OperationSwitches( static fn(): array => [ 'system-environment' ] );
+		$dispatcher = new Dispatcher(
+			$this->registry,
+			new CatalogBuilder( $this->registry, $switches ),
+			new PolicyEngine(),
+			new SchemaValidator(),
+			ChangeEngine::create(),
+			$switches
+		);
+
+		$unknown = null;
+		try {
+			$this->dispatcher->dispatch( 'system-read', [ 'operation' => 'system-nuke' ], $this->makeContext() );
+		} catch ( OperationException $e ) {
+			$unknown = $e;
+		}
+
+		try {
+			$dispatcher->dispatch( 'system-read', [ 'operation' => 'system-environment' ], $this->makeContext() );
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::InvalidInput, $e->errorCode );
+			$this->assertNotNull( $unknown );
+			$this->assertSame( $unknown->getMessage(), $e->getMessage() );
+			$this->assertStringNotContainsString( 'system-environment', $e->getMessage() );
+		}
+
+		// The same operation still answers when the switch is left alone.
+		$this->assertIsArray( $this->dispatcher->dispatch( 'system-read', [ 'operation' => 'system-environment' ], $this->makeContext() ) );
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 }

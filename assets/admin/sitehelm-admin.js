@@ -282,6 +282,103 @@
 	}
 
 	/**
+	 * Bring every switch count on the Operations screen up to date.
+	 *
+	 * Each group heading says how many of its operations are on, and the save
+	 * bar says the same for the page. Both are computed from the checkboxes
+	 * themselves, so they can never disagree with what will be posted.
+	 *
+	 * @param {HTMLElement} form The switches form.
+	 */
+	function syncSwitchCounts( form ) {
+		var all = form.querySelectorAll( '[data-sitehelm-switch]' );
+		var on = form.querySelectorAll( '[data-sitehelm-switch]:checked' );
+
+		Array.prototype.forEach.call(
+			form.querySelectorAll( '[data-sitehelm-group]' ),
+			function ( group ) {
+				var count = group.querySelector( '[data-sitehelm-switch-count]' );
+				if ( ! count ) {
+					return;
+				}
+				count.textContent = count.getAttribute( 'data-sitehelm-count-label' )
+					.replace( '%1$s', String( group.querySelectorAll( '[data-sitehelm-switch]:checked' ).length ) )
+					.replace( '%2$s', String( group.querySelectorAll( '[data-sitehelm-switch]' ).length ) );
+			}
+		);
+
+		var summary = form.querySelector( '[data-sitehelm-switch-summary]' );
+		if ( summary ) {
+			summary.textContent = summary.getAttribute( 'data-sitehelm-count-label' )
+				.replace( '%1$s', String( on.length ) )
+				.replace( '%2$s', String( all.length ) );
+		}
+	}
+
+	/**
+	 * Reflect one switch's state on its row.
+	 *
+	 * @param {HTMLInputElement} box The checkbox.
+	 */
+	function syncSwitchRow( box ) {
+		var row = box.closest( '[data-sitehelm-switch-row]' );
+		if ( row ) {
+			row.classList.toggle( 'sitehelm-table__row--off', ! box.checked );
+		}
+	}
+
+	/**
+	 * Wire the Operations screen's switches: live counts, row dimming, and the
+	 * per-group "All on" / "All off" buttons that exist only with script.
+	 *
+	 * @param {HTMLElement} form The switches form.
+	 */
+	function initSwitches( form ) {
+		var savebar = form.querySelector( '[data-sitehelm-savebar]' );
+
+		Array.prototype.forEach.call(
+			form.querySelectorAll( '[data-sitehelm-switch-actions]' ),
+			function ( actions ) {
+				actions.hidden = false;
+			}
+		);
+
+		form.addEventListener( 'change', function ( event ) {
+			if ( ! event.target.hasAttribute( 'data-sitehelm-switch' ) ) {
+				return;
+			}
+			syncSwitchRow( event.target );
+			syncSwitchCounts( form );
+			if ( savebar ) {
+				savebar.classList.add( 'is-dirty' );
+			}
+		} );
+
+		form.addEventListener( 'click', function ( event ) {
+			var button = event.target.closest( '[data-sitehelm-switch-all]' );
+			if ( ! button ) {
+				return;
+			}
+			var group = button.closest( '[data-sitehelm-group]' );
+			var on = 'on' === button.getAttribute( 'data-sitehelm-switch-all' );
+
+			Array.prototype.forEach.call(
+				group.querySelectorAll( '[data-sitehelm-switch]' ),
+				function ( box ) {
+					box.checked = on;
+					syncSwitchRow( box );
+				}
+			);
+			syncSwitchCounts( form );
+			if ( savebar ) {
+				savebar.classList.add( 'is-dirty' );
+			}
+		} );
+
+		syncSwitchCounts( form );
+	}
+
+	/**
 	 * Wire the console once the markup is present.
 	 */
 	function init() {
@@ -311,6 +408,12 @@
 			search.addEventListener( 'input', function () {
 				filterOperations( search );
 			} );
+		}
+
+		var switches = document.querySelector( '[data-sitehelm-switches]' );
+
+		if ( switches ) {
+			initSwitches( switches );
 		}
 
 		var nav = document.querySelector( '[data-sitehelm-appnav]' );
