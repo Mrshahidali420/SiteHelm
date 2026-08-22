@@ -239,7 +239,7 @@ final class OperationsScreenTest extends TestCase {
 
 		$this->assertStringContainsString( '<code>content-read-one</code>', $html );
 		$this->assertStringContainsString( 'Reads one post.', $html );
-		$this->assertStringContainsString( '<code>publish_posts</code>', $html );
+		$this->assertStringContainsString( '<code class="sitehelm-tool__slug">publish_posts</code>', $html );
 	}
 
 	public function testAReadOnlyOperationIsBadgedAsARead(): void {
@@ -366,8 +366,7 @@ final class OperationsScreenTest extends TestCase {
 
 		$html = $this->render( $registry );
 
-		$this->assertStringContainsString( '<th scope="col">Module</th>', $html );
-		$this->assertStringContainsString( '<td>Core content</td>', $html );
+		$this->assertStringContainsString( '<span class="sitehelm-tool__module">Core content</span>', $html );
 	}
 
 	/**
@@ -385,7 +384,7 @@ final class OperationsScreenTest extends TestCase {
 
 		$html = $this->render( $registry, $health );
 
-		$this->assertStringContainsString( 'class="sitehelm-table__row--muted"', $html );
+		$this->assertStringContainsString( 'class="sitehelm-tool sitehelm-tool--muted"', $html );
 		$this->assertStringContainsString( 'Core content <span class="sitehelm-badge">Not active</span>', $html );
 		$this->assertStringContainsString( '2 cannot run on this site yet', $html );
 		$this->assertStringContainsString( '<code>content-read-one</code>', $html );
@@ -398,7 +397,7 @@ final class OperationsScreenTest extends TestCase {
 		$html = $this->render( $registry );
 
 		$this->assertStringNotContainsString( 'Not active', $html );
-		$this->assertStringNotContainsString( 'sitehelm-table__row--muted', $html );
+		$this->assertStringNotContainsString( 'sitehelm-tool--muted', $html );
 		$this->assertStringNotContainsString( 'cannot run on this site', $html );
 	}
 
@@ -425,7 +424,7 @@ final class OperationsScreenTest extends TestCase {
 		$this->assertStringContainsString( 'name="action" value="' . OperationsAction::ACTION . '"', $html );
 		$this->assertStringContainsString( 'name="' . OperationsAction::FIELD . '[]" value="content-list" checked', $html );
 		$this->assertStringContainsString( 'Save changes', $html );
-		$this->assertStringNotContainsString( 'sitehelm-table__row--off', $html );
+		$this->assertStringNotContainsString( 'is-off', $html );
 		$this->assertStringContainsString( '1 of 1 on', $html );
 	}
 
@@ -439,7 +438,7 @@ final class OperationsScreenTest extends TestCase {
 		$this->assertStringContainsString( 'value="content-read" data-sitehelm-switch', $html );
 		$this->assertStringNotContainsString( 'value="content-read" checked', $html );
 		$this->assertStringContainsString( 'value="content-list" checked', $html );
-		$this->assertStringContainsString( 'sitehelm-table__row--off', $html );
+		$this->assertStringContainsString( 'class="sitehelm-tool is-off"', $html );
 		$this->assertStringContainsString( '1 switched off', $html );
 		$this->assertStringContainsString( '1 of 2 on', $html );
 		$this->assertStringContainsString( '1 of 2 operations on', $html );

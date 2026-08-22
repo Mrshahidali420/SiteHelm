@@ -323,7 +323,7 @@
 	function syncSwitchRow( box ) {
 		var row = box.closest( '[data-sitehelm-switch-row]' );
 		if ( row ) {
-			row.classList.toggle( 'sitehelm-table__row--off', ! box.checked );
+			row.classList.toggle( 'is-off', ! box.checked );
 		}
 	}
 
@@ -355,6 +355,14 @@
 		} );
 
 		form.addEventListener( 'click', function ( event ) {
+			var toggle = event.target.closest( '[data-sitehelm-collapse]' );
+			if ( toggle ) {
+				var section = toggle.closest( '[data-sitehelm-group]' );
+				var collapsed = section.classList.toggle( 'is-collapsed' );
+				toggle.setAttribute( 'aria-expanded', collapsed ? 'false' : 'true' );
+				return;
+			}
+
 			var button = event.target.closest( '[data-sitehelm-switch-all]' );
 			if ( ! button ) {
 				return;
