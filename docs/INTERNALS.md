@@ -896,6 +896,13 @@ that hardcoded map; the Activity screen additionally refuses any outcome word th
 gateway never writes, so a hand-edited URL cannot render an empty table under a
 filter bar that reads "Any outcome".
 
+**`AuditStore::FILTERS` also accepts `clientId` (column `client_id`, `%s`).** The
+Activity screen reads it from `?client=`, offers a "Filter by client" field, carries
+it through the pager, and renders every **named** client in the actor cell as a link
+to its own filtered view; an unidentified client (`''` or
+`RestTransport::UNKNOWN_CLIENT`) is plain text, because linking to "everything the
+unidentified did" would mix every unnamed connection into one view.
+
 **The summary is a size, never a value, and carries no unit.**
 `AuditRedactor::measure()` returns `0` for null, `count()` for arrays, `1` for
 bools and `mb_strlen()` otherwise — so a character count and an array length are
