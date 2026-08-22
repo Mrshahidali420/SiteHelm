@@ -32,6 +32,18 @@ final class ActivityScreen {
 	public const PER_PAGE = 25;
 
 	/**
+	 * Query arguments this screen reads, mapped to the store filter each one sets.
+	 *
+	 * @var array<string, string>
+	 */
+	public const FILTER_ARGS = [
+		'operation'   => 'operationId',
+		'correlation' => 'correlationId',
+		'client'      => 'clientId',
+		'outcome'     => 'outcome',
+	];
+
+	/**
 	 * The outcomes the gateway records, in the order the filter offers them.
 	 *
 	 * @var array<int, string>
@@ -82,7 +94,7 @@ final class ActivityScreen {
 			wp_die( esc_html__( 'You do not have permission to view SiteHelm.', 'sitehelm' ) );
 		}
 
-		$filters = $this->filters();
+		$filters = self::filters();
 		$page    = $this->page_number();
 		$total   = $this->store->count( $filters );
 		$rows    = $this->store->query( $filters, self::PER_PAGE, ( $page - 1 ) * self::PER_PAGE );
@@ -122,7 +134,7 @@ final class ActivityScreen {
 	 *
 	 * @return array<string, string|int>
 	 */
-	private function filters(): array {
+	public static function filters(): array {
 		$filters = [];
 
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Reading a filter from a link this screen produced; it selects rows and changes nothing.
@@ -256,6 +268,14 @@ final class ActivityScreen {
 				esc_html__( 'Clear', 'sitehelm' )
 			);
 		}
+
+		// The export takes the filters with it: what is downloaded is what the
+		// page is showing, every row of it rather than this page of it.
+		printf(
+			'<a class="sitehelm-btn sitehelm-filters__export" href="%s">%s</a>',
+			esc_url( ExportAction::url( $filters ) ),
+			esc_html__( 'Export CSV', 'sitehelm' )
+		);
 
 		echo '</form>';
 	}
@@ -514,7 +534,7 @@ final class ActivityScreen {
 	 *
 	 * @param string $summary The stored summary JSON.
 	 */
-	private static function change_text( string $summary ): string {
+	public static function change_text( string $summary ): string {
 		if ( '' === $summary ) {
 			return '';
 		}
