@@ -13,6 +13,27 @@ an operation behaves.
 
 ### Added
 
+- **A Site Health test** under Tools → Site Health that says whether client
+  credentials reach WordPress on this server, with the .htaccess fix when they do not
+  and a warning when application passwords are switched off.
+
+- **Connect and Status links on the Plugins screen**, beside Deactivate, for the
+  moment after activation.
+
+- **Filter the Activity log by period.** Last hour, 24 hours, 7 days or 30 days,
+  alongside the other filters; the period travels with the pager and the CSV export.
+
+- **The Status screen now tests whether the Authorization header reaches WordPress.**
+  A loopback to the endpoint with a login that cannot exist tells a server that passes
+  the header through from one that strips it (Apache as CGI/FastCGI), which is the
+  commonest reason a fresh credential is "wrong"; when it is stripped the screen gives
+  the three .htaccess lines that fix it.
+
+- **Export the Activity log as CSV.** The Activity screen's filter row now ends in
+  an Export CSV link that downloads every row matching the filters shown, newest
+  first, up to 10,000 rows (the file says so on its last line when it stops there).
+  Cells that a spreadsheet would read as formulas are neutralised.
+
 - **Set how long records are kept, on the Status screen.** The pruning window
   (1–365 days, default 30) that governs the activity log and the snapshots behind
   each rollback was previously only reachable by editing an option; it is now one
