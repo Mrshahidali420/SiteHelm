@@ -145,11 +145,11 @@ That is the whole install. SiteHelm registers one REST route and one admin menu 
 
 ### The console
 
-Five screens, plus a Dashboard widget that states write access, issued credentials and the last five operations at a glance. Four controls, each a form that goes through the same checks as a client would: mint a credential, revoke one, pause every write, roll one change back.
+Five screens, plus a Dashboard widget that states write access, issued credentials and the last five operations at a glance. Five controls, each a form that goes through the same checks as a client would: mint a credential, revoke one, pause every write, set the retention window, roll one change back.
 
 - **Connect** — the endpoint, an application password created in place and shown once, a config snippet for Claude Code, Cursor, or any other MCP client, and the list of every credential SiteHelm has issued — which account it acts as, when it was last used — each with a **Revoke** button.
 - **Activity** — every operation a client has performed, newest first, with its target, outcome, actor, client and rollback reference. Filterable by operation, correlation id, outcome or client, and every named client links to its own history. Each applied row has a **Roll back** button: a preview of what would change first, then a confirm, and the restoration runs through the same engine and is itself recorded.
-- **Status** — which modules are active, which are version-blocked, which are absent, whether the storage tables exist, and the **Write access** switch that pauses every write from every client at the gate.
+- **Status** — which modules are active, which are version-blocked, which are absent, whether the storage tables exist, the **Write access** switch that pauses every write from every client at the gate, and the **Record retention** window that decides how long the log and its rollback snapshots are kept.
 - **Modules** — one card per integration, naming what a blocked one is waiting on.
 - **Operations** — the full catalogue of what a connected client can ask this site to do, grouped by tool and module, marked read or write, preview-required, destructive or high risk.
 

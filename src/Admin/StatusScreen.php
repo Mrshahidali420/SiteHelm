@@ -13,6 +13,7 @@ use SiteHelm\Contracts\ModuleHealth;
 use SiteHelm\Contracts\ModuleId;
 use SiteHelm\Gateway\McpServer;
 use SiteHelm\Storage\Installer;
+use SiteHelm\Storage\Retention;
 
 /**
  * What SiteHelm can and cannot do on this particular site.
@@ -100,6 +101,7 @@ final class StatusScreen {
 		$this->render_readiness();
 		$this->render_environment();
 		$this->render_storage();
+		$this->render_retention();
 
 		Ui::app_close();
 	}
@@ -290,5 +292,55 @@ final class StatusScreen {
 		}
 
 		return $blocked;
+	}
+
+	/**
+	 * How long records are kept: one number, one Save button.
+	 *
+	 * The audit log, the snapshots that make rollback possible, and pending
+	 * plans are all pruned past this window, so the screen says so in those
+	 * words rather than "retention".
+	 */
+	private function render_retention(): void {
+		$days = RetentionAction::days();
+
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Reading an outcome from a redirect this plugin produced; it reports and grants nothing.
+		$state = isset( $_GET[ RetentionAction::ARG_STATE ] ) ? sanitize_key( wp_unslash( (string) $_GET[ RetentionAction::ARG_STATE ] ) ) : '';
+
+		Ui::section_open(
+			__( 'Record retention', 'sitehelm' ),
+			__( 'How long the activity log and the snapshots behind each rollback are kept. Older records are pruned once a day; a change older than this can no longer be rolled back.', 'sitehelm' )
+		);
+
+		if ( RetentionAction::STATE_SAVED === $state ) {
+			printf(
+				'<div class="sitehelm-note sitehelm-note--ok" role="status"><p>%s</p></div>',
+				esc_html(
+					sprintf(
+						/* translators: %s: number of days. */
+						_n( 'Records are now kept for %s day.', 'Records are now kept for %s days.', $days, 'sitehelm' ),
+						number_format_i18n( $days )
+					)
+				)
+			);
+		}
+
+		printf( '<form method="post" action="%s" class="sitehelm-inline-form sitehelm-retention">', esc_url( admin_url( 'admin-post.php' ) ) );
+		wp_nonce_field( RetentionAction::NONCE );
+		printf(
+			'<input type="hidden" name="action" value="%1$s"><label for="sitehelm-retention-days">%2$s</label>'
+				. '<input type="number" id="sitehelm-retention-days" name="%3$s" value="%4$s" min="%5$s" max="%6$s" step="1" required>'
+				. '<span>%7$s</span><button type="submit" class="sitehelm-btn sitehelm-btn--small">%8$s</button></form>',
+			esc_attr( RetentionAction::ACTION ),
+			esc_html__( 'Keep records for', 'sitehelm' ),
+			esc_attr( RetentionAction::FIELD ),
+			esc_attr( (string) $days ),
+			esc_attr( (string) Retention::MIN_DAYS ),
+			esc_attr( (string) Retention::MAX_DAYS ),
+			esc_html__( 'days', 'sitehelm' ),
+			esc_html__( 'Save', 'sitehelm' )
+		);
+
+		Ui::section_close();
 	}
 }

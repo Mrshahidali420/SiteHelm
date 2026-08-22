@@ -13,6 +13,10 @@ an operation behaves.
 
 ### Added
 
+- **Set how long records are kept, on the Status screen.** The pruning window
+  (1–365 days, default 30) that governs the activity log and the snapshots behind
+  each rollback was previously only reachable by editing an option; it is now one
+  number and a Save button under "Record retention".
 - **A SiteHelm widget on the wp-admin Dashboard.** Whether writes are paused,
   how many credentials are issued, and the five most recent operations with their
   client and outcome — each linked to the console screen that explains it. It shows

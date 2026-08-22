@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace SiteHelm\Tests\Unit\Admin;
 
 use SiteHelm\Admin\AdminMenu;
+use SiteHelm\Admin\RetentionAction;
 use SiteHelm\Admin\StatusScreen;
 use SiteHelm\Contracts\ModuleHealth;
 use SiteHelm\Contracts\ModuleId;
@@ -12,6 +13,7 @@ use SiteHelm\Contracts\PermissionMode;
 use SiteHelm\Gateway\ContextFactory;
 use SiteHelm\Gateway\McpServer;
 use SiteHelm\Storage\Installer;
+use SiteHelm\Storage\Retention;
 use SiteHelm\Tests\Doubles\AdminDied;
 use SiteHelm\Tests\Doubles\AdminWordPressStubs;
 use SiteHelm\Tests\TestCase;
@@ -209,5 +211,25 @@ final class StatusScreenTest extends TestCase {
 		$this->assertStringContainsString( 'Writes are allowed again.', $html );
 
 		$_GET = [];
+	}
+
+	public function testRetentionShowsTheStoredWindowInAFormThatSavesIt(): void {
+		AdminWordPressStubs::$options[ Retention::RETENTION_OPTION ] = 45;
+
+		$html = $this->render( $this->allActive() );
+
+		$this->assertStringContainsString( 'Record retention', $html );
+		$this->assertStringContainsString( 'name="action" value="sitehelm_retention"', $html );
+		$this->assertStringContainsString( 'name="sitehelm_retention_days" value="45" min="1" max="365"', $html );
+		$this->assertStringContainsString( '>Save</button>', $html );
+	}
+
+	public function testAJustSavedRetentionIsReportedInDays(): void {
+		AdminWordPressStubs::$options[ Retention::RETENTION_OPTION ] = 14;
+		$_GET[ RetentionAction::ARG_STATE ]                          = RetentionAction::STATE_SAVED;
+
+		$html = $this->render( $this->allActive() );
+
+		$this->assertStringContainsString( 'Records are now kept for 14 days.', $html );
 	}
 }

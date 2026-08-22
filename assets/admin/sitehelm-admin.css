@@ -1363,3 +1363,16 @@
 .sitehelm-widget__more {
 	margin: 10px 0 0;
 }
+
+.sitehelm-retention {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 10px;
+	font-size: 13px;
+	color: var(--sh-gray-700);
+}
+
+.sitehelm-retention input[type="number"] {
+	width: 6em;
+}
