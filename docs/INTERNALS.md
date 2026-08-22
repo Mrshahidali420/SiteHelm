@@ -1414,9 +1414,9 @@ to `Extensions::*`; change one and that test fails.
 
 **Pro plugin layout** (`pro/`): `sitehelm-pro.php` (header, `Requires Plugins: sitehelm`,
 boots `ProPlugin` at priority 5 and shows an admin notice if `sitehelm_boot()` is absent),
-`src/Bootstrap/ProPlugin.php` (wires the three hooks plus
-`admin_post_sitehelm_pro_licence`), `src/Licence/{LicenceKey,Licence}.php`,
-`src/Admin/{LicenceAction,LicenceSection}.php`, `tools/make-licence.php`,
+`pro/src/Bootstrap/ProPlugin.php` (wires the three hooks plus
+`admin_post_sitehelm_pro_licence`), `pro/src/Licence/{LicenceKey,Licence}.php`,
+`pro/src/Admin/{LicenceAction,LicenceSection}.php`, `pro/tools/make-licence.php`,
 `composer.json` (PSR-4 `SiteHelm\Pro\` → `src/`). The root `composer.json` maps the
 same namespace under `autoload-dev` so the one PHPUnit run covers both; `phpcs.xml.dist`
 lints `pro/src` and allows the `sitehelm-pro` text domain; `phpunit.xml.dist` counts
