@@ -1201,7 +1201,39 @@ appends `&_wpnonce=<action>`.
 
 ---
 
-## 23. Standing project constraints
+## 23. Connection probe — does the Authorization header reach WordPress?
+
+The commonest "my credential does not work" on shared hosting is Apache running PHP as
+CGI/FastCGI and dropping the `Authorization` header; WordPress then sees an anonymous
+request and answers `rest_not_logged_in`, which to a client is indistinguishable from a
+wrong password. `ConnectionProbe` (`src/Admin/ConnectionProbe.php`) settles it from the
+Status screen: a loopback `wp_remote_post` to `ConnectScreen::endpoint()` with
+`Authorization: Basic base64('sitehelm-probe:probe')` (a login this plugin never creates),
+5 s timeout, `sslverify` from `https_local_ssl_verify`. Verdicts (`run(): string`):
+**OK** — body is a REST error whose `code` is anything but `rest_not_logged_in` and the
+HTTP status is 401/403 (WordPress read the header and judged it); **STRIPPED** — `code`
+is `rest_not_logged_in`; **UNREACHABLE** — `wp_remote_post` returned a `WP_Error`, or the
+body was not a REST error (HTML from a WAF, a 200, …); **SKIPPED** — application
+passwords are unavailable, so no header would be honoured and nothing is sent. The
+transport is an injectable callable `(string $url, string $authorization): ?array{code,body}`
+so the probe never touches `WP_Error` itself; `AdminWordPressStubs` stubs
+`wp_remote_post` (static `$probeResponse`, default a 401 `invalid_username`),
+`is_wp_error` (a `Throwable` stands in), and the two `wp_remote_retrieve_*`.
+`StatusScreen` takes `?ConnectionProbe` as its second constructor argument and runs it
+once per render: a fifth Readiness card "Authorization header" (Reaches WordPress /
+Stripped by the server / Could not be tested / Not tested), and below the grid
+`render_probe_advice()`: for STRIPPED, a `.sitehelm-note.sitehelm-probe-advice` saying
+every client will be told its credentials are wrong, plus `<pre class="sitehelm-probe-fix">`
+with `StatusScreen::HEADER_FIX` (`RewriteEngine On` / `RewriteCond %{HTTP:Authorization} .`
+/ `RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]`); for UNREACHABLE, a
+calm note that local and firewalled hosts often cannot reach themselves and this alone
+does not mean clients will fail. No transport error string ever reaches the page.
+The probe costs one loopback per Status view; Status is not a hot page and the timeout
+bounds it.
+
+---
+
+## 24. Standing project constraints
 
 - **No AI attribution anywhere in git** — no "Generated with Claude Code" footer,
   no session URL, no `Co-Authored-By` trailer, in any commit, PR body, PR comment,

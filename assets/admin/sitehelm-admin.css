@@ -1380,3 +1380,17 @@
 .sitehelm-filters__export {
 	margin-left: auto;
 }
+
+.sitehelm-probe-advice {
+	margin: 14px 0 0;
+}
+
+.sitehelm-probe-fix {
+	margin: 8px 0 0;
+	padding: 10px 12px;
+	background: var(--sh-gray-50);
+	border: 1px solid var(--sh-gray-200);
+	border-radius: var(--sh-radius-sm);
+	font-size: 12px;
+	overflow-x: auto;
+}
