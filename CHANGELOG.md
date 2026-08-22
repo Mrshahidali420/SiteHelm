@@ -11,8 +11,13 @@ an operation behaves.
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-08-22
+
 ### Added
 
+- **A switch on every Modules card** that turns the whole module's operations on or off
+  together — the same switches the Operations screen shows one row at a time, stored in
+  the same option, so a module half-switched off there reads "N of M operations on" here.
 - **Per-operation switches on the Operations screen.** Every operation now has an
   on/off switch, with per-group counts, "All on" / "All off" per tool, and a sticky
   save bar. A switched-off operation leaves the catalogue, is refused with the
@@ -543,7 +548,8 @@ Arbitrary PHP execution, unrestricted SQL, unrestricted filesystem access, and i
 permanent deletion are out of scope by design and will not be added. See
 [ROADMAP.md](ROADMAP.md).
 
-[Unreleased]: https://github.com/Mrshahidali420/SiteHelm/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/Mrshahidali420/SiteHelm/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/Mrshahidali420/SiteHelm/releases/tag/v0.5.0
 [0.4.0]: https://github.com/Mrshahidali420/SiteHelm/releases/tag/v0.4.0
 [0.3.0]: https://github.com/Mrshahidali420/SiteHelm/releases/tag/v0.3.0
 [0.2.1]: https://github.com/Mrshahidali420/SiteHelm/releases/tag/v0.2.1

@@ -416,6 +416,21 @@
 			initSwitches( switches );
 		}
 
+		// A one-switch form posts itself on change; its Apply button is only
+		// for a browser that cannot.
+		Array.prototype.forEach.call(
+			document.querySelectorAll( '[data-sitehelm-autosubmit]' ),
+			function ( form ) {
+				var apply = form.querySelector( '[data-sitehelm-autosubmit-apply]' );
+				if ( apply ) {
+					apply.hidden = true;
+				}
+				form.addEventListener( 'change', function () {
+					form.submit();
+				} );
+			}
+		);
+
 		var nav = document.querySelector( '[data-sitehelm-appnav]' );
 
 		if ( nav ) {
