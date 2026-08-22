@@ -11,6 +11,7 @@ namespace SiteHelm\Registry;
 
 use SiteHelm\Contracts\Mode;
 use SiteHelm\Contracts\ModuleHealth;
+use SiteHelm\Policy\OperationSwitches;
 use SiteHelm\Policy\PolicyEngine;
 use SiteHelm\Policy\RequestHost;
 use SiteHelm\Contracts\OperationContext;
@@ -54,9 +55,13 @@ final class CatalogBuilder {
 	/**
 	 * Constructs the builder.
 	 *
-	 * @param CapabilityRegistry $registry The capability registry.
+	 * @param CapabilityRegistry     $registry The capability registry.
+	 * @param OperationSwitches|null $switches The operator's per-operation switches; null means all on.
 	 */
-	public function __construct( private readonly CapabilityRegistry $registry ) {
+	public function __construct(
+		private readonly CapabilityRegistry $registry,
+		private readonly ?OperationSwitches $switches = null,
+	) {
 	}
 
 	/**
@@ -69,9 +74,13 @@ final class CatalogBuilder {
 	 * @return array<string, mixed> The catalog payload.
 	 */
 	public function build( string $dispatcher, OperationContext $context ): array {
+		// An operation the operator switched off is simply absent, the same way
+		// one the module never registered would be.
+		$switches  = $this->switches ?? OperationSwitches::none();
 		$permitted = array_filter(
 			$this->registry->forDispatcher( $dispatcher ),
-			static fn( OperationDefinition $d ): bool => PolicyEngine::isVisibleWithoutTarget( $d, $context )
+			static fn( OperationDefinition $d ): bool => $switches->isEnabled( $d->id )
+				&& PolicyEngine::isVisibleWithoutTarget( $d, $context )
 		);
 
 		return [
