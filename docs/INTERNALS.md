@@ -1292,8 +1292,9 @@ The operator can turn any registered operation off from the Operations screen.
 - **Enforcement** — `Dispatcher` takes the switches as its sixth constructor argument and
   refuses a switched-off operation with the **same `InvalidInput` message as an unknown
   operation**, so a client cannot tell the two apart. `CatalogBuilder($registry, $switches)`
-  omits switched-off operations from the catalogue. Accepted gap: `system-operation-schema`
-  still answers for a switched-off id.
+  omits switched-off operations from the catalogue. `Diagnostics\OperationSchema` refuses a
+  switched-off id with its unknown-name answer too (second ctor arg, defaults to reading the
+  option itself because modules are built with no arguments by `IntegrationDirectory`).
 - **Wiring** — `Plugin::register()` creates one `OperationSwitches` and shares it with the
   CatalogBuilder, the Dispatcher and `AdminMenu` (fourth constructor argument).
 - **Save path** — `Admin\OperationsAction` (`admin_post_sitehelm_operations`; constants

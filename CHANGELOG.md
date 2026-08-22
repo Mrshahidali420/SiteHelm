@@ -15,8 +15,9 @@ an operation behaves.
 
 - **Per-operation switches on the Operations screen.** Every operation now has an
   on/off switch, with per-group counts, "All on" / "All off" per tool, and a sticky
-  save bar. A switched-off operation leaves the catalogue and is refused with the
-  same answer an unknown operation gets; everything is on by default, including
+  save bar. A switched-off operation leaves the catalogue, is refused with the
+  same answer an unknown operation gets, and `system-operation-schema` will not
+  describe it either; everything is on by default, including
   operations a later update adds. Stored in `sitehelm_disabled_operations`.
 - **A one-time notice after activation** pointing at the Connect screen, shown to the
   first operator who can open the console and then gone.
