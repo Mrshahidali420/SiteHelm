@@ -72,7 +72,7 @@ final class PermissionLevel {
 	/**
 	 * The identifiers that are ON under a level.
 	 *
-	 * @param string                    $level       One of levels().
+	 * @param string                          $level       One of levels().
 	 * @param array<int, OperationDefinition> $definitions A module's operations.
 	 *
 	 * @return list<string>
@@ -120,7 +120,7 @@ final class PermissionLevel {
 	 * no reads for Read only to match.
 	 *
 	 * @param array<int, OperationDefinition> $definitions A module's operations.
-	 * @param OperationSwitches         $switches    The operator's switches.
+	 * @param OperationSwitches               $switches    The operator's switches.
 	 */
 	public static function level_of( array $definitions, OperationSwitches $switches ): string {
 		$on = [];
