@@ -80,12 +80,21 @@ final class ConnectScreen {
 	private AuditStore $store;
 
 	/**
+	 * The credential store the listing and the Revoke button read through.
+	 *
+	 * @var Credentials
+	 */
+	private Credentials $credentials;
+
+	/**
 	 * Constructs the screen.
 	 *
-	 * @param AuditStore|null $store The audit log, or null to use the real one.
+	 * @param AuditStore|null  $store       The audit log, or null to use the real one.
+	 * @param Credentials|null $credentials The credential store, or null for the WordPress-backed one.
 	 */
-	public function __construct( ?AuditStore $store = null ) {
-		$this->store = $store ?? new AuditStore();
+	public function __construct( ?AuditStore $store = null, ?Credentials $credentials = null ) {
+		$this->store       = $store ?? new AuditStore();
+		$this->credentials = $credentials ?? new Credentials();
 	}
 
 	/**
@@ -115,6 +124,7 @@ final class ConnectScreen {
 		$this->render_readiness( [] !== $last );
 		$this->render_endpoint( $endpoint );
 		$this->render_credential( $handoff );
+		( new CredentialsPanel( $this->credentials ) )->render( $this->selectable_users() );
 		$this->render_clients( $endpoint, $handoff );
 
 		( new ConnectHelp() )->render();
