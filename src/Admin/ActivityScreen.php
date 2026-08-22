@@ -116,8 +116,8 @@ final class ActivityScreen {
 		Ui::app_open( AdminMenu::PAGE_ACTIVITY );
 
 		Ui::page_head(
-			__( 'Activity', 'sitehelm' ),
-			__( 'Every operation an AI client has performed on this site, newest first.', 'sitehelm' )
+			__( 'History', 'sitehelm' ),
+			__( 'Everything a connected app has done on your site, newest first, in plain words. Anything that changed the site can be undone from here.', 'sitehelm' )
 		);
 
 		$this->render_verdict( $total, $filters );
@@ -393,12 +393,11 @@ final class ActivityScreen {
 
 		$headings = [
 			__( 'When', 'sitehelm' ),
-			__( 'Operation', 'sitehelm' ),
-			__( 'Target', 'sitehelm' ),
+			__( 'What happened', 'sitehelm' ),
 			__( 'Outcome', 'sitehelm' ),
 			__( 'Took', 'sitehelm' ),
 			__( 'Who', 'sitehelm' ),
-			__( 'Rollback', 'sitehelm' ),
+			__( 'Undo', 'sitehelm' ),
 		];
 
 		foreach ( $headings as $heading ) {
@@ -427,15 +426,15 @@ final class ActivityScreen {
 
 		printf( '<td class="sitehelm-table__time">%s</td>', esc_html( $this->when( $row ) ) );
 
+		// The sentence first, for the person; the identifier and target key
+		// beneath it, for anyone who needs the exact record.
 		printf(
-			'<td><code>%s</code>%s</td>',
+			'<td class="sitehelm-table__what"><span class="sitehelm-table__sentence">%s</span>'
+				. '<span class="sitehelm-table__sub"><code>%s</code> · <code>%s</code>%s</span></td>',
+			esc_html( Phrasebook::sentence( $row ) ),
 			esc_html( isset( $row['operation_id'] ) ? (string) $row['operation_id'] : '' ),
-			'' === $changes ? '' : '<span class="sitehelm-table__sub">' . esc_html( $changes ) . '</span>'
-		);
-
-		printf(
-			'<td><code>%s</code></td>',
-			esc_html( isset( $row['target_key'] ) ? (string) $row['target_key'] : '' )
+			esc_html( isset( $row['target_key'] ) ? (string) $row['target_key'] : '' ),
+			'' === $changes ? '' : ' · ' . esc_html( $changes )
 		);
 
 		// Ui::badge() escapes its own label; the tone is chosen from a fixed set.
@@ -706,7 +705,7 @@ final class ActivityScreen {
 		Ui::empty_state(
 			__( 'No operation has been performed yet', 'sitehelm' ),
 			__(
-				'Connect a client on the Connect screen. From the first request onwards, every read and every change it makes appears here.',
+				'Connect an app on the Connect tab. From the first request onwards, every change it makes appears here.',
 				'sitehelm'
 			)
 		);
