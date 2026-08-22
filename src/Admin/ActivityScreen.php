@@ -41,6 +41,20 @@ final class ActivityScreen {
 		'correlation' => 'correlationId',
 		'client'      => 'clientId',
 		'outcome'     => 'outcome',
+		'period'      => 'period',
+	];
+
+	/**
+	 * The periods the bar offers, each as the number of seconds it reaches back.
+	 * The key is the URL value; the store is given the resulting `since` instant.
+	 *
+	 * @var array<string, int>
+	 */
+	public const PERIODS = [
+		'1h'  => 3600,
+		'24h' => 86400,
+		'7d'  => 7 * 86400,
+		'30d' => 30 * 86400,
 	];
 
 	/**
@@ -169,6 +183,16 @@ final class ActivityScreen {
 			$filters['outcome'] = $outcome;
 		}
 
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- As above; a period narrows the view and grants nothing.
+		$period = isset( $_GET['period'] ) ? sanitize_key( wp_unslash( (string) $_GET['period'] ) ) : '';
+
+		// The period travels as its own key so links can carry it; the store
+		// ignores it and reads the `since` instant it stands for.
+		if ( isset( self::PERIODS[ $period ] ) ) {
+			$filters['period'] = $period;
+			$filters['since']  = time() - self::PERIODS[ $period ];
+		}
+
 		return $filters;
 	}
 
@@ -255,6 +279,7 @@ final class ActivityScreen {
 		);
 
 		$this->render_outcome_filter( (string) ( $filters['outcome'] ?? '' ) );
+		$this->render_period_filter( (string) ( $filters['period'] ?? '' ) );
 
 		printf(
 			'<button type="submit" class="sitehelm-btn sitehelm-btn--primary">%s</button>',
@@ -311,6 +336,51 @@ final class ActivityScreen {
 		}
 
 		echo '</select>';
+	}
+
+	/**
+	 * The period selector: how far back the view reaches.
+	 *
+	 * @param string $selected The active period key, or an empty string for all time.
+	 */
+	private function render_period_filter( string $selected ): void {
+		printf(
+			'<label class="sitehelm-srt" for="sitehelm-filter-period">%s</label>'
+				. '<select class="sitehelm-select" id="sitehelm-filter-period" name="period">',
+			esc_html__( 'Filter by period', 'sitehelm' )
+		);
+
+		printf(
+			'<option value=""%s>%s</option>',
+			'' === $selected ? ' selected' : '',
+			esc_html__( 'Any time', 'sitehelm' )
+		);
+
+		foreach ( array_keys( self::PERIODS ) as $period ) {
+			printf(
+				'<option value="%s"%s>%s</option>',
+				esc_attr( $period ),
+				$period === $selected ? ' selected' : '',
+				esc_html( self::period_label( $period ) )
+			);
+		}
+
+		echo '</select>';
+	}
+
+	/**
+	 * The period, as the selector names it.
+	 *
+	 * @param string $period One of the PERIODS keys.
+	 */
+	public static function period_label( string $period ): string {
+		return match ( $period ) {
+			'1h'    => __( 'Last hour', 'sitehelm' ),
+			'24h'   => __( 'Last 24 hours', 'sitehelm' ),
+			'7d'    => __( 'Last 7 days', 'sitehelm' ),
+			'30d'   => __( 'Last 30 days', 'sitehelm' ),
+			default => __( 'Any time', 'sitehelm' ),
+		};
 	}
 
 	/**
@@ -703,20 +773,10 @@ final class ActivityScreen {
 			'paged' => $page,
 		];
 
-		if ( isset( $filters['operationId'] ) ) {
-			$args['operation'] = (string) $filters['operationId'];
-		}
-
-		if ( isset( $filters['correlationId'] ) ) {
-			$args['correlation'] = (string) $filters['correlationId'];
-		}
-
-		if ( isset( $filters['clientId'] ) ) {
-			$args['client'] = (string) $filters['clientId'];
-		}
-
-		if ( isset( $filters['outcome'] ) ) {
-			$args['outcome'] = (string) $filters['outcome'];
+		foreach ( self::FILTER_ARGS as $arg => $key ) {
+			if ( isset( $filters[ $key ] ) ) {
+				$args[ $arg ] = (string) $filters[ $key ];
+			}
 		}
 
 		return add_query_arg( $args, admin_url( 'admin.php' ) );

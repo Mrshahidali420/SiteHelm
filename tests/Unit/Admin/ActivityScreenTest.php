@@ -608,4 +608,37 @@ final class ActivityScreenTest extends TestCase {
 		$this->assertStringNotContainsString( '<script>alert(1)</script>', $html );
 		$this->assertStringContainsString( '&lt;script&gt;', $html );
 	}
+
+	public function testAPeriodFilterNarrowsTheQueryToARecentSinceInstant(): void {
+		$_GET['period'] = '24h';
+		$before         = time();
+
+		$html = $this->render( 1, [ $this->row() ] );
+
+		$this->assertStringContainsString( 'recorded_at >= %d', implode( ' ', array_column( $this->wpdb->prepared, 'query' ) ) );
+		$since = array_values( array_filter( $this->boundValues(), 'is_int' ) );
+		$this->assertNotEmpty( $since );
+		$this->assertGreaterThanOrEqual( $before - ActivityScreen::PERIODS['24h'], $since[0] );
+		$this->assertLessThanOrEqual( time() - ActivityScreen::PERIODS['24h'], $since[0] );
+		$this->assertStringContainsString( '<option value="24h" selected>Last 24 hours</option>', $html );
+		$this->assertStringContainsString( 'Filtered', $html );
+	}
+
+	public function testAPeriodTheBarDoesNotOfferIsIgnoredRatherThanQueried(): void {
+		$_GET['period'] = '99y';
+
+		$html = $this->render( 1, [ $this->row() ] );
+
+		$this->assertStringNotContainsString( 'recorded_at >=', implode( ' ', array_column( $this->wpdb->prepared, 'query' ) ) );
+		$this->assertStringContainsString( '<option value="" selected>Any time</option>', $html );
+	}
+
+	public function testPagerAndExportLinksCarryThePeriodForward(): void {
+		$_GET['period'] = '7d';
+
+		$html = $this->render( ActivityScreen::PER_PAGE + 1, [ $this->row() ] );
+
+		$this->assertStringContainsString( 'paged=2', $html );
+		$this->assertGreaterThanOrEqual( 2, substr_count( $html, 'period=7d' ) );
+	}
 }
