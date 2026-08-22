@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace SiteHelm\Tests\Unit\Admin;
 
+use SiteHelm\Admin\OperationsAction;
 use SiteHelm\Admin\OperationsScreen;
 use SiteHelm\Contracts\Domain;
 use SiteHelm\Contracts\Mode;
@@ -14,6 +15,7 @@ use SiteHelm\Contracts\PreviewPolicy;
 use SiteHelm\Contracts\Risk;
 use SiteHelm\Contracts\RollbackPolicy;
 use SiteHelm\Contracts\SnapshotPolicy;
+use SiteHelm\Policy\OperationSwitches;
 use SiteHelm\Registry\CapabilityRegistry;
 use SiteHelm\Tests\Doubles\AdminDied;
 use SiteHelm\Tests\Doubles\AdminWordPressStubs;
@@ -126,9 +128,9 @@ final class OperationsScreenTest extends TestCase {
 	 * @param CapabilityRegistry                                          $registry The registry to catalogue.
 	 * @param array<string, array{version: ?string, health: string}>|null $health   The loader's map, or null for all active.
 	 */
-	private function render( CapabilityRegistry $registry, ?array $health = null ): string {
+	private function render( CapabilityRegistry $registry, ?array $health = null, array $off = [] ): string {
 		ob_start();
-		( new OperationsScreen( $registry, $health ?? $this->allActive() ) )->render();
+		( new OperationsScreen( $registry, $health ?? $this->allActive(), new OperationSwitches( static fn(): array => $off ) ) )->render();
 
 		return (string) ob_get_clean();
 	}
@@ -412,5 +414,65 @@ final class OperationsScreenTest extends TestCase {
 
 		$this->assertStringContainsString( '>Not active</span>', $html );
 		$this->assertStringContainsString( '1 cannot run on this site yet', $html );
+	}
+
+	public function testEveryRowCarriesASwitchThatPostsTheOperationIdentifier(): void {
+		$registry = new CapabilityRegistry();
+		$registry->register( $this->readDefinition( 'content-list', Domain::Content ), static fn(): array => [] );
+
+		$html = $this->render( $registry );
+
+		$this->assertStringContainsString( 'name="action" value="' . OperationsAction::ACTION . '"', $html );
+		$this->assertStringContainsString( 'name="' . OperationsAction::FIELD . '[]" value="content-list" checked', $html );
+		$this->assertStringContainsString( 'Save changes', $html );
+		$this->assertStringNotContainsString( 'sitehelm-table__row--off', $html );
+		$this->assertStringContainsString( '1 of 1 on', $html );
+	}
+
+	public function testASwitchedOffOperationIsUncheckedMarkedAndCounted(): void {
+		$registry = new CapabilityRegistry();
+		$registry->register( $this->readDefinition( 'content-list', Domain::Content ), static fn(): array => [] );
+		$registry->register( $this->readDefinition( 'content-read', Domain::Content ), static fn(): array => [] );
+
+		$html = $this->render( $registry, null, [ 'content-read' ] );
+
+		$this->assertStringContainsString( 'value="content-read" data-sitehelm-switch', $html );
+		$this->assertStringNotContainsString( 'value="content-read" checked', $html );
+		$this->assertStringContainsString( 'value="content-list" checked', $html );
+		$this->assertStringContainsString( 'sitehelm-table__row--off', $html );
+		$this->assertStringContainsString( '1 switched off', $html );
+		$this->assertStringContainsString( '1 of 2 on', $html );
+		$this->assertStringContainsString( '1 of 2 operations on', $html );
+	}
+
+	public function testADestructiveOperationGetsTheWarningSwitch(): void {
+		$registry = new CapabilityRegistry();
+		$registry->registerWrite( $this->writeDefinition( 'content-post-delete', true ), new StubWriteOperation() );
+		$registry->register( $this->readDefinition( 'content-list', Domain::Content ), static fn(): array => [] );
+
+		$html = $this->render( $registry );
+
+		$this->assertSame( 1, substr_count( $html, 'sitehelm-switch--warn' ) );
+	}
+
+	public function testTheSavedOutcomeIsReportedOnceAfterTheRedirect(): void {
+		$registry = new CapabilityRegistry();
+		$registry->register( $this->readDefinition( 'content-list', Domain::Content ), static fn(): array => [] );
+
+		$_GET[ OperationsAction::ARG_STATE ] = OperationsAction::STATE_SAVED;
+
+		try {
+			$html = $this->render( $registry );
+		} finally {
+			unset( $_GET[ OperationsAction::ARG_STATE ] );
+		}
+
+		$this->assertStringContainsString( 'sitehelm-note--ok', $html );
+		$this->assertStringContainsString( 'Saved.', $html );
+		$this->assertStringNotContainsString( 'Saved.', $this->render( $registry ) );
+	}
+
+	public function testAnEmptyRegistryRendersNoSwitchForm(): void {
+		$this->assertStringNotContainsString( 'data-sitehelm-switches', $this->render( new CapabilityRegistry() ) );
 	}
 }

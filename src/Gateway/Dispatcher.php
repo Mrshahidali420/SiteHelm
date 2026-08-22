@@ -14,6 +14,7 @@ use SiteHelm\Contracts\ErrorCode;
 use SiteHelm\Contracts\ModuleHealth;
 use SiteHelm\Contracts\OperationContext;
 use SiteHelm\Contracts\OperationException;
+use SiteHelm\Policy\OperationSwitches;
 use SiteHelm\Contracts\OperationResult;
 use SiteHelm\Contracts\VerificationStatus;
 use SiteHelm\Policy\PolicyEngine;
@@ -63,11 +64,12 @@ final class Dispatcher {
 	/**
 	 * Constructs the dispatcher with its dependencies.
 	 *
-	 * @param CapabilityRegistry $registry        The capability registry.
-	 * @param CatalogBuilder     $catalogBuilder  The catalog builder.
-	 * @param PolicyEngine       $policy          The policy engine.
-	 * @param SchemaValidator    $schemaValidator The schema validator.
-	 * @param ChangeEngine       $changeEngine    The write-operation change engine.
+	 * @param CapabilityRegistry     $registry        The capability registry.
+	 * @param CatalogBuilder         $catalogBuilder  The catalog builder.
+	 * @param PolicyEngine           $policy          The policy engine.
+	 * @param SchemaValidator        $schemaValidator The schema validator.
+	 * @param ChangeEngine           $changeEngine    The write-operation change engine.
+	 * @param OperationSwitches|null $switches    The operator's per-operation switches; null means all on.
 	 *
 	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
 	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
@@ -78,6 +80,7 @@ final class Dispatcher {
 		private readonly PolicyEngine $policy,
 		private readonly SchemaValidator $schemaValidator,
 		private readonly ChangeEngine $changeEngine,
+		private readonly ?OperationSwitches $switches = null,
 	) {
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
@@ -131,8 +134,10 @@ final class Dispatcher {
 		}
 
 		// The client's raw operation string is never echoed back: it is untrusted
-		// text that would otherwise flow into an outbound envelope message.
-		if ( ! $this->registry->has( $operation_id ) ) {
+		// text that would otherwise flow into an outbound envelope message. An
+		// operation the operator has switched off gets the very same answer as
+		// one that was never registered, so the refusal reveals nothing.
+		if ( ! $this->registry->has( $operation_id ) || ! ( $this->switches ?? OperationSwitches::none() )->isEnabled( $operation_id ) ) {
 			throw new OperationException(
 				ErrorCode::InvalidInput,
 				'The requested operation is not available on this dispatcher.',

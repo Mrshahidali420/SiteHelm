@@ -1279,7 +1279,48 @@ dismissible `notice-info` with an "Open Connect" button. Shown at most once per 
 
 ---
 
-## 27. Standing project constraints
+## 27. Operation switches
+
+The operator can turn any registered operation off from the Operations screen.
+
+- **Store** — `Policy\OperationSwitches`, option `sitehelm_disabled_operations`: a list of
+  switched-**off** operation ids (never "enabled" ids, so an operation a module adds in an
+  update arrives on). `sanitise()` keeps unique non-empty strings matching
+  `/\A[a-z0-9-]+\z/` and drops everything else; `isEnabled($id)`; `disabled()`;
+  `static save(array)`; `static none()` for callers without a store. Constructor takes an
+  optional reader callable (tests inject `static fn() => [...]`).
+- **Enforcement** — `Dispatcher` takes the switches as its sixth constructor argument and
+  refuses a switched-off operation with the **same `InvalidInput` message as an unknown
+  operation**, so a client cannot tell the two apart. `CatalogBuilder($registry, $switches)`
+  omits switched-off operations from the catalogue. `Diagnostics\OperationSchema` refuses a
+  switched-off id with its unknown-name answer too (second ctor arg, defaults to reading the
+  option itself because modules are built with no arguments by `IntegrationDirectory`).
+- **Wiring** — `Plugin::register()` creates one `OperationSwitches` and shares it with the
+  CatalogBuilder, the Dispatcher and `AdminMenu` (fourth constructor argument).
+- **Save path** — `Admin\OperationsAction` (`admin_post_sitehelm_operations`; constants
+  `ACTION`/`NONCE`/`FIELD`/`ARG_STATE` all `sitehelm_operations`, `STATE_SAVED`): capability
+  check → `wp_die(403)`, `check_admin_referer`, posted `sitehelm_operations[]` = the ids left
+  **on**; the stored list is `all_ids(registry)` minus the posted ids (unknown ids cannot be
+  stored either way), then redirect to the Operations page with `sitehelm_operations=saved`.
+- **Screen** — `OperationsScreen($registry, $health, $switches)` wraps the groups in
+  `<form method="post" action="admin-post.php" class="sitehelm-switches" data-sitehelm-switches>`
+  (no form on an empty registry). Each group `<section data-sitehelm-group>` has a
+  `[data-sitehelm-switch-count]` badge ("N of M on", label template in
+  `data-sitehelm-count-label`) and a hidden `[data-sitehelm-switch-actions]` span with
+  `[data-sitehelm-switch-all="on|off"]` buttons revealed by JS. Each row
+  `[data-sitehelm-switch-row]` starts with a `.sitehelm-switch` label (`--warn` for
+  destructive / high-risk) holding the real checkbox `name="sitehelm_operations[]"
+  value="<id>" data-sitehelm-switch` under a drawn track; off rows carry
+  `sitehelm-table__row--off`. A sticky `.sitehelm-savebar[data-sitehelm-savebar]` holds the
+  `[data-sitehelm-switch-summary]` ("N of M operations on") and the submit button; JS adds
+  `is-dirty` on change. After the redirect `render_saved_note()` prints one
+  `sitehelm-note--ok` status.
+- **JS** — `initSwitches(form)` / `syncSwitchCounts` / `syncSwitchRow` in
+  `sitehelm-admin.js`; counts are always recomputed from the checkboxes.
+
+---
+
+## 28. Standing project constraints
 
 - **No AI attribution anywhere in git** — no "Generated with Claude Code" footer,
   no session URL, no `Co-Authored-By` trailer, in any commit, PR body, PR comment,

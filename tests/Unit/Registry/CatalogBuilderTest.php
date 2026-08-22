@@ -15,6 +15,7 @@ use SiteHelm\Contracts\PreviewPolicy;
 use SiteHelm\Contracts\Risk;
 use SiteHelm\Contracts\RollbackPolicy;
 use SiteHelm\Contracts\SnapshotPolicy;
+use SiteHelm\Policy\OperationSwitches;
 use SiteHelm\Registry\CapabilityRegistry;
 use SiteHelm\Registry\CatalogBuilder;
 use SiteHelm\Tests\Doubles\StubWriteOperation;
@@ -557,5 +558,22 @@ final class CatalogBuilderTest extends TestCase {
 			$this->assertTrue( $entry['available'], $mode->value );
 			$this->assertNull( $entry['blockedReason'], $mode->value );
 		}
+	}
+
+	/**
+	 * A switched-off operation is simply absent from the catalogue, not listed
+	 * as blocked: blocked says "exists, cannot run now"; a switch says the
+	 * operator does not want it reachable at all.
+	 */
+	public function test_a_switched_off_operation_is_absent_from_the_catalog(): void {
+		$builder = new CatalogBuilder(
+			$this->registry,
+			new OperationSwitches( static fn(): array => [ 'system-environment' ] )
+		);
+
+		$catalog = $builder->build( 'system-read', $this->makeContext() );
+
+		$this->assertSame( [], $catalog['operations'] );
+		$this->assertCount( 1, $this->builder->build( 'system-read', $this->makeContext() )['operations'] );
 	}
 }

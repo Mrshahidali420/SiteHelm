@@ -18,6 +18,7 @@ use SiteHelm\Gateway\McpServer;
 use SiteHelm\Gateway\RestTransport;
 use SiteHelm\Modules\Core\RedirectRouter;
 use SiteHelm\Modules\Core\RedirectStore;
+use SiteHelm\Policy\OperationSwitches;
 use SiteHelm\Policy\PolicyEngine;
 use SiteHelm\Registry\CapabilityRegistry;
 use SiteHelm\Registry\CatalogBuilder;
@@ -79,12 +80,18 @@ final class Plugin {
 
 		$module_health = ( new ModuleLoader() )->load( ( new IntegrationDirectory() )->modules(), $registry );
 
+		// The operator's switches are read by the catalogue, the dispatcher and
+		// the console from one instance, so the three can never disagree about
+		// what is on.
+		$switches = new OperationSwitches();
+
 		$dispatcher = new Dispatcher(
 			$registry,
-			new CatalogBuilder( $registry ),
+			new CatalogBuilder( $registry, $switches ),
 			new PolicyEngine(),
 			new SchemaValidator(),
-			ChangeEngine::create()
+			ChangeEngine::create(),
+			$switches
 		);
 
 		$server = new McpServer( $dispatcher, new ContextFactory(), $module_health );
@@ -98,7 +105,7 @@ final class Plugin {
 		// disagrees with the server is worse than no catalogue at all. The
 		// dispatcher goes too, so a console rollback runs the same write path.
 		if ( is_admin() ) {
-			( new AdminMenu( $registry, $module_health, $dispatcher ) )->register();
+			( new AdminMenu( $registry, $module_health, $dispatcher, $switches ) )->register();
 		}
 
 		// The redirect router is the only part of this plugin that serves ordinary

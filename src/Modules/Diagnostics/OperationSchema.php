@@ -12,6 +12,7 @@ namespace SiteHelm\Modules\Diagnostics;
 use SiteHelm\Contracts\ErrorCode;
 use SiteHelm\Contracts\OperationContext;
 use SiteHelm\Contracts\OperationException;
+use SiteHelm\Policy\OperationSwitches;
 use SiteHelm\Policy\PolicyEngine;
 use SiteHelm\Registry\CapabilityRegistry;
 use SiteHelm\Registry\SchemaShape;
@@ -52,10 +53,23 @@ final class OperationSchema {
 	 * request, assembled as modules load, and a lookup holding a second empty one
 	 * would report every operation as unknown.
 	 *
-	 * @param CapabilityRegistry $registry The capability registry.
+	 * @param CapabilityRegistry     $registry The capability registry.
+	 * @param OperationSwitches|null $switches The operator's switches; null reads the stored option.
 	 */
-	public function __construct( private readonly CapabilityRegistry $registry ) {
+	public function __construct(
+		private readonly CapabilityRegistry $registry,
+		?OperationSwitches $switches = null
+	) {
+		$this->switches = $switches ?? new OperationSwitches();
 	}
+
+	/**
+	 * The operator's switches: a switched-off operation is as unknown here as
+	 * it is to the catalogue and the dispatcher.
+	 *
+	 * @var OperationSwitches
+	 */
+	private readonly OperationSwitches $switches;
 
 	// phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase, WordPress.Security.EscapeOutput.ExceptionNotEscaped -- OperationDefinition and OperationContext expose contract properties this module does not name, and every message here is a literal written for end users.
 	/**
@@ -84,7 +98,7 @@ final class OperationSchema {
 
 		$name = is_string( $input['operation'] ?? null ) ? $input['operation'] : '';
 
-		if ( ! $this->registry->has( $name ) ) {
+		if ( ! $this->registry->has( $name ) || ! $this->switches->isEnabled( $name ) ) {
 			throw $this->unknown();
 		}
 
