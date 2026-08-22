@@ -13,6 +13,9 @@ an operation behaves.
 
 ### Added
 
+- **Filter the Activity log by period.** Last hour, 24 hours, 7 days or 30 days,
+  alongside the other filters; the period travels with the pager and the CSV export.
+
 - **The Status screen now tests whether the Authorization header reaches WordPress.**
   A loopback to the endpoint with a login that cannot exist tells a server that passes
   the header through from one that strips it (Apache as CGI/FastCGI), which is the
