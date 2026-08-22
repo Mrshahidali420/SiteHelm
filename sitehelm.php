@@ -59,7 +59,8 @@ function sitehelm_boot(): void {
 }
 
 /**
- * Create the plugin's local tables and schedule retention pruning.
+ * Create the plugin's local tables, schedule retention pruning and arm the
+ * one-time notice that points at the Connect screen.
  *
  * The autoloader is required here explicitly: `plugins_loaded` has already
  * fired by the time an activation callback runs, so `sitehelm_boot()` has not
@@ -72,6 +73,7 @@ function sitehelm_activate(): void {
 
 	( new \SiteHelm\Storage\Installer() )->install();
 	\SiteHelm\Storage\Retention::schedule();
+	\SiteHelm\Admin\ActivationNotice::arm();
 }
 
 /**

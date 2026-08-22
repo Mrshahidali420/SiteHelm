@@ -95,6 +95,7 @@ final class PluginTest extends TestCase {
 			}
 		);
 		Functions\when( 'time' )->justReturn( 1_800_000_000 );
+		Functions\when( 'set_transient' )->justReturn( true );
 
 		sitehelm_activate();
 
