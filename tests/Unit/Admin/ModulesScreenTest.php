@@ -20,6 +20,7 @@ use SiteHelm\Modules\Acf\AcfPresence;
 use SiteHelm\Modules\Elementor\ElementorPresence;
 use SiteHelm\Modules\Seo\SeoPresence;
 use SiteHelm\Policy\OperationSwitches;
+use SiteHelm\Policy\PermissionLevel;
 use SiteHelm\Registry\CapabilityRegistry;
 use SiteHelm\Tests\Doubles\AdminDied;
 use SiteHelm\Tests\Doubles\AdminWordPressStubs;
@@ -386,14 +387,17 @@ final class ModulesScreenTest extends TestCase {
 		return $registry;
 	}
 
-	public function testAModuleWithOperationsCarriesASwitchPostedToTheModuleAction(): void {
+	public function testAModuleWithOperationsCarriesALevelControlPostedToTheModuleAction(): void {
 		$html = $this->render( $this->allActive(), $this->switchRegistry() );
 
 		$this->assertStringContainsString( 'value="' . ModuleSwitchAction::ACTION . '"', $html );
 		$this->assertStringContainsString( 'name="' . ModuleSwitchAction::FIELD_MODULE . '" value="' . ModuleId::Core->value . '"', $html );
-		$this->assertStringContainsString( 'name="' . ModuleSwitchAction::FIELD_ON . '" value="1" checked', $html );
-		// Three modules registered nothing here, so only two cards carry a switch.
-		$this->assertSame( 2, substr_count( $html, 'data-sitehelm-autosubmit>' ) );
+		// Everything on reads as Full, and the four levels are all offered.
+		$this->assertStringContainsString( 'name="' . ModuleSwitchAction::FIELD_LEVEL . '" value="' . PermissionLevel::FULL . '" class="sitehelm-seg__btn is-current"', $html );
+		$this->assertStringContainsString( 'value="' . PermissionLevel::READ . '" class="sitehelm-seg__btn"', $html );
+		// Three modules registered nothing here, so only two cards carry a control.
+		$this->assertSame( 2, substr_count( $html, 'class="sitehelm-levels"' ) );
+		$this->assertStringNotContainsString( 'sitehelm-levels__hint--custom', $html );
 	}
 
 	public function testAModuleWhoseOperationsAreAllOffReadsOffAndCountsThem(): void {
@@ -401,18 +405,28 @@ final class ModulesScreenTest extends TestCase {
 
 		$html = $this->render( $this->allActive(), $this->switchRegistry() );
 
-		$this->assertStringContainsString( 'name="' . ModuleSwitchAction::FIELD_ON . '" value="1" data-sitehelm-switch', $html );
+		$this->assertStringContainsString( 'value="' . PermissionLevel::OFF . '" class="sitehelm-seg__btn is-current"', $html );
 		$this->assertStringContainsString( '0 of 2 operations on', $html );
 		$this->assertStringContainsString( '>1 operation<', $html );
 	}
 
-	public function testAHalfSwitchedModuleStillReadsOnWithTheCountBesideIt(): void {
+	public function testAHalfSwitchedModuleReadsCustomRatherThanTheNearestLevel(): void {
 		AdminWordPressStubs::$options[ OperationSwitches::OPTION ] = [ 'content-two' ];
 
 		$html = $this->render( $this->allActive(), $this->switchRegistry() );
 
 		$this->assertStringContainsString( '1 of 2 operations on', $html );
-		$this->assertSame( 2, substr_count( $html, 'value="1" checked' ) );
+		$this->assertStringContainsString( 'sitehelm-levels__hint--custom', $html );
+		$this->assertStringContainsString( 'Custom', $html );
+		// Only the media card, still fully on, has a level pressed.
+		$this->assertSame( 1, substr_count( $html, 'is-current' ) );
+	}
+
+	public function testTheFineTuneLinkLeadsToTools(): void {
+		$html = $this->render( $this->allActive(), $this->switchRegistry() );
+
+		$this->assertStringContainsString( 'sitehelm-finetune', $html );
+		$this->assertStringContainsString( 'page=' . AdminMenu::PAGE_OPERATIONS, $html );
 	}
 
 	public function testTheSavedNoteAppearsOnlyAfterTheRedirect(): void {

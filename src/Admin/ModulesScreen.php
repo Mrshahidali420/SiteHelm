@@ -16,6 +16,7 @@ use SiteHelm\Modules\Elementor\ElementorPresence;
 use SiteHelm\Modules\Metabox\MetaboxPresence;
 use SiteHelm\Modules\Seo\SeoPresence;
 use SiteHelm\Policy\OperationSwitches;
+use SiteHelm\Policy\PermissionLevel;
 use SiteHelm\Registry\CapabilityRegistry;
 
 /**
@@ -29,10 +30,12 @@ use SiteHelm\Registry\CapabilityRegistry;
  * Whether a module is ACTIVE is a readout, not a control: a module is active
  * exactly when the plugin behind it is running, and the only way to change that
  * is on the Plugins screen. What each card does offer is the operator's own
- * choice — one switch that turns every operation the module registered on or
- * off together, the same switches the Operations screen shows one row at a
- * time and stored in the same option. A module switched off is still listed
- * here as active or not; its operations simply leave the catalogue.
+ * choice — a permission level (Off, Read only, Read & edit, Full) that sets
+ * every operation the module registered at once, through the same switches the
+ * Tools screen shows one operation at a time, stored in the same option. A
+ * module set to Off is still listed here as active or not; its operations
+ * simply leave the catalogue. In the console this screen is the "Permissions"
+ * tab; the class keeps its original name.
  *
  * Health is the map the loader produced while booting the request that is
  * serving this page, so what this screen reports and what the gateway answers
@@ -87,8 +90,8 @@ final class ModulesScreen {
 		Ui::app_open( AdminMenu::PAGE_MODULES );
 
 		Ui::page_head(
-			__( 'Modules', 'sitehelm' ),
-			__( 'Which groups of operations this site can run, and what the rest are waiting on.', 'sitehelm' )
+			__( 'Permissions', 'sitehelm' ),
+			__( 'Decide how much a connected app may do with each part of your site. Four levels, one choice per area — nothing technical to learn.', 'sitehelm' )
 		);
 
 		$this->render_saved_note();
@@ -123,9 +126,9 @@ final class ModulesScreen {
 		}
 
 		Ui::section_open(
-			__( 'Capability packs', 'sitehelm' ),
+			__( 'What apps may do, area by area', 'sitehelm' ),
 			__(
-				'A module is active when the plugin behind it is running. SiteHelm cannot tell an installed but deactivated plugin apart from one that was never installed, so both read as not active. A module that is not active still lists its operations in the catalogue, so an agent is told the operation exists and why it cannot run it. The switch on each card turns every operation in the module on or off together; the Operations screen does the same one operation at a time.',
+				'Off hides an area completely. Read only lets an app look but change nothing. Read & edit lets it make changes but never delete. Full allows everything. An area whose plugin is not running is shown dimmed with what it is waiting on; whatever you set there takes effect as soon as that plugin is active.',
 				'sitehelm'
 			)
 		);
@@ -139,6 +142,14 @@ final class ModulesScreen {
 		echo '</div>';
 
 		Ui::section_close();
+
+		printf(
+			'<p class="sitehelm-finetune">%s <a class="sitehelm-btn sitehelm-btn--small" href="%s">%s</a></p>',
+			esc_html__( 'Need one specific operation on or off rather than a whole level? Every operation has its own switch in the Tools tab.', 'sitehelm' ),
+			esc_url( admin_url( 'admin.php?page=' . AdminMenu::PAGE_OPERATIONS ) ),
+			esc_html__( 'Open Tools', 'sitehelm' )
+		);
+
 		Ui::app_close();
 	}
 
@@ -227,28 +238,28 @@ final class ModulesScreen {
 		echo '</p>';
 
 		if ( $count > 0 ) {
-			$this->render_switch( $module, $count > $off );
+			$this->render_levels( $module );
 		}
 
 		echo '</article>';
 	}
 
 	/**
-	 * The card's switch: one form, one checkbox, posted on change.
+	 * The card's level control: one form, four submit buttons, no script needed.
 	 *
-	 * The checkbox is on while at least one of the module's operations is on,
-	 * so a module the operator half-switched off on the Operations screen still
-	 * reads as on here, with the count beside it saying how many. Switching it
-	 * off turns every operation off; switching it on turns every one back on.
-	 * The Apply button is for a browser without script; with script the form
-	 * posts itself on change and the button is hidden.
+	 * Each button posts the level it names, so the choice is saved by the click
+	 * itself. The level currently in force is read back from the switches, and
+	 * a mix no level describes — an operation flipped on its own in Tools — is
+	 * reported as Custom rather than rounded to the nearest level, so nothing
+	 * the operator set elsewhere is misrepresented here.
 	 *
 	 * @param ModuleId $module The module.
-	 * @param bool     $is_on  Whether any of its operations is on.
 	 */
-	private function render_switch( ModuleId $module, bool $is_on ): void {
+	private function render_levels( ModuleId $module ): void {
+		$current = PermissionLevel::level_of( ModuleSwitchAction::module_definitions( $this->registry, $module ), $this->switches );
+
 		printf(
-			'<form method="post" action="%s" class="sitehelm-card__switch" data-sitehelm-autosubmit>',
+			'<form method="post" action="%s" class="sitehelm-levels">',
 			esc_url( admin_url( 'admin-post.php' ) )
 		);
 		printf( '<input type="hidden" name="action" value="%s">', esc_attr( ModuleSwitchAction::ACTION ) );
@@ -256,23 +267,43 @@ final class ModulesScreen {
 		wp_nonce_field( ModuleSwitchAction::NONCE );
 
 		printf(
-			'<label class="sitehelm-switch"><input type="checkbox" name="%s" value="1"%s data-sitehelm-switch>'
-				. '<span class="sitehelm-switch__track" aria-hidden="true"></span>'
-				. '<span class="sitehelm-srt">%s</span></label>'
-				. '<span class="sitehelm-card__switch-label" aria-hidden="true">%s</span>'
-				. '<button type="submit" class="sitehelm-btn sitehelm-btn--small" data-sitehelm-autosubmit-apply>%s</button>'
-				. '</form>',
-			esc_attr( ModuleSwitchAction::FIELD_ON ),
-			$is_on ? ' checked' : '',
-			esc_html(
+			'<span class="sitehelm-levels__label">%s</span><span class="sitehelm-seg sitehelm-levels__seg" role="group" aria-label="%s">',
+			esc_html__( 'Apps may', 'sitehelm' ),
+			esc_attr(
 				sprintf(
-					/* translators: %s: a module name. */
-					__( 'Allow every %s operation', 'sitehelm' ),
+					/* translators: %s: an area name, such as Media. */
+					__( 'Permission level for %s', 'sitehelm' ),
 					self::module_label( $module )
 				)
-			),
-			esc_html__( 'Operations on', 'sitehelm' ),
-			esc_html__( 'Apply', 'sitehelm' )
+			)
+		);
+
+		foreach ( PermissionLevel::levels() as $level ) {
+			printf(
+				'<button type="submit" name="%s" value="%s" class="sitehelm-seg__btn%s" aria-pressed="%s" title="%s">%s</button>',
+				esc_attr( ModuleSwitchAction::FIELD_LEVEL ),
+				esc_attr( $level ),
+				$level === $current ? ' is-current' : '',
+				$level === $current ? 'true' : 'false',
+				esc_attr( PermissionLevel::description( $level ) ),
+				esc_html( PermissionLevel::label( $level ) )
+			);
+		}
+
+		echo '</span>';
+
+		printf(
+			'<span class="sitehelm-levels__hint%s">%s</span></form>',
+			PermissionLevel::CUSTOM === $current ? ' sitehelm-levels__hint--custom' : '',
+			esc_html(
+				PermissionLevel::CUSTOM === $current
+					? sprintf(
+						/* translators: %s: "Custom". */
+						__( '%s — some operations were switched one by one in Tools. Pick a level to reset them.', 'sitehelm' ),
+						PermissionLevel::label( $current )
+					)
+					: PermissionLevel::description( $current )
+			)
 		);
 	}
 

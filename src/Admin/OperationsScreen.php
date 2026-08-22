@@ -95,8 +95,16 @@ final class OperationsScreen {
 		Ui::app_open( AdminMenu::PAGE_OPERATIONS );
 
 		Ui::page_head(
-			__( 'Operations', 'sitehelm' ),
-			__( 'Everything a connected client can ask this site to do. Nothing outside this list is reachable, and anything switched off here is not reachable either.', 'sitehelm' )
+			__( 'Tools', 'sitehelm' ),
+			__( 'Every single operation a connected app can ask this site to do, each with its own switch. Nothing outside this list is reachable, and anything switched off here is not reachable either.', 'sitehelm' )
+		);
+
+		printf(
+			'<div class="sitehelm-note sitehelm-note--waiting sitehelm-advanced"><p><strong>%s</strong> %s <a href="%s">%s</a></p></div>',
+			esc_html__( 'Advanced.', 'sitehelm' ),
+			esc_html__( 'Most sites never need this page: the Permissions tab sets a whole area at once. Come here only to switch one specific operation on or off.', 'sitehelm' ),
+			esc_url( admin_url( 'admin.php?page=' . AdminMenu::PAGE_MODULES ) ),
+			esc_html__( 'Back to Permissions', 'sitehelm' )
 		);
 
 		$detail = sprintf(

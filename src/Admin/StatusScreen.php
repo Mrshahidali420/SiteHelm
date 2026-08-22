@@ -71,8 +71,8 @@ final class StatusScreen {
 		Ui::app_open( AdminMenu::PAGE_STATUS );
 
 		Ui::page_head(
-			__( 'Status', 'sitehelm' ),
-			__( 'What SiteHelm can do on this site, and what is holding the rest back.', 'sitehelm' )
+			__( 'Health', 'sitehelm' ),
+			__( 'Whether everything SiteHelm needs is in place on this site, and what to do about anything that is not.', 'sitehelm' )
 		);
 
 		$blocked = $this->blocked_count();
