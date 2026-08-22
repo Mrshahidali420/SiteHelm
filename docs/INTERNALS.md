@@ -1037,7 +1037,50 @@ assert on that, not on `sitehelm-badge--neutral`.
 
 ---
 
-## 17. Standing project constraints
+## 17. Console rollback — the Activity screen can put a change back
+
+`RollbackAction` (handler) and `RollbackPanel` (markup) let an operator restore a
+recorded change from the Activity row without an AI client. It runs through the same
+`Dispatcher` the gateway serves from (`content-write` / `content-rollback-apply`), so
+the console can restore nothing an agent could not, and the restoration is recorded,
+verified and itself re-restorable like any write.
+
+- **Wiring.** `Plugin::register()` hoists `$dispatcher` and passes it as the third
+  argument of `AdminMenu( $registry, $health, ?Dispatcher $dispatcher )`. Only when it
+  is non-null does `AdminMenu::register()` bind `admin_post_sitehelm_rollback` to
+  `RollbackAction( [ $dispatcher, 'dispatch' ], new ContextFactory(), $health )`.
+  Tests inject a closure for the dispatch seam and a closure for the redirect seam
+  (the default does `wp_safe_redirect(); exit;`).
+- **Two POSTs, never one click.** Step `preview` asks for a plan and parks
+  `{reference, token, target, changes, warnings}` in transient
+  `sitehelm_rollback_pending_{user_id}` for `PENDING_TTL = 300` s, then redirects to
+  `admin.php?page=sitehelm-activity&sitehelm_rollback=confirm`. Step `apply` reads
+  **and deletes** the transient, refuses if it is missing, the form's reference does
+  not match the parked one, or the token is empty; otherwise dispatches with
+  `planToken` and redirects with `sitehelm_rollback=done&sitehelm_rollback_ref=…`.
+  A refusal (`OperationException`) is carried back as `sitehelm_rollback_error` =
+  message + ' ' + remediation — the engine's sentences are secret-free by contract
+  (§7) and are shown verbatim, escaped.
+- **The plan token never reaches the browser.** Both forms carry only the action,
+  the reference and the step, plus the nonce `sitehelm_rollback`. Capability check
+  is `AdminMenu::CAPABILITY` then `check_admin_referer`.
+- **`clientId` is `wp-admin`** (`RollbackAction::CLIENT_ID`), so the Activity "Who"
+  column tells a console restoration apart from an agent's.
+- **Markup.** `RollbackPanel::render_button()` is a `sitehelm-inline-form` beside the
+  reference in the rollback cell; `render_confirm()` renders only when the query says
+  `confirm` AND `RollbackAction::pending( get_current_user_id() )` is non-null (stale
+  link → nothing); the diff table reuses `.sitehelm-scroll > .sitehelm-table` with
+  `sitehelm-diff__before/after` cells, values shortened to `VALUE_LIMIT = 160` chars,
+  `null` shown as `—`, `''` as `(empty)`. `render_notice()` reads the `done`/error
+  arguments. All three are read-only; `ActivityScreen` owns one `RollbackPanel`.
+- **Test stubs.** `AdminWordPressStubs` now provides `home_url`, `wp_parse_url`,
+  `wp_generate_uuid4`, `wp_safe_redirect`, which `ContextFactory::create()` needs.
+  The stub `add_query_arg` URL-encodes values (real WordPress does not), so a test
+  that reads a redirect query must `rawurldecode` once after `parse_str`.
+
+---
+
+## 18. Standing project constraints
 
 - **No AI attribution anywhere in git** — no "Generated with Claude Code" footer,
   no session URL, no `Co-Authored-By` trailer, in any commit, PR body, PR comment,

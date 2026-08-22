@@ -154,11 +154,105 @@ final class ActivityScreenTest extends TestCase {
 		$this->assertStringNotContainsString( '1970-01-01', $html );
 	}
 
-	public function testTheRollbackReferenceIsStatedRatherThanOfferedAsAButton(): void {
+	public function testTheRollbackReferenceIsStatedAndOfferedAsAPreviewFirstRollBackForm(): void {
 		$html = $this->render( 1, [ $this->row() ] );
 
 		$this->assertStringContainsString( '>audit-1</code>', $html );
-		$this->assertStringNotContainsString( 'Undo', $html );
+		$this->assertStringContainsString( 'class="sitehelm-inline-form"', $html );
+		$this->assertStringContainsString( 'name="action" value="sitehelm_rollback"', $html );
+		$this->assertStringContainsString( 'name="sitehelm_rollback_ref" value="audit-1"', $html );
+		$this->assertStringContainsString( 'name="sitehelm_rollback_step" value="preview"', $html );
+		$this->assertStringContainsString( '>Roll back</button>', $html );
+		$this->assertStringNotContainsString( 'value="apply"', $html );
+	}
+
+	public function testARowWithNoRollbackReferenceOffersNoRollBackForm(): void {
+		$html = $this->render( 1, [ $this->row( [ 'rollback_ref' => '' ] ) ] );
+
+		$this->assertStringNotContainsString( 'sitehelm-inline-form', $html );
+	}
+
+	public function testAParkedPreviewRendersTheConfirmPanelWithTheDiffAndTheSecondClick(): void {
+		$_GET['sitehelm_rollback'] = 'confirm';
+
+		AdminWordPressStubs::$transients[ 'sitehelm_rollback_pending_' . AdminWordPressStubs::$currentUserId ] = [
+			'reference' => 'audit-1',
+			'token'     => 'tok-secret',
+			'target'    => 'post:41',
+			'changes'   => [
+				[
+					'field'  => 'post_title',
+					'before' => 'New <b>title</b>',
+					'after'  => 'Old title',
+				],
+				[
+					'field'  => 'post_status',
+					'before' => null,
+					'after'  => true,
+				],
+			],
+			'warnings'  => [ 'Edited since.' ],
+		];
+
+		$html = $this->render( 0, [] );
+
+		$this->assertStringContainsString( 'Confirm rollback', $html );
+		$this->assertStringContainsString( 'Restoring post:41 to the state recorded as audit-1', $html );
+		$this->assertStringContainsString( '<code>post_title</code>', $html );
+		$this->assertStringContainsString( 'New &lt;b&gt;title&lt;/b&gt;', $html );
+		$this->assertStringContainsString( 'class="sitehelm-diff__after">Old title<', $html );
+		$this->assertStringContainsString( 'class="sitehelm-diff__before">—<', $html );
+		$this->assertStringContainsString( 'class="sitehelm-diff__after">true<', $html );
+		$this->assertStringContainsString( '<li>Edited since.</li>', $html );
+		$this->assertStringContainsString( 'name="sitehelm_rollback_step" value="apply"', $html );
+		$this->assertStringContainsString( '>Roll back now</button>', $html );
+		$this->assertStringContainsString( '>Cancel</a>', $html );
+		$this->assertStringNotContainsString( 'tok-secret', $html );
+	}
+
+	public function testAConfirmLinkWithNoParkedPreviewRendersNoPanel(): void {
+		$_GET['sitehelm_rollback'] = 'confirm';
+
+		$html = $this->render( 0, [] );
+
+		$this->assertStringNotContainsString( 'Confirm rollback', $html );
+	}
+
+	public function testAParkedPreviewWithNoChangesSaysSoInsteadOfAnEmptyTable(): void {
+		$_GET['sitehelm_rollback'] = 'confirm';
+
+		AdminWordPressStubs::$transients[ 'sitehelm_rollback_pending_' . AdminWordPressStubs::$currentUserId ] = [
+			'reference' => 'audit-1',
+			'token'     => 'tok',
+			'target'    => 'post:41',
+			'changes'   => [],
+			'warnings'  => [],
+		];
+
+		$html = $this->render( 0, [] );
+
+		$this->assertStringContainsString( 'No field would change', $html );
+		$this->assertStringNotContainsString( 'sitehelm-diff', $html );
+	}
+
+	public function testAFinishedRollbackIsReportedWithItsReference(): void {
+		$_GET['sitehelm_rollback']     = 'done';
+		$_GET['sitehelm_rollback_ref'] = 'audit-1';
+
+		$html = $this->render( 0, [] );
+
+		$this->assertStringContainsString( 'sitehelm-note--ok', $html );
+		$this->assertStringContainsString( 'The change recorded as audit-1 has been put back', $html );
+	}
+
+	public function testARefusedRollbackIsReportedInTheEnginesWordsEscaped(): void {
+		$_GET['sitehelm_rollback_error'] = 'That preview has expired <b>x</b>';
+
+		$html = $this->render( 0, [] );
+
+		$this->assertStringContainsString( 'sitehelm-note--refused', $html );
+		$this->assertStringContainsString( 'Nothing was rolled back.', $html );
+		$this->assertStringContainsString( 'That preview has expired &lt;b&gt;x&lt;/b&gt;', $html );
 	}
 
 	/**

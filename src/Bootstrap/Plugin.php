@@ -79,17 +79,15 @@ final class Plugin {
 
 		$module_health = ( new ModuleLoader() )->load( ( new IntegrationDirectory() )->modules(), $registry );
 
-		$server = new McpServer(
-			new Dispatcher(
-				$registry,
-				new CatalogBuilder( $registry ),
-				new PolicyEngine(),
-				new SchemaValidator(),
-				ChangeEngine::create()
-			),
-			new ContextFactory(),
-			$module_health
+		$dispatcher = new Dispatcher(
+			$registry,
+			new CatalogBuilder( $registry ),
+			new PolicyEngine(),
+			new SchemaValidator(),
+			ChangeEngine::create()
 		);
+
+		$server = new McpServer( $dispatcher, new ContextFactory(), $module_health );
 
 		$transport = new RestTransport( $server );
 		add_action( 'rest_api_init', [ $transport, 'registerRoute' ] );
@@ -97,9 +95,10 @@ final class Plugin {
 		// The console is handed the same registry and the same health map the
 		// gateway is serving from. A second registry built for the admin could
 		// disagree with the one answering requests, and a catalogue that
-		// disagrees with the server is worse than no catalogue at all.
+		// disagrees with the server is worse than no catalogue at all. The
+		// dispatcher goes too, so a console rollback runs the same write path.
 		if ( is_admin() ) {
-			( new AdminMenu( $registry, $module_health ) )->register();
+			( new AdminMenu( $registry, $module_health, $dispatcher ) )->register();
 		}
 
 		// The redirect router is the only part of this plugin that serves ordinary

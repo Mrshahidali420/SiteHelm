@@ -11,6 +11,19 @@ an operation behaves.
 
 ## [Unreleased]
 
+### Added
+
+- **Roll a change back from the Activity screen.** Every applied row now carries a
+  "Roll back" button beside its reference. The first click asks the change engine
+  for a preview and shows a confirm panel — target, reference, a field-by-field
+  Now / After rollback table, and any warnings — with nothing changed yet; "Roll
+  back now" restores exactly what was shown, and the result is reported at the top
+  of the screen in the engine's own words when it refuses. The restoration runs
+  through the same dispatcher, capability checks, audit record and verification as
+  a client-requested rollback, is recorded against the client `wp-admin`, and is
+  itself re-restorable. The plan token never reaches the browser; it sits in a
+  five-minute, per-user transient and is spent on the second click only.
+
 ### Changed
 
 - **The console now says what a blocked module is waiting on, and which operations
