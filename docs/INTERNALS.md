@@ -75,8 +75,10 @@ silently unbooted module.
    to `MODULE_CLASSES`. Order is boot order.
 4. `tests/Unit/Modules/Diagnostics/IntegrationHealthTest.php` — `BOOT_ORDER`
    constant (written out on purpose, so a new module must be acknowledged).
-5. `src/Admin/ModulesScreen.php` — **two** switch arms: the display name and the
-   one-sentence description.
+5. `src/Admin/ModulesScreen.php` — **three** switch arms: the display name, the
+   one-sentence description, and `requirement_for()` (the plugin name plus the
+   module's `*Presence::MIN_VERSION` floor — never a literal copy of the number;
+   return `''` for a module backed by WordPress itself).
 6. `tests/Unit/Admin/ModulesScreenTest.php` — the `"N of M active"` assertion.
 7. `tests/Unit/Admin/StatusScreenTest.php` — the `"0 of M"` assertion.
 8. Docs: `README.md` operation count (three places), `docs/OPERATIONS.md` header
@@ -1008,7 +1010,34 @@ notice was outside every removable root and survived by accident. On a real site
 plugin is *inside* `wp-content/plugins`, so that check is the only thing stopping it
 deleting its own banners. The fixture tree now nests them the same way.
 
-## 16. Standing project constraints
+## 16. Console screens share one health map
+
+`AdminMenu` hands the loader's health map (`array<string, array{version, health}>`
+keyed by `ModuleId->value`) to three screens. None of them recompute health, so the
+console cannot disagree with the gateway.
+
+- **Modules** (`ModulesScreen`): a card that is not `Active` carries a
+  `sitehelm-card__waiting` line. `requirement_for()` names the plugin and floor
+  (`Elementor 3.0.0`, `Advanced Custom Fields 5.9.0`, `Meta Box 5.3.0`, `Yoast SEO x
+  or Rank Math y`) from the Presence constants; `VersionBlocked` reads "Update to …",
+  anything else "Activate …", both linking to `plugins.php`. A module whose
+  requirement is `''` (Core, Diagnostics, Media, Menus) reads "Waiting on SiteHelm
+  storage." and links to Status instead — there is no plugin to activate for it.
+- **Operations** (`OperationsScreen`, constructed with `$registry, $health`): every row
+  has a Module column; a row whose module is not `Active` gets
+  `sitehelm-table__row--muted`, a neutral "Not active" badge, and is counted into the
+  verdict detail ("N cannot run on this site yet"). A module missing from the map is
+  treated as not active. The module label is part of the row's search haystack.
+- **Status** (`StatusScreen`): a blocked verdict is followed by a `sitehelm-followup`
+  link to the Modules screen, because Status carries the count and Modules carries
+  the reason.
+
+`Ui::badge( 'neutral', … )` renders a bare `sitehelm-badge` with no tone modifier —
+assert on that, not on `sitehelm-badge--neutral`.
+
+---
+
+## 17. Standing project constraints
 
 - **No AI attribution anywhere in git** — no "Generated with Claude Code" footer,
   no session URL, no `Co-Authored-By` trailer, in any commit, PR body, PR comment,

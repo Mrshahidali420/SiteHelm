@@ -11,6 +11,19 @@ an operation behaves.
 
 ## [Unreleased]
 
+### Changed
+
+- **The console now says what a blocked module is waiting on, and which operations
+  that blocks.** A Modules card that is not active names the plugin and the lowest
+  version SiteHelm accepts ("Activate Elementor 3.0.0 or newer", "Update to Advanced
+  Custom Fields 5.9.0 or newer") and links to Plugins; a module backed by WordPress
+  itself points at Status instead. Every Operations row names its module, and a row
+  the site cannot run yet is dimmed, marked "Not active", and counted in the verdict
+  — the catalogue stays complete, so an operator sees which rows are promises. The
+  Status verdict's "N modules are not active" now links to the screen that explains
+  why. The version floors are read from the same constants the gateway enforces, so
+  the two cannot drift.
+
 ### Fixed
 
 - **Every string a request can carry now has an upper bound too.** Ninety-four of

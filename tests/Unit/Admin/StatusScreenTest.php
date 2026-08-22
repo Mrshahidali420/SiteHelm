@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace SiteHelm\Tests\Unit\Admin;
 
+use SiteHelm\Admin\AdminMenu;
 use SiteHelm\Admin\StatusScreen;
 use SiteHelm\Contracts\ModuleHealth;
 use SiteHelm\Contracts\ModuleId;
@@ -84,6 +85,29 @@ final class StatusScreenTest extends TestCase {
 
 		$this->assertStringContainsString( 'Some modules are unavailable', $html );
 		$this->assertStringContainsString( '2 modules are not active', $html );
+	}
+
+	/**
+	 * The count belongs here; the reason lives on Modules. A verdict that names a
+	 * number without pointing at the explanation leaves the operator to guess.
+	 */
+	public function testABlockedVerdictLinksToTheModulesScreenWhereTheReasonLives(): void {
+		$health = $this->allActive();
+		unset( $health[ ModuleId::Elementor->value ] );
+
+		$html = $this->render( $health );
+
+		$this->assertStringContainsString(
+			'href="https://example.test/wp-admin/admin.php?page=' . AdminMenu::PAGE_MODULES . '"',
+			$html
+		);
+		$this->assertStringContainsString( 'what each one is waiting on', $html );
+	}
+
+	public function testAnAllActiveVerdictCarriesNoFollowUpLink(): void {
+		$html = $this->render( $this->allActive() );
+
+		$this->assertStringNotContainsString( 'sitehelm-followup', $html );
 	}
 
 	/**

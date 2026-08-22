@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace SiteHelm\Admin;
 
+use SiteHelm\Contracts\ModuleHealth;
 use SiteHelm\Contracts\OperationDefinition;
 use SiteHelm\Contracts\PreviewPolicy;
 use SiteHelm\Contracts\Risk;
@@ -35,12 +36,26 @@ final class OperationsScreen {
 	private CapabilityRegistry $registry;
 
 	/**
+	 * Module health, keyed by module identifier.
+	 *
+	 * The catalogue lists every operation whether or not its module is active,
+	 * because the list exists to be complete. But a row the site cannot run is
+	 * a different kind of row, and the operator deciding what to hand an agent
+	 * should see which ones those are without cross-referencing Modules.
+	 *
+	 * @var array<string, array{version: ?string, health: string}>
+	 */
+	private array $health;
+
+	/**
 	 * Constructs the screen.
 	 *
-	 * @param CapabilityRegistry $registry The registry the gateway is serving from.
+	 * @param CapabilityRegistry                                     $registry The registry the gateway is serving from.
+	 * @param array<string, array{version: ?string, health: string}> $health   The loader's health map.
 	 */
-	public function __construct( CapabilityRegistry $registry ) {
+	public function __construct( CapabilityRegistry $registry, array $health = [] ) {
 		$this->registry = $registry;
+		$this->health   = $health;
 	}
 
 	/**
@@ -51,8 +66,9 @@ final class OperationsScreen {
 			wp_die( esc_html__( 'You do not have permission to view SiteHelm.', 'sitehelm' ) );
 		}
 
-		$groups = $this->groups();
-		$total  = array_sum( array_map( 'count', $groups ) );
+		$groups      = $this->groups();
+		$total       = array_sum( array_map( 'count', $groups ) );
+		$unavailable = $this->unavailable_count( $groups );
 
 		Ui::app_open( AdminMenu::PAGE_OPERATIONS );
 
@@ -61,6 +77,20 @@ final class OperationsScreen {
 			__( 'Everything a connected client can ask this site to do. Nothing outside this list is reachable.', 'sitehelm' )
 		);
 
+		$detail = sprintf(
+			/* translators: %s: number of dispatchers holding at least one operation. */
+			_n( 'across %s tool', 'across %s tools', count( $groups ), 'sitehelm' ),
+			number_format_i18n( count( $groups ) )
+		);
+
+		if ( $unavailable > 0 ) {
+			$detail .= ' · ' . sprintf(
+				/* translators: %s: number of operations whose module is not active on this site. */
+				_n( '%s cannot run on this site yet', '%s cannot run on this site yet', $unavailable, 'sitehelm' ),
+				number_format_i18n( $unavailable )
+			);
+		}
+
 		Ui::verdict(
 			'brand',
 			sprintf(
@@ -68,11 +98,7 @@ final class OperationsScreen {
 				_n( '%s operation registered', '%s operations registered', $total, 'sitehelm' ),
 				number_format_i18n( $total )
 			),
-			sprintf(
-				/* translators: %s: number of dispatchers holding at least one operation. */
-				_n( 'across %s tool', 'across %s tools', count( $groups ), 'sitehelm' ),
-				number_format_i18n( count( $groups ) )
-			)
+			$detail
 		);
 
 		$this->render_search();
@@ -152,6 +178,7 @@ final class OperationsScreen {
 		$headings = [
 			__( 'Operation', 'sitehelm' ),
 			__( 'What it does', 'sitehelm' ),
+			__( 'Module', 'sitehelm' ),
 			__( 'Kind', 'sitehelm' ),
 			__( 'Requires', 'sitehelm' ),
 		];
@@ -177,14 +204,19 @@ final class OperationsScreen {
 	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 	 */
 	private function render_operation( OperationDefinition $definition ): void {
+		$module_label = ModulesScreen::module_label( $definition->module );
+		$is_active    = $this->is_active( $definition );
+
 		printf(
-			'<tr data-sitehelm-haystack="%s">',
-			esc_attr( strtolower( $definition->id . ' ' . $definition->description ) )
+			'<tr data-sitehelm-haystack="%s"%s>',
+			esc_attr( strtolower( $definition->id . ' ' . $definition->description . ' ' . $module_label ) ),
+			$is_active ? '' : ' class="sitehelm-table__row--muted"'
 		);
 
 		printf( '<td><code>%s</code></td>', esc_html( $definition->id ) );
 		printf( '<td>%s</td>', esc_html( $definition->description ) );
 
+		echo '<td>' . $this->module_cell( $module_label, $is_active ) . '</td>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Composed from escaped text and Ui::badge(), which escapes its own label.
 		echo '<td>' . $this->kind_cell( $definition ) . '</td>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Composed from Ui::badge(), which escapes its own label.
 
 		printf(
@@ -195,6 +227,64 @@ final class OperationsScreen {
 		echo '</tr>';
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+
+	/**
+	 * Whether the module behind an operation is active on this site.
+	 *
+	 * Read from the loader's own map, so the answer is the one the gateway gives.
+	 *
+	 * @param OperationDefinition $definition The operation.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+	 */
+	private function is_active( OperationDefinition $definition ): bool {
+		$entry = $this->health[ $definition->module->value ] ?? null;
+		$state = is_array( $entry ) && isset( $entry['health'] ) ? (string) $entry['health'] : '';
+
+		return ModuleHealth::Active->value === $state;
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+
+	/**
+	 * How many listed operations belong to a module that is not active.
+	 *
+	 * @param array<string, OperationDefinition[]> $groups The grouped catalogue.
+	 */
+	private function unavailable_count( array $groups ): int {
+		$count = 0;
+
+		foreach ( $groups as $definitions ) {
+			foreach ( $definitions as $definition ) {
+				if ( ! $this->is_active( $definition ) ) {
+					++$count;
+				}
+			}
+		}
+
+		return $count;
+	}
+
+	/**
+	 * The module an operation belongs to, and a marker when it cannot run here.
+	 *
+	 * The marker is a word, not a tint, so the row reads the same without colour.
+	 * It is omitted when the module is active: an "Active" badge on every row of
+	 * a healthy site would be noise beside the one badge that carries news.
+	 *
+	 * @param string $label     The module's name.
+	 * @param bool   $is_active Whether the module is active on this site.
+	 *
+	 * @return string Escaped HTML.
+	 */
+	private function module_cell( string $label, bool $is_active ): string {
+		$cell = esc_html( $label );
+
+		if ( ! $is_active ) {
+			$cell .= ' ' . Ui::badge( 'neutral', __( 'Not active', 'sitehelm' ) );
+		}
+
+		return $cell;
+	}
 
 	/**
 	 * The badges describing what kind of operation this is.
