@@ -11,6 +11,16 @@ an operation behaves.
 
 ## [Unreleased]
 
+### Changed
+
+- **The admin console's look.** A new design throughout: indigo accents, Geist headings,
+  one white content panel under the tab bar, headline stat tiles, and a "Get help" menu in
+  the app bar that links to the documentation, the changelog and the issue tracker.
+- **The Operations screen lays its operations out as cards** — switch, name, description,
+  module and required capability on each — in place of the table. Clicking anywhere on a
+  card flips its switch, each tool's group can be collapsed, and "All on / All off" is now a
+  segmented control.
+
 ## [0.5.0] — 2026-08-22
 
 ### Added

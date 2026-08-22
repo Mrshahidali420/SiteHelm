@@ -243,11 +243,13 @@ final class OperationsScreen {
 		printf(
 			'<section class="sitehelm-section sitehelm-switchgroup" data-sitehelm-group>'
 				. '<div class="sitehelm-switchgroup__head">'
-				. '<h2 class="sitehelm-section__head"><code>%1$s</code></h2>'
+				. '<h2 class="sitehelm-section__head sitehelm-switchgroup__title">'
+				. '<button type="button" class="sitehelm-switchgroup__toggle" data-sitehelm-collapse aria-expanded="true">'
+				. '<span class="dashicons dashicons-arrow-down-alt2" aria-hidden="true"></span><code>%1$s</code></button></h2>'
 				. '<span class="sitehelm-switchgroup__count" data-sitehelm-switch-count data-sitehelm-count-label="%2$s">%3$s</span>'
-				. '<span class="sitehelm-switchgroup__actions" hidden data-sitehelm-switch-actions>'
-				. '<button type="button" class="sitehelm-btn sitehelm-btn--small" data-sitehelm-switch-all="on">%4$s</button>'
-				. '<button type="button" class="sitehelm-btn sitehelm-btn--small" data-sitehelm-switch-all="off">%5$s</button>'
+				. '<span class="sitehelm-switchgroup__actions sitehelm-seg" hidden data-sitehelm-switch-actions>'
+				. '<button type="button" class="sitehelm-seg__btn sitehelm-seg__btn--on" data-sitehelm-switch-all="on">%4$s</button>'
+				. '<button type="button" class="sitehelm-seg__btn sitehelm-seg__btn--off" data-sitehelm-switch-all="off">%5$s</button>'
 				. '</span></div>',
 			esc_html( $dispatcher ),
 			/* translators: 1: number of operations switched on in a group, 2: number of operations in the group. */
@@ -264,32 +266,21 @@ final class OperationsScreen {
 			esc_html__( 'All off', 'sitehelm' )
 		);
 
-		echo '<div class="sitehelm-scroll"><table class="sitehelm-table sitehelm-table--switches"><thead><tr>';
-
-		$headings = [
-			__( 'On', 'sitehelm' ),
-			__( 'Operation', 'sitehelm' ),
-			__( 'What it does', 'sitehelm' ),
-			__( 'Module', 'sitehelm' ),
-			__( 'Kind', 'sitehelm' ),
-			__( 'Requires', 'sitehelm' ),
-		];
-
-		foreach ( $headings as $heading ) {
-			printf( '<th scope="col">%s</th>', esc_html( $heading ) );
-		}
-
-		echo '</tr></thead><tbody>';
+		echo '<div class="sitehelm-tools" data-sitehelm-tools>';
 
 		foreach ( $definitions as $definition ) {
 			$this->render_operation( $definition );
 		}
 
-		echo '</tbody></table></div></section>';
+		echo '</div></section>';
 	}
 
 	/**
-	 * One operation.
+	 * One operation, as a card: the switch, the name, what it does, and its
+	 * module, kind and required capability underneath.
+	 *
+	 * The whole card is the switch's label, so clicking anywhere on it flips
+	 * the checkbox, with or without script.
 	 *
 	 * @param OperationDefinition $definition The operation to describe.
 	 *
@@ -300,33 +291,35 @@ final class OperationsScreen {
 		$is_active    = $this->is_active( $definition );
 		$is_on        = $this->is_on( $definition );
 
-		$classes = [];
+		$classes = [ 'sitehelm-tool' ];
 		if ( ! $is_active ) {
-			$classes[] = 'sitehelm-table__row--muted';
+			$classes[] = 'sitehelm-tool--muted';
 		}
 		if ( ! $is_on ) {
-			$classes[] = 'sitehelm-table__row--off';
+			$classes[] = 'is-off';
 		}
 
 		printf(
-			'<tr data-sitehelm-haystack="%s" data-sitehelm-switch-row%s>',
-			esc_attr( strtolower( $definition->id . ' ' . $definition->description . ' ' . $module_label ) ),
-			[] === $classes ? '' : ' class="' . esc_attr( implode( ' ', $classes ) ) . '"'
+			'<label class="%s" data-sitehelm-haystack="%s" data-sitehelm-switch-row>',
+			esc_attr( implode( ' ', $classes ) ),
+			esc_attr( strtolower( $definition->id . ' ' . $definition->description . ' ' . $module_label ) )
 		);
 
-		echo '<td>' . $this->switch_cell( $definition, $is_on ) . '</td>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Composed from escaped attributes and text.
-		printf( '<td><code>%s</code></td>', esc_html( $definition->id ) );
-		printf( '<td>%s</td>', esc_html( $definition->description ) );
-
-		echo '<td>' . $this->module_cell( $module_label, $is_active ) . '</td>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Composed from escaped text and Ui::badge(), which escapes its own label.
-		echo '<td>' . $this->kind_cell( $definition ) . '</td>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Composed from Ui::badge(), which escapes its own label.
+		echo $this->switch_cell( $definition, $is_on ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Composed from escaped attributes and text.
 
 		printf(
-			'<td><code>%s</code></td>',
+			'<span class="sitehelm-tool__info"><span class="sitehelm-tool__name"><code>%s</code> %s</span>'
+				. '<span class="sitehelm-tool__desc">%s</span>'
+				. '<span class="sitehelm-tool__meta"><span class="sitehelm-tool__module">%s</span>'
+				. '<code class="sitehelm-tool__slug">%s</code></span></span>',
+			esc_html( $definition->id ),
+			$this->kind_cell( $definition ), // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Ui::badge() escapes its own label.
+			esc_html( $definition->description ),
+			$this->module_cell( $module_label, $is_active ), // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped text and Ui::badge().
 			esc_html( implode( ', ', $definition->requiredCapabilities ) )
 		);
 
-		echo '</tr>';
+		echo '</label>';
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 
@@ -349,9 +342,9 @@ final class OperationsScreen {
 		$is_warn = $definition->isDestructive || Risk::High === $definition->risk;
 
 		return sprintf(
-			'<label class="sitehelm-switch%s"><input type="checkbox" name="%s[]" value="%s"%s data-sitehelm-switch>'
+			'<span class="sitehelm-switch%s"><input type="checkbox" name="%s[]" value="%s"%s data-sitehelm-switch>'
 				. '<span class="sitehelm-switch__track" aria-hidden="true"></span>'
-				. '<span class="sitehelm-srt">%s</span></label>',
+				. '<span class="sitehelm-srt">%s</span></span>',
 			$is_warn ? ' sitehelm-switch--warn' : '',
 			esc_attr( OperationsAction::FIELD ),
 			esc_attr( $definition->id ),
