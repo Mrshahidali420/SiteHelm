@@ -13,6 +13,9 @@ an operation behaves.
 
 ### Added
 
+- **A one-time notice after activation** pointing at the Connect screen, shown to the
+  first operator who can open the console and then gone.
+
 - **A Site Health test** under Tools → Site Health that says whether client
   credentials reach WordPress on this server, with the .htaccess fix when they do not
   and a warning when application passwords are switched off.
