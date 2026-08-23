@@ -50,7 +50,7 @@ an operation behaves.
   `seo-redirection-list` page Rank Math's 404 monitor and redirections newest first (at
   most 200 a page), and say plainly when a Yoast site has no such tables or the Rank Math
   module is switched off. The free plugin is unchanged: the operation count stays at 74.
-- **SiteHelm Pro foundation.** A separate add-on plugin (source under `pro/`, not part of the
+- **SiteHelm Pro foundation.** A separate add-on plugin (source in a private repository, not part of the
   free zip) with an offline-signed per-site licence key, a Licence card on the Health tab, and
   a gate every Pro operation checks itself. The free plugin carries no Pro file, no nag and no
   crippled operation.

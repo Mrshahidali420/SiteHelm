@@ -1436,9 +1436,10 @@ change; labels, slugs and one new screen did.
 ## 30. Extension points and SiteHelm Pro
 
 Added 2026-08-23 (REQ-0099). The free plugin exposes three hooks, all named in
-`src/Bootstrap/Extensions.php`; SiteHelm Pro is a separate add-on plugin whose source
-lives in `pro/` of this repository and is **never** packed into the free zip
-(`tools/build-plugin-zip.php` packs only `src/`, `assets/`, `bridge/`, `vendor/`).
+`src/Bootstrap/Extensions.php`. SiteHelm Pro is a separate add-on plugin whose source
+lives in the **private** repository `Mrshahidali420/sitehelm-pro` (moved out of this
+repository on 2026-08-23; the history here was rewritten so no Pro file remains).
+`tools/build-plugin-zip.php` packs only `src/`, `assets/`, `bridge/`, `vendor/`.
 
 | Hook | Kind | Fires | Contract |
 |------|------|-------|----------|
@@ -1448,60 +1449,47 @@ lives in `pro/` of this repository and is **never** packed into the free zip
 
 The hook names are string literals on both sides by contract: the add-on registers its
 handlers at `plugins_loaded` priority 5, before the free plugin's autoloader has run at
-priority 10, so it cannot read `Extensions::*`. `ProPluginTest` pins `ProPlugin::HOOK_*`
-to `Extensions::*`; change one and that test fails.
+priority 10, so it cannot read `Extensions::*`. The add-on's own test pins its `HOOK_*`
+constants to these three strings; change a name here and that test fails over there.
 
-**Pro plugin layout** (`pro/`): `sitehelm-pro.php` (header, `Requires Plugins: sitehelm`,
-boots `ProPlugin` at priority 5 and shows an admin notice if `sitehelm_boot()` is absent),
-`pro/src/Bootstrap/ProPlugin.php` (wires the three hooks plus
-`admin_post_sitehelm_pro_licence`), `pro/src/Licence/{LicenceKey,Licence}.php`,
-`pro/src/Admin/{LicenceAction,LicenceSection}.php`, `pro/tools/make-licence.php`,
-`composer.json` (PSR-4 `SiteHelm\Pro\` → `src/`). The root `composer.json` maps the
-same namespace under `autoload-dev` so the one PHPUnit run covers both; `phpcs.xml.dist`
-lints `pro/src` and allows the `sitehelm-pro` text domain; `phpunit.xml.dist` counts
-`pro/src` toward coverage.
+**Pro plugin layout** (private repo, root = the plugin folder): *sitehelm-pro.php*
+(header, `Requires Plugins: sitehelm`, boots `ProPlugin` at priority 5 and shows an admin
+notice if `sitehelm_boot()` is absent); *src/* is PSR-4 `SiteHelm\Pro\` with
+`Bootstrap\ProPlugin` (wires the three hooks), `Licence\{LicenceKey,Licence}`,
+`Admin\{LicenceAction,LicenceSection}`, `Seo\*` (§31); *tools/make-licence.php*; its own
+`composer.json`, and *tests/Unit/Pro/* which reuse this repository's test doubles
+(`SiteHelm\Tests\*`). Nothing in this repository's `composer.json`, `phpcs.xml.dist` or
+`phpunit.xml.dist` refers to Pro any more.
 
-**Licence keys** are signed offline — no licence server, nothing phones home.
-Format `SHP1.<base64url payload>.<base64url Ed25519 signature>`; payload
-`{"site":"<host>|*","plan":"pro","exp":"Y-m-d"|null,"id":"<order>"}`. The public key is
-`LicenceKey::PUBLIC_KEY` (hex); the secret stays outside the repository
-(`SITEHELM_LICENCE_SECRET` env for the issuing tool). `LicenceKey::parse()` returns the
-payload or `null` — never throws — and lower-cases the site. `Licence` reads option
-`sitehelm_pro_licence` (stored as typed, autoload off) and answers one of
-`missing | invalid | other_site | expired | active`; the host compare is
-`Licence::host()` = `home_url` host, lower-cased, leading `www.` stripped; `*` fits any
-host; `exp` equal to today is still active. **Every Pro unit calls `Licence::gate()`
-itself** (throws `OperationException(IntegrationUnavailable, …)` with the Health-tab
-remediation) — the bootstrap only wires. Issue keys with
-`php pro/tools/make-licence.php keygen` / `issue --site=… [--exp=…]`.
-
-Testing pattern: generate a throw-away pair with `sodium_crypto_sign_keypair()` in
-`setUp()`, inject the public half and a fixed `$today` closure into `new Licence(...)`,
-and store keys issued with the secret half into `AdminWordPressStubs::$options`. The
-shared stubs do not double `delete_option` — add it locally.
-
+**Licensing.** The first cut was an offline-signed key (`SHP1.<payload>.<Ed25519 sig>`,
+option `sitehelm_pro_licence`, `Licence::gate()` throwing
+`OperationException(IntegrationUnavailable, …)`). The decision on 2026-08-23 is to replace
+it with **Freemius**: the free plugin will carry the Freemius SDK with
+`has_addons => true`, the Pro plugin is a Freemius add-on, and `gate()` becomes
+`function_exists( 'sitehelm_pro_fs' ) && sitehelm_pro_fs()->can_use_premium_code()` with
+the same refusal. Whatever the gate is, the rule stands: **every Pro unit calls it itself
+before it looks at anything else** — the bootstrap only wires.
 
 ## 31. Pro SEO — settings, bulk metadata, Rank Math tables
 
-Added 2026-08-23 (REQ-0098, Pro part). Source under `pro/src/Seo/`, registered by
-`pro/src/Seo/ProSeo.php` into `ModuleId::Seo` from `ProPlugin::register_operations()`.
-`ProSeo::operation_ids()` is the one list of Pro SEO ids; `ProSeoTest` and
-`ProPluginTest` both walk it.
+Added 2026-08-23 (REQ-0098, Pro part); source *src/Seo/* in the private repo, registered by
+`ProSeo::register()` into `ModuleId::Seo` from `ProPlugin::register_operations()`.
+`ProSeo::operation_ids()` is the one list of Pro SEO ids: `seo-settings-get`,
+`seo-settings-set`, `content-seo-bulk-set`, `seo-404-log-list`, `seo-redirection-list`.
 
-**Guard order, every unit, in this order and nowhere later:** `Licence::gate()` →
+**Guard order, every unit, in this order and nowhere later:** licence gate →
 `user_can( manage_options )` (bulk set: `edit_post` per id) → `SeoPresence::provider()`
 (IntegrationUnavailable when neither plugin is active) → the target (`postType` must be
 a public registered type; bulk ids must all exist). Tests assert the unlicensed refusal
-lands before any capability check or query (`$capabilityChecks === []`,
-`FakeWpdb::$queries === []`).
+lands before any capability check or query.
 
 **Settings (`seo-settings-get` / `seo-settings-set`).** `SeoSettingsFields` names the
 vocabulary: `SITE_FIELDS` = separator, knowledgeGraphName, knowledgeGraphLogo,
 defaultSocialImage, breadcrumbs; `TYPE_FIELDS` = titleTemplate, descriptionTemplate,
 noindex, inSitemap. A change is one scope: `postType` present → type fields only,
 absent → site fields only; mixing, naming nothing, or a provider refusal is
-InvalidInput. `SeoSettingsProviderBase` does the work in terms of **owned keys** per
-option — `owned_keys( ?string $post_type )` returns `[ option name => [ keys… ] ]` — so
+InvalidInput. `SeoSettingsProviderBase` works in terms of **owned keys** per option —
+`owned_keys( ?string $post_type )` returns `[ option name => [ keys… ] ]` — so
 capture/restore snapshot only those keys and a restore rewrites the whole option with
 the owned keys put back (a key absent in the snapshot is unset, not written empty).
 Target key `SeoSettingsFields::target_key( ?string $post_type )`.
@@ -1517,33 +1505,34 @@ Target key `SeoSettingsFields::target_key( ?string $post_type )`.
 | inSitemap | no switch: reads `!noindex`, **refused as a write** | `rank-math-options-sitemap.pt_{type}_sitemap` `'on'`/`'off'` |
 
 **Bulk metadata (`content-seo-bulk-set`).** `SeoBulkMetadataSet` reuses the free
-`SeoFields` vocabulary (TEXT_FIELDS + FLAG_FIELDS) and the free `SeoProvider` (`capture` / `apply`) per post;
-`MAX_IDS` 50; ids are de-duplicated in order. The target key is
-`TARGET_PREFIX . sha1( csv of ids )` (under 191 chars whatever the set) and the resolved
-id list is kept in `$ids_by_key` on the instance — so a fresh instance cannot apply or
-snapshot a plan it did not resolve (refused, `captureSnapshot` answers `null`). Snapshot
-`{provider, ids, posts: {id: fields}}`; restore refuses a state without posts or from
-another provider (RollbackUnavailable). Promise = read-back: `afterFields` is
+`SeoFields` vocabulary (TEXT_FIELDS + FLAG_FIELDS) and the free `SeoProvider`
+(`capture` / `apply`) per post; `MAX_IDS` 50; ids are de-duplicated in order. The target
+key is `TARGET_PREFIX . sha1( csv of ids )` (under 191 chars whatever the set) and the
+resolved id list is kept in `$ids_by_key` on the instance — so a fresh instance cannot
+apply or snapshot a plan it did not resolve (refused; `captureSnapshot` answers `null`).
+Snapshot `{provider, ids, posts: {id: fields}}`; restore refuses a state without posts or
+from another provider (RollbackUnavailable). Promise = read-back: `afterFields` is
 `{provider, ids, posts}` and `readBack` re-reads every post.
 
 **Rank Math tables (`seo-404-log-list`, `seo-redirection-list`).** Both extend
 `RankMathTableList`: `DEFAULT_LIMIT` 50, `MAX_LIMIT` 200, offset clamped to ≥ 0. A Yoast
 site is refused "Only Rank Math keeps these"; then `SHOW TABLES LIKE` with
-`$wpdb->esc_like( $wpdb->prefix . 'rank_math_…' )` (so underscores are escaped — tests
-expect `wp\_rank\_math\_404\_logs`) and a missing table reads as "switched off". Count
-then page via `$wpdb->prepare` with `[limit, offset]`; `ORDER BY \`accessed\` DESC`
-(404 log) / `ORDER BY \`updated\` DESC` (redirections). Dates go out ISO-8601 through
-`when()`; a zero date is `null`. Redirection `sources` is PHP-serialised in Rank Math's
-table: decoded with `@unserialize( …, [ 'allowed_classes' => false ] )` (one combined
-`phpcs:ignore` for serialize_unserialize + NoSilencedErrors), non-array rows and
-entries without a string `pattern` are dropped.
+`$wpdb->esc_like( $wpdb->prefix . 'rank_math_…' )` (underscores escaped — tests expect
+`wp\_rank\_math\_404\_logs`) and a missing table reads as "switched off". Count then page
+via `$wpdb->prepare` with `[limit, offset]`; `ORDER BY \`accessed\` DESC` (404 log) /
+`ORDER BY \`updated\` DESC` (redirections). Dates go out ISO-8601; a zero date is `null`.
+Redirection `sources` is PHP-serialised in Rank Math's table: decoded with
+`@unserialize( …, [ 'allowed_classes' => false ] )` (one combined `phpcs:ignore` for
+serialize_unserialize + NoSilencedErrors); non-array rows and entries without a string
+`pattern` are dropped.
 
-**Testing.** `tests/Unit/Pro/Seo/ProLicenceFixture.php` (trait): `installLicenceFixture()`
-(AdminWordPressStubs + throw-away keypair), `license()` stores a `site: *` key,
-`installYoast()` / `installRankMath()` define the version constants, `context()` is user 7
-SafeWrite. Settings tests run in separate processes because of the constants. The table
-tests use `tests/Doubles/FakeWpdb.php` via `$GLOBALS['wpdb']` with `varQueue` /
+**Testing (private repo).** A `ProLicenceFixture` trait installs `AdminWordPressStubs`
+plus a throw-away keypair, `license()` stores a `site: *` key, `installYoast()` /
+`installRankMath()` define the version constants, `context()` is user 7 SafeWrite.
+Settings tests run in separate processes because of the constants. The table tests use
+this repository's `tests/Doubles/FakeWpdb.php` via `$GLOBALS['wpdb']` with `varQueue` /
 `resultQueue`.
+
 ## 28. Standing project constraints
 
 - **No AI attribution anywhere in git** — no "Generated with Claude Code" footer,
