@@ -32,7 +32,7 @@ final class Ui {
 	 * console that fatals because an outcome string grew a new value is worse
 	 * than one that shows that value plainly.
 	 */
-	private const TONES = [ 'ok', 'refused', 'waiting', 'brand' ];
+	private const TONES = [ 'ok', 'refused', 'waiting', 'brand', 'pro' ];
 
 	/**
 	 * Open the console shell: heading, app bar and tab bar.

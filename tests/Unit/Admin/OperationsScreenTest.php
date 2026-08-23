@@ -6,6 +6,7 @@ namespace SiteHelm\Tests\Unit\Admin;
 
 use SiteHelm\Admin\OperationsAction;
 use SiteHelm\Admin\OperationsScreen;
+use SiteHelm\Admin\ProCatalogue;
 use SiteHelm\Contracts\Domain;
 use SiteHelm\Contracts\Mode;
 use SiteHelm\Contracts\ModuleHealth;
@@ -128,11 +129,34 @@ final class OperationsScreenTest extends TestCase {
 	 * @param CapabilityRegistry                                          $registry The registry to catalogue.
 	 * @param array<string, array{version: ?string, health: string}>|null $health   The loader's map, or null for all active.
 	 */
-	private function render( CapabilityRegistry $registry, ?array $health = null, array $off = [] ): string {
+	private function render( CapabilityRegistry $registry, ?array $health = null, array $off = [], ?ProCatalogue $pro = null ): string {
 		ob_start();
-		( new OperationsScreen( $registry, $health ?? $this->allActive(), new OperationSwitches( static fn(): array => $off ) ) )->render();
+		( new OperationsScreen(
+			$registry,
+			$health ?? $this->allActive(),
+			new OperationSwitches( static fn(): array => $off ),
+			$pro ?? $this->pro( ProCatalogue::STATE_ACTIVE )
+		) )->render();
 
 		return (string) ob_get_clean();
+	}
+
+	/**
+	 * A Pro catalogue that answers with the given state, without the add-on.
+	 *
+	 * The default for every other test is "active", so the catalogue tests
+	 * describe a site where the list is simply the list.
+	 *
+	 * @param string $state One of the ProCatalogue::STATE_* constants.
+	 * @param string $url   The link the note may offer.
+	 */
+	private function pro( string $state, string $url = '' ): ProCatalogue {
+		return new ProCatalogue(
+			static fn(): array => [
+				'state' => $state,
+				'url'   => $url,
+			]
+		);
 	}
 
 	/**
@@ -473,5 +497,83 @@ final class OperationsScreenTest extends TestCase {
 
 	public function testAnEmptyRegistryRendersNoSwitchForm(): void {
 		$this->assertStringNotContainsString( 'data-sitehelm-switches', $this->render( new CapabilityRegistry() ) );
+	}
+
+	/**
+	 * Without the add-on, every Pro operation is still listed — in the group it
+	 * would join, with its description, a Pro tag and a lock where the switch
+	 * would be — so the owner reads the whole surface in one place. It has no
+	 * checkbox, counts toward no total, and the one link lives in one note.
+	 */
+	public function testWithoutTheAddOnEveryProOperationIsListedLockedInItsOwnGroup(): void {
+		$registry = new CapabilityRegistry();
+		$registry->register( $this->readDefinition( 'content-read-one', Domain::Content ), static fn(): array => [] );
+
+		$html = $this->render( $registry, null, [], $this->pro( ProCatalogue::STATE_ABSENT, 'https://example.test/wp-admin/admin.php?page=sitehelm-addons' ) );
+
+		$this->assertStringContainsString( '1 operation registered', $html );
+		$this->assertStringContainsString( '5 more with SiteHelm Pro', $html );
+		$this->assertStringContainsString( '5 operations come with SiteHelm Pro.', $html );
+		$this->assertStringContainsString( 'href="https://example.test/wp-admin/admin.php?page=sitehelm-addons">Get SiteHelm Pro', $html );
+		$this->assertSame( 1, substr_count( $html, 'sitehelm-note--pro' ) );
+
+		$this->assertStringContainsString( '<code>content-write</code>', $html );
+		$this->assertStringContainsString( '<code>system-read</code>', $html );
+		$this->assertSame( 3, substr_count( $html, 'data-sitehelm-group' ) );
+		$this->assertSame( 5, substr_count( $html, 'sitehelm-tool--locked' ) );
+		$this->assertStringContainsString( '<code>seo-settings-set</code> <span class="sitehelm-badge sitehelm-badge--pro">Pro</span>', $html );
+		$this->assertStringContainsString( 'Available with SiteHelm Pro', $html );
+		$this->assertStringContainsString( 'data-sitehelm-haystack="seo-404-log-list list the urls', $html );
+		$this->assertStringNotContainsString( 'value="seo-settings-set"', $html );
+		$this->assertStringContainsString( '1 of 1 on', $html );
+		$this->assertStringContainsString( '1 of 1 operations on', $html );
+	}
+
+	public function testARegisteredProOperationIsTaggedProWhileTheAddOnIsActive(): void {
+		$registry = new CapabilityRegistry();
+		$registry->register( $this->readDefinition( 'seo-settings-get', Domain::System ), static fn(): array => [] );
+		$registry->register( $this->readDefinition( 'content-read-one', Domain::Content ), static fn(): array => [] );
+
+		$html = $this->render( $registry );
+
+		$this->assertStringContainsString( '1 from SiteHelm Pro', $html );
+		$this->assertStringContainsString( 'class="sitehelm-tool sitehelm-tool--pro"', $html );
+		$this->assertStringContainsString( '<code>seo-settings-get</code> <span class="sitehelm-badge sitehelm-badge--pro">Pro</span> <span class="sitehelm-badge">Read</span>', $html );
+		$this->assertStringContainsString( 'value="seo-settings-get" checked', $html );
+		$this->assertStringNotContainsString( 'sitehelm-tool--locked', $html );
+		$this->assertStringNotContainsString( 'sitehelm-note--pro', $html );
+		$this->assertStringNotContainsString( 'more with SiteHelm Pro', $html );
+	}
+
+	/**
+	 * Installed but unlicensed, the add-on has registered its operations and
+	 * refuses each call; the screen says so once, keeps the switches, and still
+	 * lists whatever the installed version does not register.
+	 */
+	public function testAnInstalledButUnlicensedAddOnIsSaidSoOnceAndKeepsItsSwitches(): void {
+		$registry = new CapabilityRegistry();
+		$registry->register( $this->readDefinition( 'seo-settings-get', Domain::System ), static fn(): array => [] );
+
+		$html = $this->render( $registry, null, [], $this->pro( ProCatalogue::STATE_UNLICENSED, 'https://example.test/wp-admin/admin.php?page=sitehelm-account' ) );
+
+		$this->assertStringContainsString( 'SiteHelm Pro is installed but not activated.', $html );
+		$this->assertStringContainsString( 'href="https://example.test/wp-admin/admin.php?page=sitehelm-account">Enter licence', $html );
+		$this->assertStringContainsString( 'value="seo-settings-get" checked', $html );
+		$this->assertStringContainsString( '4 more with SiteHelm Pro', $html );
+		$this->assertSame( 4, substr_count( $html, 'sitehelm-tool--locked' ) );
+	}
+
+	public function testAnActiveAddOnWithNothingRegisteredLeavesTheScreenFreeOfProMentions(): void {
+		$registry = new CapabilityRegistry();
+		$registry->register( $this->readDefinition( 'content-read-one', Domain::Content ), static fn(): array => [] );
+
+		$this->assertStringNotContainsString( 'SiteHelm Pro', $this->render( $registry ) );
+	}
+
+	public function testTheProNoteOffersNoLinkWhenThereIsNoneToOffer(): void {
+		$html = $this->render( new CapabilityRegistry(), null, [], $this->pro( ProCatalogue::STATE_ABSENT ) );
+
+		$this->assertStringContainsString( 'sitehelm-note--pro', $html );
+		$this->assertStringNotContainsString( 'sitehelm-note__link', $html );
 	}
 }
