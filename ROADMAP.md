@@ -33,12 +33,13 @@ row lands under the Free and Pro rule below.
 | REQ-0087 | Console | **Per-app permissions** — the Permissions tab's Off / Read / Edit / Full levels set per connected app, so a content assistant may edit while a reporting tool may only read | Pro | should |
 | REQ-0088 | Console | **Scheduled write windows and an approval queue** — an owner can require a human tap before any destructive change, or confine writes to hours they choose | Pro | could |
 
-## Unreleased
+## Shipped — v0.6.0
 
 74 operations across 11 dispatchers. REQ-0098's free part: SEO and readability scores
 as the plugin stored them, a paged site-wide SEO audit, and category and tag metadata in
-Yoast SEO and Rank Math. The SiteHelm Pro foundation (REQ-0099): extension hooks and the
-offline-verified licence key.
+Yoast SEO and Rank Math. The SiteHelm Pro foundation (REQ-0099): extension hooks, the
+Freemius SDK, and the Tools tab's Pro catalogue; the add-on itself (eight Pro SEO
+operations, v0.2.0) is sold separately.
 
 ## Shipped — v0.5.0
 
