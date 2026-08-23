@@ -14,6 +14,7 @@ use Brain\Monkey\Filters;
 use SiteHelm\Bootstrap\Extensions;
 use SiteHelm\Pro\Admin\LicenceAction;
 use SiteHelm\Pro\Bootstrap\ProPlugin;
+use SiteHelm\Pro\Seo\ProSeo;
 use SiteHelm\Registry\CapabilityRegistry;
 use SiteHelm\Tests\TestCase;
 
@@ -37,11 +38,16 @@ final class ProPluginTest extends TestCase {
 		$this->assertSame( 10, Actions\has( ProPlugin::HOOK_REGISTER_OPERATIONS, [ ProPlugin::instance(), 'register_operations' ] ) );
 	}
 
-	public function test_the_module_filter_is_additive_and_the_registry_is_left_alone(): void {
-		$plugin = ProPlugin::instance();
+	public function test_the_module_filter_is_additive_and_the_registry_gains_the_pro_seo_operations(): void {
+		$plugin   = ProPlugin::instance();
+		$registry = new CapabilityRegistry();
 
 		$this->assertSame( [ 'Some\\Module' ], $plugin->add_modules( [ 'Some\\Module' ] ) );
-		$plugin->register_operations( new CapabilityRegistry() );
+		$plugin->register_operations( $registry );
+
+		foreach ( ProSeo::operation_ids() as $id ) {
+			$this->assertTrue( $registry->has( $id ), $id );
+		}
 		$this->assertSame( ProPlugin::instance(), $plugin );
 	}
 }
