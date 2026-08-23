@@ -396,7 +396,7 @@ operation checks the licence itself before it looks at anything else — an unli
 is refused with `IntegrationUnavailable` and the Health-tab remediation — and only then
 asks the capability, the SEO plugin and the target.
 
-### SEO (Pro) — five Pro operations
+### SEO (Pro) — eight Pro operations
 
 | Operation | Dispatcher | Does | Capability | Rollback |
 |---|---|---|---|---|
@@ -405,11 +405,21 @@ asks the capability, the SEO plugin and the target.
 | `content-seo-bulk-set` | `content-write` | Sets the per-post fields of `content-seo-set` on up to fifty posts as one previewed, reversible change; one post the caller may not edit, or one that does not exist, refuses the whole set | `edit_post` on every post | supported |
 | `seo-404-log-list` | `system-read` | Pages Rank Math's 404 monitor newest first (URI, hits, last seen, referer), at most 200 per page | `manage_options` | — |
 | `seo-redirection-list` | `system-read` | Pages Rank Math's redirections newest first (sources, destination, status code, hits, status) | `manage_options` | — |
+| `content-seo-schema-get` | `content-read` | Reads one post's primary schema type (Schema.org spelling, `null` when the plugin's default applies), the plugin's stored fields for it, and the type names the plugin accepts on write | `edit_post` | — |
+| `content-seo-schema-set` | `content-write` | Sets one post's schema `type` and optional `fields` as a previewed, reversible change; `null` clears it back to the plugin's default and drops the stored fields; an unknown type is refused naming `content-seo-schema-get` for the list | `edit_post` | supported |
+| `content-seo-audit-fix` | `content-write` | Takes the same page `content-seo-audit` would (type, status, limit ≤ 50, offset, minScore) and fixes the chosen findings on every post that carries one as one previewed, reversible change — `missing-description` from the post's excerpt or text (a post whose text yields fewer than 70 characters is reported under `unfixable`), `description-too-long` and `title-too-long` trimmed at a word boundary, `noindex` set to false | `edit_post` on every post | supported |
 
 > **Rank Math keeps the 404 log and redirections; Yoast does not.** Both reads say
 > *Only Rank Math keeps these* on a Yoast site, and that the module is switched off when
 > Rank Math is installed but the table is absent. Yoast's own redirects live in its
 > paid add-on, which SiteHelm does not read.
+
+> **Schema is stored differently by each plugin.** Yoast keeps two choices — a page type
+> and an article type — so `fields` there is `{pageType, articleType}` and nothing else is
+> accepted; Rank Math keeps one serialised entry per schema, so `type` is the primary
+> entry's `@type` and `fields` are its own properties (up to forty, scalars or one level of
+> nesting). `content-seo-audit-fix` offers only the four findings with a mechanical fix;
+> a missing focus keyword, a low score and a too-short description need a person.
 >
 > **Settings are an allowlist, not the whole option.** Only the keys behind the fields
 > named above are read or written; the rest of each option is carried through a write

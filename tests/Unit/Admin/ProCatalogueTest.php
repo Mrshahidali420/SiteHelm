@@ -104,8 +104,9 @@ final class ProCatalogueTest extends TestCase {
 
 		$this->assertSame(
 			[
-				'content-write' => [ 'seo-settings-set', 'content-seo-bulk-set' ],
+				'content-write' => [ 'seo-settings-set', 'content-seo-bulk-set', 'content-seo-schema-set', 'content-seo-audit-fix' ],
 				'system-read'   => [ 'seo-404-log-list', 'seo-redirection-list' ],
+				'content-read'  => [ 'content-seo-schema-get' ],
 			],
 			( new ProCatalogue() )->missing( $registry )
 		);
@@ -119,6 +120,6 @@ final class ProCatalogueTest extends TestCase {
 		}
 
 		$this->assertSame( [], ( new ProCatalogue() )->missing( $registry ) );
-		$this->assertSame( 5, ( new ProCatalogue() )->registered_count( $registry ) );
+		$this->assertSame( 8, ( new ProCatalogue() )->registered_count( $registry ) );
 	}
 }

@@ -44,35 +44,53 @@ final class ProCatalogue {
 	 * @var array<string, array{dispatcher: string, module: ModuleId, read: bool, description: string}>
 	 */
 	public const OPERATIONS = [
-		'seo-settings-get'     => [
+		'seo-settings-get'       => [
 			'dispatcher'  => 'system-read',
 			'module'      => ModuleId::Seo,
 			'read'        => true,
 			'description' => "Read the SEO plugin's site-wide settings (title separator, knowledge graph, default social image, breadcrumbs) or one post type's settings (title and description templates, noindex, sitemap inclusion).",
 		],
-		'seo-settings-set'     => [
+		'seo-settings-set'       => [
 			'dispatcher'  => 'content-write',
 			'module'      => ModuleId::Seo,
 			'read'        => false,
 			'description' => "Set the SEO plugin's site-wide settings or one post type's settings from a strict allowlist. Previewed, reversible.",
 		],
-		'content-seo-bulk-set' => [
+		'content-seo-bulk-set'   => [
 			'dispatcher'  => 'content-write',
 			'module'      => ModuleId::Seo,
 			'read'        => false,
 			'description' => 'Set the same search-engine metadata on up to fifty posts in one previewed, reversible change — title, description, canonical, focus keyword, noindex, nofollow and the social overrides.',
 		],
-		'seo-404-log-list'     => [
+		'seo-404-log-list'       => [
 			'dispatcher'  => 'system-read',
 			'module'      => ModuleId::Seo,
 			'read'        => true,
 			'description' => "List the URLs visitors requested that returned 404, as Rank Math's 404 monitor recorded them, most recent first, with hit counts and referrers. Rank Math only.",
 		],
-		'seo-redirection-list' => [
+		'seo-redirection-list'   => [
 			'dispatcher'  => 'system-read',
 			'module'      => ModuleId::Seo,
 			'read'        => true,
 			'description' => "List the redirections Rank Math's redirections module holds — source patterns, destination, status code, hit count, active or inactive. Rank Math only.",
+		],
+		'content-seo-schema-get' => [
+			'dispatcher'  => 'content-read',
+			'module'      => ModuleId::Seo,
+			'read'        => true,
+			'description' => "Read one post's structured-data schema — its primary type and the plugin's stored fields — and the type names the plugin accepts.",
+		],
+		'content-seo-schema-set' => [
+			'dispatcher'  => 'content-write',
+			'module'      => ModuleId::Seo,
+			'read'        => false,
+			'description' => "Set one post's schema type and fields, or clear it back to the plugin's default. Previewed, reversible.",
+		],
+		'content-seo-audit-fix'  => [
+			'dispatcher'  => 'content-write',
+			'module'      => ModuleId::Seo,
+			'read'        => false,
+			'description' => 'Fix a page of SEO audit findings as one previewed, reversible change — missing descriptions from the post\'s own text, over-long titles and descriptions trimmed, published posts taken off noindex.',
 		],
 	];
 

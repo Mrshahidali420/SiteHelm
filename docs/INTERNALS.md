@@ -1496,12 +1496,14 @@ tab keeps a read-only Pro section that states the licence state and links there.
 stands: **every Pro unit calls the gate itself before it looks at anything else** — the
 bootstrap only wires.
 
-## 31. Pro SEO — settings, bulk metadata, Rank Math tables
+## 31. Pro SEO — settings, bulk metadata, Rank Math tables, schema, audit fixes
 
 Added 2026-08-23 (REQ-0098, Pro part); source *src/Seo/* in the private repo, registered by
 `ProSeo::register()` into `ModuleId::Seo` from `ProPlugin::register_operations()`.
 `ProSeo::operation_ids()` is the one list of Pro SEO ids: `seo-settings-get`,
-`seo-settings-set`, `content-seo-bulk-set`, `seo-404-log-list`, `seo-redirection-list`.
+`seo-settings-set`, `content-seo-bulk-set`, `seo-404-log-list`, `seo-redirection-list`,
+`content-seo-schema-get`, `content-seo-schema-set`, `content-seo-audit-fix` (the last three
+added 2026-08-23 as Pro 0.2.0, completing REQ-0098).
 
 **Guard order, every unit, in this order and nowhere later:** licence gate →
 `user_can( manage_options )` (bulk set: `edit_post` per id) → `SeoPresence::provider()`
@@ -1551,6 +1553,32 @@ Redirection `sources` is PHP-serialised in Rank Math's table: decoded with
 `@unserialize( …, [ 'allowed_classes' => false ] )` (one combined `phpcs:ignore` for
 serialize_unserialize + NoSilencedErrors); non-array rows and entries without a string
 `pattern` are dropped.
+
+**Per-post schema (`content-seo-schema-get` / `content-seo-schema-set`).** A second
+provider family, `SeoSchemaProvider` (`name`, `read`, `available`, `refuseFields`,
+`project`, `write`, `capture`, `restore`), chosen by `SeoSchemaProviders::for_site()` from
+the free `SeoPresence`; `SeoSchemaMetaProvider` holds the snapshot mechanics (every owned
+key's raw rows, delete-then-re-add, compared after). `YoastSchemaProvider` reads
+`_yoast_wpseo_schema_article_type` (not `None`) else `_yoast_wpseo_schema_page_type`;
+`fields` is `{pageType, articleType}` only. `RankMathSchemaProvider` reads the
+`rank_math_schema_*` entry whose `metadata.isPrimary` is truthy, else the first, else
+`null`; a write deletes the primary entries, writes `rank_math_schema_<Type>` with `@type`,
+`metadata {title, type: template, shortcode: s-<id>-<slug>, isPrimary: true}` plus the
+fields, and keeps the legacy `rank_math_rich_snippet` slug in step (`article` for the
+Article family, else lowercase type; `off` on clear). Its `TYPES` is a 22-name allowlist,
+not Rank Math's full vocabulary. UNVERIFIED against live plugin output: Rank Math's exact
+`metadata` members and `isPrimary` serialisation — check both before relying on a write
+reaching the front end.
+
+**Audit fixes (`content-seo-audit-fix`).** `SeoAuditFix` re-uses the free `SeoAudit`
+handler for the page (so it skips the same posts), keeps the items whose findings
+intersect `fixes` (`FIXABLE_FINDINGS`: missing-description, description-too-long,
+title-too-long, noindex), and refuses TargetNotFound when none. Per post it builds changes
+through the free provider's `project()`; the trimmer is `mb_`-safe and falls back to the
+last space only when that keeps ≥ 60 % of the bound. The promise carries `fixes` and
+`unfixable` per post, and because `WriteVerifier` compares every promised key, both are
+memoised per target key and re-reported by `readBack()`, which re-reads only the posts the
+plan actually wrote. Apply stops at the first `apply()` false with the bulk op's wording.
 
 **Testing (private repo).** A `ProLicenceFixture` trait installs `AdminWordPressStubs`
 plus a throw-away keypair, `license()` stores a `site: *` key, `installYoast()` /
