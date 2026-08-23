@@ -100,6 +100,18 @@ final class YoastProvider extends SeoMetaProvider {
 	}
 
 	/**
+	 * Yoast stores its SEO analysis score and its readability score separately.
+	 *
+	 * @return array{seoScore: string|null, readabilityScore: string|null} Score name => meta key.
+	 */
+	protected function scoreKeys(): array {
+		return [
+			'seoScore'         => '_yoast_wpseo_linkdex',
+			'readabilityScore' => '_yoast_wpseo_content_score',
+		];
+	}
+
+	/**
 	 * Every meta key this provider owns.
 	 *
 	 * The two `-image-id` keys are listed although no field projects them, because
