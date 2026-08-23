@@ -152,7 +152,9 @@ tool — and you should be very sure about who is holding the credentials for it
 
 SiteHelm stays one plugin with one code path. Pro is a separate add-on plugin (REQ-0099)
 of extra operations and console features, licensed per site; the free
-plugin never carries a Pro file, a nag, or a crippled operation. Pro is not "for agencies":
+plugin never carries a Pro file, a nag, or a crippled operation. The one place the free
+plugin mentions Pro is the Tools tab, which lists the Pro operations in their own groups
+with a Pro tag and a single note — no admin notices, nothing on any other screen. Pro is not "for agencies":
 it is for anyone who runs a site they care about — a solo owner with one blog or shop is the
 first customer. The rule for the split:
 

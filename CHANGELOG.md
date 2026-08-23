@@ -12,6 +12,12 @@ an operation behaves.
 ## [Unreleased]
 
 ### Added
+- **Pro operations on the Tools tab.** The five SiteHelm Pro operations are listed in the
+  groups they belong to, each with a Pro tag. Without the add-on they appear as locked
+  rows — full description, no switch — under one note with the one link to the Add-Ons
+  page; with it installed but unlicensed the note says so and points at the Account page;
+  with it active the tag stays and the rows are ordinary switches. No admin notice, and
+  nothing on any other screen.
 - The plugin now carries the Freemius SDK: an opt-in insights prompt on first run, and
   Account and Add-Ons pages under the SiteHelm menu. SiteHelm Pro is sold and licensed
   through it as an add-on; nothing about the free operations changes.

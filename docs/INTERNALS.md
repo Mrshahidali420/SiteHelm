@@ -1081,6 +1081,24 @@ console cannot disagree with the gateway.
   `sitehelm-table__row--muted`, a neutral "Not active" badge, and is counted into the
   verdict detail ("N cannot run on this site yet"). A module missing from the map is
   treated as not active. The module label is part of the row's search haystack.
+  **Pro rows** (`ProCatalogue`, the screen's fourth constructor argument): the free
+  plugin carries a static catalogue of the Pro operation ids (`ProCatalogue::OPERATIONS`
+  — dispatcher, module, read/write, description). `probe()` answers
+  `{state: absent|unlicensed|active, url}` from `function_exists('sitehelm_pro_fs')` and
+  `can_use_premium_code()`, every lookup guarded; the url is `sitehelm_fs()->addon_url('sitehelm-pro')`
+  when absent, the add-on's Account page when unlicensed, `''` when active. A registered
+  operation whose id is in the catalogue gets `sitehelm-tool--pro` and a leading
+  `Ui::badge('pro', 'Pro')` (tone `pro` is in `Ui::TONES`), whatever the state. While the
+  state is not active, catalogue ids the registry lacks render as `.sitehelm-tool--locked`
+  cards inside the dispatcher group they would join (a group is created for them if the
+  free registry has nothing there): lock glyph in the switch slot, Pro + Read/Write
+  badges, full description, "Available with SiteHelm Pro" — no checkbox, so they count
+  toward no total or switch. The verdict detail gains "N more with SiteHelm Pro" (or
+  "N from SiteHelm Pro" when active and registered), and one `.sitehelm-note--pro` under
+  the verdict carries the single link ("Get SiteHelm Pro" / "Enter licence"), omitted
+  when the state is active or the url is empty. Nothing Pro is rendered on any other
+  screen and there is no admin notice — the Tools tab is the one place the add-on is
+  mentioned, and only with the rows it explains.
 - **Status** (`StatusScreen`): a blocked verdict is followed by a `sitehelm-followup`
   link to the Modules screen, because Status carries the count and Modules carries
   the reason.

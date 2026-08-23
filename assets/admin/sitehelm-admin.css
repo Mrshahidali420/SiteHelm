@@ -821,6 +821,73 @@
 	color: var(--sh-info-ink);
 }
 
+/* The Pro tag, and the one note and the locked rows that go with it.
+ * Indigo on the brand tint, so it reads as "ours" rather than as a warning,
+ * and distinct from the neutral "Not active" marker that means a missing
+ * plugin. */
+.sitehelm-badge--pro {
+	background: var(--sh-primary-light);
+	color: var(--sh-primary-hover);
+}
+
+.sitehelm-note--pro {
+	display: flex;
+	align-items: flex-start;
+	gap: 12px;
+	background: #fff;
+	margin-bottom: 6px;
+}
+
+.sitehelm-note--pro p {
+	flex: 1 1 auto;
+	line-height: 1.55;
+}
+
+.sitehelm-note__link {
+	margin-left: auto;
+	align-self: center;
+	font-weight: 600;
+	white-space: nowrap;
+	text-decoration: none;
+	color: var(--sh-primary);
+}
+
+.sitehelm-note__link:hover,
+.sitehelm-note__link:focus {
+	color: var(--sh-primary-hover);
+	text-decoration: underline;
+}
+
+.sitehelm-tool--locked {
+	border-style: dashed;
+	border-color: #c7d2fe;
+	cursor: default;
+}
+
+.sitehelm-tool--locked:hover {
+	border-color: #c7d2fe;
+	box-shadow: none;
+}
+
+.sitehelm-tool__lock {
+	display: flex;
+	flex: 0 0 auto;
+	align-items: center;
+	justify-content: center;
+	width: 38px;
+	height: 22px;
+	margin-top: 1px;
+	border-radius: 11px;
+	background: var(--sh-primary-light);
+	color: var(--sh-primary);
+}
+
+.sitehelm-tool__avail {
+	font-size: 11.5px;
+	font-weight: 500;
+	color: var(--sh-primary);
+}
+
 /* =========================================================================
  * Filters and pagination
  * ========================================================================= */

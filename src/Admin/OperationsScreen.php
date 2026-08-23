@@ -58,6 +58,13 @@ final class OperationsScreen {
 	private OperationSwitches $switches;
 
 	/**
+	 * What the Pro add-on adds, and whether it is here.
+	 *
+	 * @var ProCatalogue
+	 */
+	private ProCatalogue $pro;
+
+	/**
 	 * The switched-off identifiers, read once per render.
 	 *
 	 * @var list<string>
@@ -65,16 +72,26 @@ final class OperationsScreen {
 	private array $disabled = [];
 
 	/**
+	 * The Pro operations this site does not have, keyed by dispatcher; read
+	 * once per render and empty while the add-on is active.
+	 *
+	 * @var array<string, list<string>>
+	 */
+	private array $locked = [];
+
+	/**
 	 * Constructs the screen.
 	 *
 	 * @param CapabilityRegistry                                     $registry The registry the gateway is serving from.
 	 * @param array<string, array{version: ?string, health: string}> $health   The loader's health map.
 	 * @param OperationSwitches|null                                 $switches The per-operation switches; null reads the option.
+	 * @param ProCatalogue|null                                      $pro      The Pro catalogue; null asks the add-on itself.
 	 */
-	public function __construct( CapabilityRegistry $registry, array $health = [], ?OperationSwitches $switches = null ) {
+	public function __construct( CapabilityRegistry $registry, array $health = [], ?OperationSwitches $switches = null, ?ProCatalogue $pro = null ) {
 		$this->registry = $registry;
 		$this->health   = $health;
 		$this->switches = $switches ?? new OperationSwitches();
+		$this->pro      = $pro ?? new ProCatalogue();
 	}
 
 	/**
@@ -86,6 +103,10 @@ final class OperationsScreen {
 		}
 
 		$this->disabled = $this->switches->disabled();
+
+		$probe        = $this->pro->probe();
+		$this->locked = ProCatalogue::STATE_ACTIVE === $probe['state'] ? [] : $this->pro->missing( $this->registry );
+		$locked_count = array_sum( array_map( 'count', $this->locked ) );
 
 		$groups      = $this->groups();
 		$total       = array_sum( array_map( 'count', $groups ) );
@@ -129,6 +150,8 @@ final class OperationsScreen {
 			);
 		}
 
+		$detail .= $this->pro_detail( $probe['state'], $locked_count );
+
 		Ui::verdict(
 			'brand',
 			sprintf(
@@ -140,6 +163,7 @@ final class OperationsScreen {
 		);
 
 		$this->render_saved_note();
+		$this->render_pro_note( $probe['state'], $probe['url'], $locked_count );
 
 		if ( [] === $groups ) {
 			Ui::app_close();
@@ -182,7 +206,7 @@ final class OperationsScreen {
 		foreach ( CapabilityRegistry::DISPATCHERS as $dispatcher ) {
 			$definitions = $this->registry->forDispatcher( $dispatcher );
 
-			if ( [] === $definitions ) {
+			if ( [] === $definitions && ! isset( $this->locked[ $dispatcher ] ) ) {
 				continue;
 			}
 
@@ -280,7 +304,108 @@ final class OperationsScreen {
 			$this->render_operation( $definition );
 		}
 
+		foreach ( $this->locked[ $dispatcher ] ?? [] as $id ) {
+			$this->render_locked( $id );
+		}
+
 		echo '</div></section>';
+	}
+
+	/**
+	 * One Pro operation this site does not have, as a card without a switch.
+	 *
+	 * It sits in the group it would join, carrying its full description, so
+	 * the owner reads what the add-on adds exactly where it would appear —
+	 * not in a separate pitch. The lock slot stands where the switch would be;
+	 * there is no checkbox, so nothing about it can be posted.
+	 *
+	 * @param string $id The Pro operation identifier.
+	 */
+	private function render_locked( string $id ): void {
+		$entry        = ProCatalogue::OPERATIONS[ $id ];
+		$module_label = ModulesScreen::module_label( $entry['module'] );
+
+		printf(
+			'<div class="sitehelm-tool sitehelm-tool--locked" data-sitehelm-haystack="%s">'
+				. '<span class="sitehelm-tool__lock" aria-hidden="true">'
+				. '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">'
+				. '<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></span>'
+				. '<span class="sitehelm-tool__info"><span class="sitehelm-tool__name"><code>%s</code> %s %s</span>'
+				. '<span class="sitehelm-tool__desc">%s</span>'
+				. '<span class="sitehelm-tool__meta"><span class="sitehelm-tool__module">%s</span>'
+				. '<span class="sitehelm-tool__avail">%s</span></span></span></div>',
+			esc_attr( strtolower( $id . ' ' . $entry['description'] . ' ' . $module_label . ' pro' ) ),
+			esc_html( $id ),
+			Ui::badge( 'pro', __( 'Pro', 'sitehelm' ) ), // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Ui::badge() escapes its own label.
+			$entry['read'] ? Ui::badge( 'neutral', __( 'Read', 'sitehelm' ) ) : Ui::badge( 'brand', __( 'Write', 'sitehelm' ) ), // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Ui::badge() escapes its own label.
+			esc_html( $entry['description'] ),
+			esc_html( $module_label ),
+			esc_html__( 'Available with SiteHelm Pro', 'sitehelm' )
+		);
+	}
+
+	/**
+	 * The Pro part of the verdict's detail: what the add-on would add, or
+	 * how much of the list it already is.
+	 *
+	 * @param string $state        The add-on's state.
+	 * @param int    $locked_count How many Pro operations this site does not have.
+	 */
+	private function pro_detail( string $state, int $locked_count ): string {
+		if ( $locked_count > 0 ) {
+			return ' · ' . sprintf(
+				/* translators: %s: number of operations the Pro add-on would add. */
+				_n( '%s more with SiteHelm Pro', '%s more with SiteHelm Pro', $locked_count, 'sitehelm' ),
+				number_format_i18n( $locked_count )
+			);
+		}
+
+		$registered = ProCatalogue::STATE_ACTIVE === $state ? $this->pro->registered_count( $this->registry ) : 0;
+
+		if ( $registered > 0 ) {
+			return ' · ' . sprintf(
+				/* translators: %s: number of registered operations that come from the Pro add-on. */
+				_n( '%s from SiteHelm Pro', '%s from SiteHelm Pro', $registered, 'sitehelm' ),
+				number_format_i18n( $registered )
+			);
+		}
+
+		return '';
+	}
+
+	/**
+	 * The one place the console mentions the add-on: a note under the verdict,
+	 * only while there is something to say — the add-on is absent and would add
+	 * operations, or it is installed and waiting on its licence. Nothing is
+	 * shown once Pro is active, and nothing appears on any other screen.
+	 *
+	 * @param string $state        The add-on's state.
+	 * @param string $url          The one link to offer, or '' for none.
+	 * @param int    $locked_count How many Pro operations this site does not have.
+	 */
+	private function render_pro_note( string $state, string $url, int $locked_count ): void {
+		if ( ProCatalogue::STATE_ABSENT === $state && $locked_count > 0 ) {
+			$lead = sprintf(
+				/* translators: %s: number of operations the Pro add-on would add. */
+				_n( '%s operation comes with SiteHelm Pro.', '%s operations come with SiteHelm Pro.', $locked_count, 'sitehelm' ),
+				number_format_i18n( $locked_count )
+			);
+			$body = __( 'They are listed below with a Pro tag, in the groups they belong to. Nothing here changes until the add-on is installed and activated.', 'sitehelm' );
+			$link = __( 'Get SiteHelm Pro', 'sitehelm' );
+		} elseif ( ProCatalogue::STATE_UNLICENSED === $state ) {
+			$lead = __( 'SiteHelm Pro is installed but not activated.', 'sitehelm' );
+			$body = __( 'Its operations stay locked until a licence is entered; their switches below take effect once it is.', 'sitehelm' );
+			$link = __( 'Enter licence', 'sitehelm' );
+		} else {
+			return;
+		}
+
+		printf(
+			'<div class="sitehelm-note sitehelm-note--pro"><p><strong>%s</strong> %s</p>%s</div>',
+			esc_html( $lead ),
+			esc_html( $body ),
+			'' === $url ? '' : sprintf( '<a class="sitehelm-note__link" href="%s">%s &rarr;</a>', esc_url( $url ), esc_html( $link ) )
+		);
 	}
 
 	/**
@@ -299,6 +424,8 @@ final class OperationsScreen {
 		$is_active    = $this->is_active( $definition );
 		$is_on        = $this->is_on( $definition );
 
+		$is_pro = $this->pro->is_pro( $definition->id );
+
 		$classes = [ 'sitehelm-tool' ];
 		if ( ! $is_active ) {
 			$classes[] = 'sitehelm-tool--muted';
@@ -306,11 +433,14 @@ final class OperationsScreen {
 		if ( ! $is_on ) {
 			$classes[] = 'is-off';
 		}
+		if ( $is_pro ) {
+			$classes[] = 'sitehelm-tool--pro';
+		}
 
 		printf(
 			'<label class="%s" data-sitehelm-haystack="%s" data-sitehelm-switch-row>',
 			esc_attr( implode( ' ', $classes ) ),
-			esc_attr( strtolower( $definition->id . ' ' . $definition->description . ' ' . $module_label ) )
+			esc_attr( strtolower( $definition->id . ' ' . $definition->description . ' ' . $module_label . ( $is_pro ? ' pro' : '' ) ) )
 		);
 
 		echo $this->switch_cell( $definition, $is_on ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Composed from escaped attributes and text.
@@ -495,11 +625,15 @@ final class OperationsScreen {
 	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 	 */
 	private function kind_cell( OperationDefinition $definition ): string {
-		$badges = [
-			$definition->isReadOnly
-				? Ui::badge( 'neutral', __( 'Read', 'sitehelm' ) )
-				: Ui::badge( 'brand', __( 'Write', 'sitehelm' ) ),
-		];
+		$badges = [];
+
+		if ( $this->pro->is_pro( $definition->id ) ) {
+			$badges[] = Ui::badge( 'pro', __( 'Pro', 'sitehelm' ) );
+		}
+
+		$badges[] = $definition->isReadOnly
+			? Ui::badge( 'neutral', __( 'Read', 'sitehelm' ) )
+			: Ui::badge( 'brand', __( 'Write', 'sitehelm' ) );
 
 		if ( PreviewPolicy::Required === $definition->previewPolicy ) {
 			$badges[] = Ui::badge( 'waiting', __( 'Preview required', 'sitehelm' ) );
