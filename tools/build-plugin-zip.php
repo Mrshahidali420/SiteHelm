@@ -67,7 +67,10 @@ $files = [ 'sitehelm.php', 'LICENSE', 'README.md', 'CHANGELOG.md' ];
 // bridge/ carries the stdio bridge. It is never executed by WordPress, so a zip
 // without it installs and runs cleanly; the only symptom is that the path the
 // Connect screen prints resolves to nothing on the operator's machine.
-foreach ( [ 'src', 'assets', 'bridge', 'vendor/composer' ] as $directory ) {
+//
+// vendor/freemius/wordpress-sdk is the Freemius SDK sitehelm.php requires at
+// load; without it the plugin fatals on activation.
+foreach ( [ 'src', 'assets', 'bridge', 'vendor/composer', 'vendor/freemius/wordpress-sdk' ] as $directory ) {
 	$iterator = new RecursiveIteratorIterator(
 		new RecursiveDirectoryIterator( $root . '/' . $directory, FilesystemIterator::SKIP_DOTS )
 	);
