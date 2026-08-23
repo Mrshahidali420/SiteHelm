@@ -37,6 +37,19 @@ an operation behaves.
   module) and `sitehelm_status_sections` (add a section to the Health tab). Every hook is
   additive and contained: nothing an add-on returns can remove a built-in module, and a
   throwing handler is logged rather than allowed to break the boot.
+- **SiteHelm Pro: deep SEO (REQ-0098, Pro part).** Five Pro operations for sites running
+  Yoast SEO or Rank Math, each gated by the licence first and `manage_options` second.
+  `seo-settings-get` / `seo-settings-set` read and write an allowlist of the plugin's own
+  settings — separator, knowledge-graph name and logo, default social image and
+  breadcrumbs at site scope; title and description templates, noindex and sitemap
+  inclusion per public post type — as one previewed, snapshotted, reversible change per
+  scope, translating between the two plugins' option layouts (Yoast's separator codes,
+  Rank Math's two-key robots rule). `content-seo-bulk-set` applies the `content-seo-set`
+  fields to up to fifty posts at once as a single reversible change, refusing the whole
+  set if one post is missing or not the caller's to edit. `seo-404-log-list` and
+  `seo-redirection-list` page Rank Math's 404 monitor and redirections newest first (at
+  most 200 a page), and say plainly when a Yoast site has no such tables or the Rank Math
+  module is switched off. The free plugin is unchanged: the operation count stays at 74.
 - **SiteHelm Pro foundation.** A separate add-on plugin (source under `pro/`, not part of the
   free zip) with an offline-signed per-site licence key, a Licence card on the Health tab, and
   a gate every Pro operation checks itself. The free plugin carries no Pro file, no nag and no

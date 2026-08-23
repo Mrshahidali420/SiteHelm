@@ -1480,6 +1480,70 @@ Testing pattern: generate a throw-away pair with `sodium_crypto_sign_keypair()` 
 and store keys issued with the secret half into `AdminWordPressStubs::$options`. The
 shared stubs do not double `delete_option` — add it locally.
 
+
+## 31. Pro SEO — settings, bulk metadata, Rank Math tables
+
+Added 2026-08-23 (REQ-0098, Pro part). Source under `pro/src/Seo/`, registered by
+`pro/src/Seo/ProSeo.php` into `ModuleId::Seo` from `ProPlugin::register_operations()`.
+`ProSeo::operation_ids()` is the one list of Pro SEO ids; `ProSeoTest` and
+`ProPluginTest` both walk it.
+
+**Guard order, every unit, in this order and nowhere later:** `Licence::gate()` →
+`user_can( manage_options )` (bulk set: `edit_post` per id) → `SeoPresence::provider()`
+(IntegrationUnavailable when neither plugin is active) → the target (`postType` must be
+a public registered type; bulk ids must all exist). Tests assert the unlicensed refusal
+lands before any capability check or query (`$capabilityChecks === []`,
+`FakeWpdb::$queries === []`).
+
+**Settings (`seo-settings-get` / `seo-settings-set`).** `SeoSettingsFields` names the
+vocabulary: `SITE_FIELDS` = separator, knowledgeGraphName, knowledgeGraphLogo,
+defaultSocialImage, breadcrumbs; `TYPE_FIELDS` = titleTemplate, descriptionTemplate,
+noindex, inSitemap. A change is one scope: `postType` present → type fields only,
+absent → site fields only; mixing, naming nothing, or a provider refusal is
+InvalidInput. `SeoSettingsProviderBase` does the work in terms of **owned keys** per
+option — `owned_keys( ?string $post_type )` returns `[ option name => [ keys… ] ]` — so
+capture/restore snapshot only those keys and a restore rewrites the whole option with
+the owned keys put back (a key absent in the snapshot is unset, not written empty).
+Target key `SeoSettingsFields::target_key( ?string $post_type )`.
+
+| Field | Yoast (`wpseo_titles`, `wpseo_social`) | Rank Math (`rank-math-options-titles`, `rank-math-options-sitemap`) |
+|---|---|---|
+| separator | `separator` — a **code** (`sc-dash`, `sc-pipe`, …); `YoastSettingsProvider::SEPARATORS` maps code ↔ character, a character outside the map is refused | `title_separator` — the literal character |
+| knowledgeGraphName / Logo | `company_name`, `company_logo` | `knowledgegraph_name`, `knowledgegraph_logo` |
+| defaultSocialImage | `wpseo_social.og_default_image` (+ `og_default_image_id` cleared on write) | `open_graph_image` |
+| breadcrumbs | `breadcrumbs-enable` bool | `breadcrumbs` `'on'`/`'off'` |
+| titleTemplate / descriptionTemplate | `title-{type}`, `metadesc-{type}` | `pt_{type}_title`, `pt_{type}_description` |
+| noindex | `noindex-{type}` bool | **two keys**: `pt_{type}_custom_robots` `'on'` + `'noindex'` in the `pt_{type}_robots` list; reading is noindex only when both hold; writing `true` sets both, `false` removes `noindex` from the list and leaves `custom_robots` alone |
+| inSitemap | no switch: reads `!noindex`, **refused as a write** | `rank-math-options-sitemap.pt_{type}_sitemap` `'on'`/`'off'` |
+
+**Bulk metadata (`content-seo-bulk-set`).** `SeoBulkMetadataSet` reuses the free
+`SeoFields` vocabulary (TEXT_FIELDS + FLAG_FIELDS) and the free `SeoProvider` (`capture` / `apply`) per post;
+`MAX_IDS` 50; ids are de-duplicated in order. The target key is
+`TARGET_PREFIX . sha1( csv of ids )` (under 191 chars whatever the set) and the resolved
+id list is kept in `$ids_by_key` on the instance — so a fresh instance cannot apply or
+snapshot a plan it did not resolve (refused, `captureSnapshot` answers `null`). Snapshot
+`{provider, ids, posts: {id: fields}}`; restore refuses a state without posts or from
+another provider (RollbackUnavailable). Promise = read-back: `afterFields` is
+`{provider, ids, posts}` and `readBack` re-reads every post.
+
+**Rank Math tables (`seo-404-log-list`, `seo-redirection-list`).** Both extend
+`RankMathTableList`: `DEFAULT_LIMIT` 50, `MAX_LIMIT` 200, offset clamped to ≥ 0. A Yoast
+site is refused "Only Rank Math keeps these"; then `SHOW TABLES LIKE` with
+`$wpdb->esc_like( $wpdb->prefix . 'rank_math_…' )` (so underscores are escaped — tests
+expect `wp\_rank\_math\_404\_logs`) and a missing table reads as "switched off". Count
+then page via `$wpdb->prepare` with `[limit, offset]`; `ORDER BY \`accessed\` DESC`
+(404 log) / `ORDER BY \`updated\` DESC` (redirections). Dates go out ISO-8601 through
+`when()`; a zero date is `null`. Redirection `sources` is PHP-serialised in Rank Math's
+table: decoded with `@unserialize( …, [ 'allowed_classes' => false ] )` (one combined
+`phpcs:ignore` for serialize_unserialize + NoSilencedErrors), non-array rows and
+entries without a string `pattern` are dropped.
+
+**Testing.** `tests/Unit/Pro/Seo/ProLicenceFixture.php` (trait): `installLicenceFixture()`
+(AdminWordPressStubs + throw-away keypair), `license()` stores a `site: *` key,
+`installYoast()` / `installRankMath()` define the version constants, `context()` is user 7
+SafeWrite. Settings tests run in separate processes because of the constants. The table
+tests use `tests/Doubles/FakeWpdb.php` via `$GLOBALS['wpdb']` with `varQueue` /
+`resultQueue`.
 ## 28. Standing project constraints
 
 - **No AI attribution anywhere in git** — no "Generated with Claude Code" footer,
