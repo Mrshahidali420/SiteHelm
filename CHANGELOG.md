@@ -11,6 +11,8 @@ an operation behaves.
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-08-23
+
 ### Added
 - **Three more Pro operations in the Tools-tab catalogue** — `content-seo-schema-get`,
   `content-seo-schema-set` and `content-seo-audit-fix` (SiteHelm Pro 0.2.0), so a site
@@ -633,7 +635,8 @@ Arbitrary PHP execution, unrestricted SQL, unrestricted filesystem access, and i
 permanent deletion are out of scope by design and will not be added. See
 [ROADMAP.md](ROADMAP.md).
 
-[Unreleased]: https://github.com/Mrshahidali420/SiteHelm/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/Mrshahidali420/SiteHelm/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/Mrshahidali420/SiteHelm/releases/tag/v0.6.0
 [0.5.0]: https://github.com/Mrshahidali420/SiteHelm/releases/tag/v0.5.0
 [0.4.0]: https://github.com/Mrshahidali420/SiteHelm/releases/tag/v0.4.0
 [0.3.0]: https://github.com/Mrshahidali420/SiteHelm/releases/tag/v0.3.0
