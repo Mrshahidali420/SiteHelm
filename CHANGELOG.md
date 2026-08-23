@@ -12,7 +12,10 @@ an operation behaves.
 ## [Unreleased]
 
 ### Added
-- **Pro operations on the Tools tab.** The five SiteHelm Pro operations are listed in the
+- **Three more Pro operations in the Tools-tab catalogue** — `content-seo-schema-get`,
+  `content-seo-schema-set` and `content-seo-audit-fix` (SiteHelm Pro 0.2.0), so a site
+  without the add-on sees them as locked rows in their groups.
+- **Pro operations on the Tools tab.** The SiteHelm Pro operations are listed in the
   groups they belong to, each with a Pro tag. Without the add-on they appear as locked
   rows — full description, no switch — under one note with the one link to the Add-Ons
   page; with it installed but unlicensed the note says so and points at the Account page;
