@@ -3,8 +3,6 @@
     <description>SiteHelm coding standard: WPCS with PSR-4 file naming.</description>
     <file>src</file>
     <file>sitehelm.php</file>
-    <file>pro/src</file>
-    <file>pro/sitehelm-pro.php</file>
     <arg name="extensions" value="php"/>
     <arg value="sp"/>
     <config name="minimum_wp_version" value="6.6"/>
@@ -16,7 +14,7 @@
     </rule>
     <rule ref="WordPress.WP.I18n">
         <properties>
-            <property name="text_domain" type="array" value="sitehelm,sitehelm-pro"/>
+            <property name="text_domain" type="array" value="sitehelm"/>
         </properties>
     </rule>
 </ruleset>

@@ -12,7 +12,6 @@
     <coverage>
         <include>
             <directory suffix=".php">src</directory>
-            <directory suffix=".php">pro/src</directory>
         </include>
     </coverage>
 </phpunit>
