@@ -10,8 +10,10 @@ declare(strict_types=1);
 namespace SiteHelm\Tests\Unit\Modules\Seo;
 
 use SiteHelm\Modules\Seo\RankMathProvider;
+use SiteHelm\Modules\Seo\RankMathTermProvider;
 use SiteHelm\Modules\Seo\SeoPresence;
 use SiteHelm\Modules\Seo\YoastProvider;
+use SiteHelm\Modules\Seo\YoastTermProvider;
 use SiteHelm\Tests\TestCase;
 
 /**
@@ -68,6 +70,7 @@ final class SeoPresenceTest extends TestCase {
 		$this->assertFalse( $this->presence->isLoaded() );
 		$this->assertFalse( $this->presence->isInstalled() );
 		$this->assertNull( $this->presence->provider() );
+		$this->assertNull( $this->presence->termProvider() );
 		$this->assertNull( $this->presence->providerName() );
 		$this->assertNull( $this->presence->version() );
 	}
@@ -81,6 +84,7 @@ final class SeoPresenceTest extends TestCase {
 
 		$this->assertTrue( $this->presence->isLoaded() );
 		$this->assertInstanceOf( YoastProvider::class, $this->presence->provider() );
+		$this->assertInstanceOf( YoastTermProvider::class, $this->presence->termProvider() );
 		$this->assertSame( 'yoast-seo', $this->presence->providerName() );
 		$this->assertSame( '20.13', $this->presence->version() );
 	}
@@ -94,6 +98,7 @@ final class SeoPresenceTest extends TestCase {
 
 		$this->assertTrue( $this->presence->isLoaded() );
 		$this->assertInstanceOf( RankMathProvider::class, $this->presence->provider() );
+		$this->assertInstanceOf( RankMathTermProvider::class, $this->presence->termProvider() );
 		$this->assertSame( 'rank-math', $this->presence->providerName() );
 	}
 
