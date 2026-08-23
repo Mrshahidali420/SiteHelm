@@ -57,6 +57,13 @@ abstract class SeoMetaProvider implements SeoProvider {
 	abstract protected function ownedKeys(): array;
 
 	/**
+	 * The meta key holding each stored analysis score, or null when the plugin has none.
+	 *
+	 * @return array{seoScore: string|null, readabilityScore: string|null} Score name => meta key.
+	 */
+	abstract protected function scoreKeys(): array;
+
+	/**
 	 * This plugin's stored answer for the two robots flags.
 	 *
 	 * @param int $post_id The post identifier.
@@ -161,6 +168,44 @@ abstract class SeoMetaProvider implements SeoProvider {
 		}
 
 		return $ordered;
+	}
+
+	/**
+	 * The plugin's stored analysis scores, both keys always present.
+	 *
+	 * @param int $post_id The post identifier.
+	 *
+	 * @return array{seoScore: int|null, readabilityScore: int|null} The scores.
+	 */
+	public function scores( int $post_id ): array {
+		$scores = [];
+
+		foreach ( $this->scoreKeys() as $name => $key ) {
+			$scores[ $name ] = null === $key ? null : $this->readScore( $post_id, $key );
+		}
+
+		return $scores;
+	}
+
+	/**
+	 * Reads one stored score as an integer clamped to the 0-100 band.
+	 *
+	 * Both plugins store the number as a string; a non-numeric or absent value is
+	 * "not scored", which is null rather than zero because zero is a score.
+	 *
+	 * @param int    $post_id The post identifier.
+	 * @param string $key     The meta key.
+	 *
+	 * @return int|null The score, or null when the post has none.
+	 */
+	private function readScore( int $post_id, string $key ): ?int {
+		$raw = $this->readText( $post_id, $key );
+
+		if ( null === $raw || ! is_numeric( $raw ) ) {
+			return null;
+		}
+
+		return max( 0, min( 100, (int) round( (float) $raw ) ) );
 	}
 
 	/**

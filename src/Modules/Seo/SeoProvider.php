@@ -62,6 +62,25 @@ interface SeoProvider {
 	public function values( int $post_id ): array;
 
 	/**
+	 * The plugin's own analysis scores for one post.
+	 *
+	 * BOTH KEYS ARE ALWAYS PRESENT: `seoScore` and `readabilityScore`, each an
+	 * integer from 0 to 100 or null. Null means the plugin has not scored the post
+	 * (it has not been saved in the editor since the plugin was installed, or no
+	 * focus keyword was set) OR the plugin has no such score at all — Rank Math
+	 * keeps one SEO score and no separate readability score. A caller that needs
+	 * the distinction has the provider name.
+	 *
+	 * The score is read, never computed: SiteHelm reports what the plugin's own
+	 * analysis stored, so the number agrees with the one the editor shows.
+	 *
+	 * @param int $post_id The post identifier.
+	 *
+	 * @return array{seoScore: int|null, readabilityScore: int|null} The scores.
+	 */
+	public function scores( int $post_id ): array;
+
+	/**
 	 * What the named changes will read back as once written.
 	 *
 	 * THIS EXISTS BECAUSE A STORE CANNOT ALWAYS HOLD WHAT WAS ASKED FOR, and the

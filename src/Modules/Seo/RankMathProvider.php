@@ -94,6 +94,18 @@ final class RankMathProvider extends SeoMetaProvider {
 	}
 
 	/**
+	 * Rank Math keeps one SEO score and folds readability into it.
+	 *
+	 * @return array{seoScore: string|null, readabilityScore: string|null} Score name => meta key.
+	 */
+	protected function scoreKeys(): array {
+		return [
+			'seoScore'         => 'rank_math_seo_score',
+			'readabilityScore' => null,
+		];
+	}
+
+	/**
 	 * Every meta key this provider owns.
 	 *
 	 * @return string[] Meta keys.
