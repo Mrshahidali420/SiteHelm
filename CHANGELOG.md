@@ -13,6 +13,15 @@ an operation behaves.
 
 ### Added
 
+- **Extension points.** Three hooks let another plugin extend SiteHelm without touching it:
+  `sitehelm_modules` (add a module), `sitehelm_register_operations` (add operations to a
+  module) and `sitehelm_status_sections` (add a section to the Health tab). Every hook is
+  additive and contained: nothing an add-on returns can remove a built-in module, and a
+  throwing handler is logged rather than allowed to break the boot.
+- **SiteHelm Pro foundation.** A separate add-on plugin (source under `pro/`, not part of the
+  free zip) with an offline-signed per-site licence key, a Licence card on the Health tab, and
+  a gate every Pro operation checks itself. The free plugin carries no Pro file, no nag and no
+  crippled operation.
 - **A Home tab.** The console now opens on a plain-language summary: one sentence on how the
   week went, three tiles (changes this week, could not be done, undone), the last five things
   an app did, and a "Connect an app" prompt when nothing has happened yet.
