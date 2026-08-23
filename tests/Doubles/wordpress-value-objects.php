@@ -28,6 +28,8 @@ if ( ! class_exists( 'WP_Post' ) ) {
 		public string $post_title = '';
 
 		public string $post_type = 'post';
+
+		public string $post_status = 'publish';
 	}
 }
 
