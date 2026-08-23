@@ -171,14 +171,6 @@ abstract class SeoMetaProvider implements SeoProvider {
 	}
 
 	/**
-	 * Writes the named changes and reports whether they are all readable afterwards.
-	 *
-	 * @param int                             $post_id The post identifier.
-	 * @param array<string, string|bool|null> $changes Field name => new value.
-	 *
-	 * @return bool True when every requested change is readable.
-	 */
-	/**
 	 * The plugin's stored analysis scores, both keys always present.
 	 *
 	 * @param int $post_id The post identifier.
@@ -216,6 +208,14 @@ abstract class SeoMetaProvider implements SeoProvider {
 		return max( 0, min( 100, (int) round( (float) $raw ) ) );
 	}
 
+	/**
+	 * Writes the named changes and reports whether they are all readable afterwards.
+	 *
+	 * @param int                             $post_id The post identifier.
+	 * @param array<string, string|bool|null> $changes Field name => new value.
+	 *
+	 * @return bool True when every requested change is readable.
+	 */
 	public function apply( int $post_id, array $changes ): bool {
 		$keys  = $this->textKeys();
 		$flags = [];

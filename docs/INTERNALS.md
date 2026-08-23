@@ -640,11 +640,28 @@ Nine files under `src/Modules/Seo/`.
   Yoast first, fixed so a write cannot land in a different store than the read that
   planned it. Floors: Yoast `14.0`, Rank Math `1.0.40`.
 - `SeoMetadataGet` (`content-seo-get`), `SeoMetadataSet` (`content-seo-set`),
-  `SeoModule`.
+  `SeoScoreGet` (`content-seo-score-get`), `SeoAudit` (`content-seo-audit`),
+  `SeoFindings` (the finding vocabulary and rules), `SeoModule`.
+- `SeoProvider::scores()` → `SeoMetaProvider::scores()` over the abstract
+  `scoreKeys()`; Yoast `_yoast_wpseo_linkdex` / `_yoast_wpseo_content_score`,
+  Rank Math `rank_math_seo_score` / no readability key (`null`). A score is read
+  as a string, clamped to 0–100, null when absent or non-numeric — **never zero**.
 
 Design decisions that are not obvious from the code:
 
-- Both operations declare `Domain::Content` (see §3).
+- All four operations declare `Domain::Content` (see §3); three reads, one write.
+- `SeoFindings` codes (order fixed, published as an `enum` in both output schemas):
+  `missing-description`, `description-too-short` (<70), `description-too-long` (>160),
+  `title-too-long` (override >60), `missing-focus-keyword`,
+  `focus-keyword-not-in-title` (override ?? post title, case-insensitive), `noindex`
+  (only when status is `publish`), `low-seo-score`, `low-readability-score` (stored score
+  < `minScore`, default 70; unscored is not low), `duplicate-title`,
+  `duplicate-description` (audit only, case-insensitive, **within the page**; "the plugin
+  decides" is never a duplicate of itself).
+- `SeoAudit` gates on `edit_posts`, then presence, then the public-type check copied
+  from `ContentList`; each row is re-asked `edit_post` and a refusal is **skipped and
+  counted** in `skipped`, never reported. The query is `WP_Query` ordered by modified
+  DESC with `update_post_term_cache` off; `total` is `found_posts`.
 - `provider` is a member of the read's output **and** of the write's promised
   fields, with `fieldOrder = [ 'provider', ...SeoFields::FIELD_ORDER ]`. It costs
   one field and catches a mid-request SEO-plugin swap at verification instead of

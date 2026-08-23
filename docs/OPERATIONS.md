@@ -1,6 +1,6 @@
 # Operations reference
 
-SiteHelm exposes **70 operations** through **11 MCP tools**, called dispatchers. Every operation is
+SiteHelm exposes **72 operations** through **11 MCP tools**, called dispatchers. Every operation is
 declared once, in code, with a strict input schema (`additionalProperties: false`), a required
 capability, a risk level, and preview, snapshot, and rollback policies. That declaration is the
 contract the gateway enforces and the catalogue an agent discovers.
@@ -85,7 +85,7 @@ string, authorization header, or resolved IP address.
 
 Posts, pages, custom post types, and taxonomies.
 
-### `content-read` — 8 operations
+### `content-read` — 10 operations
 
 | Operation | Does | Capability |
 |---|---|---|
@@ -97,6 +97,8 @@ Posts, pages, custom post types, and taxonomies.
 | `content-links-check` | Reports the links in one item, resolving this site's own against its posts and redirects | `edit_post` |
 | `comment-list` | Lists comments by status, post, or search term, newest first | `moderate_comments` |
 | `content-seo-get` | Reads one item's search-engine metadata from whichever SEO plugin the site runs | `edit_post` |
+| `content-seo-score-get` | Reads one item's SEO and readability scores as the SEO plugin stored them, with the findings SiteHelm derives | `edit_post` |
+| `content-seo-audit` | Audits a page of items: stored scores, missing or over-long descriptions, missing focus keywords, noindexed published items, in-page duplicate titles and descriptions | `edit_posts` |
 
 **`content-links-check` never fetches a link.** Every answer comes from this site's own
 database: a link to another host is listed as `unchecked`, and only a link to this site is

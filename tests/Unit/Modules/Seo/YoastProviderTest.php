@@ -55,6 +55,23 @@ final class YoastProviderTest extends TestCase {
 	 * field is not set", because the first case does not exist: the answer always
 	 * carries all twelve names.
 	 */
+	public function test_an_unscored_post_reports_both_scores_as_null(): void {
+		$this->assertSame( [ 'seoScore' => null, 'readabilityScore' => null ], $this->provider->scores( 42 ) );
+	}
+
+	public function test_stored_scores_are_read_as_clamped_integers(): void {
+		$this->seedMeta( 42, '_yoast_wpseo_linkdex', '73' );
+		$this->seedMeta( 42, '_yoast_wpseo_content_score', '120' );
+
+		$this->assertSame( [ 'seoScore' => 73, 'readabilityScore' => 100 ], $this->provider->scores( 42 ) );
+	}
+
+	public function test_a_non_numeric_score_reads_as_null_rather_than_zero(): void {
+		$this->seedMeta( 42, '_yoast_wpseo_linkdex', 'n/a' );
+
+		$this->assertNull( $this->provider->scores( 42 )['seoScore'] );
+	}
+
 	public function test_a_post_with_nothing_stored_reports_every_field_as_null(): void {
 		$values = $this->provider->values( 42 );
 

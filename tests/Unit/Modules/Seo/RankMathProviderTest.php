@@ -57,6 +57,16 @@ final class RankMathProviderTest extends TestCase {
 		$this->assertSame( 'rank-math', $this->provider->name() );
 	}
 
+	public function test_rank_math_reports_its_seo_score_and_no_readability_score(): void {
+		$this->seedMeta( 42, 'rank_math_seo_score', '88' );
+
+		$this->assertSame( [ 'seoScore' => 88, 'readabilityScore' => null ], $this->provider->scores( 42 ) );
+	}
+
+	public function test_an_unscored_post_reports_both_scores_as_null(): void {
+		$this->assertSame( [ 'seoScore' => null, 'readabilityScore' => null ], $this->provider->scores( 42 ) );
+	}
+
 	public function test_a_post_with_nothing_stored_reports_every_field_as_null(): void {
 		$values = $this->provider->values( 42 );
 
