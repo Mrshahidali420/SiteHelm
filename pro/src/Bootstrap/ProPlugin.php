@@ -11,7 +11,9 @@ namespace SiteHelm\Pro\Bootstrap;
 
 use SiteHelm\Pro\Admin\LicenceAction;
 use SiteHelm\Pro\Admin\LicenceSection;
+use SiteHelm\Modules\Seo\SeoPresence;
 use SiteHelm\Pro\Licence\Licence;
+use SiteHelm\Pro\Seo\ProSeo;
 use SiteHelm\Registry\CapabilityRegistry;
 
 /**
@@ -80,6 +82,6 @@ final class ProPlugin {
 	 * @param CapabilityRegistry $registry SiteHelm's live registry.
 	 */
 	public function register_operations( CapabilityRegistry $registry ): void {
-		unset( $registry );
+		( new ProSeo( new Licence(), new SeoPresence() ) )->register( $registry );
 	}
 }

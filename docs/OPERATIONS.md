@@ -387,3 +387,32 @@ tells an agent what is actually available before it plans anything.
 > **Nothing sensitive is reported.** The password hash, the password-reset key and the
 > session tokens live on the same row as the display name and are not reachable through
 > either operation.
+
+## SiteHelm Pro
+
+The Pro add-on registers extra operations into the same modules and dispatchers; the
+free plugin carries none of them, and nothing above moves behind the paywall. Every Pro
+operation checks the licence itself before it looks at anything else — an unlicensed site
+is refused with `IntegrationUnavailable` and the Health-tab remediation — and only then
+asks the capability, the SEO plugin and the target.
+
+### SEO (Pro) — five Pro operations
+
+| Operation | Dispatcher | Does | Capability | Rollback |
+|---|---|---|---|---|
+| `seo-settings-get` | `system-read` | Reads the SEO plugin's settings at site scope (separator, knowledge-graph name and logo, default social image, breadcrumbs) or for one public post type (`postType`: title and description templates, noindex, sitemap inclusion) | `manage_options` | — |
+| `seo-settings-set` | `content-write` | Writes the same allowlisted settings, one scope per change — site scope or `postType`, never both | `manage_options` | supported |
+| `content-seo-bulk-set` | `content-write` | Sets the per-post fields of `content-seo-set` on up to fifty posts as one previewed, reversible change; one post the caller may not edit, or one that does not exist, refuses the whole set | `edit_post` on every post | supported |
+| `seo-404-log-list` | `system-read` | Pages Rank Math's 404 monitor newest first (URI, hits, last seen, referer), at most 200 per page | `manage_options` | — |
+| `seo-redirection-list` | `system-read` | Pages Rank Math's redirections newest first (sources, destination, status code, hits, status) | `manage_options` | — |
+
+> **Rank Math keeps the 404 log and redirections; Yoast does not.** Both reads say
+> *Only Rank Math keeps these* on a Yoast site, and that the module is switched off when
+> Rank Math is installed but the table is absent. Yoast's own redirects live in its
+> paid add-on, which SiteHelm does not read.
+>
+> **Settings are an allowlist, not the whole option.** Only the keys behind the fields
+> named above are read or written; the rest of each option is carried through a write
+> untouched and the whole option is restored on rollback. Yoast has no per-type sitemap
+> switch — a type left in search results is in the sitemap — so `inSitemap` reads as
+> the opposite of `noindex` there and is refused as a write with that explanation.

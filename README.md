@@ -314,9 +314,11 @@ V1 is complete — all 52 requirements shipped and verified. V1.1 is in progress
 
 **Next up:** a stdio transport bridge for clients that cannot speak HTTP, published per-client configuration files, batched element updates, image resizing, and per-operation schema discovery.
 
-**SiteHelm Pro** is on its way as a separate add-on for the serious solo owner and the agency
-alike: deeper SEO, WooCommerce, forms, bulk work. Everything safety-related stays free, and a
-free read never moves behind the paywall. See the roadmap for the Free/Pro split.
+**SiteHelm Pro** is a separate add-on for the serious solo owner and the agency alike. Its
+first operations are here: the SEO plugin's own settings read and written as one reversible
+change, per-post metadata set across up to fifty posts at once, and Rank Math's 404 log and
+redirections. WooCommerce, forms and more bulk work follow. Everything safety-related stays
+free, and a free read never moves behind the paywall. See the roadmap for the Free/Pro split.
 
 **→ [Full roadmap](ROADMAP.md)** · **→ [Changelog](CHANGELOG.md)**
 
