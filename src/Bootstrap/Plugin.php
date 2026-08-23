@@ -78,7 +78,10 @@ final class Plugin {
 	public function register(): void {
 		$registry = new CapabilityRegistry();
 
-		$module_health = ( new ModuleLoader() )->load( ( new IntegrationDirectory() )->modules(), $registry );
+		// An add-on (SiteHelm Pro) may append modules and register operations;
+		// both go through Extensions so a failing add-on is logged, not fatal.
+		$module_health = ( new ModuleLoader() )->load( ( new IntegrationDirectory( Extensions::module_classes() ) )->modules(), $registry );
+		Extensions::register_operations( $registry );
 
 		// The operator's switches are read by the catalogue, the dispatcher and
 		// the console from one instance, so the three can never disagree about
