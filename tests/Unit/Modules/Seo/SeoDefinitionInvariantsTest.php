@@ -64,7 +64,14 @@ final class SeoDefinitionInvariantsTest extends TestCase {
 	 *
 	 * @var string[]
 	 */
-	private const OPERATION_IDS = [ 'content-seo-get', 'content-seo-set' ];
+	private const OPERATION_IDS = [
+		'content-seo-get',
+		'content-seo-score-get',
+		'content-seo-audit',
+		'content-term-seo-get',
+		'content-seo-set',
+		'content-term-seo-set',
+	];
 
 	/**
 	 * The identifiers of the module's writes.
@@ -75,7 +82,7 @@ final class SeoDefinitionInvariantsTest extends TestCase {
 	 *
 	 * @var string[]
 	 */
-	private const SEO_WRITE_IDS = [ 'content-seo-set' ];
+	private const SEO_WRITE_IDS = [ 'content-seo-set', 'content-term-seo-set' ];
 
 	/**
 	 * The two dispatchers an SEO operation may appear on.
@@ -153,11 +160,11 @@ final class SeoDefinitionInvariantsTest extends TestCase {
 		}
 	}
 
-	public function test_the_module_contributes_one_read_and_one_write(): void {
+	public function test_the_module_contributes_four_reads_and_two_writes(): void {
 		$registry = $this->registryWithSeoModule();
 
-		$this->assertCount( 1, $registry->forDispatcher( 'content-read' ) );
-		$this->assertCount( 1, $registry->forDispatcher( 'content-write' ) );
+		$this->assertCount( 4, $registry->forDispatcher( 'content-read' ) );
+		$this->assertCount( 2, $registry->forDispatcher( 'content-write' ) );
 	}
 
 	// ---------------------------------------------------- definition invariants
@@ -257,16 +264,27 @@ final class SeoDefinitionInvariantsTest extends TestCase {
 	}
 
 	/**
-	 * Both operations gate on the post they name, and on nothing wider.
+	 * Every per-post operation gates on the post it names, and on nothing wider.
 	 *
 	 * A site-wide capability would let a contributor read or rewrite the search
 	 * metadata of a page they may not edit — and this metadata is what the page shows
 	 * to search engines, so a write here is a public-facing change.
+	 *
+	 * The audit is one exception by construction: it names no post, so it gates on
+	 * the list capability and re-asks `edit_post` per row, skipping what the caller
+	 * may not edit. SeoAuditTest pins that skip. The two term operations are the
+	 * other: a term's edit capability is the taxonomy's own and is not a declarable
+	 * one, so they admit on `edit_posts` and re-ask the taxonomy's `edit_terms` in the
+	 * handler. SeoTermTargetTest pins that re-ask.
 	 */
-	public function test_every_operation_gates_on_the_post_it_names(): void {
+	public function test_every_per_post_operation_gates_on_the_post_it_names(): void {
+		$site_wide = [ 'content-seo-audit', 'content-term-seo-get', 'content-term-seo-set' ];
+
 		foreach ( $this->registeredDefinitions() as $definition ) {
+			$expected = in_array( $definition->id, $site_wide, true ) ? [ 'edit_posts' ] : [ 'edit_post' ];
+
 			$this->assertSame(
-				[ 'edit_post' ],
+				$expected,
 				$definition->requiredCapabilities,
 				"Operation '{$definition->id}' must be gated on the post it names."
 			);
@@ -309,7 +327,7 @@ final class SeoDefinitionInvariantsTest extends TestCase {
 	}
 
 	/**
-	 * THE PREFIX IS LOAD-BEARING HERE IN A WAY IT IS NOT ELSEWHERE. These two operations
+	 * THE PREFIX IS LOAD-BEARING HERE IN A WAY IT IS NOT ELSEWHERE. These operations
 	 * share `content-read` and `content-write` with the core content module, so an
 	 * identifier like `content-get` would collide with an operation that already exists
 	 * — and a registry collision is one module's operation silently replacing another's.
@@ -322,7 +340,7 @@ final class SeoDefinitionInvariantsTest extends TestCase {
 
 		foreach ( $ids as $id ) {
 			$this->assertMatchesRegularExpression( '/^[a-z0-9]+(?:-[a-z0-9]+)*$/', $id );
-			$this->assertStringStartsWith( 'content-seo-', $id, 'An SEO operation carries its own prefix, because the core content module shares this dispatcher.' );
+			$this->assertMatchesRegularExpression( '/^content-(?:term-)?seo-/', $id, 'An SEO operation carries its own prefix, because the core content module shares this dispatcher.' );
 		}
 
 		$this->assertSame( $ids, array_values( array_unique( $ids ) ) );
@@ -341,7 +359,7 @@ final class SeoDefinitionInvariantsTest extends TestCase {
 	}
 
 	/**
-	 * NEITHER OPERATION NAMES A VENDOR IN ANYTHING A CLIENT READS.
+	 * NO OPERATION NAMES A VENDOR IN ANYTHING A CLIENT READS.
 	 *
 	 * The module's whole purpose is that a caller does not need to know which SEO plugin
 	 * a site runs, and the catalog is the first thing a client reads. A description or

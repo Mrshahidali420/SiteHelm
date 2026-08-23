@@ -88,13 +88,14 @@ final class SeoModuleTest extends TestCase {
 	}
 
 	/**
-	 * No `terms`. Everything either provider addresses is post meta reached through the
-	 * post's own cached row, and declaring a group nothing here dirties would flush a
-	 * cache on every write for no reason — which also makes the declared groups less
-	 * trustworthy to anything reading them.
+	 * The post write dirties post meta through the post's cached row; the term write
+	 * dirties term meta (Rank Math) or one option (Yoast) through the term's cached
+	 * row. Nothing here writes a post row or a term relationship, so no other group is
+	 * declared — a group nothing dirties would flush a cache on every write for no
+	 * reason and make the declared groups less trustworthy to anything reading them.
 	 */
 	public function test_the_module_declares_only_the_caches_its_writes_can_invalidate(): void {
-		$this->assertSame( [ 'posts', 'post_meta' ], ( new SeoModule() )->cacheCleanup() );
+		$this->assertSame( [ 'posts', 'post_meta', 'terms', 'term_meta', 'options' ], ( new SeoModule() )->cacheCleanup() );
 	}
 
 	/**
@@ -200,6 +201,10 @@ final class SeoModuleTest extends TestCase {
 		( new SeoModule() )->register( $registry );
 
 		$this->assertSame( 'content-seo-get', $registry->definition( 'content-seo-get' )->id );
+		$this->assertSame( 'content-seo-score-get', $registry->definition( 'content-seo-score-get' )->id );
+		$this->assertSame( 'content-seo-audit', $registry->definition( 'content-seo-audit' )->id );
 		$this->assertSame( 'content-seo-set', $registry->definition( 'content-seo-set' )->id );
+		$this->assertSame( 'content-term-seo-get', $registry->definition( 'content-term-seo-get' )->id );
+		$this->assertSame( 'content-term-seo-set', $registry->definition( 'content-term-seo-set' )->id );
 	}
 }

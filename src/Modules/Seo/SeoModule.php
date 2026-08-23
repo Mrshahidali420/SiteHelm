@@ -1,6 +1,6 @@
 <?php
 /**
- * The SEO module: per-post search-engine metadata.
+ * The SEO module: per-post and per-term search-engine metadata.
  *
  * @package SiteHelm
  */
@@ -16,7 +16,8 @@ use SiteHelm\Registry\CapabilityRegistry;
 use SiteHelm\Storage\Installer;
 
 /**
- * Reads and writes the SEO metadata one post carries.
+ * Reads and writes the SEO metadata one post or one taxonomy term carries, and
+ * reads the scores and findings behind a post — per post and across a page.
  *
  * THE FIRST MODULE WHOSE DEPENDENCY IS SATISFIED BY EITHER OF TWO PLUGINS, and
  * the only structural difference that makes. Every other plugin-backed module —
@@ -33,8 +34,9 @@ use SiteHelm\Storage\Installer;
  * health reporting and the administration screens key on.
  *
  * Nothing outside SeoPresence names a plugin symbol, and nothing anywhere calls a
- * plugin function: both providers address post meta, which is a stored contract
- * rather than a code one.
+ * plugin function: the post providers address post meta, the term providers
+ * address term meta or one option, and each is a stored contract rather than a
+ * code one.
  *
  * @package SiteHelm
  */
@@ -140,16 +142,16 @@ final class SeoModule implements IntegrationModule {
 	/**
 	 * Caches this module's writes can invalidate.
 	 *
-	 * Everything both providers address is post meta, and the post's own cached row
-	 * is what a reader reaches it through, so these two groups cover every cache an
-	 * SEO write can dirty. `terms` is deliberately absent: no operation here writes
-	 * a term or a term relationship, and declaring a group a module never dirties
-	 * makes the declared ones less trustworthy.
+	 * The post write addresses post meta reached through the post's cached row; the
+	 * term write addresses term meta (Rank Math) or one option (Yoast), reached
+	 * through the term's cached row. Those are the five groups, and no others: no
+	 * operation here writes a term relationship or a post row, and declaring a
+	 * group a module never dirties makes the declared ones less trustworthy.
 	 *
 	 * @return string[] Cache group names.
 	 */
 	public function cacheCleanup(): array {
-		return [ 'posts', 'post_meta' ];
+		return [ 'posts', 'post_meta', 'terms', 'term_meta', 'options' ];
 	}
 
 	/**
@@ -161,8 +163,8 @@ final class SeoModule implements IntegrationModule {
 	 * looks like a SiteHelm too old to have it. Each operation refuses on its own
 	 * when no supported SEO plugin is usable, and health() reports the state.
 	 *
-	 * One presence gate is shared by both operations, so a request answers "which
-	 * SEO plugin does this site run" once.
+	 * One presence gate is shared by all six operations, so a request answers
+	 * "which SEO plugin does this site run" once.
 	 *
 	 * @param CapabilityRegistry $registry The capability registry.
 	 */
@@ -172,9 +174,29 @@ final class SeoModule implements IntegrationModule {
 			[ new SeoMetadataGet( $this->presence ), 'handle' ]
 		);
 
+		$registry->register(
+			SeoScoreGet::definition(),
+			[ new SeoScoreGet( $this->presence ), 'handle' ]
+		);
+
+		$registry->register(
+			SeoAudit::definition(),
+			[ new SeoAudit( $this->presence ), 'handle' ]
+		);
+
+		$registry->register(
+			SeoTermMetadataGet::definition(),
+			[ new SeoTermMetadataGet( $this->presence ), 'handle' ]
+		);
+
 		$registry->registerWrite(
 			SeoMetadataSet::definition(),
 			new SeoMetadataSet( $this->presence )
+		);
+
+		$registry->registerWrite(
+			SeoTermMetadataSet::definition(),
+			new SeoTermMetadataSet( $this->presence )
 		);
 	}
 }
