@@ -12,6 +12,9 @@ an operation behaves.
 ## [Unreleased]
 
 ### Added
+- The plugin now carries the Freemius SDK: an opt-in insights prompt on first run, and
+  Account and Add-Ons pages under the SiteHelm menu. SiteHelm Pro is sold and licensed
+  through it as an add-on; nothing about the free operations changes.
 
 - **SEO scores and a site-wide SEO audit (REQ-0098, free part).** Two new reads for sites
   running Yoast SEO or Rank Math. `content-seo-score-get` reports one post's SEO and

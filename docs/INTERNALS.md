@@ -1461,14 +1461,22 @@ notice if `sitehelm_boot()` is absent); *src/* is PSR-4 `SiteHelm\Pro\` with
 (`SiteHelm\Tests\*`). Nothing in this repository's `composer.json`, `phpcs.xml.dist` or
 `phpunit.xml.dist` refers to Pro any more.
 
-**Licensing.** The first cut was an offline-signed key (`SHP1.<payload>.<Ed25519 sig>`,
-option `sitehelm_pro_licence`, `Licence::gate()` throwing
-`OperationException(IntegrationUnavailable, …)`). The decision on 2026-08-23 is to replace
-it with **Freemius**: the free plugin will carry the Freemius SDK with
-`has_addons => true`, the Pro plugin is a Freemius add-on, and `gate()` becomes
-`function_exists( 'sitehelm_pro_fs' ) && sitehelm_pro_fs()->can_use_premium_code()` with
-the same refusal. Whatever the gate is, the rule stands: **every Pro unit calls it itself
-before it looks at anything else** — the bootstrap only wires.
+**Licensing — Freemius** (wired 2026-08-23; the first cut, an offline Ed25519 key in
+option `sitehelm_pro_licence`, is gone). The free plugin requires `freemius/wordpress-sdk`
+through Composer and `sitehelm.php` initialises it at file load — `sitehelm_fs()`,
+product id `37703`, `has_addons => true`, `has_paid_plans => false`,
+`is_org_compliant => true`, menu under the `sitehelm` page with contact/support off — then
+fires `sitehelm_fs_loaded`. The init sits inside the `defined( 'ABSPATH' )` guard because
+the test bootstrap includes the file. `tools/build-plugin-zip.php` packs the SDK directory
+(vendor/freemius/wordpress-sdk) alongside `vendor/composer`. The Pro plugin is the Freemius
+**add-on** (id `37704`, parent `37703`): its `sitehelm_pro_fs()` waits for
+`sitehelm_fs_loaded` (or finds the parent already active), and `Licence::gate()` is now
+`function_exists( 'sitehelm_pro_fs' ) && sitehelm_pro_fs()->can_use_premium_code()`, throwing
+the same `OperationException(IntegrationUnavailable, …)` when it is false. Licence entry,
+activation and renewals are Freemius screens (Account under the SiteHelm menu); the Health
+tab keeps a read-only Pro section that states the licence state and links there. The rule
+stands: **every Pro unit calls the gate itself before it looks at anything else** — the
+bootstrap only wires.
 
 ## 31. Pro SEO — settings, bulk metadata, Rank Math tables
 
