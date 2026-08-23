@@ -623,7 +623,10 @@ first docblock** (after the last constant) and close it after the last method:
 
 ## 10. The SEO module (REQ-0059) in one screen
 
-Nine files under `src/Modules/Seo/`.
+Sixteen files under `src/Modules/Seo/`: the nine post-level ones below, plus the
+term-level seven (`SeoTermFields`, `SeoTermProvider`, `SeoTermProviderBase`,
+`YoastTermProvider`, `RankMathTermProvider`, `SeoTermTarget`, and the two operations
+`SeoTermMetadataGet` / `SeoTermMetadataSet`).
 
 - `SeoFields` — SiteHelm's own vendor-neutral vocabulary. Twelve flat field names
   (`title`, `description`, `canonical`, `focusKeyword`, `noindex`, `nofollow`,
@@ -649,7 +652,26 @@ Nine files under `src/Modules/Seo/`.
 
 Design decisions that are not obvious from the code:
 
-- All four operations declare `Domain::Content` (see §3); three reads, one write.
+- All six operations declare `Domain::Content` (see §3); four reads, two writes.
+- **Term metadata** (`content-term-seo-get` / `content-term-seo-set`, target key
+  `term-seo:<taxonomy>:<id>`, five fields: title, description, canonical, focusKeyword,
+  noindex). `SeoTermTarget` is the guard order both share: admission on `edit_posts`
+  (site-wide, the only capability a declaration can carry), then presence, then the
+  taxonomy must exist and be public (`InvalidInput`), then the user is **re-asked the
+  taxonomy's own `cap->edit_terms`** (`Forbidden`; a taxonomy naming no capability is
+  not editable), then the term must exist in that taxonomy (`TargetNotFound`). The
+  re-ask is the load-bearing guard — every contributor holds `edit_posts`.
+  Yoast keeps every term's values in **one option**, `wpseo_taxonomy_meta[tax][id]`
+  (`wpseo_title/desc/canonical/focuskw`, `wpseo_noindex` = `noindex`/`index`/`default`),
+  so a write rewrites the whole option and the tests pin that other taxonomies, other
+  terms and unaddressed keys survive; a term emptied of keys is removed, and an
+  emptied taxonomy with it. Rank Math keeps **term meta** (`rank_math_title`,
+  `rank_math_description`, `rank_math_canonical_url`, `rank_math_focus_keyword`,
+  `rank_math_robots` directive array, edited not replaced, deleted when emptied).
+  Snapshot = provider capture + `taxonomy` + `term_id`; restore refuses a snapshot for
+  another term or another provider with `RollbackUnavailable`.
+  `SeoModule::cacheCleanup()` therefore names five groups: posts, post_meta, terms,
+  term_meta, options.
 - `SeoFindings` codes (order fixed, published as an `enum` in both output schemas):
   `missing-description`, `description-too-short` (<70), `description-too-long` (>160),
   `title-too-long` (override >60), `missing-focus-keyword`,

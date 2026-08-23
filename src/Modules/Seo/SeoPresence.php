@@ -102,6 +102,22 @@ final class SeoPresence {
 	}
 
 	/**
+	 * The term-level provider for the same plugin provider() answers with.
+	 *
+	 * Decided by the same precedence so a site never reads its posts from one
+	 * plugin and its terms from the other.
+	 *
+	 * @return SeoTermProvider|null The term provider, or null when no plugin is usable.
+	 */
+	public function termProvider(): ?SeoTermProvider {
+		return match ( $this->providerName() ) {
+			'yoast-seo' => new YoastTermProvider(),
+			'rank-math' => new RankMathTermProvider(),
+			default     => null,
+		};
+	}
+
+	/**
 	 * The detected plugin's name, or null when none is usable.
 	 *
 	 * @return string|null The provider name.

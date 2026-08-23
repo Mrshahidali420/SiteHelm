@@ -24,7 +24,14 @@ an operation behaves.
   one's scores and findings with a count of every finding across the page, detecting
   duplicate titles and descriptions within it; posts the caller may not edit are skipped
   and counted, not shown. The finding vocabulary is fixed and published in both output
-  schemas. 72 operations.
+  schemas.
+- **Term SEO metadata (REQ-0098, free part 2).** `content-term-seo-get` and
+  `content-term-seo-set` read and write a category's or tag's title, description,
+  canonical, focus keyword and noindex in Yoast SEO (the `wpseo_taxonomy_meta` option)
+  or Rank Math (term meta, with the robots directive list edited rather than replaced).
+  Both admit on `edit_posts` and then ask the taxonomy's own edit capability, so a
+  contributor cannot rewrite what a category archive tells search engines. The write
+  is previewed, snapshotted and reversible like every other. 74 operations.
 - **Extension points.** Three hooks let another plugin extend SiteHelm without touching it:
   `sitehelm_modules` (add a module), `sitehelm_register_operations` (add operations to a
   module) and `sitehelm_status_sections` (add a section to the Health tab). Every hook is
