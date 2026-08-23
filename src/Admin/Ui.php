@@ -187,14 +187,22 @@ final class Ui {
 	}
 
 	/**
-	 * The SiteHelm mark: a ship's wheel, drawn rather than fetched.
+	 * The SiteHelm mark: a ship's wheel inside a shield, drawn rather than
+	 * fetched. The same mark as the plugin icon and the marketplace listing.
 	 */
 	private static function mark(): void {
 		echo '<svg class="sitehelm-appbar__mark" viewBox="0 0 24 24" fill="none" stroke="currentColor"'
-			. ' stroke-width="1.6" aria-hidden="true" focusable="false">'
-			. '<circle cx="12" cy="12" r="8.6"></circle><circle cx="12" cy="12" r="3.1"></circle>'
-			. '<path d="M12 1.6v6.4M12 16v6.4M1.6 12h6.4M16 12h6.4"></path>'
-			. '<path d="M5.2 5.2l4.5 4.5M14.3 14.3l4.5 4.5M18.8 5.2l-4.5 4.5M9.7 14.3l-4.5 4.5"></path></svg>';
+			. ' stroke-linecap="round" aria-hidden="true" focusable="false">'
+			. '<path class="sitehelm-appbar__mark-shield" stroke-width="1.4"'
+			. ' d="M12 2.2 3.2 4.1v8.3c0 1.2.4 2.2 1.1 3L12 22.2l7.7-6.8c.7-.8 1.1-1.8 1.1-3V4.1Z"></path>'
+			. '<circle cx="12" cy="12" r="3.6" stroke-width="1.5"></circle>'
+			. '<circle cx="12" cy="12" r="1.2" stroke-width="1.2"></circle>'
+			. '<path stroke-width="1.5" d="M12 5.6v2.8M12 15.6v2.8M5.6 12h2.8M15.6 12h2.8'
+			. 'M7.5 7.5l2 2M14.5 14.5l2 2M16.5 7.5l-2 2M9.5 14.5l-2 2"></path>'
+			. '<path stroke="none" fill="currentColor" d="M12 4.6a1 1 0 1 1 0 2 1 1 0 0 1 0-2Zm0 12.8a1 1 0 1 1 0 2'
+			. ' 1 1 0 0 1 0-2ZM4.6 11a1 1 0 1 1 2 0 1 1 0 0 1-2 0Zm12.8 0a1 1 0 1 1 2 0 1 1 0 0 1-2 0Z'
+			. 'M6.8 6.8a1 1 0 1 1 1.4 1.4 1 1 0 0 1-1.4-1.4Zm9 9a1 1 0 1 1 1.4 1.4 1 1 0 0 1-1.4-1.4Z'
+			. 'M15.8 6.8a1 1 0 1 1 1.4 1.4 1 1 0 0 1-1.4-1.4Zm-9 9a1 1 0 1 1 1.4 1.4 1 1 0 0 1-1.4-1.4Z"></path></svg>';
 	}
 
 	/**
