@@ -16,7 +16,8 @@ use SiteHelm\Registry\CapabilityRegistry;
 use SiteHelm\Storage\Installer;
 
 /**
- * Reads and writes the SEO metadata one post carries.
+ * Reads and writes the SEO metadata one post carries, and reads the scores and
+ * findings behind it — per post and across a page of posts.
  *
  * THE FIRST MODULE WHOSE DEPENDENCY IS SATISFIED BY EITHER OF TWO PLUGINS, and
  * the only structural difference that makes. Every other plugin-backed module —
@@ -161,8 +162,8 @@ final class SeoModule implements IntegrationModule {
 	 * looks like a SiteHelm too old to have it. Each operation refuses on its own
 	 * when no supported SEO plugin is usable, and health() reports the state.
 	 *
-	 * One presence gate is shared by both operations, so a request answers "which
-	 * SEO plugin does this site run" once.
+	 * One presence gate is shared by all four operations, so a request answers
+	 * "which SEO plugin does this site run" once.
 	 *
 	 * @param CapabilityRegistry $registry The capability registry.
 	 */
@@ -170,6 +171,16 @@ final class SeoModule implements IntegrationModule {
 		$registry->register(
 			SeoMetadataGet::definition(),
 			[ new SeoMetadataGet( $this->presence ), 'handle' ]
+		);
+
+		$registry->register(
+			SeoScoreGet::definition(),
+			[ new SeoScoreGet( $this->presence ), 'handle' ]
+		);
+
+		$registry->register(
+			SeoAudit::definition(),
+			[ new SeoAudit( $this->presence ), 'handle' ]
 		);
 
 		$registry->registerWrite(

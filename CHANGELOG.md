@@ -13,6 +13,18 @@ an operation behaves.
 
 ### Added
 
+- **SEO scores and a site-wide SEO audit (REQ-0098, free part).** Two new reads for sites
+  running Yoast SEO or Rank Math. `content-seo-score-get` reports one post's SEO and
+  readability scores exactly as the plugin stored them (never recomputed, so the number
+  matches the editor; Rank Math has no separate readability score and says `null`), plus
+  a list of findings derived from the metadata — missing, too-short or too-long
+  description, over-long title, missing focus keyword or one absent from the title, a
+  published post kept out of search, a score under the caller's floor.
+  `content-seo-audit` walks a page of posts (default 50, at most 100) and reports each
+  one's scores and findings with a count of every finding across the page, detecting
+  duplicate titles and descriptions within it; posts the caller may not edit are skipped
+  and counted, not shown. The finding vocabulary is fixed and published in both output
+  schemas. 72 operations.
 - **Extension points.** Three hooks let another plugin extend SiteHelm without touching it:
   `sitehelm_modules` (add a module), `sitehelm_register_operations` (add operations to a
   module) and `sitehelm_status_sections` (add a section to the Health tab). Every hook is

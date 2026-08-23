@@ -200,6 +200,8 @@ final class SeoModuleTest extends TestCase {
 		( new SeoModule() )->register( $registry );
 
 		$this->assertSame( 'content-seo-get', $registry->definition( 'content-seo-get' )->id );
+		$this->assertSame( 'content-seo-score-get', $registry->definition( 'content-seo-score-get' )->id );
+		$this->assertSame( 'content-seo-audit', $registry->definition( 'content-seo-audit' )->id );
 		$this->assertSame( 'content-seo-set', $registry->definition( 'content-seo-set' )->id );
 	}
 }
