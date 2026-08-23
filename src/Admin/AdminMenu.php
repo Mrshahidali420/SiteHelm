@@ -294,7 +294,7 @@ final class AdminMenu {
 	}
 
 	/**
-	 * The menu icon: a ship's wheel, drawn rather than fetched.
+	 * The menu icon: a ship's wheel inside a shield, drawn rather than fetched.
 	 *
 	 * Inline so the icon costs no request and inherits the admin menu's own
 	 * colour through `currentColor`, which is how WordPress expects a menu icon
@@ -302,8 +302,11 @@ final class AdminMenu {
 	 */
 	private static function menu_icon(): string {
 		$svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none" stroke="currentColor"'
-			. ' stroke-width="1.5"><circle cx="10" cy="10" r="7.2"/><circle cx="10" cy="10" r="2.6"/>'
-			. '<path d="M10 1.4v5.9M10 12.7v5.9M1.4 10h5.9M12.7 10h5.9"/></svg>';
+			. ' stroke-width="1.5" stroke-linecap="round">'
+			. '<path d="M10 1.6 2.6 3.2v7c0 1 .3 1.9.9 2.5L10 18.6l6.5-5.9c.6-.6.9-1.5.9-2.5v-7Z"/>'
+			. '<circle cx="10" cy="10" r="3"/><circle cx="10" cy="10" r="1"/>'
+			. '<path d="M10 4.8v2.2M10 13v2.2M4.8 10H7M13 10h2.2M6.3 6.3l1.6 1.6M12.1 12.1l1.6 1.6'
+			. 'M13.7 6.3l-1.6 1.6M7.9 12.1l-1.6 1.6"/></svg>';
 
 		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- A data URI is defined as base64; WordPress documents this exact form for menu icons.
 		return 'data:image/svg+xml;base64,' . base64_encode( $svg );

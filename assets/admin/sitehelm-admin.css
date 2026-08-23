@@ -147,11 +147,15 @@
 .sitehelm-appbar__mark {
 	width: 34px;
 	height: 34px;
-	padding: 6px;
+	padding: 4px;
 	flex-shrink: 0;
-	border-radius: 6px;
-	background: var(--sh-primary);
-	color: var(--sh-white);
+	border-radius: 8px;
+	background: #0d1b35;
+	color: #3cbef0;
+}
+
+.sitehelm-appbar__mark-shield {
+	stroke: #f4f6f9;
 }
 
 .sitehelm-appbar__title {
