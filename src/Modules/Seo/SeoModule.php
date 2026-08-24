@@ -78,21 +78,27 @@ final class SeoModule implements IntegrationModule {
 	/**
 	 * The runtime dependency.
 	 *
-	 * BOTH ALTERNATIVES ARE NAMED, and both floors are quoted, because the
+	 * EVERY ALTERNATIVE IS NAMED, and every floor is quoted, because the
 	 * descriptor exists so an operator told a module is unavailable knows what to
-	 * install. Naming one plugin would send an operator who already runs the other
-	 * to install a second SEO plugin — the single worst remediation this descriptor
-	 * could give, since two active SEO plugins is the state that makes a site's
-	 * output ambiguous. Both numbers are built from SeoPresence's constants, so the
-	 * floors advertised here and the floors enforced there are the same by
+	 * install. Naming fewer plugins would send an operator who already runs one of
+	 * the others to install a second SEO plugin — the single worst remediation this
+	 * descriptor could give, since two active SEO plugins is the state that makes a
+	 * site's output ambiguous. Every number is built from SeoPresence's constants,
+	 * so the floors advertised here and the floors enforced there are the same by
 	 * construction.
 	 *
 	 * @return array<string, string> Dependency name and version range.
 	 */
 	public function dependency(): array {
 		return [
-			'name'         => 'yoast-seo or rank-math',
-			'versionRange' => 'yoast-seo >=' . SeoPresence::YOAST_MIN_VERSION . ', rank-math >=' . SeoPresence::RANK_MATH_MIN_VERSION,
+			'name'         => 'yoast-seo, rank-math, aioseo, seopress, seo-framework, slim-seo, or surerank',
+			'versionRange' => 'yoast-seo >=' . SeoPresence::YOAST_MIN_VERSION
+				. ', rank-math >=' . SeoPresence::RANK_MATH_MIN_VERSION
+				. ', aioseo >=' . SeoPresence::AIOSEO_MIN_VERSION
+				. ', seopress >=' . SeoPresence::SEOPRESS_MIN_VERSION
+				. ', seo-framework >=' . SeoPresence::SEO_FRAMEWORK_MIN_VERSION
+				. ', slim-seo >=' . SeoPresence::SLIM_SEO_MIN_VERSION
+				. ', surerank >=' . SeoPresence::SURERANK_MIN_VERSION,
 		];
 	}
 
@@ -147,6 +153,8 @@ final class SeoModule implements IntegrationModule {
 	 * through the term's cached row. Those are the five groups, and no others: no
 	 * operation here writes a term relationship or a post row, and declaring a
 	 * group a module never dirties makes the declared ones less trustworthy.
+	 * All in One SEO's custom table is not behind any object-cache group, so its
+	 * provider adds nothing here.
 	 *
 	 * @return string[] Cache group names.
 	 */

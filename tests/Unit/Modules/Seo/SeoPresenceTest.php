@@ -9,9 +9,14 @@ declare(strict_types=1);
 
 namespace SiteHelm\Tests\Unit\Modules\Seo;
 
+use SiteHelm\Modules\Seo\AioseoProvider;
 use SiteHelm\Modules\Seo\RankMathProvider;
 use SiteHelm\Modules\Seo\RankMathTermProvider;
+use SiteHelm\Modules\Seo\SeoFrameworkProvider;
 use SiteHelm\Modules\Seo\SeoPresence;
+use SiteHelm\Modules\Seo\SeoPressProvider;
+use SiteHelm\Modules\Seo\SlimSeoProvider;
+use SiteHelm\Modules\Seo\SureRankProvider;
 use SiteHelm\Modules\Seo\YoastProvider;
 use SiteHelm\Modules\Seo\YoastTermProvider;
 use SiteHelm\Tests\TestCase;
@@ -28,11 +33,12 @@ use SiteHelm\Tests\TestCase;
  * site with NO SEO plugin, which is also the ordinary state of a WordPress site and
  * the state this module has to survive without fataling.
  *
- * PRECEDENCE IS THE OTHER SUBSTANCE. A site can carry both plugins, and some do
- * during a migration. The gate picks Yoast first and does so on install base alone;
- * the ordering is arbitrary but it must be STABLE, because a precedence that varied
- * by request would let a write land in a different plugin's store than the read that
- * planned it. The both-installed test below is what holds the order.
+ * PRECEDENCE IS THE OTHER SUBSTANCE. A site can carry several plugins, and some do
+ * during a migration. The gate orders by install base — Yoast, Rank Math, All in One
+ * SEO, SEOPress, The SEO Framework, Slim SEO, SureRank; the ordering is arbitrary
+ * but it must be STABLE, because a precedence that varied by request would let a
+ * write land in a different plugin's store than the read that planned it. The
+ * multi-installed tests below are what hold the order.
  *
  * `version()` REPORTS AN OUT-OF-RANGE INSTALL. An operator told "your SEO plugin is
  * too old" needs to see the version they are updating from; null there reads as
@@ -177,6 +183,112 @@ final class SeoPresenceTest extends TestCase {
 	}
 
 	/**
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_a_supported_aioseo_is_served_by_the_aioseo_provider(): void {
+		$this->defineVersion( 'AIOSEO_VERSION', '4.8.7' );
+
+		$this->assertTrue( $this->presence->isLoaded() );
+		$this->assertInstanceOf( AioseoProvider::class, $this->presence->provider() );
+		$this->assertNull( $this->presence->termProvider() );
+		$this->assertSame( 'aioseo', $this->presence->providerName() );
+		$this->assertSame( '4.8.7', $this->presence->version() );
+	}
+
+	/**
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_a_supported_seopress_is_served_by_the_seopress_provider(): void {
+		$this->defineVersion( 'SEOPRESS_VERSION', '8.9' );
+
+		$this->assertTrue( $this->presence->isLoaded() );
+		$this->assertInstanceOf( SeoPressProvider::class, $this->presence->provider() );
+		$this->assertNull( $this->presence->termProvider() );
+		$this->assertSame( 'seopress', $this->presence->providerName() );
+		$this->assertSame( '8.9', $this->presence->version() );
+	}
+
+	/**
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_a_supported_seo_framework_is_served_by_its_provider(): void {
+		$this->defineVersion( 'THE_SEO_FRAMEWORK_VERSION', '5.1.4' );
+
+		$this->assertTrue( $this->presence->isLoaded() );
+		$this->assertInstanceOf( SeoFrameworkProvider::class, $this->presence->provider() );
+		$this->assertNull( $this->presence->termProvider() );
+		$this->assertSame( 'seo-framework', $this->presence->providerName() );
+		$this->assertSame( '5.1.4', $this->presence->version() );
+	}
+
+	/**
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_a_supported_slim_seo_is_served_by_the_slim_seo_provider(): void {
+		$this->defineVersion( 'SLIM_SEO_VER', '4.9.11' );
+
+		$this->assertTrue( $this->presence->isLoaded() );
+		$this->assertInstanceOf( SlimSeoProvider::class, $this->presence->provider() );
+		$this->assertNull( $this->presence->termProvider() );
+		$this->assertSame( 'slim-seo', $this->presence->providerName() );
+		$this->assertSame( '4.9.11', $this->presence->version() );
+	}
+
+	/**
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_a_supported_surerank_is_served_by_the_surerank_provider(): void {
+		$this->defineVersion( 'SURERANK_VERSION', '1.10.0' );
+
+		$this->assertTrue( $this->presence->isLoaded() );
+		$this->assertInstanceOf( SureRankProvider::class, $this->presence->provider() );
+		$this->assertNull( $this->presence->termProvider() );
+		$this->assertSame( 'surerank', $this->presence->providerName() );
+		$this->assertSame( '1.10.0', $this->presence->version() );
+	}
+
+	/**
+	 * All five newer plugins installed at once: All in One SEO wins, and the
+	 * answer does not vary by call — the precedence row order is the substance.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_a_site_carrying_all_five_newer_plugins_answers_aioseo_every_time(): void {
+		$this->defineVersion( 'AIOSEO_VERSION', '4.8.7' );
+		$this->defineVersion( 'SEOPRESS_VERSION', '8.9' );
+		$this->defineVersion( 'THE_SEO_FRAMEWORK_VERSION', '5.1.4' );
+		$this->defineVersion( 'SLIM_SEO_VER', '4.9.11' );
+		$this->defineVersion( 'SURERANK_VERSION', '1.10.0' );
+
+		$this->assertSame( 'aioseo', $this->presence->providerName() );
+		$this->assertSame( 'aioseo', $this->presence->providerName() );
+		$this->assertSame( '4.8.7', $this->presence->version() );
+	}
+
+	/**
+	 * An out-of-range All in One SEO does not shadow a usable SEOPress for the
+	 * PROVIDER, but it does own the reported VERSION — the same split the
+	 * Yoast/Rank Math pair holds above.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_an_out_of_range_aioseo_leaves_a_usable_seopress_serving_the_site(): void {
+		$this->defineVersion( 'AIOSEO_VERSION', '3.7.1' );
+		$this->defineVersion( 'SEOPRESS_VERSION', '8.9' );
+
+		$this->assertTrue( $this->presence->isLoaded() );
+		$this->assertSame( 'seopress', $this->presence->providerName() );
+		$this->assertSame( '3.7.1', $this->presence->version() );
+	}
+
+	/**
 	 * A constant of the wrong shape answers null instead of fataling.
 	 *
 	 * `wp-config.php` or an mu-plugin can define a version constant first and to
@@ -219,19 +331,27 @@ final class SeoPresenceTest extends TestCase {
 	}
 
 	/**
-	 * The declared ranges name both plugins and are built from the enforced floors.
+	 * The declared ranges name every plugin and are built from the enforced floors.
 	 *
-	 * Naming one plugin would misdescribe a site running the other, and a range
-	 * written out by hand would drift from the constant the gate actually compares
-	 * against — a definition that promises support the code refuses.
+	 * Naming fewer plugins would misdescribe a site running one of the others, and
+	 * a range written out by hand would drift from the constant the gate actually
+	 * compares against — a definition that promises support the code refuses.
 	 */
-	public function test_the_declared_versions_name_both_plugins_using_the_enforced_floors(): void {
+	public function test_the_declared_versions_name_every_plugin_using_the_enforced_floors(): void {
 		$versions = SeoPresence::supportedVersions();
 
-		$this->assertSame( [ 'wordpress', 'yoast-seo', 'rank-math' ], array_keys( $versions ) );
+		$this->assertSame(
+			[ 'wordpress', 'yoast-seo', 'rank-math', 'aioseo', 'seopress', 'seo-framework', 'slim-seo', 'surerank' ],
+			array_keys( $versions )
+		);
+		$this->assertSame( '>=' . SITEHELM_MIN_WP, $versions['wordpress'] );
 		$this->assertSame( '>=' . SeoPresence::YOAST_MIN_VERSION, $versions['yoast-seo'] );
 		$this->assertSame( '>=' . SeoPresence::RANK_MATH_MIN_VERSION, $versions['rank-math'] );
-		$this->assertSame( '>=' . SITEHELM_MIN_WP, $versions['wordpress'] );
+		$this->assertSame( '>=' . SeoPresence::AIOSEO_MIN_VERSION, $versions['aioseo'] );
+		$this->assertSame( '>=' . SeoPresence::SEOPRESS_MIN_VERSION, $versions['seopress'] );
+		$this->assertSame( '>=' . SeoPresence::SEO_FRAMEWORK_MIN_VERSION, $versions['seo-framework'] );
+		$this->assertSame( '>=' . SeoPresence::SLIM_SEO_MIN_VERSION, $versions['slim-seo'] );
+		$this->assertSame( '>=' . SeoPresence::SURERANK_MIN_VERSION, $versions['surerank'] );
 	}
 
 	/**

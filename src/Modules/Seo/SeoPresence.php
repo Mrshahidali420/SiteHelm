@@ -13,20 +13,26 @@ namespace SiteHelm\Modules\Seo;
  * Answers three questions: is a supported SEO plugin loaded, which one, and what
  * version.
  *
- * THIS IS THE ONLY FILE IN THE MODULE PERMITTED TO NAME A PLUGIN SYMBOL —
- * `WPSEO_VERSION` and `RANK_MATH_VERSION`. The providers address post meta only,
+ * THIS IS THE ONLY FILE IN THE MODULE PERMITTED TO NAME A PLUGIN SYMBOL — one
+ * version constant per supported plugin. The providers address stored data only,
  * which is why the containment here is one constant per plugin rather than a
  * wrapper around an API. Every reference is `defined()`-guarded, because an absent
  * SEO plugin is the ordinary condition of a WordPress site rather than an error,
  * and an unguarded constant is the one way this module could fatal on such a site.
+ * (All in One SEO defines its constant at runtime from its own file header rather
+ * than as a literal; by the time any operation runs, it is a constant like the
+ * others.)
  *
- * TWO PLUGINS, ONE ANSWER PER REQUEST. A site can have both installed, and some
- * do during a migration. Rather than refuse — which would leave the site's SEO
- * unreachable for exactly the period an agent is most useful — the gate picks by a
- * fixed precedence and the read REPORTS WHICH STORE IT ANSWERED FROM. Precedence
- * is Yoast SEO first, on install base alone; the ordering is arbitrary but it must
- * be stable, because a precedence that varied by request would make a write land
- * in a different plugin's store than the read that planned it.
+ * SEVEN PLUGINS, ONE ANSWER PER REQUEST. A site can have more than one installed,
+ * and some do during a migration. Rather than refuse — which would leave the
+ * site's SEO unreachable for exactly the period an agent is most useful — the gate
+ * picks by a fixed precedence and the read REPORTS WHICH STORE IT ANSWERED FROM.
+ * Precedence follows install base — Yoast SEO, Rank Math, All in One SEO,
+ * SEOPress, The SEO Framework, Slim SEO, SureRank; the ordering is arbitrary but
+ * it must be stable, because a precedence that varied by request would make a
+ * write land in a different plugin's store than the read that planned it, and the
+ * first two rows must never reorder because shipped sites already answer from
+ * them.
  *
  * THE VERSION FLOORS ARE CONSERVATIVE CHOICES, NOT THE EARLIEST TECHNICALLY
  * COMPATIBLE RELEASES. The meta keys this module reads are far older than either
@@ -50,13 +56,45 @@ final class SeoPresence {
 	 */
 	public const RANK_MATH_MIN_VERSION = '1.0.40';
 
+	/**
+	 * The oldest All in One SEO this module claims to support.
+	 *
+	 * Version 4 is where the plugin moved to the `{prefix}aioseo_posts` table
+	 * the provider addresses; every earlier release stored post meta this
+	 * module has never read.
+	 */
+	public const AIOSEO_MIN_VERSION = '4.0.0';
+
+	/**
+	 * The oldest SEOPress this module claims to support.
+	 */
+	public const SEOPRESS_MIN_VERSION = '5.0';
+
+	/**
+	 * The oldest The SEO Framework this module claims to support.
+	 */
+	public const SEO_FRAMEWORK_MIN_VERSION = '4.2.0';
+
+	/**
+	 * The oldest Slim SEO this module claims to support.
+	 *
+	 * Version 3 is where the plugin consolidated its per-post fields into the
+	 * single `slim_seo` array the provider addresses.
+	 */
+	public const SLIM_SEO_MIN_VERSION = '3.0.0';
+
+	/**
+	 * The oldest SureRank this module claims to support.
+	 */
+	public const SURERANK_MIN_VERSION = '1.0.0';
+
 	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- The module vocabulary is camelCase across every class.
 
 	/**
-	 * The version ranges both SEO operations declare.
+	 * The version ranges every SEO operation declares.
 	 *
-	 * BOTH PLUGINS ARE NAMED, because either one satisfies this module and an
-	 * operation that declared one range would misdescribe a site running the other.
+	 * EVERY PLUGIN IS NAMED, because any one of them satisfies this module and an
+	 * operation that declared one range would misdescribe a site running another.
 	 * The keys are the plugins' own slugs rather than the module id, for the same
 	 * reason: `seo` is not a plugin anyone can install.
 	 *
@@ -69,9 +107,14 @@ final class SeoPresence {
 	 */
 	public static function supportedVersions(): array {
 		return [
-			'wordpress' => '>=' . SITEHELM_MIN_WP,
-			'yoast-seo' => '>=' . self::YOAST_MIN_VERSION,
-			'rank-math' => '>=' . self::RANK_MATH_MIN_VERSION,
+			'wordpress'     => '>=' . SITEHELM_MIN_WP,
+			'yoast-seo'     => '>=' . self::YOAST_MIN_VERSION,
+			'rank-math'     => '>=' . self::RANK_MATH_MIN_VERSION,
+			'aioseo'        => '>=' . self::AIOSEO_MIN_VERSION,
+			'seopress'      => '>=' . self::SEOPRESS_MIN_VERSION,
+			'seo-framework' => '>=' . self::SEO_FRAMEWORK_MIN_VERSION,
+			'slim-seo'      => '>=' . self::SLIM_SEO_MIN_VERSION,
+			'surerank'      => '>=' . self::SURERANK_MIN_VERSION,
 		];
 	}
 
@@ -96,6 +139,26 @@ final class SeoPresence {
 
 		if ( $this->supported( 'RANK_MATH_VERSION', self::RANK_MATH_MIN_VERSION ) ) {
 			return new RankMathProvider();
+		}
+
+		if ( $this->supported( 'AIOSEO_VERSION', self::AIOSEO_MIN_VERSION ) ) {
+			return new AioseoProvider();
+		}
+
+		if ( $this->supported( 'SEOPRESS_VERSION', self::SEOPRESS_MIN_VERSION ) ) {
+			return new SeoPressProvider();
+		}
+
+		if ( $this->supported( 'THE_SEO_FRAMEWORK_VERSION', self::SEO_FRAMEWORK_MIN_VERSION ) ) {
+			return new SeoFrameworkProvider();
+		}
+
+		if ( $this->supported( 'SLIM_SEO_VER', self::SLIM_SEO_MIN_VERSION ) ) {
+			return new SlimSeoProvider();
+		}
+
+		if ( $this->supported( 'SURERANK_VERSION', self::SURERANK_MIN_VERSION ) ) {
+			return new SureRankProvider();
 		}
 
 		return null;
@@ -138,7 +201,13 @@ final class SeoPresence {
 	 * @return string|null The version.
 	 */
 	public function version(): ?string {
-		return $this->constantVersion( 'WPSEO_VERSION' ) ?? $this->constantVersion( 'RANK_MATH_VERSION' );
+		return $this->constantVersion( 'WPSEO_VERSION' )
+			?? $this->constantVersion( 'RANK_MATH_VERSION' )
+			?? $this->constantVersion( 'AIOSEO_VERSION' )
+			?? $this->constantVersion( 'SEOPRESS_VERSION' )
+			?? $this->constantVersion( 'THE_SEO_FRAMEWORK_VERSION' )
+			?? $this->constantVersion( 'SLIM_SEO_VER' )
+			?? $this->constantVersion( 'SURERANK_VERSION' );
 	}
 
 	/**

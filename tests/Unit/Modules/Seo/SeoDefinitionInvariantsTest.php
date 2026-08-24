@@ -253,12 +253,17 @@ final class SeoDefinitionInvariantsTest extends TestCase {
 		foreach ( $this->registeredDefinitions() as $definition ) {
 			$this->assertSame(
 				[
-					'wordpress' => '>=' . SITEHELM_MIN_WP,
-					'yoast-seo' => '>=' . SeoPresence::YOAST_MIN_VERSION,
-					'rank-math' => '>=' . SeoPresence::RANK_MATH_MIN_VERSION,
+					'wordpress'     => '>=' . SITEHELM_MIN_WP,
+					'yoast-seo'     => '>=' . SeoPresence::YOAST_MIN_VERSION,
+					'rank-math'     => '>=' . SeoPresence::RANK_MATH_MIN_VERSION,
+					'aioseo'        => '>=' . SeoPresence::AIOSEO_MIN_VERSION,
+					'seopress'      => '>=' . SeoPresence::SEOPRESS_MIN_VERSION,
+					'seo-framework' => '>=' . SeoPresence::SEO_FRAMEWORK_MIN_VERSION,
+					'slim-seo'      => '>=' . SeoPresence::SLIM_SEO_MIN_VERSION,
+					'surerank'      => '>=' . SeoPresence::SURERANK_MIN_VERSION,
 				],
 				$definition->supportedVersions,
-				"Operation '{$definition->id}' must declare the WordPress range and both plugin ranges, all built from the declared floors."
+				"Operation '{$definition->id}' must declare the WordPress range and every plugin range, all built from the declared floors."
 			);
 		}
 	}

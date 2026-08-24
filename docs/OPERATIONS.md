@@ -152,12 +152,16 @@ links are listed per item, and `truncated` says when a page held more.
 > preview and the apply, and again on rollback.
 
 > **The SEO operations speak one vocabulary whichever plugin is installed.** A site
-> running Yoast SEO and a site running Rank Math answer the same field names —
-> `title`, `description`, `canonical`, `ogTitle`, `noindex`, and the rest — and the
-> answer carries a `provider` naming which store it came from. Nothing else in the
-> contract mentions a plugin. If both are installed, Yoast serves the site, and the
-> precedence is fixed so a write lands in the same store the read that planned it came
-> from.
+> running Yoast SEO, Rank Math, All in One SEO, SEOPress, The SEO Framework, Slim
+> SEO, or SureRank answers the same field names — `title`, `description`,
+> `canonical`, `ogTitle`, `noindex`, and the rest — and the answer carries a
+> `provider` naming which store it came from. Nothing else in the contract mentions
+> a plugin. If more than one is installed, precedence follows install base in the
+> order above, and the order is fixed so a write lands in the same store the read
+> that planned it came from. A field a plugin has nowhere to store — Slim SEO has no
+> canonical, The SEO Framework keeps no focus keyword — reads as `null` and a write
+> to it promises `null` in the preview rather than failing after the fact. Term
+> metadata is served for Yoast and Rank Math only.
 >
 > **The three search-visibility directives are tri-state.** `noindex`, `nofollow`, and
 > the two social flags are `true`, `false`, or `null` — and `null` is not "off", it is
