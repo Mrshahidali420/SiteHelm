@@ -21,4 +21,5 @@ enum ModuleId: string {
 	case Acf         = 'acf';
 	case Metabox     = 'metabox';
 	case Seo         = 'seo';
+	case Forms       = 'forms';
 }

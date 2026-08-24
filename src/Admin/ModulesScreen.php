@@ -13,6 +13,7 @@ use SiteHelm\Contracts\ModuleHealth;
 use SiteHelm\Contracts\ModuleId;
 use SiteHelm\Modules\Acf\AcfPresence;
 use SiteHelm\Modules\Elementor\ElementorPresence;
+use SiteHelm\Modules\Forms\FormsPresence;
 use SiteHelm\Modules\Metabox\MetaboxPresence;
 use SiteHelm\Modules\Seo\SeoPresence;
 use SiteHelm\Policy\OperationSwitches;
@@ -376,6 +377,8 @@ final class ModulesScreen {
 					SeoPresence::YOAST_MIN_VERSION,
 					SeoPresence::RANK_MATH_MIN_VERSION
 				);
+			case ModuleId::Forms:
+				return 'Contact Form 7 ' . FormsPresence::CF7_MIN_VERSION;
 			default:
 				return '';
 		}
@@ -464,6 +467,8 @@ final class ModulesScreen {
 				return __( 'Meta Box', 'sitehelm' );
 			case ModuleId::Seo:
 				return __( 'SEO metadata', 'sitehelm' );
+			case ModuleId::Forms:
+				return __( 'Forms', 'sitehelm' );
 			default:
 				return $module->value;
 		}
@@ -492,6 +497,8 @@ final class ModulesScreen {
 				return __( 'Read and write Meta Box fields, respecting each field\'s own type.', 'sitehelm' );
 			case ModuleId::Seo:
 				return __( 'Read and set a post\'s search-engine title, description and visibility, in Yoast SEO or Rank Math.', 'sitehelm' );
+			case ModuleId::Forms:
+				return __( 'List the site\'s forms and read each form\'s fields, embed shortcode and recent entries.', 'sitehelm' );
 			default:
 				return '';
 		}
