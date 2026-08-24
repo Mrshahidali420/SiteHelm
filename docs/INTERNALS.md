@@ -1655,6 +1655,10 @@ Seven files under `src/Modules/Forms/`, all read-only, all on `content-read`:
 | `FormsProvider.php` | The interface every operation consumes: `name`, `available`, `version`, `forms`, `form`, `entries`, `entriesNote` |
 | `Cf7Provider.php` | The one Free provider: Contact Form 7's stored contract, no plugin code called |
 | `FormsPresence.php` | The gate: built-in provider first, add-on providers via the `sitehelm_forms_providers` filter, contained like `Extensions` |
+
+SiteHelm Pro 0.3.0 serves that filter: WPForms, Gravity Forms, Fluent Forms, Ninja
+Forms, Formidable, Forminator and SureForms, appended only while the licence is
+active, so an unlicensed site keeps exactly the built-in Contact Form 7 behaviour.
 | `FormList.php` / `FormGet.php` / `FormEntriesList.php` | The three operations |
 | `FormsModule.php` | `ModuleId::Forms`, four-state health, empty `cacheCleanup()`, unconditional registration |
 
