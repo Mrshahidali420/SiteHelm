@@ -623,8 +623,8 @@ first docblock** (after the last constant) and close it after the last method:
 
 ## 10. The SEO module (REQ-0059) in one screen
 
-Sixteen files under `src/Modules/Seo/`: the nine post-level ones below, plus the
-term-level seven (`SeoTermFields`, `SeoTermProvider`, `SeoTermProviderBase`,
+Twenty-two files under `src/Modules/Seo/`: the fifteen post-level ones below, plus
+the term-level seven (`SeoTermFields`, `SeoTermProvider`, `SeoTermProviderBase`,
 `YoastTermProvider`, `RankMathTermProvider`, `SeoTermTarget`, and the two operations
 `SeoTermMetadataGet` / `SeoTermMetadataSet`).
 
@@ -636,12 +636,28 @@ term-level seven (`SeoTermFields`, `SeoTermProvider`, `SeoTermProviderBase`,
   `CANONICAL_MAX_LENGTH` 2000), `TARGET_PREFIX = 'post-seo:'`,
   `CAPABILITY = 'edit_post'`, plus `targetKey()`, `postIdFromKey()` (null, never 0,
   for a foreign key — 0 means "the global post" to WordPress), `maxLengthFor()`.
-- `SeoProvider` (interface) → `SeoMetaProvider` (abstract mechanics) →
-  `YoastProvider`, `RankMathProvider`.
+- `SeoProvider` (interface) → `SeoMetaProvider` (abstract mechanics, one meta key
+  per field) → `YoastProvider`, `RankMathProvider`, `SeoPressProvider`,
+  `SeoFrameworkProvider`; → `SeoArrayMetaProvider` (abstract mechanics over
+  `[meta key, sub-key]` paths inside serialized arrays, read-modify-write so
+  foreign sub-keys survive) → `SlimSeoProvider` (one `slim_seo` array),
+  `SureRankProvider` (`surerank_settings_*` group arrays plus scalar flag rows);
+  → `AioseoProvider` standalone over `$wpdb` (the `{prefix}aioseo_posts` table —
+  the one provider with no post meta in it; its coupled `robots_default` switch
+  means a cleared flag projects to **false**, never null, and a flag write pins
+  the untouched directive to its current effective value). A field a plugin has
+  nowhere to store is **declined**: it reads null and `project()` promises null,
+  so plan, apply and verification agree (`SeoMetaProvider::project()` consults
+  `textKeys()` for exactly this reason).
 - `SeoPresence` — **the only file allowed to name a plugin symbol**
-  (`WPSEO_VERSION`, `RANK_MATH_VERSION`), always `defined()`-guarded. Precedence is
-  Yoast first, fixed so a write cannot land in a different store than the read that
-  planned it. Floors: Yoast `14.0`, Rank Math `1.0.40`.
+  (`WPSEO_VERSION`, `RANK_MATH_VERSION`, `AIOSEO_VERSION`, `SEOPRESS_VERSION`,
+  `THE_SEO_FRAMEWORK_VERSION`, `SLIM_SEO_VER`, `SURERANK_VERSION`), always
+  `defined()`-guarded. Precedence follows install base — Yoast, Rank Math,
+  All in One SEO, SEOPress, The SEO Framework, Slim SEO, SureRank — fixed so a
+  write cannot land in a different store than the read that planned it. Floors:
+  Yoast `14.0`, Rank Math `1.0.40`, AIOSEO `4.0.0` (the custom-table era),
+  SEOPress `5.0`, The SEO Framework `4.2.0`, Slim SEO `3.0.0` (the single-array
+  era), SureRank `1.0.0`. `termProvider()` answers only for Yoast and Rank Math.
 - `SeoMetadataGet` (`content-seo-get`), `SeoMetadataSet` (`content-seo-set`),
   `SeoScoreGet` (`content-seo-score-get`), `SeoAudit` (`content-seo-audit`),
   `SeoFindings` (the finding vocabulary and rules), `SeoModule`.
@@ -734,6 +750,11 @@ Its tests, and what each is for:
 | `SeoFieldsTest` | target-key round trip; nine unusable keys all → **null, never 0** |
 | `YoastProviderTest` | the two independent robots numbers and their encodings |
 | `RankMathProviderTest` | **the merge** — `noarchive`/`nosnippet`/`noimageindex` survive a `noindex` write |
+| `SeoPressProviderTest` | the `'yes'` flag encoding, and the key named `index` that means noindex |
+| `SeoFrameworkProviderTest` | the declined focus keyword — a write to it is a no-op that still verifies |
+| `SlimSeoProviderTest` | sub-key writes preserve foreign sub-keys; an emptied array deletes its row |
+| `SureRankProviderTest` | scalar whole-row flags beside group arrays; the sanitizer's true-spellings |
+| `AioseoProviderTest` | the coupled robots switch — cleared flags project false, untouched ones are pinned |
 | `SeoPresenceTest` | precedence stability; installed-vs-loaded; a version constant of the wrong shape |
 | `SeoMetadataGetTest` | guard order, each step asserted where it can be told from the others |
 | `SeoMetadataSetTest` | all six `WriteOperation` phases; the full promise; the provider-mismatch refusal |

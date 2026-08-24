@@ -124,7 +124,10 @@ abstract class SeoMetaProvider implements SeoProvider {
 				continue;
 			}
 
-			if ( ! is_string( $value ) ) {
+			// A text field with no mapped key is one this plugin does not store,
+			// so the honest promise is null: apply() will skip it, and the plan
+			// must say so rather than promise a value verification cannot find.
+			if ( ! is_string( $value ) || ! isset( $this->textKeys()[ $field ] ) ) {
 				$projected[ $field ] = null;
 
 				continue;

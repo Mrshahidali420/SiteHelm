@@ -75,14 +75,20 @@ final class SeoModuleTest extends TestCase {
 	}
 
 	/**
-	 * THE TWO-PLUGIN DESCRIPTOR, with both floors composed from the enforced ones.
+	 * THE SEVEN-PLUGIN DESCRIPTOR, with every floor composed from the enforced ones.
 	 */
-	public function test_the_dependency_names_both_plugins_and_quotes_both_enforced_floors(): void {
+	public function test_the_dependency_names_every_plugin_and_quotes_every_enforced_floor(): void {
 		$dependency = ( new SeoModule() )->dependency();
 
-		$this->assertSame( 'yoast-seo or rank-math', $dependency['name'] );
+		$this->assertSame( 'yoast-seo, rank-math, aioseo, seopress, seo-framework, slim-seo, or surerank', $dependency['name'] );
 		$this->assertSame(
-			'yoast-seo >=' . SeoPresence::YOAST_MIN_VERSION . ', rank-math >=' . SeoPresence::RANK_MATH_MIN_VERSION,
+			'yoast-seo >=' . SeoPresence::YOAST_MIN_VERSION
+				. ', rank-math >=' . SeoPresence::RANK_MATH_MIN_VERSION
+				. ', aioseo >=' . SeoPresence::AIOSEO_MIN_VERSION
+				. ', seopress >=' . SeoPresence::SEOPRESS_MIN_VERSION
+				. ', seo-framework >=' . SeoPresence::SEO_FRAMEWORK_MIN_VERSION
+				. ', slim-seo >=' . SeoPresence::SLIM_SEO_MIN_VERSION
+				. ', surerank >=' . SeoPresence::SURERANK_MIN_VERSION,
 			$dependency['versionRange']
 		);
 	}

@@ -12,6 +12,14 @@ an operation behaves.
 ## [Unreleased]
 
 ### Added
+- **Five more SEO plugins speak the shared vocabulary** (REQ-0083) — All in One SEO,
+  SEOPress, The SEO Framework, Slim SEO, and SureRank now serve the six existing SEO
+  operations alongside Yoast SEO and Rank Math. The same field names read and write
+  whichever plugin the site runs, the answer names its `provider`, and precedence
+  across a multi-plugin site is fixed (Yoast, Rank Math, All in One SEO, SEOPress,
+  The SEO Framework, Slim SEO, SureRank). A field a plugin has nowhere to store reads
+  as null and a write to it promises null in the preview instead of failing after
+  the fact.
 - **Site settings, read and write** (REQ-0062) — `site-settings-read` answers the whole
   thirteen-field allowlist (title, tagline, timezone, date and time formats, posts per
   page, front page geometry, permalink structure, default comment and ping status,
