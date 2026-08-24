@@ -42,6 +42,19 @@ final class IntegrationHealthTest extends TestCase {
 	private const BOOT_ORDER = [ 'diagnostics', 'core', 'media', 'menus', 'elementor', 'acf', 'metabox', 'seo', 'forms' ];
 
 	/**
+	 * Module identifiers no built-in module implements.
+	 *
+	 * `woocommerce` is REQ-0057's: the enum case exists so the console can carry
+	 * permission levels and switches for it, and the operations behind it arrive
+	 * from the SiteHelm Pro add-on through `sitehelm_modules`. Written out here
+	 * rather than derived, for the same reason BOOT_ORDER is: a case added to the
+	 * enum and to no boot table has to be acknowledged in one of these two lists.
+	 *
+	 * @var string[]
+	 */
+	private const ADDON_ONLY = [ 'woocommerce' ];
+
+	/**
 	 * Whether SiteHelm's own storage answers ready for the test at hand.
 	 *
 	 * Every test in this file sets it, if only by taking the default, because the
@@ -221,7 +234,8 @@ final class IntegrationHealthTest extends TestCase {
 			[],
 			array_diff(
 				array_map( static fn( ModuleId $id ): string => $id->value, ModuleId::cases() ),
-				self::BOOT_ORDER
+				self::BOOT_ORDER,
+				self::ADDON_ONLY
 			),
 			'A module identifier the plugin knows about is missing from the report.'
 		);

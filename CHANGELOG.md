@@ -12,6 +12,15 @@ an operation behaves.
 ## [Unreleased]
 
 ### Added
+- **WooCommerce is a module the console knows about** (REQ-0057, groundwork) — the
+  Modules screen lists WooCommerce alongside the built-in nine, with its own permission
+  level and its own requirement line, and the Pro screen names the eight operations it
+  brings: products listed, read, created and updated (name, description, SKU, price, sale
+  price, stock and categories), product categories listed, and orders and customers read.
+  Orders and customers are read-only by design — SiteHelm will not rewrite a shop's
+  financial record. The operations themselves ship in the SiteHelm Pro add-on; the free
+  plugin carries the identifier, the console copy and the capability reservation so that
+  an add-on can register them without the free plugin changing again.
 - **Forms, listed and read** (REQ-0084, Free tier) — `form-list` names every form the
   site's form plugin holds with its embed shortcode, `form-get` reads one form's fields
   (name, type, required) exactly as the stored template declares them, and

@@ -37,6 +37,17 @@ final class OperationDefinition {
 	 * with no target resolves to `do_not_allow`, and it is re-checked inside the
 	 * operation where the target id is known. A narrowing test confines each of
 	 * these two to exactly one operation.
+	 *
+	 * `edit_products` and `manage_woocommerce` are REQ-0057's pair, and they are
+	 * the first entries no built-in operation names: the WooCommerce operations
+	 * ship in the SiteHelm Pro add-on. Both are WordPress primitives WooCommerce
+	 * grants to the shop roles — `edit_products` is the plural form the product
+	 * post type registers, never the target-bound `edit_product`, which is a meta
+	 * capability and would resolve to `do_not_allow` with no target. Product reads
+	 * and writes gate on `edit_products`; orders and customers, which carry a
+	 * shopper's name, address and spend, gate on `manage_woocommerce` alone. A
+	 * narrowing test in this repository asserts that no built-in operation names
+	 * either one; the add-on's own suite asserts which of its operations do.
 	 */
 	private const ALLOWED_CAPABILITIES = [
 		'read',
@@ -51,13 +62,15 @@ final class OperationDefinition {
 		'moderate_comments',
 		'list_users',
 		'promote_users',
+		'edit_products',
+		'manage_woocommerce',
 	];
 
 	/**
 	 * Modules whose dependency is a third-party plugin, and which therefore need
 	 * an explicit plugin version range in addition to the WordPress core range.
 	 */
-	private const PLUGIN_BACKED_MODULES = [ ModuleId::Elementor, ModuleId::Acf, ModuleId::Metabox ];
+	private const PLUGIN_BACKED_MODULES = [ ModuleId::Elementor, ModuleId::Acf, ModuleId::Metabox, ModuleId::Woocommerce ];
 
 	/**
 	 * Constructs one definition, enforcing every contract cross-field rule.

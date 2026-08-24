@@ -38,12 +38,82 @@ final class ProCatalogue {
 	public const ADDON_SLUG = 'sitehelm-pro';
 
 	/**
+	 * The WooCommerce version the add-on's commerce operations require.
+	 *
+	 * Declared here rather than in the add-on because the free console has to
+	 * name the floor on a site that has no add-on installed. The add-on reads
+	 * this constant as its own floor when the free plugin is new enough to
+	 * carry it, so the number advertised and the number enforced are one.
+	 */
+	public const WOOCOMMERCE_MIN_VERSION = '8.0';
+
+	/**
+	 * Modules whose operations live entirely in the add-on.
+	 *
+	 * The console shows such a module like any other — an owner can set its
+	 * permission level before buying — but what it is waiting on is the add-on,
+	 * not a plugin they can activate from the Plugins screen, so the card says
+	 * so.
+	 *
+	 * @var ModuleId[]
+	 */
+	public const ADDON_ONLY_MODULES = [ ModuleId::Woocommerce ];
+
+	/**
 	 * Every Pro operation, keyed by identifier: the dispatcher it lands on,
 	 * the module it belongs to, whether it reads, and what it does.
 	 *
 	 * @var array<string, array{dispatcher: string, module: ModuleId, read: bool, description: string}>
 	 */
 	public const OPERATIONS = [
+		'product-list'           => [
+			'dispatcher'  => 'content-read',
+			'module'      => ModuleId::Woocommerce,
+			'read'        => true,
+			'description' => "List this shop's products with their price, sale price, stock and categories, filtered by search term, status, category or stock state.",
+		],
+		'product-get'            => [
+			'dispatcher'  => 'content-read',
+			'module'      => ModuleId::Woocommerce,
+			'read'        => true,
+			'description' => 'Read one product in full — name, description, SKU, prices, stock, categories, tags, images and type, including whether its price lives on its variations.',
+		],
+		'product-category-list'  => [
+			'dispatcher'  => 'content-read',
+			'module'      => ModuleId::Woocommerce,
+			'read'        => true,
+			'description' => "List the shop's product categories with their parent, slug and product count.",
+		],
+		'order-list'             => [
+			'dispatcher'  => 'content-read',
+			'module'      => ModuleId::Woocommerce,
+			'read'        => true,
+			'description' => 'List orders newest first with status, total, currency, item count and date, filtered by status, customer or date range. Read only — SiteHelm never changes an order.',
+		],
+		'order-get'              => [
+			'dispatcher'  => 'content-read',
+			'module'      => ModuleId::Woocommerce,
+			'read'        => true,
+			'description' => 'Read one order — its line items, totals, tax, shipping, payment method and status history. Read only.',
+		],
+		'customer-list'          => [
+			'dispatcher'  => 'content-read',
+			'module'      => ModuleId::Woocommerce,
+			'read'        => true,
+			'description' => 'List shop customers with order count, lifetime spend and last order date. Read only, and gated on the WooCommerce management capability because the answer carries personal data.',
+		],
+		'product-create'         => [
+			'dispatcher'  => 'content-write',
+			'module'      => ModuleId::Woocommerce,
+			'read'        => false,
+			'description' => 'Create one simple product — name, description, SKU, price, sale price, stock and categories. Previewed before it is made.',
+		],
+		'product-update'         => [
+			'dispatcher'  => 'content-write',
+			'module'      => ModuleId::Woocommerce,
+			'read'        => false,
+			'description' => "Change one product's name, description, SKU, price, sale price, stock or categories. Previewed, snapshotted and reversible.",
+		],
 		'seo-settings-get'       => [
 			'dispatcher'  => 'system-read',
 			'module'      => ModuleId::Seo,

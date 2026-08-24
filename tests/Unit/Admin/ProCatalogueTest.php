@@ -104,9 +104,9 @@ final class ProCatalogueTest extends TestCase {
 
 		$this->assertSame(
 			[
-				'content-write' => [ 'seo-settings-set', 'content-seo-bulk-set', 'content-seo-schema-set', 'content-seo-audit-fix' ],
+				'content-read'  => [ 'product-list', 'product-get', 'product-category-list', 'order-list', 'order-get', 'customer-list', 'content-seo-schema-get' ],
+				'content-write' => [ 'product-create', 'product-update', 'seo-settings-set', 'content-seo-bulk-set', 'content-seo-schema-set', 'content-seo-audit-fix' ],
 				'system-read'   => [ 'seo-404-log-list', 'seo-redirection-list' ],
-				'content-read'  => [ 'content-seo-schema-get' ],
 			],
 			( new ProCatalogue() )->missing( $registry )
 		);
@@ -120,6 +120,68 @@ final class ProCatalogueTest extends TestCase {
 		}
 
 		$this->assertSame( [], ( new ProCatalogue() )->missing( $registry ) );
-		$this->assertSame( 8, ( new ProCatalogue() )->registered_count( $registry ) );
+		$this->assertSame( 16, ( new ProCatalogue() )->registered_count( $registry ) );
+	}
+
+	/**
+	 * REQ-0057's eight operations, described in the free console before any of
+	 * them exists.
+	 *
+	 * The catalogue is the ONLY thing the free plugin knows about the commerce
+	 * module: no module class, no operation, no handler. If an id here drifts from
+	 * the one the add-on registers, the console lists an operation that never
+	 * arrives and `missing()` keeps reporting it as absent on a site that has Pro
+	 * installed and working — the exact failure the Pro screen exists to rule out.
+	 */
+	public function testTheCommerceOperationsAreCataloguedAgainstTheCommerceModule(): void {
+		$expected = [
+			'product-list'          => 'content-read',
+			'product-get'           => 'content-read',
+			'product-category-list' => 'content-read',
+			'order-list'            => 'content-read',
+			'order-get'             => 'content-read',
+			'customer-list'         => 'content-read',
+			'product-create'        => 'content-write',
+			'product-update'        => 'content-write',
+		];
+
+		foreach ( $expected as $id => $dispatcher ) {
+			$this->assertArrayHasKey( $id, ProCatalogue::OPERATIONS, "The add-on registers '{$id}'; the free catalogue must describe it." );
+			$this->assertSame( $dispatcher, ProCatalogue::OPERATIONS[ $id ]['dispatcher'], $id );
+			$this->assertSame( ModuleId::Woocommerce, ProCatalogue::OPERATIONS[ $id ]['module'], $id );
+			$this->assertSame( 'content-read' === $dispatcher, ProCatalogue::OPERATIONS[ $id ]['read'], $id );
+		}
+
+		$commerce = array_keys(
+			array_filter(
+				ProCatalogue::OPERATIONS,
+				static fn( array $entry ): bool => ModuleId::Woocommerce === $entry['module']
+			)
+		);
+
+		$this->assertSame(
+			array_keys( $expected ),
+			$commerce,
+			'The commerce module ships exactly these eight operations. One more in the catalogue than in the add-on advertises a feature that does not exist.'
+		);
+	}
+
+	/**
+	 * Every add-on-only module has catalogue entries.
+	 *
+	 * `ADDON_ONLY_MODULES` names the modules no built-in class implements, and the
+	 * modules screen renders a card for each. A module in that list with nothing in
+	 * the catalogue renders an empty card: a name, a version requirement and no
+	 * statement of what it does.
+	 */
+	public function testEveryAddOnOnlyModuleIsDescribedByTheCatalogue(): void {
+		foreach ( ProCatalogue::ADDON_ONLY_MODULES as $module ) {
+			$described = array_filter(
+				ProCatalogue::OPERATIONS,
+				static fn( array $entry ): bool => $module === $entry['module']
+			);
+
+			$this->assertNotSame( [], $described, "Module '{$module->value}' has no built-in operations and no catalogue entries, so nothing anywhere says what it does." );
+		}
 	}
 }

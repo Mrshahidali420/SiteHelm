@@ -328,7 +328,18 @@ final class ModulesScreen {
 	private function render_waiting_on( ModuleId $module, string $state ): void {
 		$requirement = self::requirement_for( $module );
 
-		if ( '' === $requirement ) {
+		if ( in_array( $module, ProCatalogue::ADDON_ONLY_MODULES, true ) ) {
+			// An add-on-only module is not waiting on anything the operator can
+			// activate from the Plugins screen, so pointing them there would send
+			// them looking for a plugin that is not the missing piece.
+			$text = sprintf(
+				/* translators: %s: a plugin name and minimum version, such as "WooCommerce 8.0". */
+				__( 'Included in SiteHelm Pro, on a site running %s or newer.', 'sitehelm' ),
+				$requirement
+			);
+			$href = admin_url( 'admin.php?page=' . AdminMenu::PAGE_OPERATIONS );
+			$link = __( 'See what Pro adds', 'sitehelm' );
+		} elseif ( '' === $requirement ) {
 			$text = __( 'Waiting on SiteHelm storage.', 'sitehelm' );
 			$href = admin_url( 'admin.php?page=' . AdminMenu::PAGE_STATUS );
 			$link = __( 'See Status', 'sitehelm' );
@@ -379,6 +390,8 @@ final class ModulesScreen {
 				);
 			case ModuleId::Forms:
 				return 'Contact Form 7 ' . FormsPresence::CF7_MIN_VERSION;
+			case ModuleId::Woocommerce:
+				return 'WooCommerce ' . ProCatalogue::WOOCOMMERCE_MIN_VERSION;
 			default:
 				return '';
 		}
@@ -469,6 +482,8 @@ final class ModulesScreen {
 				return __( 'SEO metadata', 'sitehelm' );
 			case ModuleId::Forms:
 				return __( 'Forms', 'sitehelm' );
+			case ModuleId::Woocommerce:
+				return __( 'WooCommerce', 'sitehelm' );
 			default:
 				return $module->value;
 		}
@@ -499,6 +514,8 @@ final class ModulesScreen {
 				return __( 'Read and set a post\'s search-engine title, description and visibility, in Yoast SEO or Rank Math.', 'sitehelm' );
 			case ModuleId::Forms:
 				return __( 'List the site\'s forms and read each form\'s fields, embed shortcode and recent entries.', 'sitehelm' );
+			case ModuleId::Woocommerce:
+				return __( 'Read and edit products, prices, stock and categories, and read orders and customers. Orders and customers are never changed.', 'sitehelm' );
 			default:
 				return '';
 		}
