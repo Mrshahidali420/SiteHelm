@@ -12,6 +12,14 @@ an operation behaves.
 ## [Unreleased]
 
 ### Added
+- **Forms, listed and read** (REQ-0084, Free tier) — `form-list` names every form the
+  site's form plugin holds with its embed shortcode, `form-get` reads one form's fields
+  (name, type, required) exactly as the stored template declares them, and
+  `form-entries-list` reads a form's recent entries where the plugin stores any — for
+  Contact Form 7, which delivers each entry by email and stores none, the answer says so
+  plainly instead of erroring. Entries gate on `manage_options` because a submission can
+  carry a visitor's personal information. Everything is read-only: no form write, no
+  entry deletion. Other form plugins arrive through the same provider seam as an add-on.
 - **Five more SEO plugins speak the shared vocabulary** (REQ-0083) — All in One SEO,
   SEOPress, The SEO Framework, Slim SEO, and SureRank now serve the six existing SEO
   operations alongside Yoast SEO and Rank Math. The same field names read and write

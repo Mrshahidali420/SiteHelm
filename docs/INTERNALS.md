@@ -1646,6 +1646,53 @@ change touches.
 `permalinkStructure` — and on restore, only when the snapshot's structure differs from
 what is stored at restore time.
 
+## 33. The forms module (REQ-0084) in one screen
+
+Seven files under `src/Modules/Forms/`, all read-only, all on `content-read`:
+
+| File | Holds |
+|---|---|
+| `FormsProvider.php` | The interface every operation consumes: `name`, `available`, `version`, `forms`, `form`, `entries`, `entriesNote` |
+| `Cf7Provider.php` | The one Free provider: Contact Form 7's stored contract, no plugin code called |
+| `FormsPresence.php` | The gate: built-in provider first, add-on providers via the `sitehelm_forms_providers` filter, contained like `Extensions` |
+| `FormList.php` / `FormGet.php` / `FormEntriesList.php` | The three operations |
+| `FormsModule.php` | `ModuleId::Forms`, four-state health, empty `cacheCleanup()`, unconditional registration |
+
+**A form is a post.** Contact Form 7 keeps each form as a `wpcf7_contact_form` post:
+title = form name, template in `_form` post meta as plain text carrying form tags, hash
+in `_hash` meta. `Cf7Provider` addresses that stored contract only — no CF7 class or
+function is ever called — so reads behave identically in production and under doubles.
+Floor `5.0` is enforced from `Cf7Provider::MIN_VERSION`, re-exported as
+`FormsPresence::CF7_MIN_VERSION` so the module descriptor and the enforcement share one
+constant. The version constant is `WPCF7_VERSION`, which is why the provider and module
+tests run in separate processes.
+
+**The shortcode spelling matches the plugin's copy box.** Since CF7 5.8 the plugin shows
+a hash-based id — the first seven characters of `_hash`; the provider emits the same,
+falling back to the numeric id for a form saved before hashes existed:
+`[contact-form-7 id="8f3ab29" title="Contact form 1"]`.
+
+**Field parsing is one regex over the stored template**, `[type* name …]` → `{name,
+type, required}`, with `submit` / `response` / `count` / `recaptcha` skipped by name and
+quoted-first-token tags (e.g. `[submit "Send"]`) shaped out structurally.
+
+**Entries: null is not empty.** `entries()` answering `null` means "this plugin keeps no
+entry store" — CF7 delivers each entry by email and stores nothing — and
+`form-entries-list` turns that into `entriesSupported: false` plus `entriesNote()`'s
+sentence, never an error. `[]` would claim a store exists and merely holds nothing.
+Entries gate on `manage_options` (a submission is a visitor's words, possibly personal
+data) where `form-list` / `form-get` gate on `edit_posts`. There is no form write and no
+entry deletion anywhere (REQ-0084's explicit exclusion).
+
+**Guard order** is capability → presence (`IntegrationUnavailable`) → existence
+(`TargetNotFound`), same as the SEO reads and for the same reason: an unauthorised
+caller learns nothing about which plugins the site runs.
+
+Tests: `tests/Unit/Modules/Forms/` (provider, presence, three operations, module) over
+the `FormsWordPressStubs` trait — a typed post store whose `get_posts` filters by
+`post_type` (so a dropped clause fails) while `get_post` answers any seeded row (so the
+provider's own wrong-type refusal is what a test exercises).
+
 ## 28. Standing project constraints
 
 - **No AI attribution anywhere in git** — no "Generated with Claude Code" footer,
