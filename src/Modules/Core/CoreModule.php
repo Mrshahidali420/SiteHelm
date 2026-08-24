@@ -147,6 +147,12 @@ final class CoreModule implements IntegrationModule {
 		// dispatcher set rather than chosen: there is no system-write.
 		$registry->register( UserList::definition(), [ new UserList(), 'handle' ] );
 
+		// The settings read rides system-read for the same reason user-list does:
+		// how the site presents itself is a fact about the installation. Its write
+		// is down among the content writes, forced there by the frozen dispatcher
+		// set — there is no system-write.
+		$registry->register( SiteSettingsRead::definition(), [ new SiteSettingsRead(), 'handle' ] );
+
 		$targets = new ContentTarget( $fields );
 
 		$registry->registerWrite( ContentUpdate::definition(), new ContentUpdate( $fields, $targets ) );
@@ -219,6 +225,11 @@ final class CoreModule implements IntegrationModule {
 		// its own PolicyEngine for the target-bound edit_user check that cannot be
 		// expressed as a declared capability.
 		$registry->registerWrite( UserRoleSet::definition(), new UserRoleSet( new PolicyEngine() ) );
+
+		// The settings write is the other half of the user-pair pattern: a system
+		// operation riding content-write because the dispatcher set has no
+		// system-write. Its read is registered up with the system reads.
+		$registry->registerWrite( SiteSettingsSet::definition(), new SiteSettingsSet() );
 
 		$registry->register( AuditRead::definition(), [ new AuditRead( new AuditStore(), new Installer() ), 'handle' ] );
 	}

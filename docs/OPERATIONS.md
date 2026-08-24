@@ -1,6 +1,6 @@
 # Operations reference
 
-SiteHelm exposes **74 operations** through **11 MCP tools**, called dispatchers. Every operation is
+SiteHelm exposes **76 operations** through **11 MCP tools**, called dispatchers. Every operation is
 declared once, in code, with a strict input schema (`additionalProperties: false`), a required
 capability, a risk level, and preview, snapshot, and rollback policies. That declaration is the
 contract the gateway enforces and the catalogue an agent discovers.
@@ -109,7 +109,7 @@ path), or to nothing, which is the `broken` count worth acting on. A link a redi
 catches is still worth rewriting: the redirect is a safety net, not a fix. At most 200
 links are listed per item, and `truncated` says when a page held more.
 
-### `content-write` — 16 operations
+### `content-write` — 17 operations
 
 | Operation | Does | Capability | Risk | Rollback |
 |---|---|---|---|---|
@@ -129,6 +129,7 @@ links are listed per item, and `truncated` says when a page held more.
 | `content-seo-set` | Writes one item's search-engine metadata into whichever SEO plugin the site runs | `edit_post` | medium | supported |
 | `content-term-seo-set` | Writes one category's or tag's search-engine metadata into whichever SEO plugin the site runs | `edit_posts` + the taxonomy's edit capability | medium | supported |
 | `user-role-set` | Replaces one user's roles with a single registered role | `promote_users` | high | supported |
+| `site-settings-set` | Changes site settings from a strict thirteen-field allowlist — title, tagline, timezone, date and time formats, posts per page, front page geometry, permalink structure, default comment and ping status, search-engine visibility | `manage_options` | medium | supported |
 
 > **`user-role-set` is a system operation wearing a content dispatcher.** It is here, not
 > beside `user-list`, only because the dispatcher set is frozen and holds no
@@ -360,7 +361,7 @@ what is actually in the database, so a restore puts back what was really there.
 
 ## System
 
-### `system-read` — 6 operations
+### `system-read` — 7 operations
 
 | Operation | Does | Capability |
 |---|---|---|
@@ -369,6 +370,7 @@ what is actually in the database, so a restore puts back what was really there.
 | `system-integrations` | Health of every optional integration: `Active`, `Inactive`, `VersionBlocked` | `manage_options` |
 | `system-operation-schema` | Returns one named operation's full input and output schema, so an agent fetches only the schema it is about to use | `read` |
 | `user-list` | Lists user accounts by role or search term, newest registration first, with the role slugs this site has registered | `list_users` |
+| `site-settings-read` | Reads the whole site-settings allowlist, typed, in one call — the same thirteen fields `site-settings-set` can change, and nothing else | `manage_options` |
 | `audit-list` | Reads the change ledger: what changed, when, by whom, and what can be rolled back | `manage_options` |
 
 Start every session with `system-connection`, then `system-integrations`. It costs one call and

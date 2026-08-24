@@ -11,6 +11,18 @@ an operation behaves.
 
 ## [Unreleased]
 
+### Added
+- **Site settings, read and write** (REQ-0062) — `site-settings-read` answers the whole
+  thirteen-field allowlist (title, tagline, timezone, date and time formats, posts per
+  page, front page geometry, permalink structure, default comment and ping status,
+  search-engine visibility) typed in one call, and `site-settings-set` changes any subset
+  of it as one previewed, snapshotted, reversible change. Values are validated strictly
+  at plan time — a timezone must be a real identifier, a custom permalink structure must
+  keep every post's URL unique, a front page must be a published page — and nothing
+  outside the allowlist is reachable. Changing the permalink structure flushes rewrite
+  rules and warns that existing URLs change; turning search-engine visibility off warns
+  that removal from indexes is not guaranteed.
+
 ## [0.6.0] — 2026-08-23
 
 ### Added

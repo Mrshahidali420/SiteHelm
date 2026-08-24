@@ -21,10 +21,12 @@
         "comment-status-set",
         "comment-reply",
         "user-role-set",
+        "site-settings-set",
         "user-list",
+        "site-settings-read",
         "audit-list"
     ],
-    "operationCount": 23,
+    "operationCount": 25,
     "definitions": {
         "content-get": {
             "inputSchema": {
@@ -1635,6 +1637,136 @@
                 ]
             }
         },
+        "site-settings-set": {
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "title": {
+                        "type": "string",
+                        "maxLength": 250,
+                        "description": "The site title."
+                    },
+                    "tagline": {
+                        "type": "string",
+                        "maxLength": 250,
+                        "description": "The site tagline. An empty string clears it."
+                    },
+                    "timezone": {
+                        "type": "string",
+                        "maxLength": 64,
+                        "description": "A PHP timezone identifier such as Europe/London or UTC."
+                    },
+                    "dateFormat": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 40,
+                        "description": "The PHP date format string, e.g. \"F j, Y\"."
+                    },
+                    "timeFormat": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 40,
+                        "description": "The PHP time format string, e.g. \"g:i a\"."
+                    },
+                    "postsPerPage": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 100,
+                        "description": "How many posts blog pages show, 1 to 100."
+                    },
+                    "showOnFront": {
+                        "type": "string",
+                        "enum": [
+                            "posts",
+                            "page"
+                        ],
+                        "description": "Whether the front page shows latest posts or a static page. Choosing \"page\" requires a front page."
+                    },
+                    "frontPageId": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "The published page shown as the static front page, or 0 to unset it."
+                    },
+                    "postsPageId": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "The published page that lists posts when the front page is static, or 0 to unset it."
+                    },
+                    "permalinkStructure": {
+                        "type": "string",
+                        "maxLength": 250,
+                        "description": "The permalink structure, e.g. \"/%postname%/\". Must contain %postname% or %post_id%; an empty string selects plain permalinks. Changing it changes every public URL."
+                    },
+                    "defaultCommentStatus": {
+                        "type": "string",
+                        "enum": [
+                            "open",
+                            "closed"
+                        ],
+                        "description": "Whether NEW posts allow comments by default. Existing posts are not changed."
+                    },
+                    "defaultPingStatus": {
+                        "type": "string",
+                        "enum": [
+                            "open",
+                            "closed"
+                        ],
+                        "description": "Whether NEW posts accept pingbacks and trackbacks by default."
+                    },
+                    "searchEngineVisibility": {
+                        "type": "boolean",
+                        "description": "false asks search engines not to index the site. This is the setting that deindexes a site; the preview warns when turning it off."
+                    }
+                },
+                "additionalProperties": false
+            },
+            "outputSchema": {
+                "type": "object",
+                "oneOf": [
+                    {
+                        "title": "Plan phase",
+                        "type": "object",
+                        "properties": {
+                            "plan": {
+                                "type": "object",
+                                "description": "The change plan to approve, including its plan token."
+                            }
+                        },
+                        "required": [
+                            "plan"
+                        ],
+                        "additionalProperties": false
+                    },
+                    {
+                        "title": "Apply phase",
+                        "type": "object",
+                        "properties": {
+                            "target": {
+                                "type": "string",
+                                "description": "The concrete target that was written."
+                            },
+                            "changed": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                },
+                                "description": "The fields the approved plan changed."
+                            },
+                            "state": {
+                                "type": "object",
+                                "description": "The verified persisted state of the target."
+                            }
+                        },
+                        "required": [
+                            "target",
+                            "changed",
+                            "state"
+                        ],
+                        "additionalProperties": false
+                    }
+                ]
+            }
+        },
         "user-list": {
             "inputSchema": {
                 "type": "object",
@@ -1725,6 +1857,94 @@
                     "limit",
                     "offset",
                     "siteRoles"
+                ],
+                "additionalProperties": false
+            }
+        },
+        "site-settings-read": {
+            "inputSchema": {
+                "type": "object",
+                "properties": [],
+                "additionalProperties": false
+            },
+            "outputSchema": {
+                "type": "object",
+                "properties": {
+                    "settings": {
+                        "type": "object",
+                        "properties": {
+                            "title": {
+                                "type": "string"
+                            },
+                            "tagline": {
+                                "type": "string"
+                            },
+                            "timezone": {
+                                "type": "string"
+                            },
+                            "dateFormat": {
+                                "type": "string"
+                            },
+                            "timeFormat": {
+                                "type": "string"
+                            },
+                            "postsPerPage": {
+                                "type": "integer"
+                            },
+                            "showOnFront": {
+                                "type": "string",
+                                "enum": [
+                                    "posts",
+                                    "page"
+                                ]
+                            },
+                            "frontPageId": {
+                                "type": "integer"
+                            },
+                            "postsPageId": {
+                                "type": "integer"
+                            },
+                            "permalinkStructure": {
+                                "type": "string"
+                            },
+                            "defaultCommentStatus": {
+                                "type": "string",
+                                "enum": [
+                                    "open",
+                                    "closed"
+                                ]
+                            },
+                            "defaultPingStatus": {
+                                "type": "string",
+                                "enum": [
+                                    "open",
+                                    "closed"
+                                ]
+                            },
+                            "searchEngineVisibility": {
+                                "type": "boolean"
+                            }
+                        },
+                        "required": [
+                            "title",
+                            "tagline",
+                            "timezone",
+                            "dateFormat",
+                            "timeFormat",
+                            "postsPerPage",
+                            "showOnFront",
+                            "frontPageId",
+                            "postsPageId",
+                            "permalinkStructure",
+                            "defaultCommentStatus",
+                            "defaultPingStatus",
+                            "searchEngineVisibility"
+                        ],
+                        "additionalProperties": false
+                    }
+                },
+                "required": [
+                    "settings"
                 ],
                 "additionalProperties": false
             }

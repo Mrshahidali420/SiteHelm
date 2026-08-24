@@ -70,14 +70,16 @@ final class CoreDefinitionInvariantsTest extends TestCase {
 		'comment-status-set',
 		'comment-reply',
 		'user-role-set',
+		'site-settings-set',
 		'user-list',
+		'site-settings-read',
 		'audit-list',
 	];
 
 	/**
 	 * The core module's frozen write count.
 	 */
-	private const CORE_WRITE_COUNT = 14;
+	private const CORE_WRITE_COUNT = 15;
 
 	/**
 	 * A registry with the core module registered.
@@ -179,7 +181,7 @@ final class CoreDefinitionInvariantsTest extends TestCase {
 		$this->assertCount(
 			self::CORE_WRITE_COUNT,
 			$writes,
-			'The core module must expose fourteen writes; a fifteenth write has to declare the shared union too, and this count is what makes it say so.'
+			'The core module must expose fifteen writes; a sixteenth write has to declare the shared union too, and this count is what makes it say so.'
 		);
 
 		foreach ( $writes as $write ) {

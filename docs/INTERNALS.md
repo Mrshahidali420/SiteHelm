@@ -1587,6 +1587,44 @@ Settings tests run in separate processes because of the constants. The table tes
 this repository's `tests/Doubles/FakeWpdb.php` via `$GLOBALS['wpdb']` with `varQueue` /
 `resultQueue`.
 
+## 32. Site settings — the allowlist
+
+`SiteSettings` (src/Modules/Core/SiteSettings.php) is the single authority for the
+thirteen-field allowlist: `OPTION_MAP` maps API field names to option names, and
+`FIELD_ORDER` fixes the order every projection, snapshot, and schema uses. Nothing
+outside the map is readable or writable — the read projects exactly the map, and the
+write's input schema (`additionalProperties: false`) plus `normalize()`'s
+default-throws switch refuse anything else twice over.
+
+**Strict validation at plan time, not sanitisation at write time.** WordPress's
+`sanitize_option()` repairs bad values silently (an unknown timezone becomes the old
+value, a bad posts-per-page becomes a default), which would break the promise ==
+read-back invariant. So `normalize()` validates strictly when the plan is made — real
+timezone identifier, permalink structure that is empty or starts with `/` and carries
+`%postname%` or `%post_id%`, posts per page 1–100, page ids ≥ 0 — and applies
+`sanitize_text_field()` to the two free-text fields at the same moment, so the stored
+value is exactly the promised value.
+
+**Dispatcher split.** `site-settings-read` registers under `system-read` (beside
+`user-list`); `site-settings-set` under `content-write` (after `user-role-set`) — the
+same frozen-dispatcher reasoning as the user pair.
+
+**Whole-allowlist snapshot.** `captureSnapshot()` stores every mapped option in stored
+(not projected) form regardless of which fields the change touches, so a rollback
+restores the full pre-change settings state; `restore()` walks `FIELD_ORDER` and
+ignores any snapshot key outside the map (the allowlist gates rollback too).
+
+**Front-page geometry.** The write merges the requested fields over current state and
+refuses (Conflict) `show_on_front: page` with no front page, front page == posts page,
+and any referenced page that is not a published page — checked only for fields the
+change touches.
+
+**Caches and flushes.** All thirteen options autoload, so `readBack()` deletes the
+`alloptions` and `notoptions` cache rows plus each per-option row before re-reading.
+`flush_rewrite_rules(false)` runs only when the applied payload contains
+`permalinkStructure` — and on restore, only when the snapshot's structure differs from
+what is stored at restore time.
+
 ## 28. Standing project constraints
 
 - **No AI attribution anywhere in git** — no "Generated with Claude Code" footer,
