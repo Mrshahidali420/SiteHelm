@@ -85,6 +85,36 @@ silently unbooted module.
    count plus the per-dispatcher counts and the new rows, `CHANGELOG.md` under
    `## [Unreleased]`, `ROADMAP.md` requirement move.
 
+### 4a. Adding a module the free plugin does NOT implement
+
+`ModuleId::Woocommerce` (REQ-0057) is the first identifier with no built-in module
+class: the operations behind it live in the SiteHelm Pro add-on and reach the
+registry through `sitehelm_modules`. An add-on cannot add an enum case, and the
+console's permission levels, module switches and health report are all keyed by the
+enum, so the case has to ship free while the code does not.
+
+The checklist above still applies EXCEPT steps 3 and 4 — there is no class to boot:
+
+- `src/Registry/IntegrationDirectory.php` — do **not** add it. `MODULE_CLASSES` is
+  the free boot table.
+- `tests/Unit/Modules/Diagnostics/IntegrationHealthTest.php` — add the value to `ADDON_ONLY`, not to
+  `BOOT_ORDER`. The "every ModuleId appears in the report" assertion subtracts both.
+- `src/Admin/ProCatalogue.php` — add the module to `ADDON_ONLY_MODULES`, and one
+  `OPERATIONS` entry per operation the add-on will register (`dispatcher`, `module`,
+  `read`, `description`). This catalogue is the ONLY thing the free plugin knows
+  about the module; `ProCatalogueTest` holds the ids and dispatchers to the ones the
+  add-on actually registers.
+- `ModulesScreen::render_waiting_on()` — the `ADDON_ONLY_MODULES` branch runs first
+  and points at the Pro screen. Every other module points at the Plugins screen,
+  which for an add-on-only module would send the owner somewhere that cannot help.
+- `OperationDefinition` — a capability only the add-on uses still has to be in
+  `ALLOWED_CAPABILITIES` (the constructor refuses anything else), and a module in
+  `PLUGIN_BACKED_MODULES` forces every one of its operations to declare the plugin
+  version range under `<module value>`. `woocommerce` is in both.
+  `tests/Unit/Registry/ReservedCapabilityTest.php` is the narrowing half: it asserts
+  the pair is admitted AND that no free operation declares either, which is the test
+  the operation itself would normally provide.
+
 `IntegrationModule` implementations provide: `id()`, `displayName()`,
 `dependency()` (`['name' => …, 'versionRange' => …]`), `health()`,
 `cacheCleanup()` (array of cache groups), `register()`.

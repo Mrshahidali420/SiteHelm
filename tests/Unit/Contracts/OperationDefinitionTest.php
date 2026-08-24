@@ -167,7 +167,7 @@ final class OperationDefinitionTest extends TestCase {
 
 	/**
 	 * The contract requires "one WordPress core version range, plus one plugin
-	 * version range for elementor, acf, and metabox operations".
+	 * version range for elementor, acf, metabox and woocommerce operations".
 	 *
 	 * @dataProvider plugin_backed_module_provider
 	 */
@@ -213,7 +213,69 @@ final class OperationDefinitionTest extends TestCase {
 			'elementor' => [ ModuleId::Elementor, Domain::Elementor ],
 			'acf'       => [ ModuleId::Acf, Domain::Fields ],
 			'metabox'   => [ ModuleId::Metabox, Domain::Fields ],
+			// No built-in module implements this one: its operations ship in the
+			// SiteHelm Pro add-on and arrive through `sitehelm_modules`. The rule
+			// still has to hold for them, and this is the only place in the free
+			// repository that can prove it does.
+			'commerce'  => [ ModuleId::Woocommerce, Domain::Content ],
 		];
+	}
+
+	/**
+	 * The two capabilities REQ-0057 added are usable, not merely listed.
+	 *
+	 * ReservedCapabilityTest asserts they sit in the allowlist and that no free
+	 * operation names them. This asserts the consequence that matters: a
+	 * definition declaring one constructs. The Pro add-on is the only caller, so
+	 * without this line the free repository would ship the widening untested.
+	 *
+	 * @dataProvider commerce_capability_provider
+	 */
+	public function test_accepts_the_commerce_capabilities( string $capability ): void {
+		$definition = $this->makeDefinition(
+			[
+				'id'                   => 'product-list',
+				'domain'               => Domain::Content,
+				'module'               => ModuleId::Woocommerce,
+				'requiredCapabilities' => [ $capability ],
+				'supportedVersions'    => [
+					'wordpress'   => '>=6.6',
+					'woocommerce' => '>=8.0',
+				],
+			]
+		);
+		$this->assertSame( [ $capability ], $definition->requiredCapabilities );
+	}
+
+	/** @return array<string, array{string}> */
+	public function commerce_capability_provider(): array {
+		return [
+			'products' => [ 'edit_products' ],
+			'store'    => [ 'manage_woocommerce' ],
+		];
+	}
+
+	/**
+	 * The singular meta capability is refused.
+	 *
+	 * `edit_product` resolves to `do_not_allow` when declared without a target, so
+	 * admitting it would produce an operation nobody — administrators included —
+	 * could run, failing as a lockout rather than as a permission error.
+	 */
+	public function test_rejects_the_singular_product_meta_capability(): void {
+		$this->expectException( InvalidArgumentException::class );
+		$this->makeDefinition(
+			[
+				'id'                   => 'product-update',
+				'domain'               => Domain::Content,
+				'module'               => ModuleId::Woocommerce,
+				'requiredCapabilities' => [ 'edit_product' ],
+				'supportedVersions'    => [
+					'wordpress'   => '>=6.6',
+					'woocommerce' => '>=8.0',
+				],
+			]
+		);
 	}
 
 	public function test_core_backed_module_needs_no_plugin_version_range(): void {

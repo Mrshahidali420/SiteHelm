@@ -443,3 +443,35 @@ asks the capability, the SEO plugin and the target.
 > untouched and the whole option is restored on rollback. Yoast has no per-type sitemap
 > switch — a type left in search results is in the sitemap — so `inSitemap` reads as
 > the opposite of `noindex` there and is refused as a write with that explanation.
+
+### WooCommerce (Pro) — eight Pro operations
+
+Shipped in SiteHelm Pro 0.4.0, on a site running WooCommerce 8.0 or newer. Products are
+readable and editable; **orders and customers are read-only and always will be** — money
+that has already changed hands is not something an assistant should be able to rewrite.
+
+| Operation | Dispatcher | Does | Capability | Rollback |
+|---|---|---|---|---|
+| `product-list` | `content-read` | Pages products newest first with name, SKU, status, type, price, sale price, stock status and quantity, and categories; filtered by search term, status, category or stock state | `edit_products` | — |
+| `product-get` | `content-read` | Reads one product in full — name, description, short description, SKU, regular and sale price, stock, categories, tags, images, type — and says when the price lives on the product's variations rather than on the product | `edit_products` | — |
+| `product-category-list` | `content-read` | Lists the product categories with parent, slug and product count | `edit_products` | — |
+| `order-list` | `content-read` | Pages orders newest first with status, total, currency, item count and date, filtered by status, customer or date range | `manage_woocommerce` | — |
+| `order-get` | `content-read` | Reads one order — line items, totals, tax, shipping, payment method and status history | `manage_woocommerce` | — |
+| `customer-list` | `content-read` | Pages shop customers with order count, lifetime spend and last order date | `manage_woocommerce` | — |
+| `product-create` | `content-write` | Creates one simple product from name, description, SKU, prices, stock and categories | `edit_products` | — (nothing existed to restore; delete the product instead) |
+| `product-update` | `content-write` | Changes one product's name, description, SKU, regular price, sale price, stock status, stock quantity or categories | `edit_products`, re-checked as `edit_product` against the resolved product | supported |
+
+> **Orders and customers are never written.** There is no `order-update`, no
+> `order-status-set` and no customer write, and the dispatcher pair carries no operation
+> that could reach one indirectly. A shop's order history is a financial record.
+
+> **`edit_products` is the plural primitive, not `edit_product`.** WordPress maps the
+> singular form against a specific product, and a meta capability declared with no target
+> resolves to `do_not_allow` — it would refuse administrators too. The write declares the
+> plural and re-checks the singular inside the operation, where the product id exists.
+> Orders and customers gate on `manage_woocommerce` alone, because they carry personal
+> and financial data that product editing rights should not open.
+
+> **Variable products are read, not written.** `product-get` reports a variable product's
+> price range and says the price is held on its variations; `product-update` refuses a
+> price change on one rather than writing a value the shop will ignore.
