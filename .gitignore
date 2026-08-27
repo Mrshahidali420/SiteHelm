@@ -17,3 +17,11 @@ build/
 # Agent workflow artifacts — kept locally, not part of the published plugin
 tasks/
 docs/superpowers/
+
+# Agent harness state — local tooling, not part of the plugin
+.github/agents/
+.github/hooks/
+.github/skills/
+
+# Vendored reference copy — kept locally, never part of the plugin
+/elementor mcp that i want you to copy from i have permission/
