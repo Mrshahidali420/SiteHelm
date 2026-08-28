@@ -1,6 +1,6 @@
 # Operations reference
 
-SiteHelm exposes **79 operations** through **11 MCP tools**, called dispatchers. Every operation is
+SiteHelm exposes **80 operations** through **11 MCP tools**, called dispatchers. Every operation is
 declared once, in code, with a strict input schema (`additionalProperties: false`), a required
 capability, a risk level, and preview, snapshot, and rollback policies. That declaration is the
 contract the gateway enforces and the catalogue an agent discovers.
@@ -85,11 +85,12 @@ string, authorization header, or resolved IP address.
 
 Posts, pages, custom post types, and taxonomies.
 
-### `content-read` — 14 operations
+### `content-read` — 15 operations
 
 | Operation | Does | Capability |
 |---|---|---|
 | `content-get` | Reads one item with its fields, terms, and metadata | `edit_posts` |
+| `content-search` | Finds every document whose title, content, excerpt or Elementor data mentions a phrase, filtered to what you may edit | `edit_posts` |
 | `content-list` | Lists items with filtering and pagination | `edit_posts` |
 | `taxonomy-list` | Lists registered taxonomies and their terms | `edit_posts` |
 | `content-blocks-get` | Returns the block outline of one item, or one addressed block in full | `edit_post` |

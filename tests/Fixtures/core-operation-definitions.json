@@ -2,6 +2,7 @@
     "operationIds": [
         "content-get",
         "content-list",
+        "content-search",
         "taxonomy-list",
         "content-blocks-get",
         "redirect-list",
@@ -26,7 +27,7 @@
         "site-settings-read",
         "audit-list"
     ],
-    "operationCount": 25,
+    "operationCount": 26,
     "definitions": {
         "content-get": {
             "inputSchema": {
@@ -187,6 +188,89 @@
                     "limit",
                     "offset"
                 ],
+                "additionalProperties": false
+            }
+        },
+        "content-search": {
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "phrase": {
+                        "type": "string",
+                        "minLength": 2,
+                        "maxLength": 200,
+                        "description": "The phrase to find. Matched as a whole phrase, not as separate words. Two characters minimum: a one-character search matches almost every document and reports nothing useful."
+                    },
+                    "postTypes": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "maxLength": 32
+                        },
+                        "maxItems": 20,
+                        "description": "Restrict the search to these post types. Omit to search every type the site exposes to search."
+                    },
+                    "statuses": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "maxLength": 32
+                        },
+                        "maxItems": 10,
+                        "description": "Restrict the search to these post statuses. Omit to search published, draft, pending and private documents."
+                    },
+                    "caseSensitive": {
+                        "type": "boolean",
+                        "description": "Count and locate matches with case taken into account. Which documents are found does not change: the database search is case-insensitive either way."
+                    },
+                    "page": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "Which page of matching documents to return."
+                    },
+                    "perPage": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 50,
+                        "description": "How many matching documents to return per page."
+                    }
+                },
+                "required": [
+                    "phrase"
+                ],
+                "additionalProperties": false
+            },
+            "outputSchema": {
+                "type": "object",
+                "properties": {
+                    "phrase": {
+                        "type": "string"
+                    },
+                    "total": {
+                        "type": "integer"
+                    },
+                    "page": {
+                        "type": "integer"
+                    },
+                    "perPage": {
+                        "type": "integer"
+                    },
+                    "pageCount": {
+                        "type": "integer"
+                    },
+                    "scanned": {
+                        "type": "integer"
+                    },
+                    "truncated": {
+                        "type": "boolean"
+                    },
+                    "elementorExact": {
+                        "type": "boolean"
+                    },
+                    "matches": {
+                        "type": "array"
+                    }
+                },
                 "additionalProperties": false
             }
         },

@@ -12,6 +12,18 @@ an operation behaves.
 ## [Unreleased]
 
 ### Added
+- **Find a phrase everywhere on the site** (REQ-0092, Free half) — `content-search` names
+  every post, page and custom post type whose title, content, excerpt or Elementor data
+  mentions a phrase, with a per-field count, a plain-text excerpt of the first occurrence,
+  and a link to each document. The phrase is matched whole, not split into words, so
+  searching for an old company name does not return every page carrying the word "name".
+  Results are filtered document by document against your own WordPress user's
+  `edit_post` capability, so a search cannot become a way to read drafts you may not open.
+  Elementor pages are found — their text lives in post meta, which WordPress's own search
+  does not read — and reported at the document level, with `elementor-element-search`
+  naming the individual elements inside one of them. A phrase JSON would store escaped is
+  flagged `elementorExact: false` rather than presented as a complete answer, and a search
+  broad enough to match most of the site stops at five hundred documents and says so.
 - **WooCommerce is a module the console knows about** (REQ-0057, groundwork) — the
   Modules screen lists WooCommerce alongside the built-in nine, with its own permission
   level and its own requirement line, and the Pro screen names the eight operations it

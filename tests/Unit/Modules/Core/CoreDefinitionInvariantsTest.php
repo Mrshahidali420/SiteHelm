@@ -51,6 +51,7 @@ final class CoreDefinitionInvariantsTest extends TestCase {
 	private const OPERATION_IDS = [
 		'content-get',
 		'content-list',
+		'content-search',
 		'taxonomy-list',
 		'content-blocks-get',
 		'redirect-list',

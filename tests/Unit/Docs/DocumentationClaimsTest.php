@@ -182,7 +182,14 @@ final class DocumentationClaimsTest extends TestCase {
 		// correct one. The number appears more than once, and a containment
 		// assertion passes on the copy that was updated while the copy that was
 		// forgotten is the one a reader happens to reach first.
-		preg_match_all( '/(\d+) operations/', $readme, $stated );
+		// Both the badge (`operations-79`) and any bold or qualified phrasing
+		// (`**79 typed operations**`) count. A pattern that only matched
+		// "79 operations" let two stale numbers sit in the README for days
+		// while this test reported green.
+		preg_match_all( '/(\d+)[\s*]*(?:typed[\s*]*)?operations/', $readme, $prose );
+		preg_match_all( '/operations-(\d+)/', $readme, $badge );
+
+		$stated = [ 1 => array_merge( $prose[1], $badge[1] ) ];
 
 		$this->assertNotEmpty( $stated[1], 'README.md states no operation count at all.' );
 
