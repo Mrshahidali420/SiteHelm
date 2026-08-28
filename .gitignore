@@ -25,3 +25,6 @@ docs/superpowers/
 
 # Vendored reference copy — kept locally, never part of the plugin
 /elementor mcp that i want you to copy from i have permission/
+
+# Impeccable design-skill scratch state (critique snapshots, question logs)
+.impeccable/

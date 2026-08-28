@@ -126,6 +126,7 @@ final class CoreModule implements IntegrationModule {
 
 		$registry->register( ContentRead::definition(), [ new ContentRead( $fields ), 'handle' ] );
 		$registry->register( ContentList::definition(), [ new ContentList(), 'handle' ] );
+		$registry->register( ContentSearch::definition(), [ new ContentSearch(), 'handle' ] );
 		$registry->register( TaxonomyList::definition(), [ new TaxonomyList(), 'handle' ] );
 		$registry->register(
 			ContentBlocksRead::definition(),

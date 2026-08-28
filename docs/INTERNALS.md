@@ -1727,6 +1727,40 @@ the `FormsWordPressStubs` trait — a typed post store whose `get_posts` filters
 `post_type` (so a dropped clause fails) while `get_post` answers any seeded row (so the
 provider's own wrong-type refusal is what a test exercises).
 
+## 34. Site-wide content search (REQ-0092, free half) in one screen
+
+`ContentSearch` (`src/Modules/Core/ContentSearch.php`, registered on `content-read`)
+answers "which documents mention this phrase". Four things about it are load-bearing.
+
+- **Two queries, unioned.** WordPress's `WP_Query` `s` parameter reads the post table
+  and has no opinion about post meta. Elementor keeps a page's text in
+  `_elementor_data`, so a single `s` query reports a confident zero for every page the
+  site actually builds in Elementor. The second query is a `meta_query` `LIKE` on that
+  key; the identifier lists are merged, de-duplicated and capped. `sentence => true`
+  is on the first query — without it WordPress splits the phrase on spaces and
+  "old company name" starts matching every page carrying the word "name".
+- **`edit_posts` is declared; `edit_post` is re-checked per document.** Declaring the
+  target-bound meta capability is forbidden (§5), so the primitive is declared and the
+  per-row check runs inside the handler, exactly as `content-list` does. It is the
+  guard that stops a search over `draft` and `private` from being a way to read every
+  unpublished page on the site through an account that may not open one, and it is
+  pinned by two tests that fail when it is removed.
+- **A candidate can hold no real occurrence.** `LIKE` matches the raw JSON of the
+  Elementor meta, so a document survives the query and then counts zero in every field
+  the report names. `describe()` returns null for those and they are dropped, rather
+  than appearing as a row that cannot explain itself.
+- **Elementor is reported at the document level only.** How many times the phrase
+  occurs in the stored tree, never which element. Walking that tree here would put
+  Elementor's storage format inside the core module; the caller asks
+  `elementor-element-search` for one document instead. Because the meta is
+  `wp_json_encode` output, a phrase containing a quote, a backslash or a non-ASCII
+  character is stored escaped and will not match literally — `elementorExact: false`
+  says so instead of passing a partial Elementor result off as a complete one.
+
+The scan stops at `ContentSearch::MAX_SCANNED` (500) documents and sets `truncated`.
+Paging happens after the capability filter, so pages are not ragged. The bulk change
+that rewrites what this finds is REQ-0092's Pro half and is not built.
+
 ## 28. Standing project constraints
 
 - **No AI attribution anywhere in git** — no "Generated with Claude Code" footer,

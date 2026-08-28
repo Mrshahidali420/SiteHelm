@@ -27,6 +27,18 @@ final class FakeWpQuery {
 	/** @var int The unpaginated match count the next constructed query reports. */
 	public static int $foundPosts = 0;
 
+	/**
+	 * Rows for successive constructions, when one operation runs more than one
+	 * query and the test needs them to answer differently.
+	 *
+	 * Each construction shifts one entry off the front. While it is empty the
+	 * double behaves exactly as it always has and replays `$rows` every time,
+	 * so the tests written before this existed are unaffected.
+	 *
+	 * @var array<int, object[]>
+	 */
+	public static array $queue = [];
+
 	/** @var object[] The rows this query reported. */
 	public array $posts = [];
 
@@ -40,7 +52,7 @@ final class FakeWpQuery {
 	 */
 	public function __construct( array $args = [] ) {
 		self::$calls[]     = $args;
-		$this->posts       = self::$rows;
+		$this->posts       = [] === self::$queue ? self::$rows : (array) array_shift( self::$queue );
 		$this->found_posts = self::$foundPosts;
 	}
 
@@ -50,6 +62,7 @@ final class FakeWpQuery {
 	public static function reset(): void {
 		self::$calls      = [];
 		self::$rows       = [];
+		self::$queue      = [];
 		self::$foundPosts = 0;
 	}
 }

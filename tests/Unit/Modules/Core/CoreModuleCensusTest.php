@@ -44,6 +44,14 @@ final class CoreModuleCensusTest extends TestCase {
 			'snapshot'      => 'not-applicable',
 			'rollback'      => 'not-applicable',
 		],
+		'content-search'             => [
+			'dispatcher'    => 'content-read',
+			'schemaVersion' => 1,
+			'capabilities'  => [ 'edit_posts' ],
+			'preview'       => 'not-applicable',
+			'snapshot'      => 'not-applicable',
+			'rollback'      => 'not-applicable',
+		],
 		'taxonomy-list'              => [
 			'dispatcher'    => 'content-read',
 			'schemaVersion' => 1,
@@ -256,7 +264,7 @@ final class CoreModuleCensusTest extends TestCase {
 	public function test_per_dispatcher_registration_counts_are_unchanged(): void {
 		$registry = $this->registryWithCoreModule();
 
-		$this->assertCount( 7, $registry->forDispatcher( 'content-read' ) );
+		$this->assertCount( 8, $registry->forDispatcher( 'content-read' ) );
 		$this->assertCount( 15, $registry->forDispatcher( 'content-write' ) );
 		$this->assertCount( 3, $registry->forDispatcher( 'system-read' ) );
 
