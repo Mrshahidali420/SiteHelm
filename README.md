@@ -18,6 +18,9 @@
 
 </div>
 
+> [!TIP]
+> **🎁 Found us on GitHub? That's worth 30%.** Use code **`GITHUB30`** at [checkout](https://checkout.freemius.com/plugin/37704/plan/62673/) for 30% off SiteHelm Pro — first payment **and every renewal**. [See pricing →](https://wpsitehelm.com/pricing)
+
 ---
 
 SiteHelm is a WordPress plugin that exposes your site to AI agents over the [Model Context Protocol](https://modelcontextprotocol.io/). Claude, Claude Code, Cursor, VS Code, or any other MCP client can read your content, edit Elementor pages, manage media and menus, write ACF and Meta Box fields, and edit SEO metadata in Yoast or Rank Math — through **99 typed operations**, every one of them capability-checked, previewed before it runs, snapshotted before it changes anything, and verified afterwards by reading the site back.
