@@ -1,0 +1,60 @@
+{
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "document": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "Identifier of the Elementor document to change. Call elementor-document-list for the documents Elementor controls."
+            },
+            "layout": {
+                "type": "string",
+                "enum": [
+                    "default",
+                    "canvas",
+                    "headerFooter",
+                    "theme"
+                ],
+                "description": "The page layout Elementor renders this page with. Omit to leave the page's current layout alone."
+            },
+            "hideTitle": {
+                "type": "boolean",
+                "description": "Whether to hide the theme's page title on this page. Omit to leave the page's current setting alone. Send a real boolean: the strings \"true\" and \"false\" are both refused, because the second of them would otherwise read as a request to show the title that hides it instead."
+            }
+        },
+        "required": [
+            "document"
+        ],
+        "additionalProperties": false
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "layout": {
+                "type": "string",
+                "enum": [
+                    "default",
+                    "canvas",
+                    "headerFooter",
+                    "theme"
+                ],
+                "description": "The layout the page holds after the change."
+            },
+            "hideTitle": {
+                "type": "boolean",
+                "description": "Whether the theme's page title is hidden after the change."
+            },
+            "settingsKeyCount": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "How many keys the page's settings row holds after the change. Promised, not diagnostic: it is how a write that replaced the row instead of merging into it is caught."
+            }
+        },
+        "required": [
+            "layout",
+            "hideTitle",
+            "settingsKeyCount"
+        ],
+        "additionalProperties": false
+    }
+}

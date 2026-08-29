@@ -134,7 +134,8 @@ The checklist above still applies EXCEPT steps 3 and 4 — there is no class to 
 - **A schema keyword is only worth declaring if `SchemaValidator` applies it.** The
   validator is not a general JSON Schema implementation; it applies exactly `type`,
   `enum`, `minimum`, `maximum`, `minLength`, `maxLength`, `pattern`, `minItems`,
-  `maxItems`, `items`, `properties`, `required` and `additionalProperties`.
+  `maxItems`, `uniqueItems`, `items`, `properties`, `required` and
+  `additionalProperties`.
   `description` and `format` are annotations and constrain nothing. Anything else
   written into a schema is decorative, and worse than absent: the schema is
   published, so a declared bound tells an agent that a check exists. Five keywords
@@ -146,6 +147,12 @@ The checklist above still applies EXCEPT steps 3 and 4 — there is no class to 
   not `/…/`), and applied as a search with `#` delimiters. An uncompilable pattern is
   reported as a defect in the schema rather than passing every value; the catalog's
   patterns are pinned as compilable by the same test.
+- `uniqueItems` compares entries by **type and value together**, so the string `'1'`
+  and the integer `1` are two entries rather than one, and it compares scalars and
+  null only — no schema declares uniqueness over a list of objects, and an equality
+  for one would be a rule nothing exercises. It was added on 2026-08-29 with
+  `elementor-elements-reorder`, whose order names every child of one element
+  exactly once.
 - An array over its declared `maxItems` is refused **whole**, without walking the
   entries — the point of an upper bound is to stop the work, not to produce a longer
   list of violations.
@@ -1884,6 +1891,53 @@ is then readable) and nothing else, so no assertion is about what WordPress made
 fields, only about which fields the operation handed it. The document writer is real
 throughout; a stubbed writer would turn "the tree really was stored" into a claim about
 the stub.
+
+## 37. Elementor page-level editing (REQ-0103) in one screen
+
+Four operations that reach the parts of an Elementor page that are not the element
+tree: `elementor-page-settings-get`, `elementor-page-settings-set`,
+`elementor-elements-reorder`, and `elementor-element-label-set`.
+
+- **Page settings are a second snapshot channel.** They live in
+  `ElementorTemplateLibrary::META_PAGE_SETTINGS`, not in `_elementor_data`, so
+  `ElementorPageSettingsSet` registers with its own `ElementorPageSettingsTarget`
+  (`TARGET_PREFIX = 'elementor-page-settings:'`) rather than the module's
+  `ElementorWriteTarget`. Snapshotting the document instead would make a rollback
+  restore the page's content and leave the settings exactly as it found them. The
+  target distinguishes "the row was absent" from "the row was empty", so rolling
+  back a page that never had settings deletes the row rather than storing `[]`.
+- **`ElementorPageSettings` is the closed allowlist, shared by both halves.**
+  `SETTING_MAP` translates SiteHelm's names to Elementor's stored keys
+  (`layout` -> `template`, `hideTitle` -> `hide_title`); `LAYOUTS` names the four
+  layouts; `HIDE_TITLE_ON` is Elementor's `'yes'`. `apply()` merges into the stored
+  map and `ksort`s it, so a setting SiteHelm does not name survives the write and
+  the payload is deterministic across preview and apply. `requested()` refuses an
+  empty request outright — a write that changes nothing should say so, not verify.
+- **The read is deliberately wider than the write.** `writableSettings` is what
+  `elementor-page-settings-set` can change; `storedSettings` is the whole row, so an
+  agent can see what else is there before deciding it needs a different tool. A row
+  above `MAX_STORED_KEYS` is **refused** with `ExecutionFailed`, never trimmed: a
+  trimmed map is indistinguishable from a complete one to the client that reads it,
+  and a client that wrote one back would delete the rest.
+- **A reorder is a whole permutation, never a partial one.** The rule lives in
+  `ElementorTreeEdit::reorder()`, not in the operation, so no second spelling of it
+  can drift. The order must name every one of the parent's direct children exactly
+  once. A partial order would let a request written against a page that has since
+  gained a child succeed while silently deciding where that child ends up; demanding
+  the whole list makes a stale request fail loudly.
+  `ElementorTreeEdit::childIds()` reports an idless child as `null` rather than
+  skipping it, for the same reason — a list that quietly dropped them would let a
+  caller name every child it can see, pass the completeness check, and permute a
+  list missing a sibling the document still holds. `reorder()` permutes elements
+  among the raw offsets the elements already occupied, so a non-array member of the
+  child list does not move.
+- **The navigator name is `settings._title`, and it is not `label`.**
+  `ElementorTree::label()` is derived for display and is never stored;
+  `elementor-element-label-set` writes a stored setting. It goes through
+  `ElementorSettingsMerge::withSettings()` rather than the settings-update path,
+  because `_title` is not a declared control and `assertKnownKeys()` would refuse
+  it. An empty label **clears** the name by unsetting the key rather than storing an
+  empty string, and the verify step checks for an absent key, not an empty one.
 
 ## 28. Standing project constraints
 

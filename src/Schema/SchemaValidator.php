@@ -171,6 +171,26 @@ final class SchemaValidator {
 
 			return $violations;
 		}
+		// COMPARED BY TYPE AND VALUE TOGETHER, so the string '1' and the integer 1
+		// are two entries rather than one. A comparison by value alone is what
+		// in_array() without the strict flag does, and it would let a list naming
+		// the same child twice through whenever the two spellings differed only in
+		// type. SCALARS AND NULL ONLY: no schema in the catalog declares uniqueness
+		// over a list of objects, and inventing an equality for one here would be a
+		// rule nothing exercises.
+		if ( isset( $spec['uniqueItems'] ) && true === $spec['uniqueItems'] && is_array( $value ) ) {
+			$tokens = [];
+
+			foreach ( $value as $item ) {
+				if ( is_scalar( $item ) || null === $item ) {
+					$tokens[] = gettype( $item ) . ':' . ( is_bool( $item ) ? (string) (int) $item : (string) $item );
+				}
+			}
+
+			if ( count( array_unique( $tokens ) ) !== count( $tokens ) ) {
+				$violations[] = "property '{$key}' must not name the same entry twice";
+			}
+		}
 		// REFUSED WHOLE, for the same reason as maxItems above: an object larger
 		// than its declared bound is not a request to inspect member by member.
 		if ( isset( $spec['maxProperties'] ) && 'object' === $type && is_array( $value )

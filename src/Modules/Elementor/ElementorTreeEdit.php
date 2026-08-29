@@ -280,6 +280,215 @@ final class ElementorTreeEdit {
 	}
 	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- The module vocabulary is camelCase across every class.
+	/**
+	 * The stored ids of one element's direct children, in document order.
+	 *
+	 * AN IDLESS CHILD IS REPORTED AS `null` RATHER THAN SKIPPED, and that is the
+	 * whole reason this returns what it returns. A reorder addresses children by
+	 * id; a list that quietly dropped the ones carrying no id would let a caller
+	 * name every child it can see, pass the completeness check, and permute a
+	 * list that is missing a sibling the document still holds. The null is what
+	 * `elementor-elements-reorder` refuses on.
+	 *
+	 * @param array[]     $tree      The raw stored tree.
+	 * @param string|null $parent_id The parent to read, null for the document root.
+	 *
+	 * @return array<int, string|null>|null The children's ids in order, or null
+	 *                                      when the parent is not in the tree.
+	 */
+	public function childIds( array $tree, ?string $parent_id ): ?array {
+		$children = $this->childrenOf( $tree, $parent_id );
+
+		if ( null === $children ) {
+			return null;
+		}
+
+		$ids = [];
+
+		foreach ( $children as $child ) {
+			if ( ! is_array( $child ) ) {
+				continue;
+			}
+
+			$stored = $child[ self::ID_KEY ] ?? null;
+
+			$ids[] = is_scalar( $stored ) && '' !== (string) $stored ? (string) $stored : null;
+		}
+
+		return $ids;
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+
+	// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The message is a fixed literal carrying no value from the request; the sniff registers on T_THROW and cannot tell.
+	/**
+	 * A copy of the tree with one element's direct children put in a new order.
+	 *
+	 * THE ORDER MUST BE A WHOLE PERMUTATION, and this is where that is enforced
+	 * rather than in the operation above it, so no second spelling of the rule
+	 * can drift from this one. `ElementorGlobalClassesReorder` settled the
+	 * reasoning for the module: a partial order has to invent a policy for the
+	 * children the caller did not mention, every such policy is a guess, and a
+	 * caller working from a stale read is far better served by a loud failure
+	 * than by a silent rule about where its missing siblings went.
+	 *
+	 * NON-ARRAY MEMBERS DO NOT MOVE. The elements are permuted among the raw
+	 * offsets the elements already occupied, so anything else the row holds
+	 * stays exactly where the document put it — the same property `offset()`
+	 * gives an insertion, for the same reason.
+	 *
+	 * @param array[]     $tree      The raw stored tree.
+	 * @param string|null $parent_id The parent whose children to permute, null for the document root.
+	 * @param string[]    $order     The children's ids, in the wanted order.
+	 *
+	 * @return array[] The new tree.
+	 *
+	 * @throws OperationException With ErrorCode::TargetNotFound when the parent
+	 *                           is not in the tree, and with
+	 *                           ErrorCode::InvalidInput when the order is not a
+	 *                           permutation of the parent's children.
+	 */
+	public function reorder( array $tree, ?string $parent_id, array $order ): array {
+		$children = $this->childrenOf( $tree, $parent_id );
+
+		if ( null === $children ) {
+			throw $this->absent();
+		}
+
+		$list  = array_values( $children );
+		$slots = [];
+		$nodes = [];
+
+		foreach ( $list as $offset => $member ) {
+			if ( ! is_array( $member ) ) {
+				continue;
+			}
+
+			$stored = $member[ self::ID_KEY ] ?? null;
+
+			if ( ! is_scalar( $stored ) || '' === (string) $stored ) {
+				continue;
+			}
+
+			$slots[]                   = (int) $offset;
+			$nodes[ (string) $stored ] = $member;
+		}
+
+		$wanted = array_values( array_unique( array_map( 'strval', $order ) ) );
+
+		if ( count( $wanted ) !== count( $order ) || count( $wanted ) !== count( $slots ) || [] !== array_diff( $wanted, array_keys( $nodes ) ) ) {
+			throw new OperationException(
+				ErrorCode::InvalidInput,
+				'The requested order has to name every one of this element\'s direct children exactly once, and it does not.',
+				'Read the current children with elementor-document-get, then send that whole list of ids in the order you want them in.'
+			);
+		}
+
+		foreach ( $wanted as $position => $id ) {
+			$list[ $slots[ $position ] ] = $nodes[ $id ];
+		}
+
+		return $this->replacing( $tree, $parent_id, $list );
+	}
+	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- The module vocabulary is camelCase across every class.
+	/**
+	 * One parent's raw child list, wherever that parent is.
+	 *
+	 * A parent that exists and stores no `elements` key answers an empty list
+	 * rather than null: it is a real element with no children, which is not the
+	 * same state as a parent that is not in the document at all.
+	 *
+	 * @param array[]     $tree      The raw stored tree.
+	 * @param string|null $parent_id The parent to read, null for the document root.
+	 *
+	 * @return array<array-key, mixed>|null The raw child list, or null when the
+	 *                                      parent is not in the tree.
+	 */
+	private function childrenOf( array $tree, ?string $parent_id ): ?array {
+		if ( null === $parent_id ) {
+			return $tree;
+		}
+
+		$found = $this->find( $tree, $parent_id );
+
+		if ( null === $found ) {
+			return null;
+		}
+
+		$children = $found['node'][ self::CHILDREN_KEY ] ?? null;
+
+		return is_array( $children ) ? $children : [];
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+
+	/**
+	 * One parent's child list swapped for another, wherever that parent is.
+	 *
+	 * @param array[]     $tree        The raw stored tree.
+	 * @param string|null $parent_id   The parent to rewrite, null for the document root.
+	 * @param array[]     $replacement The new child list.
+	 *
+	 * @return array[] The new tree.
+	 *
+	 * @throws OperationException With ErrorCode::TargetNotFound when the parent
+	 *                           is not in the tree.
+	 */
+	private function replacing( array $tree, ?string $parent_id, array $replacement ): array {
+		if ( null === $parent_id ) {
+			return $replacement;
+		}
+
+		$rewritten = $this->swapping( $tree, $parent_id, $replacement );
+
+		if ( null === $rewritten ) {
+			throw $this->absent();
+		}
+
+		return $rewritten;
+	}
+
+	/**
+	 * Walks one child list swapping the named parent's children.
+	 *
+	 * @param array<array-key, mixed> $children    One raw child list.
+	 * @param string                  $parent_id   The parent to rewrite.
+	 * @param array[]                 $replacement The new child list.
+	 *
+	 * @return array<array-key, mixed>|null The rewritten list, or null when the
+	 *                                      parent is not in this branch.
+	 */
+	private function swapping( array $children, string $parent_id, array $replacement ): ?array {
+		foreach ( $children as $key => $child ) {
+			if ( ! is_array( $child ) ) {
+				continue;
+			}
+
+			$stored        = $child[ self::ID_KEY ] ?? null;
+			$grandchildren = $child[ self::CHILDREN_KEY ] ?? null;
+			$existing      = is_array( $grandchildren ) ? $grandchildren : [];
+
+			if ( is_scalar( $stored ) && '' !== (string) $stored && (string) $stored === $parent_id ) {
+				$child[ self::CHILDREN_KEY ] = $replacement;
+				$children[ $key ]            = $child;
+
+				return $children;
+			}
+
+			$deeper = $this->swapping( $existing, $parent_id, $replacement );
+
+			if ( null !== $deeper ) {
+				$child[ self::CHILDREN_KEY ] = $deeper;
+				$children[ $key ]            = $child;
+
+				return $children;
+			}
+		}
+
+		return null;
+	}
+
 	/**
 	 * Walks one child list looking for an element.
 	 *
