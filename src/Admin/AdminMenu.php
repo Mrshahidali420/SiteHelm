@@ -43,6 +43,12 @@ final class AdminMenu {
 	public const PAGE_HOME = 'sitehelm';
 
 	/**
+	 * The SiteHelm community group. One address, said in three places — the
+	 * menu, the help menu and nowhere else — so a moved group is one edit.
+	 */
+	public const COMMUNITY_URL = 'https://www.facebook.com/groups/2838081573231405';
+
+	/**
 	 * The Connect screen's page slug.
 	 */
 	public const PAGE_CONNECT = 'sitehelm-connect';
@@ -231,6 +237,62 @@ final class AdminMenu {
 				[ $screens[ $slug ], 'render' ]
 			);
 		}
+
+		$this->add_outward_links();
+	}
+
+	/**
+	 * The two submenu entries that leave wp-admin: the community group, and —
+	 * only while the Pro add-on is not active — where to buy it.
+	 *
+	 * A URL passed as the menu slug with no callback is rendered by WordPress
+	 * as a plain link to that URL, which is the convention plugins use for an
+	 * outward menu item. The upgrade entry disappears the moment a licence is
+	 * active: a menu that keeps selling to someone who already paid reads as
+	 * not knowing they paid.
+	 */
+	private function add_outward_links(): void {
+		add_submenu_page(
+			self::PAGE_HOME,
+			'',
+			__( 'Community', 'sitehelm' ),
+			self::CAPABILITY,
+			self::COMMUNITY_URL
+		);
+
+		if ( ProCatalogue::STATE_ACTIVE !== ( new ProCatalogue() )->probe()['state'] ) {
+			add_submenu_page(
+				self::PAGE_HOME,
+				'',
+				'<span class="sitehelm-menu-upgrade">' . esc_html__( 'Upgrade to Pro', 'sitehelm' ) . '</span>',
+				self::CAPABILITY,
+				ProCatalogue::PRICING_URL
+			);
+		}
+
+		add_action( 'admin_head', [ self::class, 'print_menu_style' ] );
+		add_action( 'admin_footer', [ self::class, 'print_outward_targets' ] );
+	}
+
+	/**
+	 * Colour the upgrade entry. Printed on every admin page because the menu
+	 * is on every admin page; it is one rule, not a stylesheet.
+	 */
+	public static function print_menu_style(): void {
+		echo '<style>#adminmenu .sitehelm-menu-upgrade{color:#f6a33b;font-weight:600;}</style>';
+	}
+
+	/**
+	 * Make the outward menu entries open in a new tab. WordPress renders a
+	 * URL-slugged submenu item as a same-tab link; leaving wp-admin without
+	 * warning is worse than one line of script.
+	 */
+	public static function print_outward_targets(): void {
+		printf(
+			"<script>document.querySelectorAll('#adminmenu a[href^=\"%s\"], #adminmenu a[href^=\"%s\"]').forEach(function(a){a.target='_blank';a.rel='noopener noreferrer';});</script>",
+			esc_url( self::COMMUNITY_URL ),
+			esc_url( ProCatalogue::PRICING_URL )
+		);
 	}
 
 	/**

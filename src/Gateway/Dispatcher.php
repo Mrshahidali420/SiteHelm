@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace SiteHelm\Gateway;
 
+use SiteHelm\Admin\ProCatalogue;
 use SiteHelm\Change\ChangeEngine;
 use SiteHelm\Contracts\ErrorCode;
 use SiteHelm\Contracts\ModuleHealth;
@@ -136,8 +137,30 @@ final class Dispatcher {
 		// The client's raw operation string is never echoed back: it is untrusted
 		// text that would otherwise flow into an outbound envelope message. An
 		// operation the operator has switched off gets the very same answer as
-		// one that was never registered, so the refusal reveals nothing.
-		if ( ! $this->registry->has( $operation_id ) || ! ( $this->switches ?? OperationSwitches::none() )->isEnabled( $operation_id ) ) {
+		// one that was never registered, so the refusal reveals nothing. The one
+		// deliberate exception is an operation the published Pro catalogue names:
+		// that identifier is a constant of this plugin, not the caller's text, and
+		// telling an agent that Pro would add it turns a dead end into the exact
+		// remediation. A registered Pro operation the operator has switched off
+		// still gets the generic answer, because "buy the add-on" would be false.
+		if ( ! $this->registry->has( $operation_id ) ) {
+			if ( isset( ProCatalogue::OPERATIONS[ $operation_id ] ) ) {
+				throw new OperationException(
+					ErrorCode::IntegrationUnavailable,
+					sprintf( "'%s' is part of SiteHelm Pro, which is not active on this site.", $operation_id ),
+					sprintf(
+						'A site administrator can add it by installing and licensing the SiteHelm Pro add-on — plans at %s. Until then, call the dispatcher without an operation to see what this site can do.',
+						ProCatalogue::PRICING_URL
+					)
+				);
+			}
+			throw new OperationException(
+				ErrorCode::InvalidInput,
+				'The requested operation is not available on this dispatcher.',
+				'Call the dispatcher without an operation to list its catalog.'
+			);
+		}
+		if ( ! ( $this->switches ?? OperationSwitches::none() )->isEnabled( $operation_id ) ) {
 			throw new OperationException(
 				ErrorCode::InvalidInput,
 				'The requested operation is not available on this dispatcher.',

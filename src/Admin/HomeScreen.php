@@ -58,12 +58,21 @@ final class HomeScreen {
 	private AuditStore $store;
 
 	/**
+	 * What the Pro add-on adds, and whether it is here.
+	 *
+	 * @var ProCatalogue
+	 */
+	private ProCatalogue $pro;
+
+	/**
 	 * Constructs the screen.
 	 *
-	 * @param AuditStore|null $store The audit log; null opens the site's.
+	 * @param AuditStore|null   $store The audit log; null opens the site's.
+	 * @param ProCatalogue|null $pro   The Pro catalogue; null asks the add-on itself.
 	 */
-	public function __construct( ?AuditStore $store = null ) {
+	public function __construct( ?AuditStore $store = null, ?ProCatalogue $pro = null ) {
 		$this->store = $store ?? new AuditStore();
+		$this->pro   = $pro ?? new ProCatalogue();
 	}
 
 	/**
@@ -261,9 +270,37 @@ final class HomeScreen {
 			);
 		}
 
+		$this->render_pro_place();
+
 		echo '</div>';
 
 		Ui::section_close();
+	}
+
+	/**
+	 * The one card that sells: what the Pro add-on would add, shown only while
+	 * it is not active. A licensed site sees nothing, because a console that
+	 * keeps advertising to someone who already paid reads as not knowing.
+	 */
+	private function render_pro_place(): void {
+		if ( ProCatalogue::STATE_ACTIVE === $this->pro->probe()['state'] ) {
+			return;
+		}
+
+		printf(
+			'<article class="sitehelm-card sitehelm-place"><div class="sitehelm-card__head"><h3 class="sitehelm-card__name">%s</h3>%s</div>'
+				. '<p class="sitehelm-card__desc">%s</p>'
+				. '<p class="sitehelm-place__action"><a class="sitehelm-btn sitehelm-btn--small" href="%s" target="_blank" rel="noopener noreferrer">%s</a></p></article>',
+			esc_html__( 'SiteHelm Pro', 'sitehelm' ),
+			Ui::badge( 'pro', __( 'Pro', 'sitehelm' ) ), // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Ui::badge() escapes its own label.
+			sprintf(
+				/* translators: %s: number of operations the Pro add-on adds. */
+				esc_html__( '%s more operations for the bigger jobs: whole-site SEO, WooCommerce, code snippets and bulk Elementor work. Every safety gate stays exactly the same.', 'sitehelm' ),
+				esc_html( number_format_i18n( count( ProCatalogue::OPERATIONS ) ) )
+			),
+			esc_url( ProCatalogue::PRICING_URL ),
+			esc_html__( 'See what Pro adds', 'sitehelm' )
+		);
 	}
 
 	/**
