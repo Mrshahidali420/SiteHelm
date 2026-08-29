@@ -12,6 +12,18 @@ an operation behaves.
 ## [Unreleased]
 
 ### Added
+- **Build, empty and create whole Elementor pages** (REQ-0104) —
+  `elementor-document-build` replaces a page's entire layout with one you supply,
+  `elementor-document-clear` empties a page, and `elementor-document-create` makes a
+  new page for a layout to live on. All three refuse a layout using a widget this site
+  does not have installed, and refuse any setting key the widget carrying it does not
+  declare, rather than storing it and letting Elementor drop the text silently. Build
+  and clear both preview, snapshot and roll back, and both refuse a request that would
+  leave the page exactly as it already is instead of reporting a change that never
+  happened. A created page is always a draft, so nothing an agent sends can put an
+  unreviewed page in front of visitors, and it is a real Elementor page from the moment
+  it exists — the layout you ask for reaches its page settings, and every other
+  Elementor operation will work on it.
 - **Find a phrase everywhere on the site** (REQ-0092, Free half) — `content-search` names
   every post, page and custom post type whose title, content, excerpt or Elementor data
   mentions a phrase, with a per-field count, a plain-text excerpt of the first occurrence,

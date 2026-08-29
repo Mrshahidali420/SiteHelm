@@ -93,10 +93,13 @@ final class ElementorDefinitionInvariantsTest extends TestCase {
 		'elementor-elements-reorder',
 		'elementor-element-label-set',
 		'elementor-page-settings-set',
+		'elementor-document-build',
+		'elementor-document-clear',
 		'elementor-template-apply',
 		'elementor-template-save',
 		'elementor-template-import',
 		'elementor-theme-template-create',
+		'elementor-document-create',
 		'elementor-global-colors-update',
 		'elementor-global-typography-update',
 		'elementor-global-class-create',
@@ -120,7 +123,7 @@ final class ElementorDefinitionInvariantsTest extends TestCase {
 	/**
 	 * The Elementor module's write count, bumped by every task registering a write.
 	 */
-	private const ELEMENTOR_WRITE_COUNT = 21;
+	private const ELEMENTOR_WRITE_COUNT = 24;
 
 	/**
 	 * The writes that CREATE a library post rather than change an existing one.
@@ -141,6 +144,7 @@ final class ElementorDefinitionInvariantsTest extends TestCase {
 		'elementor-template-save',
 		'elementor-template-import',
 		'elementor-theme-template-create',
+		'elementor-document-create',
 	];
 
 	/**

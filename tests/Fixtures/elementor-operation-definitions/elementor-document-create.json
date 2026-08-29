@@ -1,0 +1,121 @@
+{
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "title": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 255,
+                "description": "Title for the new page."
+            },
+            "postType": {
+                "type": "string",
+                "enum": [
+                    "page",
+                    "post"
+                ],
+                "description": "Post type to create the page in. Defaults to page."
+            },
+            "layout": {
+                "type": "string",
+                "enum": [
+                    "default",
+                    "canvas",
+                    "headerFooter",
+                    "theme"
+                ],
+                "description": "Elementor page layout the new page starts in. Defaults to the theme's own layout."
+            },
+            "content": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 5000,
+                "items": {
+                    "type": "object",
+                    "maxProperties": 32
+                },
+                "description": "Layout the new page starts with, shaped exactly as elementor-document-get reports a document's content. Every setting key must be one the widget carrying it declares, or the request is refused rather than stored with the unrecognised keys dropped. Omit it for an empty page."
+            }
+        },
+        "required": [
+            "title"
+        ],
+        "additionalProperties": false
+    },
+    "outputSchema": {
+        "type": "object",
+        "oneOf": [
+            {
+                "title": "Plan phase",
+                "type": "object",
+                "properties": {
+                    "plan": {
+                        "type": "object",
+                        "description": "The change plan to approve, including its plan token."
+                    }
+                },
+                "required": [
+                    "plan"
+                ],
+                "additionalProperties": false
+            },
+            {
+                "title": "Apply phase",
+                "type": "object",
+                "properties": {
+                    "target": {
+                        "type": "string",
+                        "description": "The concrete target that was written."
+                    },
+                    "changed": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "description": "The fields the approved plan changed."
+                    },
+                    "state": {
+                        "type": "object",
+                        "properties": {
+                            "postType": {
+                                "type": "string",
+                                "description": "Post type the page was created in."
+                            },
+                            "title": {
+                                "type": "string",
+                                "description": "Title the created page carries."
+                            },
+                            "status": {
+                                "type": "string",
+                                "description": "Post status of the created page. Always draft."
+                            },
+                            "elementCount": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "description": "How many elements the created page holds, counting every nesting level."
+                            },
+                            "documentDigest": {
+                                "type": "string",
+                                "description": "Fingerprint of the created page's content exactly as it is stored."
+                            }
+                        },
+                        "required": [
+                            "postType",
+                            "title",
+                            "status",
+                            "elementCount",
+                            "documentDigest"
+                        ],
+                        "additionalProperties": false
+                    }
+                },
+                "required": [
+                    "target",
+                    "changed",
+                    "state"
+                ],
+                "additionalProperties": false
+            }
+        ]
+    }
+}

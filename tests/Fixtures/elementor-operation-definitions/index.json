@@ -23,10 +23,13 @@
         "elementor-elements-reorder",
         "elementor-element-label-set",
         "elementor-page-settings-set",
+        "elementor-document-build",
+        "elementor-document-clear",
         "elementor-template-apply",
         "elementor-template-save",
         "elementor-template-import",
         "elementor-theme-template-create",
+        "elementor-document-create",
         "elementor-global-colors-update",
         "elementor-global-typography-update",
         "elementor-global-class-create",
@@ -35,5 +38,5 @@
         "elementor-global-classes-reorder",
         "elementor-theme-conditions-set"
     ],
-    "operationCount": 34
+    "operationCount": 37
 }

@@ -29,6 +29,7 @@ use SiteHelm\Modules\Elementor\ElementorTemplateLibrary;
 use SiteHelm\Modules\Elementor\ElementorTemplateTarget;
 use SiteHelm\Modules\Elementor\ElementorThemeConditions;
 use SiteHelm\Modules\Elementor\ElementorTree;
+use SiteHelm\Modules\Elementor\ElementorTreeInput;
 use SiteHelm\Tests\Doubles\TemplateLibraryFixtures;
 use SiteHelm\Tests\TestCase;
 use WP_Post;
@@ -190,9 +191,8 @@ final class ElementorTemplateImportTest extends TestCase {
 	public function test_a_site_without_elementor_refuses_before_the_plan(): void {
 		$handler = new ElementorTemplateImport(
 			$this->templateTarget(),
-			new ElementorTree(),
+			new ElementorTreeInput( new ElementorTree(), $this->propCoercion(), new ElementorPresence() ),
 			$this->propCoercion(),
-			new ElementorPresence(),
 			$this->documentWriter()
 		);
 
@@ -730,9 +730,8 @@ final class ElementorTemplateImportTest extends TestCase {
 
 		return new ElementorTemplateImport(
 			$this->templateTarget(),
-			new ElementorTree(),
+			new ElementorTreeInput( new ElementorTree(), $this->propCoercion(), new ElementorPresence() ),
 			$this->propCoercion(),
-			new ElementorPresence(),
 			$this->documentWriter()
 		);
 	}
