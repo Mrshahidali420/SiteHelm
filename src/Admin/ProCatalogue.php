@@ -276,6 +276,42 @@ final class ProCatalogue {
 			'read'        => false,
 			'description' => 'Put a quarantined snippet back into circulation. It goes through the whole activation guard again rather than simply being trusted.',
 		],
+		'elementor-dynamic-tag-list'   => [
+			'dispatcher'  => 'elementor-read',
+			'module'      => ModuleId::Elementor,
+			'read'        => true,
+			'description' => 'List the dynamic tags this site registers, so a binding names a tag the site actually has. Requires Elementor Pro.',
+		],
+		'elementor-brand-kit-list'     => [
+			'dispatcher'  => 'elementor-read',
+			'module'      => ModuleId::Elementor,
+			'read'        => true,
+			'description' => "List the site's brand kits with their global colour and typography counts, and say which one is live. Needs only Elementor.",
+		],
+		'elementor-popup-create'       => [
+			'dispatcher'  => 'elementor-write',
+			'module'      => ModuleId::Elementor,
+			'read'        => false,
+			'description' => 'Create a popup with no trigger armed, so it shows to nobody until you give it one. Requires Elementor Pro.',
+		],
+		'elementor-popup-settings-set' => [
+			'dispatcher'  => 'elementor-write',
+			'module'      => ModuleId::Elementor,
+			'read'        => false,
+			'description' => 'Set when a popup opens and how a visitor can close it, from an allowlist of five settings written in whole groups. Requires Elementor Pro.',
+		],
+		'elementor-dynamic-tag-set'    => [
+			'dispatcher'  => 'elementor-write',
+			'module'      => ModuleId::Elementor,
+			'read'        => false,
+			'description' => "Bind one widget setting to a dynamic tag, so the page shows what the site holds rather than typed text. The tag is checked against the site's own registry first. Requires Elementor Pro.",
+		],
+		'elementor-brand-kit-apply'    => [
+			'dispatcher'  => 'elementor-write',
+			'module'      => ModuleId::Elementor,
+			'read'        => false,
+			'description' => 'Switch the active brand kit. Every page using global colours or global typography changes appearance, so the change is high risk and always reversible.',
+		],
 	];
 
 	/**
