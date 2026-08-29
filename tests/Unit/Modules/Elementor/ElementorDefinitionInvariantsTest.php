@@ -80,6 +80,8 @@ final class ElementorDefinitionInvariantsTest extends TestCase {
 		'elementor-global-tokens-get',
 		'elementor-global-class-list',
 		'elementor-theme-template-list',
+		'elementor-template-list',
+		'elementor-template-get',
 		'elementor-element-add',
 		'elementor-element-update',
 		'elementor-elements-update',
@@ -87,6 +89,10 @@ final class ElementorDefinitionInvariantsTest extends TestCase {
 		'elementor-element-move',
 		'elementor-element-duplicate',
 		'elementor-element-remove',
+		'elementor-template-apply',
+		'elementor-template-save',
+		'elementor-template-import',
+		'elementor-theme-template-create',
 		'elementor-global-colors-update',
 		'elementor-global-typography-update',
 		'elementor-global-class-create',
@@ -105,12 +111,33 @@ final class ElementorDefinitionInvariantsTest extends TestCase {
 	 * read that silently became a write, or a write registered without its write
 	 * handler, moves the derived count away from this one.
 	 */
-	private const ELEMENTOR_READ_COUNT = 10;
+	private const ELEMENTOR_READ_COUNT = 12;
 
 	/**
 	 * The Elementor module's write count, bumped by every task registering a write.
 	 */
-	private const ELEMENTOR_WRITE_COUNT = 14;
+	private const ELEMENTOR_WRITE_COUNT = 18;
+
+	/**
+	 * The writes that CREATE a library post rather than change an existing one.
+	 *
+	 * They are the only Elementor writes that may declare `SnapshotPolicy::Supported`,
+	 * and the reason is mechanical rather than a relaxation: `SnapshotLifecycle`
+	 * refuses a change outright when a required snapshot cannot be captured, and a
+	 * post that does not exist yet has no prior state to capture. Declaring
+	 * `required` on a create would make it refuse every time it ran.
+	 *
+	 * Listing them BY NAME is what keeps that from becoming a loophole. A write that
+	 * edits a document and quietly drops to `supported` is not on this list, so it
+	 * still fails.
+	 *
+	 * @var string[]
+	 */
+	private const ELEMENTOR_CREATE_IDS = [
+		'elementor-template-save',
+		'elementor-template-import',
+		'elementor-theme-template-create',
+	];
 
 	/**
 	 * The capabilities an Elementor operation may declare.
@@ -368,6 +395,13 @@ final class ElementorDefinitionInvariantsTest extends TestCase {
 	 * requires `edit_post` on the template at resolve time so a theme administrator
 	 * with no rights over that template still cannot move it.
 	 *
+	 * `elementor-theme-template-create` gates the same way for the same reason one
+	 * step earlier. A header is part of the site's chrome before it is content, and
+	 * an editor entitled to write pages is not thereby entitled to add one — even an
+	 * empty one that displays nowhere, because the operation that gives it somewhere
+	 * to display is gated here too and a create nobody may act on is not worth
+	 * offering.
+	 *
 	 * A future document-content operation appearing in this list is a defect, and
 	 * the exact-match assertion is what makes it one.
 	 */
@@ -384,6 +418,7 @@ final class ElementorDefinitionInvariantsTest extends TestCase {
 			[
 				'elementor-global-tokens-get',
 				'elementor-global-class-list',
+				'elementor-theme-template-create',
 				'elementor-global-colors-update',
 				'elementor-global-typography-update',
 				'elementor-global-class-create',
@@ -497,7 +532,13 @@ final class ElementorDefinitionInvariantsTest extends TestCase {
 			$this->assertFalse( $write->isReadOnly, "Write '{$write->id}' must declare isReadOnly false." );
 			$this->assertSame( 'write', $write->mode->value, "Write '{$write->id}' must declare Mode::Write." );
 			$this->assertSame( 'required', $write->previewPolicy->value, "Write '{$write->id}' must require a preview." );
-			$this->assertSame( 'required', $write->snapshotPolicy->value, "Write '{$write->id}' must require a snapshot." );
+			$expected_snapshot = in_array( $write->id, self::ELEMENTOR_CREATE_IDS, true ) ? 'supported' : 'required';
+
+			$this->assertSame(
+				$expected_snapshot,
+				$write->snapshotPolicy->value,
+				"Write '{$write->id}' must declare snapshotPolicy '{$expected_snapshot}'."
+			);
 			// Tied to the destructive flag rather than stated as a literal, because
 			// the OperationDefinition constructor forces `required` on a destructive
 			// write and would refuse anything else. Hardcoding `supported` here

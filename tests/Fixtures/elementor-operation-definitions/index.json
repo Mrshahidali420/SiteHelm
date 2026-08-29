@@ -10,6 +10,8 @@
         "elementor-global-tokens-get",
         "elementor-global-class-list",
         "elementor-theme-template-list",
+        "elementor-template-list",
+        "elementor-template-get",
         "elementor-element-add",
         "elementor-element-update",
         "elementor-elements-update",
@@ -17,6 +19,10 @@
         "elementor-element-move",
         "elementor-element-duplicate",
         "elementor-element-remove",
+        "elementor-template-apply",
+        "elementor-template-save",
+        "elementor-template-import",
+        "elementor-theme-template-create",
         "elementor-global-colors-update",
         "elementor-global-typography-update",
         "elementor-global-class-create",
@@ -25,5 +31,5 @@
         "elementor-global-classes-reorder",
         "elementor-theme-conditions-set"
     ],
-    "operationCount": 24
+    "operationCount": 30
 }
