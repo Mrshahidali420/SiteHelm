@@ -1,0 +1,85 @@
+{
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "postId": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "The Elementor document to save from. Call elementor-document-list for the documents Elementor controls."
+            },
+            "elementId": {
+                "type": "string",
+                "maxLength": 64,
+                "pattern": "^[A-Za-z0-9_-]{1,64}$",
+                "description": "Save only this element and everything inside it. Omit to save the whole document."
+            },
+            "title": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 255,
+                "description": "The title the saved template is listed under."
+            },
+            "type": {
+                "type": "string",
+                "enum": [
+                    "page",
+                    "section",
+                    "container"
+                ],
+                "description": "What kind of template this is: page for a whole layout, or section or container for a fragment of one."
+            }
+        },
+        "required": [
+            "postId",
+            "title",
+            "type"
+        ],
+        "additionalProperties": false
+    },
+    "outputSchema": {
+        "type": "object",
+        "oneOf": [
+            {
+                "title": "Plan phase",
+                "type": "object",
+                "properties": {
+                    "plan": {
+                        "type": "object",
+                        "description": "The change plan to approve, including its plan token."
+                    }
+                },
+                "required": [
+                    "plan"
+                ],
+                "additionalProperties": false
+            },
+            {
+                "title": "Apply phase",
+                "type": "object",
+                "properties": {
+                    "target": {
+                        "type": "string",
+                        "description": "The concrete target that was written."
+                    },
+                    "changed": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "description": "The fields the approved plan changed."
+                    },
+                    "state": {
+                        "type": "object",
+                        "description": "The verified persisted state of the target."
+                    }
+                },
+                "required": [
+                    "target",
+                    "changed",
+                    "state"
+                ],
+                "additionalProperties": false
+            }
+        ]
+    }
+}

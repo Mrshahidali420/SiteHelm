@@ -1,0 +1,81 @@
+{
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "title": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 255,
+                "description": "The title the theme template is listed under."
+            },
+            "type": {
+                "type": "string",
+                "enum": [
+                    "header",
+                    "footer",
+                    "single",
+                    "single-post",
+                    "single-page",
+                    "archive",
+                    "search-results",
+                    "error-404",
+                    "product",
+                    "product-archive",
+                    "single-product"
+                ],
+                "description": "Which kind of theme document to create, for example header, footer or single-post."
+            }
+        },
+        "required": [
+            "title",
+            "type"
+        ],
+        "additionalProperties": false
+    },
+    "outputSchema": {
+        "type": "object",
+        "oneOf": [
+            {
+                "title": "Plan phase",
+                "type": "object",
+                "properties": {
+                    "plan": {
+                        "type": "object",
+                        "description": "The change plan to approve, including its plan token."
+                    }
+                },
+                "required": [
+                    "plan"
+                ],
+                "additionalProperties": false
+            },
+            {
+                "title": "Apply phase",
+                "type": "object",
+                "properties": {
+                    "target": {
+                        "type": "string",
+                        "description": "The concrete target that was written."
+                    },
+                    "changed": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "description": "The fields the approved plan changed."
+                    },
+                    "state": {
+                        "type": "object",
+                        "description": "The verified persisted state of the target."
+                    }
+                },
+                "required": [
+                    "target",
+                    "changed",
+                    "state"
+                ],
+                "additionalProperties": false
+            }
+        ]
+    }
+}

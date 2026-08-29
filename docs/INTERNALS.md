@@ -1815,6 +1815,76 @@ Tests: `tests/Unit/Modules/Elementor/ElementorGlobalClass*Test.php` over the sha
 returning `false` rather than throwing. `ElementorApi` is never doubled; the fake is
 installed underneath it by `class_alias` in an isolated process.
 
+## 36. The Elementor template library (REQ-0102) in one screen
+
+Six operations over `elementor_library` posts: `elementor-template-list`,
+`-get`, `-save`, `-apply`, `-import`, and `elementor-theme-template-create`.
+A library template is an ordinary post of type `ElementorFields::LIBRARY_POST_TYPE`
+whose `_elementor_template_type` says which section of the library it belongs to
+and whose `_elementor_data` is a document like any other.
+
+- **`ElementorTemplateTarget` is the shared target for the three creates.**
+  `TARGET_PREFIX = 'elementor-template:'`; `pendingTargetKey()` is
+  `elementor-template:new`, because a create has no target until it has run.
+  `pending()` holds the presence gate for all three, so a site without Elementor
+  refuses with `IntegrationUnavailable` before any plan is built. `verifyRead()`
+  requires a real `\WP_Post` of the library type — the check that turns "the insert
+  answered an id" into "the post exists and is a template".
+- **A create declares `SnapshotPolicy::Supported`, never `Required`.**
+  `SnapshotLifecycle::capture()` throws `RollbackUnavailable` when a `Required`
+  policy meets a null snapshot, so declaring `Required` on an operation with nothing
+  to capture refuses the change outright. `restore()` then refuses honestly, with
+  "trash the template" as the remediation, on `ContentCreate`'s precedent. Deleting
+  the created post and calling that a rollback would be a delete wearing a
+  reversal's name.
+- **`-save` never touches its source.** It reads one document — or one element's
+  subtree of it — and writes a different, new post. Element ids are stored exactly as
+  the source holds them.
+- **`-apply` re-mints every id and rebinds every style.** `ElementorIdMint::reassign()`
+  produces the map and `ElementorStyleRemap::remap()` rewrites the definitions and the
+  references that name the old ids. Both halves matter: renaming the definitions and
+  leaving `settings.classes.value` behind renders an unstyled page that every check in
+  the pipeline reports as a success. Elements are rebuilt **one at a time against the
+  tree being built**, not against the tree as it was found, so two top-level elements
+  in one template cannot be handed the same id, and each is remapped with its own map,
+  so a template holding two elements with the same stored id cannot rebind the wrong
+  one. The destination — not the template — is the target, so a rollback names the post
+  this operation actually wrote to, and the two posts' capabilities are checked
+  separately.
+- **`-import` is the only operation in the module that takes a tree from outside.**
+  Five gates, all at plan time, in this order, each existing so the next can run at
+  all: shape (every node's members and their types; the refusal names the nesting level
+  and quotes nothing) → size (bytes, against `ElementorWriteTarget::MAX_SNAPSHOT_BYTES`,
+  reused so an accepted template is always one a later write can snapshot) → bounds
+  (`ElementorTree`'s node and depth limits) → widget availability → declared keys.
+- **A widget the site does not have is a refusal, naming it — in both `-apply` and
+  `-import`.** `ElementorPropCoercion::coerceTree()` refuses when a widget's prop schema
+  cannot be read (upstream defect #101), so the write could not have proceeded either
+  way; what is chosen here is where the refusal lands. Checking the registry against the
+  template the caller chose lets the message name the missing types, which the coercion
+  sweep may not — it runs over the site's own stored tree and is forbidden from quoting
+  it. A site whose registry cannot be read **at all** is let through: an unreadable
+  registry is not evidence that a widget is missing.
+- **Undeclared setting keys are refused** (`assertKnownKeys()`), because Elementor
+  DISCARDS an unrecognised key instead of reporting it — content deleted and reported as
+  a success, in a template built to be applied to page after page.
+- **`elementor-theme-template-create` creates an empty published document with no
+  display conditions**, and warns saying so, pointing at
+  `elementor-theme-conditions-set`. It is the one operation here requiring
+  `ElementorKit::CAPABILITY` (`edit_theme_options`) rather than `edit_posts`: a theme
+  document replaces part of every page on the site. The type is re-checked against
+  `ElementorThemeConditions::THEME_TYPES` inside the handler, not only in the schema.
+
+Tests: `tests/Unit/Modules/Elementor/ElementorTemplate*Test.php` and
+`ElementorThemeTemplateCreateTest`. The three creates share
+`tests/Doubles/TemplateLibraryFixtures`, whose post store is **writable** — the detail
+that separates it from `ElementorWordPressStubs`, which only ever needed a meta table.
+It reproduces exactly two facts about `wp_insert_post()` (it answers an id, and the row
+is then readable) and nothing else, so no assertion is about what WordPress made of the
+fields, only about which fields the operation handed it. The document writer is real
+throughout; a stubbed writer would turn "the tree really was stored" into a claim about
+the stub.
+
 ## 28. Standing project constraints
 
 - **No AI attribution anywhere in git** — no "Generated with Claude Code" footer,

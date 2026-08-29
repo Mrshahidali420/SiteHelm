@@ -275,6 +275,19 @@ final class ElementorModule implements IntegrationModule {
 			[ new ElementorThemeTemplateList( $fields, $conditions, $this->presence ), 'handle' ]
 		);
 
+		// The library reads. Both answer from the same three collaborators the
+		// theme-template listing above uses, so a template's type means the same
+		// thing in a listing, in an export and in the write that created it.
+		$registry->register(
+			ElementorTemplateList::definition(),
+			[ new ElementorTemplateList( $fields, $conditions, $this->presence ), 'handle' ]
+		);
+
+		$registry->register(
+			ElementorTemplateGet::definition(),
+			[ new ElementorTemplateGet( $fields, $document, $tree, $conditions, $this->presence ), 'handle' ]
+		);
+
 		// The write block. Every one of these shares a single ElementorWriteTarget,
 		// and the target shares a single ElementorApi with the cache invalidator the
 		// writer holds — one presence gate, one registry read, one cache flush per
@@ -341,6 +354,43 @@ final class ElementorModule implements IntegrationModule {
 		$registry->registerWrite(
 			ElementorElementRemove::definition(),
 			new ElementorElementRemove( $targets, $document, $merge, $edit, $coercion, $writer, $diff )
+		);
+
+		// The template library's writes. The apply is a document write and shares the
+		// document target above; the three creates share a target of their own,
+		// because a post that does not exist yet has no before-state to resolve.
+		$registry->registerWrite(
+			ElementorTemplateApply::definition(),
+			new ElementorTemplateApply(
+				$targets,
+				$document,
+				$edit,
+				new ElementorIdMint(),
+				new ElementorStyleRemap(),
+				$coercion,
+				$merge,
+				$diff,
+				$tree,
+				$this->presence,
+				$writer
+			)
+		);
+
+		$library = new ElementorTemplateTarget( $document, $tree, $conditions, $this->presence );
+
+		$registry->registerWrite(
+			ElementorTemplateSave::definition(),
+			new ElementorTemplateSave( $library, $document, $edit, $tree, $writer )
+		);
+
+		$registry->registerWrite(
+			ElementorTemplateImport::definition(),
+			new ElementorTemplateImport( $library, $tree, $coercion, $this->presence, $writer )
+		);
+
+		$registry->registerWrite(
+			ElementorThemeTemplateCreate::definition(),
+			new ElementorThemeTemplateCreate( $library, $writer )
 		);
 
 		// The two global-token writes address the active kit rather than a document,

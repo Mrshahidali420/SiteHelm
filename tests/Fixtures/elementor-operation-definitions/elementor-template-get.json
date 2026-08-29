@@ -1,0 +1,172 @@
+{
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "id": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "The saved template's WordPress post identifier, as reported by elementor-template-list."
+            }
+        },
+        "required": [
+            "id"
+        ],
+        "additionalProperties": false
+    },
+    "outputSchema": {
+        "$id": "urn:sitehelm:schema:elementor-template-get:output:1",
+        "type": "object",
+        "properties": {
+            "template": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "description": "The template's WordPress post identifier."
+                    },
+                    "title": {
+                        "type": "string",
+                        "description": "The template's title."
+                    },
+                    "status": {
+                        "type": "string",
+                        "description": "The WordPress post status."
+                    },
+                    "templateType": {
+                        "type": "string",
+                        "description": "The stored template type, such as section, container, page or header. Empty when the stored value is unreadable."
+                    },
+                    "takesConditions": {
+                        "type": "boolean",
+                        "description": "Whether display conditions apply to this type. Ask elementor-theme-template-list for the conditions themselves."
+                    }
+                },
+                "required": [
+                    "id",
+                    "title",
+                    "status",
+                    "templateType",
+                    "takesConditions"
+                ],
+                "additionalProperties": false,
+                "description": "What this template is."
+            },
+            "nodes": {
+                "type": "array",
+                "items": {
+                    "$ref": "#/$defs/elementorNode"
+                },
+                "description": "The template's top-level elements, each carrying its own children, in stored order."
+            },
+            "totals": {
+                "type": "object",
+                "properties": {
+                    "nodeCount": {
+                        "type": "integer",
+                        "description": "How many elements the whole tree holds, at every level."
+                    },
+                    "maxDepth": {
+                        "type": "integer",
+                        "description": "How many nesting LEVELS the tree has, not the greatest depth value: a tree whose deepest element sits at depth 2 reports 3, and an empty tree reports 0."
+                    },
+                    "widgetTypeCounts": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "type": "integer"
+                        },
+                        "description": "How many times each widget type appears, keyed by widget type. Empty when the tree holds no widgets."
+                    }
+                },
+                "required": [
+                    "nodeCount",
+                    "maxDepth",
+                    "widgetTypeCounts"
+                ],
+                "additionalProperties": false
+            },
+            "content": {
+                "type": "array",
+                "items": {
+                    "type": "object"
+                },
+                "description": "The template's elements exactly as Elementor stores them, settings included. This is the member elementor-template-import accepts; nodes above is the readable projection of the same tree."
+            },
+            "pageSettings": {
+                "type": "object",
+                "description": "The page settings stored with this template, as stored. An empty object means the template carries none and will take the destination's settings when applied."
+            },
+            "elementorVersion": {
+                "type": "string",
+                "description": "The Elementor version that last wrote this template, as stamped on the post. Empty when the stamp is absent or unreadable."
+            }
+        },
+        "required": [
+            "template",
+            "nodes",
+            "totals",
+            "content",
+            "pageSettings",
+            "elementorVersion"
+        ],
+        "additionalProperties": false,
+        "$defs": {
+            "elementorNode": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "Elementor's own element identifier, carried through unchanged, so it is stable across reads whenever it is present. Null means the stored element declares no identifier — such an element cannot be addressed by a write, and null is never unique within a document."
+                    },
+                    "elType": {
+                        "type": "string",
+                        "description": "The stored element type, such as container or widget. Empty when the stored element declares none."
+                    },
+                    "widgetType": {
+                        "type": [
+                            "string",
+                            "null"
+                        ],
+                        "description": "The stored widget type for a widget element, and null for anything else."
+                    },
+                    "kind": {
+                        "type": "string",
+                        "description": "Either widget or container, derived from elType. An element declaring no type is reported as a container."
+                    },
+                    "label": {
+                        "type": "string",
+                        "description": "A short human string naming what this element is. DERIVED on every read from elType and widgetType, stored nowhere, and for display only — never record it as a stored value."
+                    },
+                    "depth": {
+                        "type": "integer",
+                        "description": "This element's zero-based nesting depth, so a top-level element is 0."
+                    },
+                    "childCount": {
+                        "type": "integer",
+                        "description": "How many children this element has, counting only the ones this response returns."
+                    },
+                    "children": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/$defs/elementorNode"
+                        },
+                        "description": "This element's children, in stored order."
+                    }
+                },
+                "required": [
+                    "id",
+                    "elType",
+                    "widgetType",
+                    "kind",
+                    "label",
+                    "depth",
+                    "childCount",
+                    "children"
+                ],
+                "additionalProperties": false
+            }
+        }
+    }
+}

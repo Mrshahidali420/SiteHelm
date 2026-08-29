@@ -1,0 +1,101 @@
+{
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "type": {
+                "type": "string",
+                "enum": [
+                    "page",
+                    "landing-page",
+                    "section",
+                    "container",
+                    "popup",
+                    "header",
+                    "footer",
+                    "single",
+                    "single-post",
+                    "single-page",
+                    "archive",
+                    "search-results",
+                    "error-404",
+                    "product",
+                    "product-archive",
+                    "single-product"
+                ],
+                "description": "Report only templates of this stored type. Omit for every type."
+            },
+            "limit": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "Page size, clamped to 100. The response echoes the size actually used."
+            },
+            "offset": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Templates to skip before the page begins."
+            }
+        },
+        "additionalProperties": false
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "templates": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "id": {
+                            "type": "integer",
+                            "description": "The template's WordPress post identifier."
+                        },
+                        "title": {
+                            "type": "string",
+                            "description": "The template's title."
+                        },
+                        "status": {
+                            "type": "string",
+                            "description": "The WordPress post status. A template that is not published can still be applied, but it displays nowhere on its own."
+                        },
+                        "templateType": {
+                            "type": "string",
+                            "description": "The stored template type, such as section, container, page, popup, header or archive. Empty when the stored value is unreadable."
+                        },
+                        "takesConditions": {
+                            "type": "boolean",
+                            "description": "Whether display conditions apply to this type at all. True for theme documents only; ask elementor-theme-template-list for the conditions themselves."
+                        }
+                    },
+                    "required": [
+                        "id",
+                        "title",
+                        "status",
+                        "templateType",
+                        "takesConditions"
+                    ],
+                    "additionalProperties": false
+                },
+                "description": "One page of the saved templates the caller may edit."
+            },
+            "total": {
+                "type": "integer",
+                "description": "Templates matching the request across the whole site, before this page was taken."
+            },
+            "limit": {
+                "type": "integer",
+                "description": "The page size actually used, after clamping."
+            },
+            "offset": {
+                "type": "integer",
+                "description": "The page start actually used."
+            }
+        },
+        "required": [
+            "templates",
+            "total",
+            "limit",
+            "offset"
+        ],
+        "additionalProperties": false
+    }
+}

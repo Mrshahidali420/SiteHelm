@@ -1,0 +1,89 @@
+{
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "title": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 255,
+                "description": "The title the imported template is listed under."
+            },
+            "type": {
+                "type": "string",
+                "enum": [
+                    "page",
+                    "section",
+                    "container"
+                ],
+                "description": "What kind of template this is: page for a whole layout, or section or container for a fragment of one."
+            },
+            "content": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 5000,
+                "items": {
+                    "type": "object",
+                    "maxProperties": 32
+                },
+                "description": "The elements to import, in the shape Elementor stores them — the content member of an elementor-template-get result."
+            },
+            "pageSettings": {
+                "type": "object",
+                "maxProperties": 200,
+                "description": "The page settings to store with the template, such as the layout width a landing page needs. Omit for a fragment."
+            }
+        },
+        "required": [
+            "title",
+            "type",
+            "content"
+        ],
+        "additionalProperties": false
+    },
+    "outputSchema": {
+        "type": "object",
+        "oneOf": [
+            {
+                "title": "Plan phase",
+                "type": "object",
+                "properties": {
+                    "plan": {
+                        "type": "object",
+                        "description": "The change plan to approve, including its plan token."
+                    }
+                },
+                "required": [
+                    "plan"
+                ],
+                "additionalProperties": false
+            },
+            {
+                "title": "Apply phase",
+                "type": "object",
+                "properties": {
+                    "target": {
+                        "type": "string",
+                        "description": "The concrete target that was written."
+                    },
+                    "changed": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "description": "The fields the approved plan changed."
+                    },
+                    "state": {
+                        "type": "object",
+                        "description": "The verified persisted state of the target."
+                    }
+                },
+                "required": [
+                    "target",
+                    "changed",
+                    "state"
+                ],
+                "additionalProperties": false
+            }
+        ]
+    }
+}
