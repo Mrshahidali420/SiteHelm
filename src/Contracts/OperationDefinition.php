@@ -48,6 +48,17 @@ final class OperationDefinition {
 	 * shopper's name, address and spend, gate on `manage_woocommerce` alone. A
 	 * narrowing test in this repository asserts that no built-in operation names
 	 * either one; the add-on's own suite asserts which of its operations do.
+	 *
+	 * `unfiltered_html` is REQ-0105's, and it is here for one operation only.
+	 * `media-svg-upload` stores markup the browser renders in the site's own
+	 * origin, which is publishing, not uploading — and WordPress already has the
+	 * capability that means "may publish markup". Naming it alongside
+	 * `upload_files` puts SVG upload where WordPress itself puts unfiltered
+	 * markup: administrators and editors on a single site, super admins alone on
+	 * multisite, with no special case needed for either. It is a site-wide
+	 * primitive, not a meta capability, so it does not belong in
+	 * PolicyEngine::META_CAPABILITY_MAP. A narrowing test confines it to that one
+	 * operation.
 	 */
 	private const ALLOWED_CAPABILITIES = [
 		'read',
@@ -64,6 +75,7 @@ final class OperationDefinition {
 		'promote_users',
 		'edit_products',
 		'manage_woocommerce',
+		'unfiltered_html',
 	];
 
 	/**

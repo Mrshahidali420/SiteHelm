@@ -7,9 +7,10 @@
         "media-attach",
         "media-upload",
         "media-import",
+        "media-svg-upload",
         "media-resize"
     ],
-    "operationCount": 8,
+    "operationCount": 9,
     "definitions": {
         "media-get": {
             "inputSchema": {
@@ -546,6 +547,99 @@
                 },
                 "required": [
                     "url"
+                ],
+                "additionalProperties": false
+            },
+            "outputSchema": {
+                "type": "object",
+                "oneOf": [
+                    {
+                        "title": "Plan phase",
+                        "type": "object",
+                        "properties": {
+                            "plan": {
+                                "type": "object",
+                                "description": "The change plan to approve, including its plan token."
+                            }
+                        },
+                        "required": [
+                            "plan"
+                        ],
+                        "additionalProperties": false
+                    },
+                    {
+                        "title": "Apply phase",
+                        "type": "object",
+                        "properties": {
+                            "target": {
+                                "type": "string",
+                                "description": "The concrete target that was written."
+                            },
+                            "changed": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                },
+                                "description": "The fields the approved plan changed."
+                            },
+                            "state": {
+                                "type": "object",
+                                "description": "The verified persisted state of the target."
+                            }
+                        },
+                        "required": [
+                            "target",
+                            "changed",
+                            "state"
+                        ],
+                        "additionalProperties": false
+                    }
+                ]
+            }
+        },
+        "media-svg-upload": {
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "filename": {
+                        "type": "string",
+                        "maxLength": 255,
+                        "description": "Filename for the new library asset, ending in .svg. WordPress may adjust it for uniqueness."
+                    },
+                    "content": {
+                        "type": "string",
+                        "maxLength": 262144,
+                        "description": "The SVG document itself, as text. Scripts, event handlers, embedded HTML, external references, and stylesheets are removed before it is stored."
+                    },
+                    "title": {
+                        "type": "string",
+                        "maxLength": 65535,
+                        "description": "Title of the new library asset."
+                    },
+                    "alt": {
+                        "type": "string",
+                        "maxLength": 65535,
+                        "description": "Alternative text of the new library asset."
+                    },
+                    "caption": {
+                        "type": "string",
+                        "maxLength": 65535,
+                        "description": "Caption of the new library asset."
+                    },
+                    "description": {
+                        "type": "string",
+                        "maxLength": 65535,
+                        "description": "Description of the new library asset."
+                    },
+                    "parent": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "Identifier of the content item this asset belongs to, or 0 for none."
+                    }
+                },
+                "required": [
+                    "filename",
+                    "content"
                 ],
                 "additionalProperties": false
             },

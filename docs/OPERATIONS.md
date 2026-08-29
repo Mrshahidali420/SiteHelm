@@ -1,6 +1,6 @@
 # Operations reference
 
-SiteHelm exposes **98 operations** through **11 MCP tools**, called dispatchers. Every operation is
+SiteHelm exposes **99 operations** through **11 MCP tools**, called dispatchers. Every operation is
 declared once, in code, with a strict input schema (`additionalProperties: false`), a required
 capability, a risk level, and preview, snapshot, and rollback policies. That declaration is the
 contract the gateway enforces and the catalogue an agent discovers.
@@ -243,7 +243,7 @@ links are listed per item, and `truncated` says when a page held more.
 | `media-list` | Lists the media library with filtering | `upload_files` |
 | `image-size-list` | Lists registered image sizes and their dimensions | `read` |
 
-### `media-write` — 5 operations
+### `media-write` — 6 operations
 
 | Operation | Does | Capability | Risk | Rollback |
 |---|---|---|---|---|
@@ -252,12 +252,24 @@ links are listed per item, and `truncated` says when a page held more.
 | `media-meta-update` | Updates alt text, caption, title, description | `edit_post` | medium | supported |
 | `media-attach` | Attaches an existing item to a post | `edit_post` | medium | supported |
 | `media-resize` | Brings an oversized image within a width and height you name, keeping the original file | `edit_post` + `upload_files` | high | supported |
+| `media-svg-upload` | Adds one SVG image, rebuilt from a safe subset before it is stored | `upload_files` + `unfiltered_html` | high | supported |
 
 > **`media-import` is the most security-sensitive operation in SiteHelm.** The host is resolved and
 > validated before the connection is made; private, loopback, link-local, and reserved ranges are
 > refused; every redirect hop is re-validated and re-pinned; the resolved address is pinned so the
 > connection cannot be re-pointed between the check and the fetch; the wire read is capped; and the
 > refusal message is deliberately digit-free so it cannot be used as an SSRF oracle.
+
+> **`media-svg-upload` never stores the file it was given.** An SVG is markup the browser renders
+> in the site's own origin, so `media-upload` and `media-import` refuse it outright and continue to.
+> This operation rebuilds the document instead: elements not on its allowlist are removed, event
+> handlers and stylesheets go, and a reference may only point inside the document, so no external
+> URL and no `javascript:` survives. A file declaring a document type or an entity is refused
+> rather than cleaned, as is one with nothing drawable left afterwards. Everything removed is
+> reported as a warning, the preview shows the exact document that will be stored, and the plan is
+> bound to those bytes — so what is approved is what exists. It also asks for `unfiltered_html` on
+> top of `upload_files`, which puts SVG upload where WordPress puts unfiltered markup:
+> administrators and editors on a single site, super admins alone on multisite.
 
 > **`media-resize` never overwrites and never deletes.** The reduced image is written to a new file
 > beside the original; the attachment is re-pointed at it and the untouched original stays reachable

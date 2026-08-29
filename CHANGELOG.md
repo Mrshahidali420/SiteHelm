@@ -12,6 +12,17 @@ an operation behaves.
 ## [Unreleased]
 
 ### Added
+- **SVG images can reach the media library, safely** (REQ-0105) — `media-svg-upload`
+  adds one SVG so Elementor's icon and image controls can point at it. The file that is
+  stored is never the file that was sent: the document is rebuilt from an allowlist of
+  drawing elements, and scripts, event handlers, embedded HTML, stylesheets, external
+  references and entity declarations do not survive that rebuild. Everything removed is
+  reported as a warning and the exact document that will be stored is shown in the
+  preview, so what is approved is what will exist. It is the only path allowed to store
+  markup — the ordinary upload and import operations still refuse SVG outright — and it
+  asks for `unfiltered_html` as well as `upload_files`, because storing an SVG is closer
+  to publishing markup than to uploading a photograph. The site's own upload permissions
+  are untouched: nothing about the WordPress media screen changes.
 - **Build, empty and create whole Elementor pages** (REQ-0104) —
   `elementor-document-build` replaces a page's entire layout with one you supply,
   `elementor-document-clear` empties a page, and `elementor-document-create` makes a

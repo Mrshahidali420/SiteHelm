@@ -17,10 +17,16 @@ use SiteHelm\Contracts\OperationException;
  * Writes already-validated bytes to disk and creates the attachment.
  *
  * The only file-writing unit in the codebase, shared by REQ-0023
- * `media-upload` and REQ-0052 `media-import`. Both arrive here holding bytes
- * their own plan has already bound by hash, so nothing in this class validates
- * content: by the time store() is called the decision to write has been made
- * and reviewed.
+ * `media-upload`, REQ-0052 `media-import` and REQ-0105 `media-svg-upload`. All
+ * three arrive here holding bytes their own plan has already bound by hash, so
+ * nothing in this class validates content: by the time store() is called the
+ * decision to write has been made and reviewed.
+ *
+ * ONE CALLER PASSES AN EXPLICIT TYPE MAP. `media-svg-upload` stores a type
+ * WordPress does not permit by default, and it grants that permission for its
+ * own call rather than by filtering the site's upload permissions, which would
+ * change what every other path accepts. Whether a type may be stored at all is
+ * that operation's decision and its sanitiser's; this class only carries it.
  *
  * THE TEMP FILE IS REMOVED ON EVERY PATH, via try/finally. A failed sideload
  * leaves no bytes behind. Clearing whatever pending-bytes property the calling
@@ -51,16 +57,19 @@ final class MediaSideload {
 	/**
 	 * Writes the validated bytes and creates the attachment.
 	 *
-	 * @param string               $bytes       The validated content.
-	 * @param array<string, mixed> $payload     The planned payload.
-	 * @param OperationContext     $context     The request context.
-	 * @param string               $operationId The calling operation's id, for the server log.
+	 * @param string                     $bytes       The validated content.
+	 * @param array<string, mixed>       $payload     The planned payload.
+	 * @param OperationContext           $context     The request context.
+	 * @param string                     $operationId The calling operation's id, for the server log.
+	 * @param array<string, string>|null $mimes       An explicit extension-to-type map for this
+	 *                                                one call, or null to use the site's own
+	 *                                                upload permissions.
 	 *
 	 * @return string The created attachment's target key.
 	 *
 	 * @throws OperationException With ErrorCode::ExecutionFailed.
 	 */
-	public function store( string $bytes, array $payload, OperationContext $context, string $operationId ): string {
+	public function store( string $bytes, array $payload, OperationContext $context, string $operationId, ?array $mimes = null ): string {
 		$this->load_admin_upload_apis();
 
 		$temp = wp_tempnam( (string) $payload['filename'] );
@@ -89,6 +98,16 @@ final class MediaSideload {
 				);
 			}
 
+			// `mimes` is passed only when the caller supplied one, rather than
+			// always passing a nullable member: wp_handle_sideload() branches on
+			// the KEY being set, so a `'mimes' => null` member would be a
+			// deliberate instruction to permit nothing and would refuse every
+			// ordinary upload.
+			$overrides = [ 'test_form' => false ];
+			if ( null !== $mimes ) {
+				$overrides['mimes'] = $mimes;
+			}
+
 			$sideload = wp_handle_sideload(
 				[
 					'name'     => (string) $payload['filename'],
@@ -97,7 +116,7 @@ final class MediaSideload {
 					'error'    => 0,
 					'size'     => (int) $payload['byteLength'],
 				],
-				[ 'test_form' => false ]
+				$overrides
 			);
 
 			if ( ! is_array( $sideload ) || isset( $sideload['error'] ) || ! isset( $sideload['file'] ) ) {

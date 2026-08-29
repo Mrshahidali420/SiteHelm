@@ -144,6 +144,11 @@ final class MediaModule implements IntegrationModule {
 		);
 
 		$registry->registerWrite(
+			MediaSvgUpload::definition(),
+			new MediaSvgUpload( $targets, new SvgSanitizer(), $planner, $sideload )
+		);
+
+		$registry->registerWrite(
 			MediaResize::definition(),
 			new MediaResize( $fields, $targets )
 		);
