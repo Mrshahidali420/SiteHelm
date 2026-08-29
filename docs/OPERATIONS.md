@@ -56,8 +56,12 @@ before calling what kind of operation it is dealing with.
 | **Snapshot** | `required` · `supported` · `not-applicable` | Whether prior state is captured before the change. `supported` covers writes that create rather than overwrite, where there is no prior state to keep. |
 | **Rollback** | `required` · `supported` · `unsupported` · `not-applicable` | Whether the change can be undone. Destructive operations must declare `required`. |
 
-**Risk** is `low`, `medium`, or `high`, and reflects blast radius rather than difficulty — a
-site-wide design token change is high risk even though it is a small edit.
+**Risk** is `low`, `medium`, `high`, or `extreme`, and the top two differ in kind, not degree.
+High means a bounded effect with a large blast radius — a site-wide design token change is high
+risk even though it is a small edit, because we can say exactly what will change. Extreme means
+the payload is a program, so its effect cannot be bounded at write time by anyone: what was
+stored can be promised, what it will do cannot. Extreme exists for the Pro Code module and no
+free operation may declare it — the test suite refuses one that tries.
 
 ## Error codes
 
@@ -514,3 +518,66 @@ that has already changed hands is not something an assistant should be able to r
 > **Variable products are read, not written.** `product-get` reports a variable product's
 > price range and says the price is held on its variations; `product-update` refuses a
 > price change on one rather than writing a value the shop will ignore.
+
+### Code (Pro) — eighteen Pro operations
+
+Shipped in SiteHelm Pro 0.5.0. The only module that **ships switched off**, and the only one
+with no plugin behind it: the default host is SiteHelm's own runner, so the module is never
+*unavailable*, only *off* — a decision the site owner makes on the Modules screen, in two
+steps (writing allowed, then activation allowed) rather than one. Every write re-checks
+WordPress's own `edit_plugins` capability inside the handler, and every write is refused
+outright on a site that sets `DISALLOW_FILE_EDIT` or `DISALLOW_FILE_MODS` — a site that has
+locked its own code editing has answered this question already.
+
+The reads ride `system-read` and the writes ride `content-write`; the eleven dispatchers are
+frozen and there is no `system-write`.
+
+| Operation | Dispatcher | Does | Capability | Rollback |
+|---|---|---|---|---|
+| `code-host-list` | `system-read` | Lists the places a snippet can live — SiteHelm's own runner, always present, and any snippet plugin that is installed — and which safety guarantees each can keep | `manage_options` | — |
+| `code-snippet-list` | `system-read` | Lists the stored snippets with language, hook, whether each is live and whether it is quarantined; bodies are not returned | `manage_options` | — |
+| `code-snippet-get` | `system-read` | Reads one snippet in full, including its body | `manage_options` | — |
+| `code-safe-mode-token` | `system-read` | Issues the one-off URL that loads the site with every snippet skipped, so the admin stays reachable while a snippet is breaking the front end | `manage_options` | — |
+| `code-quarantine-list` | `system-read` | Lists the snippets taken out of circulation because a request died while they were running, with the error that did it | `manage_options` | — |
+| `code-health-check` | `system-read` | Fetches the home page and the login screen and reports whether each renders, breaks, or could not be reached — the same check activation runs, callable on its own | `manage_options` | — |
+| `code-scaffold-widget` | `system-read` | Generates the source for an Elementor widget class from a description of its controls and returns it as text; nothing is stored and nothing runs | `manage_options` | — |
+| `code-scaffold-block` | `system-read` | Generates the source for a WordPress block — registration, attributes, render callback — as text; nothing is stored and nothing runs | `manage_options` | — |
+| `code-scaffold-theme-template` | `system-read` | Generates the source for a theme template file for a post type or archive, as text; nothing is stored and nothing runs | `manage_options` | — |
+| `code-snippet-write` | `content-write` | Stores one PHP snippet — always stored switched off, no argument makes it live, and refused outright if it does not lex | `manage_options` + `edit_plugins` re-checked | required |
+| `code-snippet-activate` | `content-write` | Switches one stored snippet on under the guard: health-checked immediately, auto-reverted and quarantined if the site stops rendering, and self-deactivating unless confirmed inside the window | `manage_options` + `edit_plugins` re-checked | required |
+| `code-snippet-confirm` | `content-write` | Confirms that a snippet activated a moment ago should stay live — staying on is not the default, switching back off is | `manage_options` + `edit_plugins` re-checked | required |
+| `code-snippet-deactivate` | `content-write` | Switches one snippet off; only ever reduces what runs | `manage_options` + `edit_plugins` re-checked | required |
+| `code-snippet-delete` | `content-write` | Deletes one snippet, snapshotted first so it can be put back | `manage_options` + `edit_plugins` re-checked | required |
+| `code-css-write` | `content-write` | Stores custom CSS printed on the front end — it cannot run anything, but it can make a site unusable to look at, so it is previewed and reversible like any other change | `manage_options` + `edit_plugins` re-checked | required |
+| `code-js-write` | `content-write` | Stores custom JavaScript printed on the front end — it runs in every visitor's browser, a wider reach than PHP, and goes through the same storage discipline | `manage_options` + `edit_plugins` re-checked | required |
+| `code-safe-mode-set` | `content-write` | Turns every snippet off at once, or back on, without knowing which one broke; the switch is read before any snippet is considered, so a broken snippet cannot defeat it | `manage_options` + `edit_plugins` re-checked | required |
+| `code-quarantine-clear` | `content-write` | Puts a quarantined snippet back into circulation — through the whole activation guard again, not on trust | `manage_options` + `edit_plugins` re-checked | required |
+
+> **A snippet is stored, then guarded, then live — never live on arrival.** Six steps stand
+> between a write and running code: the body must lex; storage is always inactive; the
+> activation is recorded before anything runs; the site is health-checked from the outside
+> immediately after (a site that stops rendering is auto-reverted and the snippet
+> quarantined with its fatal); the activation carries a time limit and the snippet switches
+> itself off unless `code-snippet-confirm` arrives inside it; and a shutdown handler
+> quarantines a snippet whose request dies, on the next load. An unreachable health check
+> is reported as exactly that — unverified — and does not auto-revert, because a site that
+> blocks loopback requests is not a broken site.
+>
+> **Nothing ever executes during SiteHelm's own request.** Snippets load only on the hook
+> they declare, and the loader excludes the gateway request, WP-CLI and cron outright — so
+> a snippet that white-screens the front end cannot break the channel an agent would use
+> to remove it, and the safe-mode URL skips every snippet for one request as a second way
+> back in.
+>
+> **The runner is one method.** Exactly one `eval` exists in the codebase, in
+> `SiteHelmRunner::evaluate`, and a test walks every shipped file to prove it — the
+> allowed file must contain exactly one, and every other file none.
+>
+> **Snippet bodies never appear in a preview, a plan, or the rollback panel.** A payload
+> is reported as a byte count and twelve characters of its sha256 (REQ-0106) — the
+> ordinary contents of a snippet are an API key or an SMTP password, and a preview renders
+> values in full by design. The audit log has always reduced every value to an integer.
+>
+> **Third-party snippet plugins are listed, not written.** `code-host-list` reports an
+> installed snippet plugin as a host with `writable: false` and says which guarantees it
+> cannot keep; every write targets SiteHelm's own runner, where the guard holds.

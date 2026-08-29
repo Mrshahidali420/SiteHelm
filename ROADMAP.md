@@ -146,14 +146,25 @@ concrete workflow moves an item up far more reliably than a feature name does.
 
 These are not "not yet". They are design decisions, and they will not be revisited.
 
+One entry left this list, once, and the honest thing is to say so rather than rewrite
+history: REQ-0053, arbitrary PHP execution, stood here until Pro 0.5.0 shipped the Code
+module. What changed is not our judgement about arbitrary execution — an agent that can
+run unguarded PHP still has every capability on the site at once — it is that the Code
+module is not that. It is Pro-only, it ships **switched off**, storing code and running
+code are two separate owner decisions, a stored snippet is never live on arrival, and six
+steps stand between a write and running code, ending in a health check that auto-reverts a
+snippet that breaks the site and a time limit that switches one off unless it is
+confirmed. The excluded thing was never "code"; it was code without a way back.
+
 | # | Excluded | Why |
 |---|---|---|
-| REQ-0053 | Arbitrary PHP execution | An agent that can run PHP has every capability on the site at once. There is nothing left for a capability check to protect. |
 | REQ-0054 | Unrestricted SQL | Direct SQL bypasses every WordPress hook, every capability check, and every snapshot. A change made that way cannot be verified or rolled back. |
-| REQ-0055 | Unrestricted filesystem access | It escapes the plugin's own guarantees and turns a content tool into a remote shell. |
+| REQ-0055 | Unrestricted filesystem access | It escapes the plugin's own guarantees and turns a content tool into a remote shell. The Code module writes rows in its own table, never files — and it refuses every write on a site that sets `DISALLOW_FILE_EDIT`. |
 | REQ-0056 | Irreversible permanent deletion | Every destructive operation in SiteHelm is reversible by construction. `content-trash` moves to trash; nothing hard-deletes. |
+| — | Executing anything during SiteHelm's own request | New with the Code module, and load-bearing: snippets load only on the hook they declare, and the loader excludes the gateway request, WP-CLI and cron outright. A snippet that white-screens the site cannot break the channel you would use to remove it. |
+| — | mu-plugin generation | An mu-plugin loads before everything, cannot be deactivated from the admin, and is outside every switch this plugin offers. Nothing SiteHelm stores may load unconditionally. |
 | — | Third-party service connectors and a stored-credential vault | Considered 2026-08-28 alongside REQ-0100 and declined for now. Shipping connectors to outbound services means SiteHelm holds other people's API keys and makes arbitrary outbound requests — the same shape as the guarded-fetch surface that already needs the most careful code in the plugin, multiplied by every service. REQ-0100's Pro tier sends a signed webhook to one URL the owner types in; anything richer belongs behind that webhook, in a tool built to hold credentials. |
-| — | WP-CLI passthrough, raw option writes, PHP / CSS / JS "snippet" stores, theme-file editing | Found in the 2026-08-23 survey and declined for the reasons above: each is a remote shell wearing a different hat, and none can be previewed or rolled back as a change. Site settings ship through an allowlist (REQ-0062) instead. |
+| — | WP-CLI passthrough, raw option writes, theme-file editing | Found in the 2026-08-23 survey and declined: each is a remote shell wearing a different hat, and none can be previewed or rolled back as a change. Site settings ship through an allowlist (REQ-0062) instead, and code ships through the guarded Code module, not a theme-file editor. |
 
 A request to add any of these will be closed. If you need one of them, you need a different
 tool — and you should be very sure about who is holding the credentials for it.

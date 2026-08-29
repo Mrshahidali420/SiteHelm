@@ -16,10 +16,14 @@ use SiteHelm\Registry\CapabilityRegistry;
 use SiteHelm\Tests\TestCase;
 
 /**
- * REQ-0053 (arbitrary PHP), REQ-0054 (unrestricted SQL) and REQ-0055
- * (unrestricted filesystem access) are excluded from this plugin permanently,
- * and their acceptance criterion is the same sentence in all three rows of the
- * requirement matrix: the request is "absent from every dispatcher catalog".
+ * REQ-0054 (unrestricted SQL) and REQ-0055 (unrestricted filesystem access) are
+ * excluded from this plugin permanently, and REQ-0053 (arbitrary PHP) is
+ * excluded from THE FREE PLUGIN permanently — the guarded exception is the Pro
+ * Code module, which registers through the add-on and never through this boot
+ * table, so every assertion here still holds and still matters: the free plugin
+ * on its own has no path from an agent to running code. The acceptance
+ * criterion is the same sentence in all three rows of the requirement matrix:
+ * the request is "absent from every dispatcher catalog".
  *
  * NOTHING WAS ASSERTING THAT ABSENCE. Every other requirement is proved by the
  * operation that implements it; an excluded requirement has no operation to hang
@@ -147,7 +151,7 @@ final class ExcludedCapabilityTest extends TestCase {
 		$this->assertSame(
 			[],
 			$offenders,
-			'REQ-0053 through REQ-0055 exclude code, SQL and filesystem execution permanently. Adding such an operation needs a separately approved design, not a test edit.'
+			'REQ-0053 through REQ-0055 exclude code, SQL and filesystem execution from the free plugin permanently; code ships only through the Pro Code module and its guard. Adding such an operation here needs a separately approved design, not a test edit.'
 		);
 	}
 

@@ -11,6 +11,8 @@ an operation behaves.
 
 ## [Unreleased]
 
+## [0.7.0] — 2026-08-29
+
 ### Changed
 - **A risk level for code, and the gate that goes with it** (REQ-0107) — operations that
   store or run code get their own tier above High, because the honest claim about them is
@@ -760,11 +762,13 @@ optional integration as `Active`, `Inactive`, or `VersionBlocked`.
 
 ### Permanently excluded
 
-Arbitrary PHP execution, unrestricted SQL, unrestricted filesystem access, and irreversible
-permanent deletion are out of scope by design and will not be added. See
+Unrestricted SQL, unrestricted filesystem access, and irreversible permanent deletion are
+out of scope by design and will not be added. Code ships only through the Pro Code module's
+guard, and nothing SiteHelm stores ever executes during its own request. See
 [ROADMAP.md](ROADMAP.md).
 
-[Unreleased]: https://github.com/Mrshahidali420/SiteHelm/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/Mrshahidali420/SiteHelm/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/Mrshahidali420/SiteHelm/releases/tag/v0.7.0
 [0.6.0]: https://github.com/Mrshahidali420/SiteHelm/releases/tag/v0.6.0
 [0.5.0]: https://github.com/Mrshahidali420/SiteHelm/releases/tag/v0.5.0
 [0.4.0]: https://github.com/Mrshahidali420/SiteHelm/releases/tag/v0.4.0
