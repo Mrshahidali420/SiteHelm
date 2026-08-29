@@ -1984,6 +1984,54 @@ makes a new page to hold it.
   deleting it would be a second destructive write on a failure path, taken without a
   snapshot or a preview, to tidy away an unpublished draft no visitor can reach.
 
+## 39. SVG upload (REQ-0105) in one screen
+
+`media-svg-upload` is the only path in the plugin that may store markup. It exists
+because Elementor's icon and image controls want SVG and the two general upload paths
+must keep refusing it.
+
+- **`MediaFields`' deny lists do not move.** `image/svg+xml` and the `svg`/`svgz`
+  extensions stay denied for `media-upload` and `media-import`, because those two
+  accept content they only sniff. Widening them would change what the WordPress media
+  screen accepts too. The exception is granted per call, not per site: `applyChange()`
+  passes `[ 'svg' => 'image/svg+xml' ]` as `MediaSideload::store()`'s new fifth
+  argument, and the override is added to `wp_handle_sideload()`'s array only when a
+  caller supplies one — a `'mimes' => null` member would mean "permit nothing" and
+  would refuse every ordinary upload.
+- **`SvgSanitizer` rebuilds, it does not clean.** Elements are allowlisted
+  (`ALLOWED_ELEMENTS`), attributes pass a rule set, and everything else goes.
+  Deliberate omissions: `script`, `handler`, `foreignObject`, `image`, `feImage`,
+  `style`, `a`, and every animation element — the last because they can retarget an
+  attribute after load.
+- **Three things are refused rather than cleaned**: a `<!DOCTYPE`/`<!ENTITY`
+  declaration, a root element that is not `svg`, and a document with nothing drawable
+  left after the removals. The declaration check runs on the RAW TEXT before the
+  parser sees it — by the time a parser has an opinion, the expansion has happened.
+  `LIBXML_NONET` is passed and `LIBXML_NOENT` deliberately is not: it substitutes
+  entities rather than suppressing them.
+- **The scrub collects children into an array before walking them.** Removing from a
+  live `DOMNodeList` while iterating it skips the following node, which is a sanitiser
+  that misses every other element. `SvgSanitizerTest` pins that with two adjacent
+  `<script>` elements.
+- **The plan binds the REBUILT bytes.** `contentSha256` hashes the sanitised
+  document, `previewDetail` carries it verbatim alongside `removedElements` and
+  `removedAttributes`, and every removal is also a warning. An operator approving the
+  preview is approving the file that will exist.
+- **The filename is judged before the document is parsed**, and after
+  `sanitize_file_name()`, so `icon.svg.php` — whose `pathinfo` extension is `php` —
+  is refused rather than cleaned into something acceptable-looking. `svgz` is out: it
+  would mean storing bytes the sanitiser never read.
+- **It gates on `unfiltered_html` as well as `upload_files`.** It is the only
+  operation in the catalog that names it, and
+  `tests/Unit/Registry/UnfilteredHtmlCapabilityTest.php` is what keeps it that way —
+  the same widening-plus-narrowing pattern `ReservedCapabilityTest` uses. It is a
+  site-wide primitive with no target, so it does NOT belong in
+  `PolicyEngine::META_CAPABILITY_MAP`.
+- **The other four upload properties are `MediaUpload`'s, unchanged**: validation in
+  `planChange()` in memory, bytes represented by a hash, bytes carried on a private
+  property and re-hashed before apply, temp file removed by `MediaSideload`'s
+  `try/finally`. `restore()` always throws `RollbackUnavailable`.
+
 ## 28. Standing project constraints
 
 - **No AI attribution anywhere in git** — no "Generated with Claude Code" footer,
