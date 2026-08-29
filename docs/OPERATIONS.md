@@ -519,6 +519,49 @@ that has already changed hands is not something an assistant should be able to r
 > price range and says the price is held on its variations; `product-update` refuses a
 > price change on one rather than writing a value the shop will ignore.
 
+### Elementor (Pro) — six Pro operations
+
+Shipped in SiteHelm Pro 0.6.0, registered into the **free** Elementor module on the two
+Elementor dispatchers, so the permission level an owner set for the builder governs these
+too. Popups and dynamic tags need Elementor Pro on the site and say so by name when it is
+missing; brand kits need only Elementor.
+
+| Operation | Dispatcher | Does | Capability | Rollback |
+|---|---|---|---|---|
+| `elementor-dynamic-tag-list` | `elementor-read` | Lists the dynamic tags this site registers, sorted, at most 200 with the true count and a `truncated` flag, alongside the Elementor Pro version | `edit_posts` | — |
+| `elementor-brand-kit-list` | `elementor-read` | Lists the library's kits oldest first with title, whether the `elementor_active_kit` option names it, and its global colour and typography counts (system and custom added together) | `edit_theme_options` | — |
+| `elementor-popup-create` | `elementor-write` | Creates a published popup with an empty document and **no trigger armed**, so it shows to nobody until `elementor-popup-settings-set` gives it one | `edit_theme_options` | supported |
+| `elementor-popup-settings-set` | `elementor-write` | Writes five allowlisted display settings — page-load delay, exit intent, scroll offset, and the two prevent-close switches — in whole coupled groups, merged into the stored row rather than replacing it | `edit_theme_options` | supported |
+| `elementor-dynamic-tag-set` | `elementor-write` | Binds one widget setting to one dynamic tag through the ordinary document write path, after checking the tag against the site's own registry and the setting against the widget's declared props | `edit_post` | supported |
+| `elementor-brand-kit-apply` | `elementor-write` | Switches the active kit to a validated kit post, snapshots the previous option and invalidates both kits' cached CSS | `edit_theme_options` | **required** |
+
+> **A popup is created inert.** Creating and arming a popup in one unreviewable call is the
+> shape of change this plugin exists not to make, so `elementor-popup-create` writes the
+> library post, the template type and an empty document and stops there, with a warning on
+> the planned change saying the popup will show to nobody until it is armed.
+>
+> **Popup settings are written in whole groups.** Arming page load writes the switch and
+> the delay together; arming scroll writes the switch, the direction and the offset. A
+> group cannot be left half-set, and the promised `settingsKeyCount` is what proves the
+> merge really merged rather than replaced. **Timing rules and display conditions are out
+> of scope** — they are repeaters of caller-shaped rows, and a key count cannot verify them.
+>
+> **A binding identifier is derived, not minted.** Elementor mints a random id for every
+> dynamic binding; the engine plans a change twice and compares the two payloads, so the
+> id here is a hash of the setting and the tag. The widget's `__dynamic__` map is copied
+> before the new key goes in, because the settings merge is one level deep and writing the
+> map whole would silently unbind every other setting on that widget.
+>
+> **An unregistered tag is refused before anything is written**, because a widget bound to
+> a tag the site does not register renders nothing at all. A registry that cannot be read
+> refuses with `ExecutionFailed` rather than answering "that tag is not registered" — those
+> are different facts.
+>
+> **Switching the active kit repaints the site.** Every page using global colours or global
+> typography changes appearance, so `elementor-brand-kit-apply` is high risk, a rollback is
+> required, and a post that is not a kit is refused. An `elementor_active_kit` option naming
+> a kit that has been deleted is reported as no active kit rather than repeated back.
+
 ### Code (Pro) — eighteen Pro operations
 
 Shipped in SiteHelm Pro 0.5.0. The only module that **ships switched off**, and the only one

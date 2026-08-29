@@ -2182,3 +2182,42 @@ speaks through.
   (`snippet_code`, `snippet_css`, `snippet_js`) are already in the free
   `SensitiveFields` list, asserted by a Pro test against the free constant — a payload is
   a byte count and twelve characters of sha256 everywhere a change is shown.
+
+## 42. Pro Elementor (Pro 0.6.0) — what the free repo needs to know
+
+The six operations live in the Pro repo (`src/Elementor/`), registered by `ProElementor`
+from `ProPlugin::register_operations`. They are **Pro operations inside the free Elementor
+module**: `ModuleId::Elementor`, on `elementor-read` and `elementor-write`, so the
+permission level an owner set for the builder governs them and no new dispatcher opens.
+
+- **Two presence gates, one order.** `ProElementorGate::check()` runs licence →
+  capability → Elementor → Elementor Pro, and the order is asserted by tests. The Pro
+  presence class, `ElementorProPresence`, *composes* the free `ElementorPresence` rather
+  than extending it — the free class is `final` — and is the only Pro file allowed to name
+  an Elementor Pro symbol. Popups and dynamic tags pass `needs_pro = true`; the two brand
+  kit operations pass `false`, because kits are a free-Elementor feature.
+- **A fourth snapshot channel.** `ElementorPopupTarget` joins `ElementorPageSettingsTarget`
+  and `ElementorClassRepositorySnapshot`; `elementor-brand-kit-apply` snapshots a single
+  option (`elementor_active_kit`) instead of a post row. Popup rollback restores the whole
+  stored settings row, never the five projected fields — a projection is not a snapshot.
+- **Writes reuse the free machinery.** `elementor-dynamic-tag-set` goes through
+  `ElementorWriteTarget` / `ElementorDocumentWriter`, so preview, digest verification,
+  snapshot, rollback and cache invalidation are the free module's and are not
+  re-implemented. `elementor-popup-create` writes an empty document through the same
+  writer.
+- **Determinism is load-bearing.** A dynamic binding's instance id is `md5(setting|tag)`
+  truncated, not Elementor's random value, because `planChange()` runs twice and the
+  engine compares payload digests. Anything random in a payload breaks every approved plan.
+- **The `__dynamic__` coupled-key rule.** `ElementorSettingsMerge::merged()` merges one
+  level, so the existing `__dynamic__` sub-map is copied, the new key added, the map
+  `ksort`ed and re-set whole. Writing the map without copying unbinds every other setting
+  on the widget with nothing in the audit trail naming them.
+- **`null` is not `[]` here either.** An unreadable dynamic-tag registry refuses with
+  `ExecutionFailed`; a registry that is readable and empty is a normal answer. Same rule
+  for a dangling `elementor_active_kit`: the listing reports `activeKitId: null` rather
+  than echoing an id that points at nothing.
+- **Free-side surface.** `ProCatalogue::OPERATIONS` carries all six so the console lists
+  them locked on a site without the add-on; `ADDON_ONLY_MODULES` is unchanged, because the
+  Elementor module is a free module. The Pro tally is 40; the free registry stays at 99.
+- **None of them is `Risk::Extreme`.** That tier belongs to the Code module alone, and a
+  test in this repo enforces it.

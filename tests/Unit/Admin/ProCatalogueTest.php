@@ -107,6 +107,8 @@ final class ProCatalogueTest extends TestCase {
 				'content-read'  => [ 'product-list', 'product-get', 'product-category-list', 'order-list', 'order-get', 'customer-list', 'content-seo-schema-get' ],
 				'content-write' => [ 'product-create', 'product-update', 'seo-settings-set', 'content-seo-bulk-set', 'content-seo-schema-set', 'content-seo-audit-fix', 'code-snippet-write', 'code-snippet-activate', 'code-snippet-confirm', 'code-snippet-deactivate', 'code-snippet-delete', 'code-css-write', 'code-js-write', 'code-safe-mode-set', 'code-quarantine-clear' ],
 				'system-read'   => [ 'seo-404-log-list', 'seo-redirection-list', 'code-host-list', 'code-snippet-list', 'code-snippet-get', 'code-safe-mode-token', 'code-quarantine-list', 'code-health-check', 'code-scaffold-widget', 'code-scaffold-block', 'code-scaffold-theme-template' ],
+				'elementor-read'  => [ 'elementor-dynamic-tag-list', 'elementor-brand-kit-list' ],
+				'elementor-write' => [ 'elementor-popup-create', 'elementor-popup-settings-set', 'elementor-dynamic-tag-set', 'elementor-brand-kit-apply' ],
 			],
 			( new ProCatalogue() )->missing( $registry )
 		);
@@ -120,7 +122,7 @@ final class ProCatalogueTest extends TestCase {
 		}
 
 		$this->assertSame( [], ( new ProCatalogue() )->missing( $registry ) );
-		$this->assertSame( 34, ( new ProCatalogue() )->registered_count( $registry ) );
+		$this->assertSame( 40, ( new ProCatalogue() )->registered_count( $registry ) );
 	}
 
 	/**
@@ -180,6 +182,46 @@ final class ProCatalogueTest extends TestCase {
 	 * There is no `system-write` dispatcher and the eleven are frozen, so the
 	 * writes ride `content-write` — the same seam `seo-settings-set` took.
 	 */
+	/**
+	 * The six Elementor operations the add-on registers into the FREE Elementor
+	 * module, on the two Elementor dispatchers the free module already uses.
+	 *
+	 * They carry ModuleId::Elementor rather than a module of their own, because
+	 * an owner who has set a permission level for Elementor has set it for these
+	 * too — a Pro popup write appearing under some separate heading would slip
+	 * past the level they chose for the builder.
+	 */
+	public function testTheElementorOperationsAreCataloguedAgainstTheFreeElementorModule(): void {
+		$expected = [
+			'elementor-dynamic-tag-list'   => 'elementor-read',
+			'elementor-brand-kit-list'     => 'elementor-read',
+			'elementor-popup-create'       => 'elementor-write',
+			'elementor-popup-settings-set' => 'elementor-write',
+			'elementor-dynamic-tag-set'    => 'elementor-write',
+			'elementor-brand-kit-apply'    => 'elementor-write',
+		];
+
+		foreach ( $expected as $id => $dispatcher ) {
+			$this->assertArrayHasKey( $id, ProCatalogue::OPERATIONS, "The add-on registers '{$id}'; the free catalogue must describe it." );
+			$this->assertSame( $dispatcher, ProCatalogue::OPERATIONS[ $id ]['dispatcher'], $id );
+			$this->assertSame( ModuleId::Elementor, ProCatalogue::OPERATIONS[ $id ]['module'], $id );
+			$this->assertSame( 'elementor-read' === $dispatcher, ProCatalogue::OPERATIONS[ $id ]['read'], $id );
+		}
+
+		$elementor = array_keys(
+			array_filter(
+				ProCatalogue::OPERATIONS,
+				static fn( array $entry ): bool => ModuleId::Elementor === $entry['module']
+			)
+		);
+
+		$this->assertSame(
+			array_keys( $expected ),
+			$elementor,
+			'The add-on ships exactly these six Elementor operations. One more in the catalogue advertises a builder change the add-on cannot make.'
+		);
+	}
+
 	public function testTheCodeOperationsAreCataloguedAgainstTheCodeModule(): void {
 		$expected = [
 			'code-host-list'               => 'system-read',
