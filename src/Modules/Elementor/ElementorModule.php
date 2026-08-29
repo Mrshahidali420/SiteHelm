@@ -247,6 +247,24 @@ final class ElementorModule implements IntegrationModule {
 			[ new ElementorGlobalTokensGet( $kit, $this->presence ), 'handle' ]
 		);
 
+		// The global class repository is one store, so the read and the four writes
+		// share one instance of its machinery — and therefore one snapshot, one
+		// divergence check and one normalizer. Building it here rather than in the
+		// write block below is deliberate: the listing needs the same guard the
+		// writes use, and a second copy of that guard is a second thing to keep true.
+		$normalizer = new PayloadNormalizer();
+		$classes    = new ElementorGlobalClassWrite(
+			$api,
+			new ElementorClassRepositorySnapshot( $api, $normalizer ),
+			$normalizer,
+			$this->presence
+		);
+
+		$registry->register(
+			ElementorGlobalClassList::definition(),
+			[ new ElementorGlobalClassList( $classes, $api, $this->presence ), 'handle' ]
+		);
+
 		// The theme-template vocabulary is built once and shared by the listing and
 		// the condition write, so the type list a read reports and the type list a
 		// write accepts cannot drift apart inside one request.
@@ -337,6 +355,29 @@ final class ElementorModule implements IntegrationModule {
 		$registry->registerWrite(
 			ElementorGlobalTypographyUpdate::definition(),
 			new ElementorGlobalTypographyUpdate( $tokens )
+		);
+
+		// The global class writes. Each one rewrites the whole class set, because
+		// that is the unit Elementor stores, and each one refuses when the editor
+		// holds unpublished class changes rather than overwriting them.
+		$registry->registerWrite(
+			ElementorGlobalClassCreate::definition(),
+			new ElementorGlobalClassCreate( $classes, new ElementorIdMint(), $normalizer )
+		);
+
+		$registry->registerWrite(
+			ElementorGlobalClassUpdate::definition(),
+			new ElementorGlobalClassUpdate( $classes, $normalizer )
+		);
+
+		$registry->registerWrite(
+			ElementorGlobalClassDelete::definition(),
+			new ElementorGlobalClassDelete( $classes, new ElementorGlobalClassUsage() )
+		);
+
+		$registry->registerWrite(
+			ElementorGlobalClassesReorder::definition(),
+			new ElementorGlobalClassesReorder( $classes )
 		);
 
 		// Registered last, and it is the widest write this module offers: it changes

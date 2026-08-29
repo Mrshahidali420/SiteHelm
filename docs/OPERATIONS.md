@@ -1,6 +1,6 @@
 # Operations reference
 
-SiteHelm exposes **80 operations** through **11 MCP tools**, called dispatchers. Every operation is
+SiteHelm exposes **85 operations** through **11 MCP tools**, called dispatchers. Every operation is
 declared once, in code, with a strict input schema (`additionalProperties: false`), a required
 capability, a risk level, and preview, snapshot, and rollback policies. That declaration is the
 contract the gateway enforces and the catalogue an agent discovers.
@@ -289,7 +289,7 @@ links are listed per item, and `truncated` says when a page held more.
 Requires Elementor 3.0.0+. SiteHelm edits the stored Elementor document directly and flushes the
 generated CSS afterwards, so changes appear on the front end without opening the editor.
 
-### `elementor-read` — 9 operations
+### `elementor-read` — 10 operations
 
 | Operation | Does | Capability |
 |---|---|---|
@@ -301,9 +301,10 @@ generated CSS afterwards, so changes appear on the front end without opening the
 | `elementor-widget-availability` | Reports which widget types this site actually has | `edit_posts` |
 | `elementor-control-schema` | Returns a widget's or container's control schema | `edit_posts` |
 | `elementor-global-tokens-get` | Reads the global palette and type styles with their write identifiers | `edit_theme_options` |
+| `elementor-global-class-list` | Lists the site's reusable global style classes in cascade order, and reports whether the editor holds unpublished class changes | `edit_theme_options` |
 | `elementor-theme-template-list` | Lists theme-builder templates with the display conditions each one stores | `edit_posts` |
 
-### `elementor-write` — 10 operations
+### `elementor-write` — 14 operations
 
 | Operation | Does | Capability | Risk | Rollback |
 |---|---|---|---|---|
@@ -316,6 +317,10 @@ generated CSS afterwards, so changes appear on the front end without opening the
 | `elementor-element-remove` | Removes an element from the tree | `edit_post` | high | required |
 | `elementor-global-colors-update` | Updates global colour tokens site-wide | `edit_theme_options` | high | supported |
 | `elementor-global-typography-update` | Updates global type styles site-wide | `edit_theme_options` | high | supported |
+| `elementor-global-class-create` | Adds one reusable global style class | `edit_theme_options` | high | supported |
+| `elementor-global-class-update` | Renames one global class, or merges style properties into it | `edit_theme_options` | high | supported |
+| `elementor-global-class-delete` | Deletes one global class, reporting how many documents wear it first | `edit_theme_options` | high | required |
+| `elementor-global-classes-reorder` | Sets the cascade order of the global classes | `edit_theme_options` | high | supported |
 | `elementor-theme-conditions-set` | Replaces one theme template's display conditions as a whole rule | `edit_theme_options` | high | supported |
 
 **On the global-token writes.** They address the active Elementor kit, so they gate on

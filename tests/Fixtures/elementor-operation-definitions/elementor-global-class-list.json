@@ -1,0 +1,36 @@
+{
+    "inputSchema": {
+        "type": "object",
+        "properties": [],
+        "required": [],
+        "additionalProperties": false
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "elementorVersion": {
+                "type": "string",
+                "description": "The Elementor version that answered."
+            },
+            "classCount": {
+                "type": "integer",
+                "description": "How many global classes this site holds."
+            },
+            "inEditorSync": {
+                "type": "boolean",
+                "description": "False when the Elementor editor holds unpublished global class changes. Every global-class write refuses while this is false."
+            },
+            "classes": {
+                "type": "array",
+                "description": "The classes, in the order the editor shows them. Each entry carries `id` (the handle a write addresses it by, and the CSS class name the markup wears), `label`, and `definition` — the whole stored definition including its `variants`, as stored."
+            }
+        },
+        "required": [
+            "elementorVersion",
+            "classCount",
+            "inEditorSync",
+            "classes"
+        ],
+        "additionalProperties": false
+    }
+}
