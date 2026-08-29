@@ -13,6 +13,7 @@ use ReflectionClass;
 use SiteHelm\Bootstrap\Plugin;
 use SiteHelm\Contracts\ModuleId;
 use SiteHelm\Contracts\OperationDefinition;
+use SiteHelm\Contracts\Risk;
 use SiteHelm\Registry\CapabilityRegistry;
 use SiteHelm\Tests\TestCase;
 
@@ -162,6 +163,45 @@ final class ReservedCapabilityTest extends TestCase {
 				ModuleId::Woocommerce,
 				$definition->module,
 				"Operation '{$definition->id}' claims the commerce module, which ships in the SiteHelm Pro add-on."
+			);
+		}
+	}
+
+	/**
+	 * No free module claims the code module's identifier either.
+	 *
+	 * The same rule as the commerce one above, for a module whose consequences
+	 * are larger. `ModuleId::Code` is in the free enum only so the console can
+	 * carry a permission level and switches for it; every operation behind it
+	 * ships in the add-on. A free operation claiming it would appear in the
+	 * console under a module the owner was told is Pro, and would do so on the
+	 * one surface where the answer to "who can turn this on" matters most.
+	 */
+	public function test_no_free_operation_claims_the_code_module(): void {
+		foreach ( $this->everyDefinition() as $definition ) {
+			$this->assertNotSame(
+				ModuleId::Code,
+				$definition->module,
+				"Operation '{$definition->id}' claims the code module, which ships in the SiteHelm Pro add-on."
+			);
+		}
+	}
+
+	/**
+	 * Nothing free is Extreme.
+	 *
+	 * `Risk::Extreme` means the payload is a program, and the only operations
+	 * that can be true of ship in the add-on. Pinned here so the tier cannot be
+	 * borrowed by a free operation that merely feels dangerous: risk drives the
+	 * Read & edit gate and the console's warning badge, and inflating it would
+	 * quietly switch off a free operation for every owner on that level.
+	 */
+	public function test_no_free_operation_is_extreme_risk(): void {
+		foreach ( $this->everyDefinition() as $definition ) {
+			$this->assertNotSame(
+				Risk::Extreme,
+				$definition->risk,
+				"Operation '{$definition->id}' is Extreme, a tier reserved for operations that store or run code."
 			);
 		}
 	}

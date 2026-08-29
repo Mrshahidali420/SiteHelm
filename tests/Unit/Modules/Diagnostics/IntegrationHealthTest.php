@@ -50,9 +50,17 @@ final class IntegrationHealthTest extends TestCase {
 	 * rather than derived, for the same reason BOOT_ORDER is: a case added to the
 	 * enum and to no boot table has to be acknowledged in one of these two lists.
 	 *
+	 * `code` is here for the same structural reason and a different product one.
+	 * The whole module ships in the add-on, so no free boot table names it; but
+	 * unlike every other entry in this report it has no external dependency to be
+	 * missing, so it is never *unavailable*. It is only ever *off*, which is the
+	 * owner's decision rather than a fact about the site, and putting it in the
+	 * integration report would invite the report to say "install and activate"
+	 * about a plugin that does not exist.
+	 *
 	 * @var string[]
 	 */
-	private const ADDON_ONLY = [ 'woocommerce' ];
+	private const ADDON_ONLY = [ 'woocommerce', 'code' ];
 
 	/**
 	 * Whether SiteHelm's own storage answers ready for the test at hand.

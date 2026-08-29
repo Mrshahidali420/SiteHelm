@@ -102,7 +102,13 @@ final class PermissionLevel {
 			case self::FULL:
 				return true;
 			case self::EDIT:
-				return ! $definition->isDestructive && Risk::High !== $definition->risk;
+				// ORDINAL, NOT AN INEQUALITY AGAINST ONE CASE. This read
+				// `Risk::High !== $definition->risk` until `Risk::Extreme`
+				// existed, at which point it would have started admitting
+				// arbitrary code at the level whose entire promise is that it
+				// stops short of the dangerous operations. An inequality gate
+				// widens every time a case is added above the one it names.
+				return ! $definition->isDestructive && ! $definition->risk->atLeast( Risk::High );
 			case self::READ:
 				return $definition->isReadOnly;
 			default:
