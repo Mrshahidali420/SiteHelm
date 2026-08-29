@@ -2144,3 +2144,41 @@ two tests in `ReservedCapabilityTest` enforce that.
   arrives.
 - **Adding a case to either enum breaks `EnumsTest::test_enum_values_match_frozen_contract`
   on purpose.** That list is the contract; updating it is the acknowledgement.
+
+## 41. The Code module (Pro 0.5.0) — what the free repo needs to know
+
+The module itself lives in the Pro repo (`src/Code/`, forty-five classes); this section is
+the free-side contract with it, because the free plugin's vocabulary is what the module
+speaks through.
+
+- **Registration is the ordinary Pro shape.** `CodeModule` reaches the registry through
+  `sitehelm_modules`; registration is unconditional and licence-independent, and every
+  operation refuses on its own. The gates are centralised in one class, `CodeTarget`, in a
+  fixed order: licence → mode → `manage_options` → `edit_plugins` re-checked in the
+  handler → the site's own `DISALLOW_FILE_EDIT` / `DISALLOW_FILE_MODS` lock → storage.
+  `edit_plugins` is re-checked and never declared, because the free
+  `ALLOWED_CAPABILITIES` does not carry it.
+- **The mode is a three-state option, not a boolean.** `off` / `author` /
+  `author-activate` — storing code and running code are separate owner decisions, made on
+  the Modules screen. Reads and writes need `author`; `code-snippet-activate` and
+  `code-quarantine-clear` need `author-activate`.
+- **The six-step activation guard** is the module's whole argument: lex before store;
+  stored inactive always; activation recorded before anything runs; an outside-in
+  loopback health check with three states (`broken` auto-reverts and quarantines,
+  `rendered` verifies, `unreachable` verifies nothing, says so, and deliberately does not
+  revert); a dead-man's-switch TTL that self-deactivates unless `code-snippet-confirm`
+  arrives; and a shutdown-handler backstop that quarantines a snippet whose request died,
+  on the next load.
+- **The loader's order is pinned by tests** and is a security property: the safe-mode
+  autoloaded option is read first, then the per-request safe-mode token, then the gateway
+  exclusion, then quarantine, then the hook-scoped load. The gateway request is recognised
+  from the request line itself because `REST_REQUEST` is defined too late — so nothing
+  ever executes during SiteHelm's own request, WP-CLI, or cron.
+- **`eval` exists exactly once**, in `SiteHelmRunner::evaluate`, and
+  `EvalConfinementTest` walks every shipped file asserting exactly one match in the
+  allowed file and zero elsewhere — the exactly-one-match discipline from the mutation
+  lessons, so a rename cannot silently blind the test.
+- **Snippet bodies ride the REQ-0106 rails.** The field names the module writes
+  (`snippet_code`, `snippet_css`, `snippet_js`) are already in the free
+  `SensitiveFields` list, asserted by a Pro test against the free constant — a payload is
+  a byte count and twelve characters of sha256 everywhere a change is shown.
