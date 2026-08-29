@@ -1,6 +1,6 @@
 # Operations reference
 
-SiteHelm exposes **95 operations** through **11 MCP tools**, called dispatchers. Every operation is
+SiteHelm exposes **98 operations** through **11 MCP tools**, called dispatchers. Every operation is
 declared once, in code, with a strict input schema (`additionalProperties: false`), a required
 capability, a risk level, and preview, snapshot, and rollback policies. That declaration is the
 contract the gateway enforces and the catalogue an agent discovers.
@@ -321,6 +321,8 @@ generated CSS afterwards, so changes appear on the front end without opening the
 | `elementor-elements-reorder` | Reorders one element's direct children, as a whole permutation of that list | `edit_post` | medium | supported |
 | `elementor-element-label-set` | Sets or clears the name an element carries in the Elementor navigator | `edit_post` | low | supported |
 | `elementor-page-settings-set` | Changes a document's page layout or title visibility, merging into the stored settings row | `edit_post` | medium | supported |
+| `elementor-document-build` | Replaces a document's entire content with a layout you supply, validated against the installed widgets first | `edit_post` | high | required |
+| `elementor-document-clear` | Empties a document's content, leaving the page itself in place | `edit_post` | high | required |
 | `elementor-global-colors-update` | Updates global colour tokens site-wide | `edit_theme_options` | high | supported |
 | `elementor-global-typography-update` | Updates global type styles site-wide | `edit_theme_options` | high | supported |
 | `elementor-global-class-create` | Adds one reusable global style class | `edit_theme_options` | high | supported |
@@ -331,9 +333,14 @@ generated CSS afterwards, so changes appear on the front end without opening the
 | `elementor-template-save` | Saves a document, or one element's subtree, as a new reusable library template | `edit_posts` | medium | supported |
 | `elementor-template-import` | Creates a library template from a tree this site did not produce, validated against the installed widgets first | `edit_posts` | high | supported |
 | `elementor-theme-template-create` | Creates an empty header, footer, archive or single template, with no display conditions | `edit_theme_options` | medium | supported |
+| `elementor-document-create` | Creates a draft page Elementor controls, optionally with a starting layout | `edit_posts` | medium | supported |
 | `elementor-theme-conditions-set` | Replaces one theme template's display conditions as a whole rule | `edit_theme_options` | high | supported |
 
 **On the page-level operations.** A document's page settings live in their own meta row, not in the element tree, so `elementor-page-settings-set` snapshots and restores that row rather than `_elementor_data` — a rollback that restored the tree instead would put the page's content back and leave the settings exactly as it found them. The write reaches a closed allowlist, currently the page layout and whether the theme's title is hidden, and it **merges** into the stored row so a setting SiteHelm does not name survives the change. The read is deliberately wider than the write: it returns the whole stored row so an agent can see what else is there, and refuses an implausibly large row rather than trimming it, because a trimmed map is indistinguishable from a complete one to whoever reads it.
+
+**On the whole-document operations.** `elementor-document-build` replaces a page's entire content in one change and `elementor-document-clear` empties it; both are destructive, so both force a preview, a snapshot and a rollback. Both also refuse their own no-op — building the layout a page already holds, or clearing a page that holds nothing — rather than reporting success for a change that moved nothing. A layout you supply passes the same five gates `elementor-template-import` uses, and the last of them is the one that matters: Elementor **drops** a setting key the widget does not declare, silently, so a layout stored with the wrong key is stored with that text already gone. SiteHelm refuses it instead.
+
+`elementor-document-create` makes a page Elementor controls, with an optional starting layout and an optional page layout drawn from the same allowlist `elementor-page-settings-set` writes through. **It always creates a draft**, and no argument changes that: a page this plugin has just invented has been read by nobody, and publishing it in the same call would put unreviewed content on a live site. It has no rollback — reversing a create means deleting a post, which is a second destructive write on a failure path — and what that leaves behind is an unpublished draft no visitor can reach.
 
 `elementor-elements-reorder` demands the **whole** list of a parent's direct children, in the order you want them. A partial order would let a request written against a page that has since gained a child succeed while silently deciding where that child ends up; demanding the whole list makes a stale request fail loudly instead. `elementor-element-label-set` writes the name Elementor shows in its navigator, which is a stored setting on the element and is not the label SiteHelm derives for a read. An empty label clears that name rather than storing an empty one.
 

@@ -122,17 +122,21 @@ final class ElementorTemplateImport implements WriteOperation {
 	/**
 	 * The largest encoded tree this operation will accept, in bytes.
 	 *
-	 * `ElementorWriteTarget`'s snapshot ceiling, deliberately reused rather than
-	 * chosen again. A template this operation accepted above that bound would be
-	 * one a later write could not snapshot, and the first honest report of that
-	 * would arrive when somebody tried to undo something.
+	 * The shared gate's ceiling, which is `ElementorWriteTarget`'s snapshot bound.
+	 * Named here because the catalog's own schema description quotes it, so the
+	 * published number and the enforced one are one value.
 	 */
-	public const MAX_CONTENT_BYTES = ElementorWriteTarget::MAX_SNAPSHOT_BYTES;
+	public const MAX_CONTENT_BYTES = ElementorTreeInput::MAX_CONTENT_BYTES;
 
 	/**
-	 * The node member naming an element's kind.
+	 * What the caller's tree is called in the shared gate's refusals.
 	 */
-	private const NODE_EL_TYPE = 'elType';
+	private const SUBJECT = 'template to import';
+
+	/**
+	 * Where a tree this operation will accept comes from, for those refusals.
+	 */
+	private const SOURCE = 'Send the content member of an elementor-template-get result unchanged, or export the template from Elementor again.';
 
 	/**
 	 * The operation's registered definition.
@@ -212,16 +216,14 @@ final class ElementorTemplateImport implements WriteOperation {
 	 * Constructs the operation.
 	 *
 	 * @param ElementorTemplateTarget $targets  Shared creation target resolution.
-	 * @param ElementorTree           $tree     The tree normalizer and bound.
-	 * @param ElementorPropCoercion   $coercion The declared-key gate and coercion sweep.
-	 * @param ElementorPresence       $presence The registered-widget reader.
+	 * @param ElementorTreeInput      $gates    The shared caller-supplied-tree gates.
+	 * @param ElementorPropCoercion   $coercion The coercion sweep.
 	 * @param ElementorDocumentWriter $writer   The verified document writer.
 	 */
 	public function __construct(
 		private readonly ElementorTemplateTarget $targets,
-		private readonly ElementorTree $tree,
+		private readonly ElementorTreeInput $gates,
 		private readonly ElementorPropCoercion $coercion,
-		private readonly ElementorPresence $presence,
 		private readonly ElementorDocumentWriter $writer,
 	) {
 	}
@@ -285,13 +287,7 @@ final class ElementorTemplateImport implements WriteOperation {
 			);
 		}
 
-		$this->assert_shape( $content, 0 );
-		$this->assert_size( $content );
-
-		$totals = $this->tree->normalize( $content )['totals'];
-
-		$this->assert_renderable( $totals['widgetTypeCounts'] );
-		$this->assert_declared_keys( $content );
+		$totals = $this->gates->assertUsable( $content, self::SUBJECT, self::SOURCE );
 
 		$payload = [
 			self::PAYLOAD_PAGE_SETTINGS => $this->page_settings( $input ),
@@ -432,196 +428,6 @@ final class ElementorTemplateImport implements WriteOperation {
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
 	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 	// phpcs:enable Squiz.Commenting.FunctionComment.InvalidNoReturn
-
-	// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Every message is a literal; no caller value reaches one.
-	/**
-	 * Refuses a tree whose nodes are not shaped like Elementor elements.
-	 *
-	 * NO REFUSAL QUOTES THE CALLER'S TREE. It is arbitrary text of arbitrary
-	 * length that will be read by whoever opens the activity log, and the depth
-	 * and the member name are enough to find the offending node in a payload the
-	 * caller sent and still has.
-	 *
-	 * The walk is bounded by `ElementorTree::MAX_DEPTH` on its own, before the
-	 * normalizer gets a chance to apply the same bound, because this walk runs
-	 * first and a hand-built tree can be nested arbitrarily deep.
-	 *
-	 * @param array $nodes One level of the caller's tree.
-	 * @param int   $depth The zero-based depth of this level.
-	 *
-	 * @throws OperationException With ErrorCode::InvalidInput.
-	 */
-	private function assert_shape( array $nodes, int $depth ): void {
-		if ( $depth >= ElementorTree::MAX_DEPTH ) {
-			throw new OperationException(
-				ErrorCode::InvalidInput,
-				'The template to import is nested more deeply than SiteHelm will store.',
-				'Import the layout in parts, or flatten the nesting and try again.'
-			);
-		}
-
-		foreach ( $nodes as $node ) {
-			if ( ! is_array( $node ) ) {
-				throw $this->malformed( $depth, 'an element that is not an object' );
-			}
-
-			$el_type = $node[ self::NODE_EL_TYPE ] ?? null;
-
-			if ( ! is_string( $el_type ) || '' === $el_type ) {
-				throw $this->malformed( $depth, 'an element with no elType' );
-			}
-
-			$widget_type = $node[ ElementorPropCoercion::NODE_WIDGET_TYPE ] ?? null;
-
-			if ( null !== $widget_type && ! is_string( $widget_type ) ) {
-				throw $this->malformed( $depth, 'an element whose widgetType is not a name' );
-			}
-
-			$settings = $node[ ElementorPropCoercion::NODE_SETTINGS ] ?? null;
-
-			if ( null !== $settings && ! is_array( $settings ) ) {
-				throw $this->malformed( $depth, 'an element whose settings are not an object' );
-			}
-
-			$children = $node[ ElementorPropCoercion::NODE_CHILDREN ] ?? null;
-
-			if ( null !== $children && ! is_array( $children ) ) {
-				throw $this->malformed( $depth, 'an element whose elements member is not a list' );
-			}
-
-			if ( is_array( $children ) ) {
-				$this->assert_shape( $children, $depth + 1 );
-			}
-		}
-	}
-
-	/**
-	 * The one malformed-tree refusal.
-	 *
-	 * @param int    $depth  The zero-based depth the problem was found at.
-	 * @param string $detail What was wrong, in words, quoting nothing.
-	 *
-	 * @return OperationException The refusal.
-	 */
-	private function malformed( int $depth, string $detail ): OperationException {
-		return new OperationException(
-			ErrorCode::InvalidInput,
-			sprintf(
-				'The template to import is not in the shape Elementor stores: at nesting level %d it holds %s.',
-				$depth + 1,
-				$detail
-			),
-			'Send the content member of an elementor-template-get result unchanged, or export the template from Elementor again.'
-		);
-	}
-
-	/**
-	 * Refuses a tree too large for this plugin to handle safely.
-	 *
-	 * @param array $content The caller's tree.
-	 *
-	 * @throws OperationException With ErrorCode::InvalidInput.
-	 */
-	private function assert_size( array $content ): void {
-		$json = wp_json_encode( $content );
-
-		if ( ! is_string( $json ) ) {
-			throw new OperationException(
-				ErrorCode::InvalidInput,
-				'The template to import could not be encoded for storage, so nothing was planned.',
-				'Check the content for text that is not valid UTF-8, then try again.'
-			);
-		}
-
-		if ( strlen( $json ) > self::MAX_CONTENT_BYTES ) {
-			throw new OperationException(
-				ErrorCode::InvalidInput,
-				'The template to import is larger than SiteHelm will store in one template.',
-				'Import the layout as several smaller templates and apply them in turn.'
-			);
-		}
-	}
-
-	/**
-	 * Refuses a tree naming widget types this site does not have installed.
-	 *
-	 * MANDATORY HERE, unlike anywhere else in the module, because the gate below
-	 * it reads a live prop schema for every widget in the tree and a widget this
-	 * site does not register has none. Importing a template whose settings could
-	 * not be checked would store exactly the unvalidated props upstream defect
-	 * #101 locks a page over — in a template built to be applied to many pages.
-	 *
-	 * A SITE WHOSE REGISTRY CANNOT BE READ AT ALL is let through here; the key
-	 * gate below refuses on its own terms, with the message written for a registry
-	 * that is not answering.
-	 *
-	 * @param array<string, int> $widget_counts The tree's widget type counts.
-	 *
-	 * @throws OperationException With ErrorCode::IntegrationUnavailable.
-	 */
-	private function assert_renderable( array $widget_counts ): void {
-		$registered = $this->presence->widgetTypes();
-
-		if ( null === $registered ) {
-			return;
-		}
-
-		$missing = array_values( array_diff( array_keys( $widget_counts ), $registered ) );
-
-		if ( [] === $missing ) {
-			return;
-		}
-
-		sort( $missing, SORT_STRING );
-
-		throw new OperationException(
-			ErrorCode::IntegrationUnavailable,
-			sprintf(
-				'This template uses %d widget type(s) this site does not have installed, so its content cannot be checked before storing: %s.',
-				count( $missing ),
-				implode( ', ', $missing )
-			),
-			'Activate the plugins that provide those widgets and try again. elementor-widget-availability reports what this site registers.'
-		);
-	}
-	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
-
-	/**
-	 * Refuses any setting key the widget that carries it does not declare.
-	 *
-	 * THE #102 GATE, and the reason this operation exists as its own class rather
-	 * than as an argument to `elementor-template-save`. Elementor's parser drops an
-	 * unrecognised key silently, so a template imported with `content` where the
-	 * widget declares `title` is stored with that text already gone, in a template
-	 * that will then be applied to page after page. Every gate above this one
-	 * exists to make sure this one can run.
-	 *
-	 * @param array $nodes One level of the caller's tree.
-	 *
-	 * @throws OperationException With ErrorCode::InvalidInput for an undeclared
-	 *                           key, or ErrorCode::ExecutionFailed when a schema
-	 *                           cannot be read.
-	 */
-	private function assert_declared_keys( array $nodes ): void {
-		foreach ( $nodes as $node ) {
-			if ( ! is_array( $node ) ) {
-				continue;
-			}
-
-			$widget_type = $node[ ElementorPropCoercion::NODE_WIDGET_TYPE ] ?? null;
-			$settings    = $node[ ElementorPropCoercion::NODE_SETTINGS ] ?? null;
-
-			if ( is_string( $widget_type ) && '' !== $widget_type && is_array( $settings ) && [] !== $settings ) {
-				$this->coercion->assertKnownKeys( $widget_type, $settings );
-			}
-
-			$children = $node[ ElementorPropCoercion::NODE_CHILDREN ] ?? null;
-
-			if ( is_array( $children ) ) {
-				$this->assert_declared_keys( $children );
-			}
-		}
-	}
 
 	/**
 	 * The page settings the caller asked to store with the template.

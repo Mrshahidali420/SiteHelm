@@ -1939,6 +1939,51 @@ tree: `elementor-page-settings-get`, `elementor-page-settings-set`,
   it. An empty label **clears** the name by unsetting the key rather than storing an
   empty string, and the verify step checks for an absent key, not an empty one.
 
+## 38. Elementor whole-document writes (REQ-0104) in one screen
+
+Three operations that treat a page's content as one value: `elementor-document-build`
+replaces it, `elementor-document-clear` empties it, and `elementor-document-create`
+makes a new page to hold it.
+
+- **`ElementorTreeInput` is the one gate every caller-supplied tree passes.** Five
+  checks in a fixed order: shape, encoded size, `ElementorTree::normalize`, every
+  widget type registered on this site, and every setting key declared by the widget
+  carrying it. `ElementorTemplateImport` was the only caller before; build and create
+  now share the same instance, wired once in `ElementorModule`. Three copies of the
+  formula would be three chances for one of them to lose a check.
+- **The renderable gate is mandatory, not advisory.** The key gate below it reads a
+  live prop schema per widget, and a widget this site does not register has none, so
+  a tree using one is refused with `IntegrationUnavailable` rather than stored
+  unchecked. A registry that cannot be read at all is let through, and the key gate
+  refuses on its own terms.
+- **Build and clear both refuse a write that would not move the bytes.** Identical
+  digest for a build, an already-empty page for a clear, both `InvalidInput`. The
+  writer cannot tell a save that changed nothing from a save Elementor dropped, so
+  reporting success there would tell the caller something false.
+- **Clear promises an empty document in all four fields**, `maxDepth` included,
+  because an empty tree has exactly one encoding — unlike an element removal, whose
+  resulting depth depends on what was there.
+- **Create is `Risk::Medium`, non-destructive, and always a draft.** `STATUS` is a
+  constant and not an argument, so nothing an agent sends can publish an unreviewed
+  page; the capability question stays one `edit_posts` answer. Its target is
+  `ElementorDocumentCreateTarget` (`TARGET_PREFIX = 'elementor-new-document:'`,
+  `POST_TYPES = ['page','post']`), separate from both the document target and the
+  template target: a create has no prior state, and a page landing in the library
+  post type instead is a page nobody can find. It verifies type, title and status
+  beside count and digest, because a create can get those wrong invisibly.
+- **`_elementor_data` is written unconditionally, even for an empty page.** Without
+  that row `isElementorDocument()` answers false and every other Elementor write
+  would refuse the page the create just reported making.
+- **Create's page-settings row goes through `ElementorPageSettingsTarget::store()`**,
+  the same verified writer `elementor-page-settings-set` uses, which re-reads the
+  row. No layout requested means no row written at all — Elementor reads an absent
+  row as the theme's own layout. `ElementorPageSettings::validLayout()` is private;
+  the public path is `requested()` then `apply()`.
+- **A create cannot be rolled back.** `restore()` always throws
+  `RollbackUnavailable`, and a failed tree write leaves the post in place:
+  deleting it would be a second destructive write on a failure path, taken without a
+  snapshot or a preview, to tidy away an unpublished draft no visitor can reach.
+
 ## 28. Standing project constraints
 
 - **No AI attribution anywhere in git** — no "Generated with Claude Code" footer,

@@ -384,8 +384,27 @@ final class ElementorModule implements IntegrationModule {
 			new ElementorPageSettingsSet( $page_settings )
 		);
 
+		// The five gates every caller-supplied tree passes, shared by the three
+		// operations that accept one. One instance, one formula: three copies would
+		// be three chances for one of them to lose a check.
+		$gates = new ElementorTreeInput( $tree, $coercion, $this->presence );
+
+		// The two whole-document writes. Both replace a page's entire content in one
+		// change rather than editing a branch of it, so both are destructive and both
+		// refuse their own no-op: an unchanged save reaches the writer as bytes that
+		// did not move, which it cannot tell apart from a save Elementor dropped.
+		$registry->registerWrite(
+			ElementorDocumentBuild::definition(),
+			new ElementorDocumentBuild( $targets, $document, $merge, $gates, $coercion, $writer, $diff )
+		);
+
+		$registry->registerWrite(
+			ElementorDocumentClear::definition(),
+			new ElementorDocumentClear( $targets, $document, $merge, $writer, $diff )
+		);
+
 		// The template library's writes. The apply is a document write and shares the
-		// document target above; the three creates share a target of their own,
+		// document target above; the creates share a target of their own,
 		// because a post that does not exist yet has no before-state to resolve.
 		$registry->registerWrite(
 			ElementorTemplateApply::definition(),
@@ -413,12 +432,26 @@ final class ElementorModule implements IntegrationModule {
 
 		$registry->registerWrite(
 			ElementorTemplateImport::definition(),
-			new ElementorTemplateImport( $library, $tree, $coercion, $this->presence, $writer )
+			new ElementorTemplateImport( $library, $gates, $coercion, $writer )
 		);
 
 		$registry->registerWrite(
 			ElementorThemeTemplateCreate::definition(),
 			new ElementorThemeTemplateCreate( $library, $writer )
+		);
+
+		// The one create that makes an ordinary page rather than a library entry, so
+		// it takes a target of its own: what a create can get wrong here is the post
+		// type and the status, and neither is a field the library target reports.
+		$registry->registerWrite(
+			ElementorDocumentCreate::definition(),
+			new ElementorDocumentCreate(
+				new ElementorDocumentCreateTarget( $document, $tree, $this->presence ),
+				$gates,
+				$coercion,
+				$page_settings,
+				$writer
+			)
 		);
 
 		// The two global-token writes address the active kit rather than a document,

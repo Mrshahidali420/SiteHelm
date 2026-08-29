@@ -1,6 +1,7 @@
 <?php
 /**
- * Shared fixture helpers for the REQ-0103 page-level Elementor writes.
+ * Shared fixture helpers for the REQ-0103 page-level and REQ-0104 whole-document
+ * Elementor writes.
  *
  * @package SiteHelm
  */
@@ -15,6 +16,8 @@ use SiteHelm\Change\WriteOperation;
 use SiteHelm\Modules\Elementor\ElementorApi;
 use SiteHelm\Modules\Elementor\ElementorCacheInvalidator;
 use SiteHelm\Modules\Elementor\ElementorDocument;
+use SiteHelm\Modules\Elementor\ElementorDocumentBuild;
+use SiteHelm\Modules\Elementor\ElementorDocumentClear;
 use SiteHelm\Modules\Elementor\ElementorDocumentWriter;
 use SiteHelm\Modules\Elementor\ElementorElementLabelSet;
 use SiteHelm\Modules\Elementor\ElementorElementsReorder;
@@ -27,6 +30,7 @@ use SiteHelm\Modules\Elementor\ElementorSettingsMerge;
 use SiteHelm\Modules\Elementor\ElementorTree;
 use SiteHelm\Modules\Elementor\ElementorTreeDiff;
 use SiteHelm\Modules\Elementor\ElementorTreeEdit;
+use SiteHelm\Modules\Elementor\ElementorTreeInput;
 use SiteHelm\Modules\Elementor\ElementorWriteTarget;
 
 /**
@@ -120,7 +124,47 @@ trait PageLevelFixtures {
 	}
 
 	/**
-	 * One set of real collaborators, shared by the two document writes.
+	 * The whole-tree build, wired exactly as the module wires it.
+	 *
+	 * REQ-0104. It shares the document target with the two REQ-0103 element
+	 * writes, which is the point: a build is a document write like any other, and
+	 * the only thing that separates it is how much of the document it replaces.
+	 *
+	 * @return ElementorDocumentBuild The subject.
+	 */
+	private function documentBuild(): ElementorDocumentBuild {
+		$parts = $this->collaborators();
+
+		return new ElementorDocumentBuild(
+			$parts['targets'],
+			$parts['document'],
+			$parts['merge'],
+			$parts['gates'],
+			$parts['coercion'],
+			$parts['writer'],
+			$parts['diff']
+		);
+	}
+
+	/**
+	 * The whole-document clear, wired exactly as the module wires it.
+	 *
+	 * @return ElementorDocumentClear The subject.
+	 */
+	private function documentClear(): ElementorDocumentClear {
+		$parts = $this->collaborators();
+
+		return new ElementorDocumentClear(
+			$parts['targets'],
+			$parts['document'],
+			$parts['merge'],
+			$parts['writer'],
+			$parts['diff']
+		);
+	}
+
+	/**
+	 * One set of real collaborators, shared by the document writes.
 	 *
 	 * @return array<string, mixed> The collaborators, keyed by role.
 	 */
@@ -141,6 +185,7 @@ trait PageLevelFixtures {
 			'coercion' => $coercion,
 			'writer'   => $writer,
 			'diff'     => new ElementorTreeDiff( $tree ),
+			'gates'    => new ElementorTreeInput( $tree, $coercion, $presence ),
 		];
 	}
 
