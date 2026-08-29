@@ -24,6 +24,39 @@ an operation behaves.
   unreviewed page in front of visitors, and it is a real Elementor page from the moment
   it exists — the layout you ask for reaches its page settings, and every other
   Elementor operation will work on it.
+- **Elementor page settings, child order and element names** (REQ-0103) —
+  `elementor-page-settings-get` and `elementor-page-settings-set` read and change the
+  settings a page carries as a whole (its layout template, whether the title shows),
+  `elementor-elements-reorder` sets the order of one element's children, and
+  `elementor-element-label-set` names an element in the navigator. Page settings live in
+  their own meta row, so the write snapshots that row and not the document — a rollback
+  puts the settings back and leaves the page's content untouched. The write reaches a
+  closed list of settings and merges into the stored row, so anything SiteHelm does not
+  name survives it, while the read returns the whole row so an agent can see what else is
+  there. A reorder demands the parent's complete list of children, so a request written
+  against a page that has since gained one fails loudly instead of quietly guessing where
+  the new element belongs.
+- **The Elementor template library, as a first-class surface** (REQ-0102) —
+  `elementor-template-list` and `elementor-template-get` read the templates the site has
+  saved, `elementor-template-save` stores a document or a single element as a new one,
+  `elementor-template-apply` inserts one into a page, `elementor-template-import` brings
+  in a template this site did not produce, and `elementor-theme-template-create` makes an
+  empty theme document. An apply re-mints every element id against the destination page
+  and rebinds the styles that pointed at them, so the same template inserted twice does
+  not collide with itself. Apply and import both check a template against the widgets this
+  site actually has and name the missing ones, rather than writing a tree the page cannot
+  render. A theme document is created with no display conditions, so it shows nowhere
+  until `elementor-theme-conditions-set` says where.
+- **Elementor 4 global classes** (REQ-0101) — `elementor-global-class-list`,
+  `elementor-global-class-create`, `elementor-global-class-update`,
+  `elementor-global-class-delete` and `elementor-global-classes-reorder` cover the
+  reusable style classes Elementor 4 keeps site-wide: read them in cascade order, add one,
+  rename one or merge style properties into it, remove one, and set the order they cascade
+  in. The class set is one snapshotted unit, so every change is reversible as a whole. A
+  write refuses while the editor is holding unpublished class changes instead of
+  overwriting them, and the read reports that divergence as `inEditorSync`. A delete says
+  how many documents wear the class before it is approved, and never edits a document — so
+  restoring the class restyles every element that wore it.
 - **Find a phrase everywhere on the site** (REQ-0092, Free half) — `content-search` names
   every post, page and custom post type whose title, content, excerpt or Elementor data
   mentions a phrase, with a per-field count, a plain-text excerpt of the first occurrence,
