@@ -105,8 +105,8 @@ final class ProCatalogueTest extends TestCase {
 		$this->assertSame(
 			[
 				'content-read'  => [ 'product-list', 'product-get', 'product-category-list', 'order-list', 'order-get', 'customer-list', 'content-seo-schema-get' ],
-				'content-write' => [ 'product-create', 'product-update', 'seo-settings-set', 'content-seo-bulk-set', 'content-seo-schema-set', 'content-seo-audit-fix' ],
-				'system-read'   => [ 'seo-404-log-list', 'seo-redirection-list' ],
+				'content-write' => [ 'product-create', 'product-update', 'seo-settings-set', 'content-seo-bulk-set', 'content-seo-schema-set', 'content-seo-audit-fix', 'code-snippet-write', 'code-snippet-activate', 'code-snippet-confirm', 'code-snippet-deactivate', 'code-snippet-delete', 'code-css-write', 'code-js-write', 'code-safe-mode-set', 'code-quarantine-clear' ],
+				'system-read'   => [ 'seo-404-log-list', 'seo-redirection-list', 'code-host-list', 'code-snippet-list', 'code-snippet-get', 'code-safe-mode-token', 'code-quarantine-list', 'code-health-check', 'code-scaffold-widget', 'code-scaffold-block', 'code-scaffold-theme-template' ],
 			],
 			( new ProCatalogue() )->missing( $registry )
 		);
@@ -120,7 +120,7 @@ final class ProCatalogueTest extends TestCase {
 		}
 
 		$this->assertSame( [], ( new ProCatalogue() )->missing( $registry ) );
-		$this->assertSame( 16, ( new ProCatalogue() )->registered_count( $registry ) );
+		$this->assertSame( 34, ( new ProCatalogue() )->registered_count( $registry ) );
 	}
 
 	/**
@@ -163,6 +163,63 @@ final class ProCatalogueTest extends TestCase {
 			array_keys( $expected ),
 			$commerce,
 			'The commerce module ships exactly these eight operations. One more in the catalogue than in the add-on advertises a feature that does not exist.'
+		);
+	}
+
+	/**
+	 * The Code module's eighteen operations, described in the free console
+	 * before any of them exists.
+	 *
+	 * Same reason as the commerce list above, with one addition that matters
+	 * more here than anywhere else: this is the module a person has to
+	 * deliberately switch on, and the catalogue is the only place the free
+	 * plugin says what switching it on would let an app do. An id that drifts
+	 * from the add-on's does not just mislabel a feature, it misdescribes the
+	 * most dangerous surface the plugin has.
+	 *
+	 * There is no `system-write` dispatcher and the eleven are frozen, so the
+	 * writes ride `content-write` — the same seam `seo-settings-set` took.
+	 */
+	public function testTheCodeOperationsAreCataloguedAgainstTheCodeModule(): void {
+		$expected = [
+			'code-host-list'               => 'system-read',
+			'code-snippet-list'            => 'system-read',
+			'code-snippet-get'             => 'system-read',
+			'code-safe-mode-token'         => 'system-read',
+			'code-quarantine-list'         => 'system-read',
+			'code-health-check'            => 'system-read',
+			'code-scaffold-widget'         => 'system-read',
+			'code-scaffold-block'          => 'system-read',
+			'code-scaffold-theme-template' => 'system-read',
+			'code-snippet-write'           => 'content-write',
+			'code-snippet-activate'        => 'content-write',
+			'code-snippet-confirm'         => 'content-write',
+			'code-snippet-deactivate'      => 'content-write',
+			'code-snippet-delete'          => 'content-write',
+			'code-css-write'               => 'content-write',
+			'code-js-write'                => 'content-write',
+			'code-safe-mode-set'           => 'content-write',
+			'code-quarantine-clear'        => 'content-write',
+		];
+
+		foreach ( $expected as $id => $dispatcher ) {
+			$this->assertArrayHasKey( $id, ProCatalogue::OPERATIONS, "The add-on registers '{$id}'; the free catalogue must describe it." );
+			$this->assertSame( $dispatcher, ProCatalogue::OPERATIONS[ $id ]['dispatcher'], $id );
+			$this->assertSame( ModuleId::Code, ProCatalogue::OPERATIONS[ $id ]['module'], $id );
+			$this->assertSame( 'system-read' === $dispatcher, ProCatalogue::OPERATIONS[ $id ]['read'], $id );
+		}
+
+		$code = array_keys(
+			array_filter(
+				ProCatalogue::OPERATIONS,
+				static fn( array $entry ): bool => ModuleId::Code === $entry['module']
+			)
+		);
+
+		$this->assertSame(
+			array_keys( $expected ),
+			$code,
+			'The Code module ships exactly these eighteen operations. One more in the catalogue than in the add-on advertises a way to run code that does not exist.'
 		);
 	}
 

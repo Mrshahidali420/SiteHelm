@@ -12,6 +12,18 @@ an operation behaves.
 ## [Unreleased]
 
 ### Changed
+- **A risk level for code, and the gate that goes with it** (REQ-0107) — operations that
+  store or run code get their own tier above High, because the honest claim about them is
+  different: for everything else we can say what will change, and for a program we can only
+  say what was stored. Adding the tier turned up a real hole. The "Read & edit" permission
+  level — the one whose own description promises an app can change things but never delete —
+  decided what to allow by asking whether an operation was High, so anything above High was
+  not High and went straight through. It now compares levels in order, which refuses a new
+  top tier by default rather than admitting it. Nothing in the free plugin uses the new tier;
+  the console learns the words for it, and the test suite refuses any free operation that
+  claims either the tier or the code module. The Pro screen also lists the eighteen
+  operations that module will carry, so the console can say what switching it on would
+  let an app do before any of it is written.
 - **A preview never reproduces an executable payload** (REQ-0106) — where a change
   touches a code field, the before-and-after shows a byte count and a short digest
   instead of the body. The values a preview renders travel further than the preview:

@@ -332,11 +332,18 @@ final class ModulesScreen {
 			// An add-on-only module is not waiting on anything the operator can
 			// activate from the Plugins screen, so pointing them there would send
 			// them looking for a plugin that is not the missing piece.
-			$text = sprintf(
-				/* translators: %s: a plugin name and minimum version, such as "WooCommerce 8.0". */
-				__( 'Included in SiteHelm Pro, on a site running %s or newer.', 'sitehelm' ),
-				$requirement
-			);
+			//
+			// Split on whether there is a plugin behind it at all. Commerce waits
+			// on the add-on AND on WooCommerce; the code module waits only on the
+			// add-on, and naming a version floor it does not have would print
+			// "on a site running  or newer" with a hole in the middle.
+			$text = '' === $requirement
+				? __( 'Included in SiteHelm Pro. Nothing else to install.', 'sitehelm' )
+				: sprintf(
+					/* translators: %s: a plugin name and minimum version, such as "WooCommerce 8.0". */
+					__( 'Included in SiteHelm Pro, on a site running %s or newer.', 'sitehelm' ),
+					$requirement
+				);
 			$href = admin_url( 'admin.php?page=' . AdminMenu::PAGE_OPERATIONS );
 			$link = __( 'See what Pro adds', 'sitehelm' );
 		} elseif ( '' === $requirement ) {
@@ -484,6 +491,8 @@ final class ModulesScreen {
 				return __( 'Forms', 'sitehelm' );
 			case ModuleId::Woocommerce:
 				return __( 'WooCommerce', 'sitehelm' );
+			case ModuleId::Code:
+				return __( 'Code snippets', 'sitehelm' );
 			default:
 				return $module->value;
 		}
@@ -516,6 +525,8 @@ final class ModulesScreen {
 				return __( 'List the site\'s forms and read each form\'s fields, embed shortcode and recent entries.', 'sitehelm' );
 			case ModuleId::Woocommerce:
 				return __( 'Read and edit products, prices, stock and categories, and read orders and customers. Orders and customers are never changed.', 'sitehelm' );
+			case ModuleId::Code:
+				return __( 'Write and run PHP snippets, custom CSS and custom JavaScript. Off until you deliberately switch it on, and you can stop every snippet at once even if one of them has broken the site.', 'sitehelm' );
 			default:
 				return '';
 		}

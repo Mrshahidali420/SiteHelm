@@ -477,7 +477,10 @@ final class OperationsScreen {
 	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 	 */
 	private function switch_cell( OperationDefinition $definition, bool $is_on ): string {
-		$is_warn = $definition->isDestructive || Risk::High === $definition->risk;
+		// atLeast, not an identity test: a tier above High is more worth a
+		// second look, not less, and an identity test would have dropped the
+		// warning colour from exactly the rows that most need it.
+		$is_warn = $definition->isDestructive || $definition->risk->atLeast( Risk::High );
 
 		return sprintf(
 			'<span class="sitehelm-switch%s"><input type="checkbox" name="%s[]" value="%s"%s data-sitehelm-switch>'
@@ -643,7 +646,9 @@ final class OperationsScreen {
 			$badges[] = Ui::badge( 'refused', __( 'Destructive', 'sitehelm' ) );
 		}
 
-		if ( Risk::High === $definition->risk ) {
+		if ( Risk::Extreme === $definition->risk ) {
+			$badges[] = Ui::badge( 'refused', __( 'Extreme risk', 'sitehelm' ) );
+		} elseif ( Risk::High === $definition->risk ) {
 			$badges[] = Ui::badge( 'refused', __( 'High risk', 'sitehelm' ) );
 		}
 

@@ -117,4 +117,56 @@ final class PermissionLevelTest extends TestCase {
 		$this->assertSame( 'Read & edit', PermissionLevel::label( PermissionLevel::EDIT ) );
 		$this->assertSame( 'Custom', PermissionLevel::label( 'whatever' ) );
 	}
+
+	/**
+	 * Read & edit stops below High, and that has to mean the whole band above
+	 * High rather than the single case named High.
+	 *
+	 * The gate read `Risk::High !== $definition->risk` before `Risk::Extreme`
+	 * existed. Adding the case would have made this level admit arbitrary code —
+	 * the level whose own sentence promises apps "cannot delete" would have been
+	 * the level that lets an app run PHP — and no existing test would have
+	 * failed, because every definition in the suite was Low, Medium or High.
+	 *
+	 * Asserted for both tiers from one loop so the case cannot be re-narrowed to
+	 * High later and still pass.
+	 */
+	public function testReadAndEditRefusesEveryTierAtOrAboveHigh(): void {
+		foreach ( [ Risk::High, Risk::Extreme ] as $risk ) {
+			$this->assertFalse(
+				PermissionLevel::allows(
+					PermissionLevel::EDIT,
+					$this->definition( 'a-write', read_only: false, risk: $risk )
+				),
+				$risk->value
+			);
+		}
+
+		$this->assertTrue(
+			PermissionLevel::allows(
+				PermissionLevel::EDIT,
+				$this->definition( 'a-write', read_only: false, risk: Risk::Medium )
+			)
+		);
+	}
+
+	/**
+	 * Full is the only level that admits an Extreme write, and Read only still
+	 * admits an Extreme read.
+	 *
+	 * The second half matters more than it looks: risk describes the blast
+	 * radius of a write, and a read is a read whatever it is reading about. A
+	 * Read only level that started filtering on risk would drop operations for
+	 * being frightening rather than for changing anything.
+	 */
+	public function testOnlyFullAdmitsAnExtremeWriteWhileReadOnlyStillAdmitsAnExtremeRead(): void {
+		$write = $this->definition( 'a-write', read_only: false, risk: Risk::Extreme );
+		$read  = $this->definition( 'a-read', risk: Risk::Extreme );
+
+		$this->assertTrue( PermissionLevel::allows( PermissionLevel::FULL, $write ) );
+		$this->assertFalse( PermissionLevel::allows( PermissionLevel::READ, $write ) );
+		$this->assertFalse( PermissionLevel::allows( PermissionLevel::OFF, $write ) );
+
+		$this->assertTrue( PermissionLevel::allows( PermissionLevel::READ, $read ) );
+	}
 }

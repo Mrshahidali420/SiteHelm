@@ -37,13 +37,13 @@ final class EnumsTest extends TestCase {
 		$expected = [
 			Domain::class             => [ 'system', 'content', 'media', 'menu', 'elementor', 'fields' ],
 			Mode::class               => [ 'read', 'write' ],
-			Risk::class               => [ 'low', 'medium', 'high' ],
+			Risk::class               => [ 'low', 'medium', 'high', 'extreme' ],
 			PreviewPolicy::class      => [ 'required', 'not-applicable' ],
 			SnapshotPolicy::class     => [ 'required', 'supported', 'not-applicable' ],
 			RollbackPolicy::class     => [ 'required', 'supported', 'not-applicable' ],
 			PermissionMode::class     => [ 'read-only', 'safe-write', 'trusted-write' ],
 			ModuleHealth::class       => [ 'active', 'inactive', 'version-blocked' ],
-			ModuleId::class           => [ 'core', 'diagnostics', 'media', 'menus', 'elementor', 'acf', 'metabox', 'seo', 'forms', 'woocommerce' ],
+			ModuleId::class           => [ 'core', 'diagnostics', 'media', 'menus', 'elementor', 'acf', 'metabox', 'seo', 'forms', 'woocommerce', 'code' ],
 			VerificationStatus::class => [ 'verified', 'verified-with-adjustments', 'not-applicable' ],
 			ErrorCode::class          => [
 				'authentication_failed',

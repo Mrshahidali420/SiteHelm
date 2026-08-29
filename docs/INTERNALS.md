@@ -93,6 +93,13 @@ registry through `sitehelm_modules`. An add-on cannot add an enum case, and the
 console's permission levels, module switches and health report are all keyed by the
 enum, so the case has to ship free while the code does not.
 
+`ModuleId::Code` (REQ-0107) is the second, and it differs on one point that the list
+above assumes: it has **no plugin behind it at all**. Every other add-on-only or
+plugin-backed module is *unavailable* until something is installed; this one is only ever
+*off*. So it is NOT in `PLUGIN_BACKED_MODULES`, `requirement_for()` returns nothing for
+it, and the `ADDON_ONLY_MODULES` branch of `render_waiting_on()` branches again on that
+so it does not advertise a version floor that does not exist. See section 40.
+
 The checklist above still applies EXCEPT steps 3 and 4 — there is no class to boot:
 
 - `src/Registry/IntegrationDirectory.php` — do **not** add it. `MODULE_CLASSES` is
@@ -2082,3 +2089,58 @@ must keep refusing it.
   white panel (24px, radius-lg) that `app_close()` closes together with the wrap. Stat tiles
   (`Ui::stat_grid`) render value **above** label in `.sitehelm-statcard__body` beside a 52px
   tinted icon, inside one gray `.sitehelm-statgrid` strip.
+
+---
+
+## 40. `Risk::Extreme` and `ModuleId::Code` (REQ-0107) in one screen
+
+Both were added before any operation could use them, so that the gates keyed off them
+were in place first. Nothing free is `Extreme` and nothing free claims `ModuleId::Code`;
+two tests in `ReservedCapabilityTest` enforce that.
+
+- **What the fourth tier means.** `High` is a bounded effect with a large blast radius —
+  deleting an element, rewriting the global colours — and the preview can describe it
+  exactly. `Extreme` means the payload is a program. We can promise what was STORED and
+  never what it will DO, which is a different kind of claim, not a bigger number.
+- **The defect adding it exposed.** `PermissionLevel::allows()` gated the Edit level on
+  `Risk::High !== $definition->risk`. An inequality against ONE CASE widens every time a
+  case is added above it, silently: `Extreme` is not `High`, so it would have passed, and
+  the level whose own sentence is "apps can look and make changes, but cannot delete"
+  would have been the level that admits arbitrary code. No existing test would have
+  failed, because every definition in the suite was Low, Medium or High.
+- **The fix is ordinality.** `Risk::rank()` and `Risk::atLeast()`, and every gate is
+  written against `atLeast()`. An ordinal gate refuses a newly added top tier by default,
+  which is the only safe direction for that mistake to fall in. **The declaration order of
+  the enum is therefore part of the contract** — inserting a case in the middle renumbers
+  every gate above it. `RiskTest` writes the order out rather than deriving it, so an
+  insertion has to be acknowledged.
+- **The same shape lives in `OperationsScreen`** twice: the warning colour on a switch row
+  is `isDestructive || risk->atLeast( Risk::High )`, and the badge block tests `Extreme`
+  first, then `High`, so a row gets one risk badge and it is the accurate one.
+- **`ModuleId::Code` is the first module that is *off* rather than *unavailable*.**
+  Elementor, ACF, Meta Box and WooCommerce report unavailable when the plugin behind them
+  is missing, which is a fact about the site. Code has no plugin behind it — its host is
+  the add-on's own runner — so it is never unavailable; it is only ever switched off,
+  which is the owner's decision. Consequences:
+  - It is deliberately NOT in `OperationDefinition::PLUGIN_BACKED_MODULES`. There is no
+    external dependency for the gateway to block on.
+  - It is in `IntegrationHealthTest::ADDON_ONLY`, not in `BOOT_ORDER`. Putting it in the
+    integration report would have the report say "install and activate" about a plugin
+    that does not exist.
+  - It is in `ProCatalogue::ADDON_ONLY_MODULES`, and `ModulesScreen::render_waiting_on()`
+    now branches inside that case on whether `requirement_for()` returns anything.
+    Commerce waits on the add-on AND on WooCommerce; code waits on the add-on alone, and
+    the unbranched sentence would have printed "on a site running  or newer".
+- **The catalogue carries all eighteen Code operations before one of them exists.**
+  `ProCatalogue::OPERATIONS` is the only thing the free plugin knows about an add-on-only
+  module, and for this module it is also the only place the free console says what
+  switching the module on would let an app do. Nine reads sit on `system-read`; nine
+  writes sit on `content-write`, NOT on a `system-write` that does not exist — the eleven
+  dispatchers in `CapabilityRegistry::DISPATCHERS` are frozen, and `seo-settings-set` set
+  the precedent for a system-shaped write riding the content pair.
+  `ProCatalogueTest::testTheCodeOperationsAreCataloguedAgainstTheCodeModule` writes the
+  eighteen ids and their dispatchers out longhand, so a drift between this list and the
+  ids the add-on registers fails here rather than showing an owner an operation that never
+  arrives.
+- **Adding a case to either enum breaks `EnumsTest::test_enum_values_match_frozen_contract`
+  on purpose.** That list is the contract; updating it is the acknowledgement.
