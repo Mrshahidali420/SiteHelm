@@ -83,6 +83,38 @@ final class ElementorApi {
 	public const OPTIONAL_CONTROL_KEYS = [ 'label', 'default', 'options', 'section', 'description' ];
 
 	/**
+	 * The class Elementor 4.0 exposes for the global class repository.
+	 *
+	 * Absent below 4.0, which is why every path through it is guarded rather than
+	 * gated on a version number.
+	 */
+	public const GLOBAL_CLASSES_REPOSITORY = 'Elementor\Modules\GlobalClasses\Global_Classes_Repository';
+
+	/**
+	 * The member of a global-class read holding the classes themselves.
+	 */
+	public const GLOBAL_CLASSES_ITEMS_KEY = 'items';
+
+	/**
+	 * The member of a global-class read holding their order.
+	 */
+	public const GLOBAL_CLASSES_ORDER_KEY = 'order';
+
+	/**
+	 * The authoritative global-class context: what the site renders from.
+	 */
+	public const CONTEXT_FRONTEND = 'frontend';
+
+	/**
+	 * The editor's mirror of the global-class set.
+	 *
+	 * A second store, not a view of the first. It can disagree with the frontend
+	 * one, and a write that lands in one and not the other leaves the editor
+	 * showing something the site does not serve.
+	 */
+	public const CONTEXT_PREVIEW = 'preview';
+
+	/**
 	 * Constructs the accessor.
 	 *
 	 * The presence gate is injected rather than constructed here, exactly as the
@@ -139,6 +171,104 @@ final class ElementorApi {
 		// would turn that silence into `false` — "Elementor ran the save and refused
 		// it" — which is the exact collapse this class exists to prevent.
 		return is_bool( $result ) ? $result : null;
+	}
+
+	/**
+	 * The global-class contexts this site can actually be asked about.
+	 *
+	 * Three answers, and the difference between them is the whole point of the
+	 * method. `[]` means the repository is unreachable and nothing about global
+	 * classes can be said. `[ frontend ]` means the site has a repository but no
+	 * preview switch, so the editor mirror does not exist as a separate store and
+	 * is not something a snapshot has failed to capture. Both means both, and a
+	 * caller that captures only one of them is recording half a state.
+	 *
+	 * This exists so that "preview could not be read" and "there is no preview to
+	 * read" stay two facts. `globalClasses()` answers null to both.
+	 *
+	 * @return list<string> The addressable contexts, most authoritative first.
+	 */
+	public function globalClassContexts(): array {
+		if ( null === $this->global_classes_repository( self::CONTEXT_FRONTEND, 'all' ) ) {
+			return [];
+		}
+
+		return null === $this->global_classes_repository( self::CONTEXT_PREVIEW, 'all' )
+			? [ self::CONTEXT_FRONTEND ]
+			: [ self::CONTEXT_FRONTEND, self::CONTEXT_PREVIEW ];
+	}
+
+	/**
+	 * Every global class Elementor holds in one context, or null.
+	 *
+	 * Global classes do not live in `_elementor_data`. They live in Elementor's
+	 * own repository, in two contexts stored separately: the frontend one the
+	 * site renders from, and the preview one the editor mirrors. They can
+	 * disagree, and a caller that reads only one cannot tell that they do.
+	 *
+	 * The return is `[ 'items' => ..., 'order' => ... ]` with both members
+	 * normalised to plain arrays, because the repository hands back a collection
+	 * on current Elementor and a bare array on older ones and a snapshot has to
+	 * be comparable across both. Null means the repository could not be addressed
+	 * — Elementor is absent, the site predates the class repository, or the shape
+	 * changed under us. An empty `items` means the repository was reached and the
+	 * site has no global classes, which is a different fact and must not be
+	 * conflated with the first.
+	 *
+	 * @param string $context Either self::CONTEXT_FRONTEND or self::CONTEXT_PREVIEW.
+	 *
+	 * @return array{items: array<string, array<string, mixed>>, order: list<string>}|null
+	 */
+	public function globalClasses( string $context ): ?array {
+		$repository = $this->global_classes_repository( $context, 'all' );
+
+		if ( null === $repository || ! method_exists( $repository, 'get_order' ) ) {
+			return null;
+		}
+
+		$items = $this->unwrap_class_items( $repository->all() );
+
+		if ( null === $items ) {
+			return null;
+		}
+
+		$order = $this->unwrap_class_order( $repository->get_order() );
+
+		if ( null === $order ) {
+			return null;
+		}
+
+		return [
+			self::GLOBAL_CLASSES_ITEMS_KEY => $items,
+			self::GLOBAL_CLASSES_ORDER_KEY => [] === $order ? array_keys( $items ) : $order,
+		];
+	}
+
+	/**
+	 * Writes the whole class set back into one context.
+	 *
+	 * The repository has no per-class write. `put()` replaces the set, which is
+	 * why every caller reads first, edits the array it was handed, and writes the
+	 * whole thing back — and why a snapshot of this is a snapshot of everything.
+	 *
+	 * Returns true when the write ran, false when Elementor ran it and refused,
+	 * and null when the repository could not be addressed. A caller that folds
+	 * null into false reports a refusal for a call that was never made.
+	 *
+	 * @param array<string, array<string, mixed>> $items   The complete class set.
+	 * @param array<int, string>                  $order   The complete order.
+	 * @param string                              $context Either self::CONTEXT_FRONTEND or self::CONTEXT_PREVIEW.
+	 *
+	 * @return bool|null True on a write, false on a refusal, null when unreachable.
+	 */
+	public function saveGlobalClasses( array $items, array $order, string $context ): ?bool {
+		$repository = $this->global_classes_repository( $context, 'put' );
+
+		if ( null === $repository ) {
+			return null;
+		}
+
+		return false !== $repository->put( $items, $order );
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 
@@ -426,5 +556,141 @@ final class ElementorApi {
 		$member = $plugin->{$property} ?? null;
 
 		return is_object( $member ) && method_exists( $member, $method ) ? $member : null;
+	}
+
+	/**
+	 * Elementor's global class repository for one context, or null.
+	 *
+	 * Two guards that are not one guard: the class has to exist at all (a site on
+	 * Elementor below 4.0 has no repository), and — for the preview context — it
+	 * has to expose `set_preview()`. A version that has the repository but not the
+	 * preview switch answers null for preview rather than quietly operating on the
+	 * frontend set, which would be a different write under the caller's name.
+	 *
+	 * @param string $context Either self::CONTEXT_FRONTEND or self::CONTEXT_PREVIEW.
+	 * @param string $method  The method the caller is about to invoke on it.
+	 *
+	 * @return object|null The repository, or null.
+	 */
+	private function global_classes_repository( string $context, string $method ): ?object {
+		if ( self::CONTEXT_FRONTEND !== $context && self::CONTEXT_PREVIEW !== $context ) {
+			return null;
+		}
+
+		if ( ! $this->presence->isLoaded() || ! class_exists( self::GLOBAL_CLASSES_REPOSITORY ) ) {
+			return null;
+		}
+
+		if ( ! method_exists( self::GLOBAL_CLASSES_REPOSITORY, 'make' ) ) {
+			return null;
+		}
+
+		$repository = \Elementor\Modules\GlobalClasses\Global_Classes_Repository::make();
+
+		if ( ! is_object( $repository ) || ! method_exists( $repository, $method ) ) {
+			return null;
+		}
+
+		if ( self::CONTEXT_FRONTEND === $context ) {
+			return $repository;
+		}
+
+		if ( ! method_exists( $repository, 'set_preview' ) ) {
+			return null;
+		}
+
+		$repository = $repository->set_preview( true );
+
+		return is_object( $repository ) && method_exists( $repository, $method ) ? $repository : null;
+	}
+
+	/**
+	 * The repository's class set as a plain array of plain arrays, or null.
+	 *
+	 * The repository answers a collection on current Elementor and a bare array on
+	 * older ones, and the collection has been both `get_items()`-shaped and
+	 * `all()`-shaped. Each unwrap is attempted only where the object declares it.
+	 *
+	 * A member that is neither an array nor a plain object is an unrecognised
+	 * shape, and null says so. It is deliberately not skipped: a snapshot that
+	 * drops the one class it could not read reports success and restores a site
+	 * without it.
+	 *
+	 * @param mixed $value Whatever `all()` returned.
+	 *
+	 * @return array<string, array<string, mixed>>|null The class set, or null.
+	 */
+	private function unwrap_class_items( $value ): ?array {
+		$value = $this->unwrap_collection( $value );
+
+		if ( ! is_array( $value ) ) {
+			return null;
+		}
+
+		$items = [];
+
+		foreach ( $value as $id => $definition ) {
+			if ( ! is_string( $id ) || '' === $id ) {
+				return null;
+			}
+
+			if ( $definition instanceof \stdClass ) {
+				$definition = (array) $definition;
+			}
+
+			if ( ! is_array( $definition ) ) {
+				return null;
+			}
+
+			$items[ $id ] = $definition;
+		}
+
+		return $items;
+	}
+
+	/**
+	 * The repository's order as a list of class identifiers, or null.
+	 *
+	 * An order carrying anything but strings is an unrecognised shape rather than
+	 * an order with some bad entries, for the same reason the class set is: a
+	 * silently shortened order is a silently reordered site.
+	 *
+	 * @param mixed $value Whatever `get_order()` returned.
+	 *
+	 * @return list<string>|null The order, or null.
+	 */
+	private function unwrap_class_order( $value ): ?array {
+		$value = $this->unwrap_collection( $value );
+
+		if ( ! is_array( $value ) ) {
+			return null;
+		}
+
+		foreach ( $value as $id ) {
+			if ( ! is_string( $id ) ) {
+				return null;
+			}
+		}
+
+		return array_values( $value );
+	}
+
+	/**
+	 * The array inside one of Elementor's collection wrappers, or the value.
+	 *
+	 * @param mixed $value The collection, or an array already.
+	 *
+	 * @return mixed The unwrapped value, which the caller still has to type-check.
+	 */
+	private function unwrap_collection( $value ) {
+		if ( is_object( $value ) && method_exists( $value, 'get_items' ) ) {
+			$value = $value->get_items();
+		}
+
+		if ( is_object( $value ) && method_exists( $value, 'all' ) ) {
+			$value = $value->all();
+		}
+
+		return $value;
 	}
 }

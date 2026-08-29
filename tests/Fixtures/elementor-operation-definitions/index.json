@@ -8,6 +8,7 @@
         "elementor-element-search",
         "elementor-control-schema",
         "elementor-global-tokens-get",
+        "elementor-global-class-list",
         "elementor-theme-template-list",
         "elementor-element-add",
         "elementor-element-update",
@@ -18,7 +19,11 @@
         "elementor-element-remove",
         "elementor-global-colors-update",
         "elementor-global-typography-update",
+        "elementor-global-class-create",
+        "elementor-global-class-update",
+        "elementor-global-class-delete",
+        "elementor-global-classes-reorder",
         "elementor-theme-conditions-set"
     ],
-    "operationCount": 19
+    "operationCount": 24
 }

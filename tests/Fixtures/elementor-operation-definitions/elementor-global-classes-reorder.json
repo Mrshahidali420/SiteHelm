@@ -1,0 +1,40 @@
+{
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "order": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 500,
+                "items": {
+                    "type": "string",
+                    "pattern": "^g-[A-Za-z0-9_-]{1,62}$",
+                    "maxLength": 64
+                },
+                "description": "Every class identifier elementor-global-class-list reports, exactly once, in the order they should cascade. Later entries win over earlier ones."
+            }
+        },
+        "required": [
+            "order"
+        ],
+        "additionalProperties": false
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "classDigest": {
+                "type": "string",
+                "description": "A digest over the whole global class set and its order as stored, which is what verification compares."
+            },
+            "classCount": {
+                "type": "integer",
+                "description": "How many global classes this site holds. This operation does not change it."
+            }
+        },
+        "required": [
+            "classDigest",
+            "classCount"
+        ],
+        "additionalProperties": false
+    }
+}

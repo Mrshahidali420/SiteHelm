@@ -1,0 +1,46 @@
+{
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "id": {
+                "type": "string",
+                "pattern": "^g-[A-Za-z0-9_-]{1,62}$",
+                "maxLength": 64,
+                "description": "The identifier elementor-global-class-list reports for the class to change."
+            },
+            "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 120,
+                "description": "Optional. The new name for this class. Must not repeat a label another class on this site already uses."
+            },
+            "styles": {
+                "type": "object",
+                "maxProperties": 200,
+                "description": "Optional. The style properties to set at the desktop breakpoint. A property named here is set, a property not named is left alone, and a property sent as null is removed from the class."
+            }
+        },
+        "required": [
+            "id"
+        ],
+        "additionalProperties": false
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "classDigest": {
+                "type": "string",
+                "description": "A digest over the whole global class set and its order as stored, which is what verification compares."
+            },
+            "classCount": {
+                "type": "integer",
+                "description": "How many global classes this site holds. This operation never changes it."
+            }
+        },
+        "required": [
+            "classDigest",
+            "classCount"
+        ],
+        "additionalProperties": false
+    }
+}

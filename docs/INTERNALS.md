@@ -1761,6 +1761,60 @@ The scan stops at `ContentSearch::MAX_SCANNED` (500) documents and sets `truncat
 Paging happens after the capability filter, so pages are not ragged. The bulk change
 that rewrites what this finds is REQ-0092's Pro half and is not built.
 
+## 35. Elementor 4 global classes (REQ-0101) in one screen
+
+Elementor 4 keeps its reusable style classes in one option per context, not one row
+per class. `Global_Classes_Repository::make()` answers a repository bound to a
+context — `frontend` is what the site renders from, `preview` is what the editor is
+holding — and `put( $items, $order )` replaces the **whole set** in one call. Every
+design decision below follows from that.
+
+- **The set is the target, not the class.** `ElementorClassRepositorySnapshot`
+  (`TARGET_KEY = 'elementor-global-classes'`) captures both contexts, so a create, an
+  update, a delete and a reorder all snapshot and restore the same unit. There is no
+  per-class rollback because Elementor offers no per-class write.
+- **`ElementorGlobalClassWrite` is the only thing that writes.** The five operations
+  plan a `[ items, order ]` payload and hand it over; the shared writer re-reads,
+  re-checks the divergence, writes both contexts, and verifies. Its two verification
+  fields — `classDigest` and `classCount` — are one formula shared by the promise
+  (`afterFields`) and the read-back, so a plan that promises a set the write did not
+  land fails verification rather than reporting success.
+- **A divergent editor is a `Conflict`, not an overwrite.** If `preview` differs from
+  `frontend`, somebody has unpublished class changes open; writing would discard them
+  silently. Every write refuses. `elementor-global-class-list` deliberately does
+  **not** — it reports `inEditorSync: false` and answers from `frontend`, because an
+  operator meeting the refusal has exactly one useful next question and a read that
+  also refused would leave them no way to answer it. A site whose `set_preview()`
+  yields no repository has no second store to diverge from and reads as in sync.
+- **`order` is a full permutation, always.** A reorder names every class; a partial or
+  unknown-id order is a stale request and a `Conflict`. The refusal **counts** the
+  mismatches rather than echoing the identifiers the caller sent.
+- **Minted ids are deterministic in the state they were minted against.**
+  `planChange()` runs at both preview and apply, so a create seeds `ElementorIdMint`
+  from the request plus the current set. Same request against the same state mints the
+  same `g-…` id; against a set somebody else has added to, a different one — which is
+  what stops a create from overwriting a class that appeared in between.
+- **A delete never touches a document.** It reports how many documents wear the class
+  (`ElementorGlobalClassUsage`, a `meta_query` `LIKE` on `_elementor_data`, capped at
+  `MAX_SCAN` = 200 and flagged `usageComplete: false` at the cap) as a warning, never a
+  refusal — the count is taken by substring and can over-count. Because the markup keeps
+  the class name, restoring the definition restyles every element that wore it.
+- **Style values are Elementor's vocabulary and are passed through untouched.**
+  `ElementorGlobalClassFields::styles()` is shared by the create and the update so the
+  two cannot disagree about what is storable: an object keyed by prop names, bounded by
+  `MAX_STYLE_PROPERTIES` (200) and `MAX_STYLES_BYTES` (64 KiB) — the byte bound is what
+  keeps the snapshot recordable. An update **merges** into the desktop variant rather
+  than replacing it, and a `null` value removes one property.
+
+Guard order throughout is capability (`edit_theme_options`) → presence → repository, so
+an unauthorised caller never learns whether the site runs Elementor.
+
+Tests: `tests/Unit/Modules/Elementor/ElementorGlobalClass*Test.php` over the shared
+`GlobalClassFixtures` trait — one fake repository with two independent stores, a
+`get_order()` that answers separately from `all()`, and a `put()` that can refuse by
+returning `false` rather than throwing. `ElementorApi` is never doubled; the fake is
+installed underneath it by `class_alias` in an isolated process.
+
 ## 28. Standing project constraints
 
 - **No AI attribution anywhere in git** — no "Generated with Claude Code" footer,

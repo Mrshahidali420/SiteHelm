@@ -1,0 +1,35 @@
+{
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "id": {
+                "type": "string",
+                "pattern": "^g-[A-Za-z0-9_-]{1,62}$",
+                "maxLength": 64,
+                "description": "The identifier elementor-global-class-list reports for the class to delete."
+            }
+        },
+        "required": [
+            "id"
+        ],
+        "additionalProperties": false
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "classDigest": {
+                "type": "string",
+                "description": "A digest over the whole global class set and its order as stored, which is what verification compares."
+            },
+            "classCount": {
+                "type": "integer",
+                "description": "How many global classes this site holds. This operation takes exactly one away."
+            }
+        },
+        "required": [
+            "classDigest",
+            "classCount"
+        ],
+        "additionalProperties": false
+    }
+}

@@ -78,6 +78,7 @@ final class ElementorDefinitionInvariantsTest extends TestCase {
 		'elementor-element-search',
 		'elementor-control-schema',
 		'elementor-global-tokens-get',
+		'elementor-global-class-list',
 		'elementor-theme-template-list',
 		'elementor-element-add',
 		'elementor-element-update',
@@ -88,6 +89,10 @@ final class ElementorDefinitionInvariantsTest extends TestCase {
 		'elementor-element-remove',
 		'elementor-global-colors-update',
 		'elementor-global-typography-update',
+		'elementor-global-class-create',
+		'elementor-global-class-update',
+		'elementor-global-class-delete',
+		'elementor-global-classes-reorder',
 		'elementor-theme-conditions-set',
 	];
 
@@ -100,12 +105,12 @@ final class ElementorDefinitionInvariantsTest extends TestCase {
 	 * read that silently became a write, or a write registered without its write
 	 * handler, moves the derived count away from this one.
 	 */
-	private const ELEMENTOR_READ_COUNT = 9;
+	private const ELEMENTOR_READ_COUNT = 10;
 
 	/**
 	 * The Elementor module's write count, bumped by every task registering a write.
 	 */
-	private const ELEMENTOR_WRITE_COUNT = 10;
+	private const ELEMENTOR_WRITE_COUNT = 14;
 
 	/**
 	 * The capabilities an Elementor operation may declare.
@@ -378,8 +383,13 @@ final class ElementorDefinitionInvariantsTest extends TestCase {
 		$this->assertSame(
 			[
 				'elementor-global-tokens-get',
+				'elementor-global-class-list',
 				'elementor-global-colors-update',
 				'elementor-global-typography-update',
+				'elementor-global-class-create',
+				'elementor-global-class-update',
+				'elementor-global-class-delete',
+				'elementor-global-classes-reorder',
 				'elementor-theme-conditions-set',
 			],
 			$site_scoped,

@@ -1,0 +1,40 @@
+{
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 120,
+                "description": "The name the Elementor editor will show for this class. Must start with a letter and hold only letters, digits, spaces, hyphens and underscores, and must not repeat a label this site already uses."
+            },
+            "styles": {
+                "type": "object",
+                "maxProperties": 200,
+                "description": "Optional. The style properties the class applies at the desktop breakpoint, in Elementor's own prop vocabulary as elementor-global-class-list reports it. Omit to create an empty class that changes nothing until it is styled."
+            }
+        },
+        "required": [
+            "label"
+        ],
+        "additionalProperties": false
+    },
+    "outputSchema": {
+        "type": "object",
+        "properties": {
+            "classDigest": {
+                "type": "string",
+                "description": "A digest over the whole global class set and its order as stored, which is what verification compares."
+            },
+            "classCount": {
+                "type": "integer",
+                "description": "How many global classes this site holds. This operation adds exactly one to it."
+            }
+        },
+        "required": [
+            "classDigest",
+            "classCount"
+        ],
+        "additionalProperties": false
+    }
+}
