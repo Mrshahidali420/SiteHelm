@@ -436,4 +436,70 @@ final class PreviewRendererTest extends TestCase {
 		$this->assertSame( '0', $preview['machine']['changes'][0]['before'] );
 		$this->assertSame( 0, $preview['machine']['changes'][0]['after'] );
 	}
+
+	/**
+	 * The reason SensitiveFields exists, asserted through the renderer rather
+	 * than the unit: BOTH renderings come off the same change record, so this
+	 * is the test that would fail if redaction were moved into either one of
+	 * them and forgotten in the other.
+	 */
+	public function test_a_code_payload_is_withheld_from_both_renderings(): void {
+		$secret  = 'sk-live-4f2c9a77d1e84b0398c6';
+		$current = new TargetState( 'snippet:7', true, [ 'snippet_code' => "<?php // old $secret" ] );
+		$planned = new PlannedChange(
+			[ 'code' => 'irrelevant' ],
+			[ 'snippet_code' => "<?php define( 'SMTP_PASS', '$secret' );" ],
+			[ 'snippet_code' ]
+		);
+
+		$preview = $this->renderer->render( 'code-snippet-write', $current, $planned );
+
+		$this->assertStringNotContainsString( $secret, $preview['human'] );
+		$this->assertStringNotContainsString( 'SMTP_PASS', $preview['human'] );
+		$this->assertStringNotContainsString( $secret, (string) wp_json_encode( $preview['machine'] ) );
+		$this->assertStringNotContainsString( 'SMTP_PASS', (string) wp_json_encode( $preview['machine'] ) );
+	}
+
+	/**
+	 * The change still has to be REPORTED. A redaction that also dropped the
+	 * row would hide from the operator that a snippet was being rewritten at
+	 * all, which is a worse preview than one that showed too much.
+	 */
+	public function test_the_withheld_payload_still_reports_that_the_field_changed(): void {
+		$current = new TargetState( 'snippet:7', true, [ 'snippet_code' => '<?php echo 1;' ] );
+		$planned = new PlannedChange(
+			[ 'code' => 'irrelevant' ],
+			[ 'snippet_code' => '<?php echo 2;' ],
+			[ 'snippet_code' ]
+		);
+
+		$preview = $this->renderer->render( 'code-snippet-write', $current, $planned );
+
+		$this->assertCount( 1, $preview['machine']['changes'] );
+		$this->assertSame( 'snippet_code', $preview['machine']['changes'][0]['field'] );
+		$this->assertNotSame(
+			$preview['machine']['changes'][0]['before'],
+			$preview['machine']['changes'][0]['after'],
+			'A rewritten snippet must not describe identically to the one it replaced.'
+		);
+		$this->assertStringContainsString( 'snippet_code', $preview['human'] );
+	}
+
+	/**
+	 * An unchanged payload is skipped by the same equality test every other
+	 * field uses, on the REAL values. Comparing descriptions instead would
+	 * hand that decision to a hash.
+	 */
+	public function test_an_unchanged_payload_produces_no_row(): void {
+		$current = new TargetState( 'snippet:7', true, [ 'snippet_code' => '<?php echo 1;' ] );
+		$planned = new PlannedChange(
+			[ 'code' => 'irrelevant' ],
+			[ 'snippet_code' => '<?php echo 1;' ],
+			[ 'snippet_code' ]
+		);
+
+		$preview = $this->renderer->render( 'code-snippet-write', $current, $planned );
+
+		$this->assertSame( [], $preview['machine']['changes'] );
+	}
 }

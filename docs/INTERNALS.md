@@ -1015,6 +1015,33 @@ the same integer. `ActivityScreen::change_text()` therefore renders the pair bar
 same the pair says nothing, and the field is reported as "changed". A summary that
 does not parse is shown **verbatim**: an unreadable record is a fact worth seeing.
 
+**The preview path is the half that needed fixing, not the audit path.** The
+plan for the Code module recorded the audit log as the place a snippet's API key
+would leak. It was wrong, and the reason is worth keeping: `AuditRedactor` has
+always reduced every value to an integer before encoding, so no field value has
+ever reached the audit table. What did render values in full was
+`PreviewRenderer` — correctly, since a preview exists to show the operator what
+they are approving — and those values travel into the response envelope, into
+the stored plan body, and into the rollback table `RollbackPanel` prints in the
+admin console.
+
+`SensitiveFields` closes it at one line in `PreviewRenderer::render()`, where the
+change record is built rather than in either rendering, so the human summary and
+the machine diff are covered by one edit and cannot drift apart. The rule is
+keyed by FIELD NAME (`snippet_code`, `snippet_css`, `snippet_js`), not by
+operation: a rollback promises the same field names the forward write promised
+through a generic operation that could not know which were sensitive, so a
+per-operation declaration would have redacted the write and then printed the
+restoration.
+
+The equality test that decides whether a field changed still runs on the REAL
+values, above the redaction, so an unchanged payload produces no row and the
+decision is never handed to a hash. `SensitiveFields::describe()` reports a byte
+count and twelve characters of sha256 — **and deliberately not the first line the
+plan asked for.** A one-line snippet is entirely its first line, and one line is
+exactly the shape a stored credential takes, so that rule would have redacted a
+hundred-line file and printed the only case that mattered in full.
+
 **Client identity is resolved in `RestTransport`, and it is the only source of
 `client_id`.** `ContextFactory` passes the value straight through to
 `OperationContext`, and `AuditRecorder::start()` writes it verbatim, so anything
