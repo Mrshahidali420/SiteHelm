@@ -11,6 +11,18 @@ an operation behaves.
 
 ## [Unreleased]
 
+### Changed
+- **A preview never reproduces an executable payload** (REQ-0106) — where a change
+  touches a code field, the before-and-after shows a byte count and a short digest
+  instead of the body. The values a preview renders travel further than the preview:
+  into the response, into the stored plan an operator approves, and into the rollback
+  table in the console. A snippet's contents are routinely an API key or an SMTP
+  password, so those three places would have held a live credential. The change is
+  reported exactly as loudly as before — the field is named, and a rewritten payload
+  never describes the same as the one it replaced — and rollback still restores the
+  real body, because restoration reads the snapshot rather than the preview. No
+  operation writes to one of these fields yet; this lands first so that none can.
+
 ### Added
 - **SVG images can reach the media library, safely** (REQ-0105) — `media-svg-upload`
   adds one SVG so Elementor's icon and image controls can point at it. The file that is

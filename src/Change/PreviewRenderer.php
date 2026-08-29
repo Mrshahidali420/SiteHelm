@@ -19,6 +19,12 @@ namespace SiteHelm\Change;
  * renderer knows nothing about any particular domain, so a later module's
  * writes render through exactly this code.
  *
+ * The one exception to knowing nothing is `SensitiveFields`, consulted while the
+ * change record is built. A preview exists to show an operator the value they
+ * are approving, which is right for a title and a disclosure for a snippet that
+ * holds an API key. See that class for why the rule is keyed by field name and
+ * applied here rather than in either rendering.
+ *
  * @package SiteHelm
  */
 final class PreviewRenderer {
@@ -67,6 +73,18 @@ final class PreviewRenderer {
 			if ( $before === $after ) {
 				continue;
 			}
+			// Redaction happens HERE, where the change record is built, and not
+			// in the two renderings below. Everything downstream — the machine
+			// preview in the envelope, the plan body the operator approves, and
+			// the rollback table the admin console prints — reads this array,
+			// so a payload replaced at this line cannot reappear anywhere. A
+			// renderer-level fix would have covered the human summary and left
+			// the machine changes carrying the credential in full.
+			if ( SensitiveFields::covers( $field ) ) {
+				$before = SensitiveFields::describe( $before );
+				$after  = SensitiveFields::describe( $after );
+			}
+
 			$changes[] = [
 				'field'  => $field,
 				'before' => $before,
