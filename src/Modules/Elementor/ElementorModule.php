@@ -288,6 +288,15 @@ final class ElementorModule implements IntegrationModule {
 			[ new ElementorTemplateGet( $fields, $document, $tree, $conditions, $this->presence ), 'handle' ]
 		);
 
+		// Shared by the page-settings read and the page-settings write, so both
+		// halves of that pair measure one row with one formula.
+		$page_settings = new ElementorPageSettingsTarget( $document, $this->presence );
+
+		$registry->register(
+			ElementorPageSettingsGet::definition(),
+			[ new ElementorPageSettingsGet( $fields, $document, $this->presence ), 'handle' ]
+		);
+
 		// The write block. Every one of these shares a single ElementorWriteTarget,
 		// and the target shares a single ElementorApi with the cache invalidator the
 		// writer holds — one presence gate, one registry read, one cache flush per
@@ -354,6 +363,25 @@ final class ElementorModule implements IntegrationModule {
 		$registry->registerWrite(
 			ElementorElementRemove::definition(),
 			new ElementorElementRemove( $targets, $document, $merge, $edit, $coercion, $writer, $diff )
+		);
+
+		$registry->registerWrite(
+			ElementorElementsReorder::definition(),
+			new ElementorElementsReorder( $targets, $document, $merge, $edit, $coercion, $writer, $diff )
+		);
+
+		$registry->registerWrite(
+			ElementorElementLabelSet::definition(),
+			new ElementorElementLabelSet( $targets, $document, $merge, $edit, $coercion, $writer )
+		);
+
+		// The page-settings pair's own target. It is NOT the document target above:
+		// page settings live in a different meta row, and a write that snapshotted
+		// _elementor_data would roll back the page's content and leave the settings
+		// exactly as it found them.
+		$registry->registerWrite(
+			ElementorPageSettingsSet::definition(),
+			new ElementorPageSettingsSet( $page_settings )
 		);
 
 		// The template library's writes. The apply is a document write and shares the

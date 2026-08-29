@@ -12,6 +12,7 @@
         "elementor-theme-template-list",
         "elementor-template-list",
         "elementor-template-get",
+        "elementor-page-settings-get",
         "elementor-element-add",
         "elementor-element-update",
         "elementor-elements-update",
@@ -19,6 +20,9 @@
         "elementor-element-move",
         "elementor-element-duplicate",
         "elementor-element-remove",
+        "elementor-elements-reorder",
+        "elementor-element-label-set",
+        "elementor-page-settings-set",
         "elementor-template-apply",
         "elementor-template-save",
         "elementor-template-import",
@@ -31,5 +35,5 @@
         "elementor-global-classes-reorder",
         "elementor-theme-conditions-set"
     ],
-    "operationCount": 30
+    "operationCount": 34
 }

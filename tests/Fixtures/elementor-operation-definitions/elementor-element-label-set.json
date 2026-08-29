@@ -1,0 +1,106 @@
+{
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "document": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "Identifier of the Elementor document to change. Call elementor-document-list for the documents Elementor controls."
+            },
+            "elementId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "pattern": "^[A-Za-z0-9_-]{1,64}$",
+                "description": "Stable identifier of the element to act on, exactly as elementor-document-get reports it."
+            },
+            "label": {
+                "type": "string",
+                "maxLength": 200,
+                "description": "The name to show for this element in Elementor's navigator. Send an empty string to clear the name: the element then shows its type again, which is not the same as showing a blank row."
+            }
+        },
+        "required": [
+            "document",
+            "elementId",
+            "label"
+        ],
+        "additionalProperties": false
+    },
+    "outputSchema": {
+        "type": "object",
+        "oneOf": [
+            {
+                "title": "Plan phase",
+                "type": "object",
+                "properties": {
+                    "plan": {
+                        "type": "object",
+                        "description": "The change plan to approve, including its plan token."
+                    }
+                },
+                "required": [
+                    "plan"
+                ],
+                "additionalProperties": false
+            },
+            {
+                "title": "Apply phase",
+                "type": "object",
+                "properties": {
+                    "target": {
+                        "type": "string",
+                        "description": "The concrete target that was written."
+                    },
+                    "changed": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "description": "The fields the approved plan changed."
+                    },
+                    "state": {
+                        "type": "object",
+                        "properties": {
+                            "documentDigest": {
+                                "type": "string",
+                                "description": "Fingerprint of the document exactly as it is stored. Two reads of an unchanged document give the same value."
+                            },
+                            "elementCount": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "description": "How many elements the stored document holds, counting every nesting level."
+                            },
+                            "maxDepth": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "description": "How many nesting levels the stored document has. An empty document has none."
+                            },
+                            "widgetTypeCounts": {
+                                "type": "object",
+                                "additionalProperties": {
+                                    "type": "integer",
+                                    "minimum": 1
+                                },
+                                "description": "How many of each widget type the stored document holds, keyed by widget type name."
+                            }
+                        },
+                        "required": [
+                            "documentDigest",
+                            "elementCount",
+                            "maxDepth",
+                            "widgetTypeCounts"
+                        ],
+                        "additionalProperties": false
+                    }
+                },
+                "required": [
+                    "target",
+                    "changed",
+                    "state"
+                ],
+                "additionalProperties": false
+            }
+        ]
+    }
+}

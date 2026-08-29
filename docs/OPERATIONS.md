@@ -1,6 +1,6 @@
 # Operations reference
 
-SiteHelm exposes **91 operations** through **11 MCP tools**, called dispatchers. Every operation is
+SiteHelm exposes **95 operations** through **11 MCP tools**, called dispatchers. Every operation is
 declared once, in code, with a strict input schema (`additionalProperties: false`), a required
 capability, a risk level, and preview, snapshot, and rollback policies. That declaration is the
 contract the gateway enforces and the catalogue an agent discovers.
@@ -289,7 +289,7 @@ links are listed per item, and `truncated` says when a page held more.
 Requires Elementor 3.0.0+. SiteHelm edits the stored Elementor document directly and flushes the
 generated CSS afterwards, so changes appear on the front end without opening the editor.
 
-### `elementor-read` — 12 operations
+### `elementor-read` — 13 operations
 
 | Operation | Does | Capability |
 |---|---|---|
@@ -305,8 +305,9 @@ generated CSS afterwards, so changes appear on the front end without opening the
 | `elementor-theme-template-list` | Lists theme-builder templates with the display conditions each one stores | `edit_posts` |
 | `elementor-template-list` | Lists the saved library templates, filterable by kind | `edit_posts` |
 | `elementor-template-get` | Reads one saved template in full — its tree, its page settings and the Elementor version that wrote it | `edit_post` |
+| `elementor-page-settings-get` | Reads a document's Elementor page settings — the page layout and title visibility SiteHelm can change, and the whole stored settings row alongside them | `edit_post` |
 
-### `elementor-write` — 18 operations
+### `elementor-write` — 21 operations
 
 | Operation | Does | Capability | Risk | Rollback |
 |---|---|---|---|---|
@@ -317,6 +318,9 @@ generated CSS afterwards, so changes appear on the front end without opening the
 | `elementor-element-move` | Moves an element within or between containers | `edit_post` | medium | supported |
 | `elementor-element-duplicate` | Duplicates an element with fresh ids | `edit_post` | medium | supported |
 | `elementor-element-remove` | Removes an element from the tree | `edit_post` | high | required |
+| `elementor-elements-reorder` | Reorders one element's direct children, as a whole permutation of that list | `edit_post` | medium | supported |
+| `elementor-element-label-set` | Sets or clears the name an element carries in the Elementor navigator | `edit_post` | low | supported |
+| `elementor-page-settings-set` | Changes a document's page layout or title visibility, merging into the stored settings row | `edit_post` | medium | supported |
 | `elementor-global-colors-update` | Updates global colour tokens site-wide | `edit_theme_options` | high | supported |
 | `elementor-global-typography-update` | Updates global type styles site-wide | `edit_theme_options` | high | supported |
 | `elementor-global-class-create` | Adds one reusable global style class | `edit_theme_options` | high | supported |
@@ -328,6 +332,10 @@ generated CSS afterwards, so changes appear on the front end without opening the
 | `elementor-template-import` | Creates a library template from a tree this site did not produce, validated against the installed widgets first | `edit_posts` | high | supported |
 | `elementor-theme-template-create` | Creates an empty header, footer, archive or single template, with no display conditions | `edit_theme_options` | medium | supported |
 | `elementor-theme-conditions-set` | Replaces one theme template's display conditions as a whole rule | `edit_theme_options` | high | supported |
+
+**On the page-level operations.** A document's page settings live in their own meta row, not in the element tree, so `elementor-page-settings-set` snapshots and restores that row rather than `_elementor_data` — a rollback that restored the tree instead would put the page's content back and leave the settings exactly as it found them. The write reaches a closed allowlist, currently the page layout and whether the theme's title is hidden, and it **merges** into the stored row so a setting SiteHelm does not name survives the change. The read is deliberately wider than the write: it returns the whole stored row so an agent can see what else is there, and refuses an implausibly large row rather than trimming it, because a trimmed map is indistinguishable from a complete one to whoever reads it.
+
+`elementor-elements-reorder` demands the **whole** list of a parent's direct children, in the order you want them. A partial order would let a request written against a page that has since gained a child succeed while silently deciding where that child ends up; demanding the whole list makes a stale request fail loudly instead. `elementor-element-label-set` writes the name Elementor shows in its navigator, which is a stored setting on the element and is not the label SiteHelm derives for a read. An empty label clears that name rather than storing an empty one.
 
 **On the global-token writes.** They address the active Elementor kit, so they gate on
 `edit_theme_options` — the capability Elementor itself puts on the kit document — rather than on a

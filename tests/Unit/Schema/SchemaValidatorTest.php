@@ -333,6 +333,69 @@ final class SchemaValidatorTest extends TestCase {
 	}
 
 	/**
+	 * A list declared unique is refused when it names one entry twice.
+	 *
+	 * The catalog declares `uniqueItems` on `elementor-elements-reorder`'s order,
+	 * where a repeated child is a request the operation cannot satisfy at all.
+	 */
+	public function test_a_list_declared_unique_refuses_a_repeated_entry(): void {
+		try {
+			$this->validator->validate( [ 'ids' => [ 'a', 'b', 'a' ] ], $this->uniqueListSchema() );
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::InvalidInput, $e->errorCode );
+			$this->assertStringContainsString( 'must not name the same entry twice', $e->getMessage() );
+		}
+	}
+
+	/**
+	 * The same list without a repeat passes, so the check above is a constraint
+	 * rather than a refusal of every list.
+	 */
+	public function test_a_list_declared_unique_accepts_distinct_entries(): void {
+		$this->assertSame(
+			[ 'ids' => [ 'a', 'b', 'c' ] ],
+			$this->validator->validate( [ 'ids' => [ 'a', 'b', 'c' ] ], $this->uniqueListSchema() )
+		);
+	}
+
+	/**
+	 * TYPE IS PART OF THE COMPARISON: the string '1' and the integer 1 are two
+	 * entries, not one. A comparison by value alone would call them the same and
+	 * refuse a request that names two different things.
+	 */
+	public function test_two_spellings_of_the_same_number_are_two_entries(): void {
+		$schema                             = $this->uniqueListSchema();
+		$schema['properties']['ids']['items'] = [];
+
+		$this->assertSame(
+			[ 'ids' => [ '1', 1 ] ],
+			$this->validator->validate( [ 'ids' => [ '1', 1 ] ], $schema )
+		);
+	}
+
+	/**
+	 * A list of unique identifiers, for the three cases above.
+	 *
+	 * @return array<string, mixed> The schema.
+	 */
+	private function uniqueListSchema(): array {
+		return [
+			'type'                 => 'object',
+			'properties'           => [
+				'ids' => [
+					'type'        => 'array',
+					'items'       => [ 'type' => 'string' ],
+					'maxItems'    => 10,
+					'uniqueItems' => true,
+				],
+			],
+			'required'             => [],
+			'additionalProperties' => false,
+		];
+	}
+
+	/**
 	 * Non-object schema should throw InvalidArgumentException.
 	 */
 	public function test_non_object_schema_is_a_programming_error(): void {

@@ -54,6 +54,7 @@ final class SchemaKeywordCoverageTest extends TestCase {
 		'properties',
 		'required',
 		'type',
+		'uniqueItems',
 	];
 
 	/**

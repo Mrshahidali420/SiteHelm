@@ -82,6 +82,7 @@ final class ElementorDefinitionInvariantsTest extends TestCase {
 		'elementor-theme-template-list',
 		'elementor-template-list',
 		'elementor-template-get',
+		'elementor-page-settings-get',
 		'elementor-element-add',
 		'elementor-element-update',
 		'elementor-elements-update',
@@ -89,6 +90,9 @@ final class ElementorDefinitionInvariantsTest extends TestCase {
 		'elementor-element-move',
 		'elementor-element-duplicate',
 		'elementor-element-remove',
+		'elementor-elements-reorder',
+		'elementor-element-label-set',
+		'elementor-page-settings-set',
 		'elementor-template-apply',
 		'elementor-template-save',
 		'elementor-template-import',
@@ -111,12 +115,12 @@ final class ElementorDefinitionInvariantsTest extends TestCase {
 	 * read that silently became a write, or a write registered without its write
 	 * handler, moves the derived count away from this one.
 	 */
-	private const ELEMENTOR_READ_COUNT = 12;
+	private const ELEMENTOR_READ_COUNT = 13;
 
 	/**
 	 * The Elementor module's write count, bumped by every task registering a write.
 	 */
-	private const ELEMENTOR_WRITE_COUNT = 18;
+	private const ELEMENTOR_WRITE_COUNT = 21;
 
 	/**
 	 * The writes that CREATE a library post rather than change an existing one.
