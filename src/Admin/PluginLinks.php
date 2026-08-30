@@ -57,6 +57,14 @@ final class PluginLinks {
 			),
 		];
 
+		if ( ProCatalogue::STATE_ACTIVE !== ( new ProCatalogue() )->probe()['state'] ) {
+			$links['sitehelm-pro'] = sprintf(
+				'<a href="%s" target="_blank" rel="noopener noreferrer" style="color:#b45309;font-weight:600;">%s</a>',
+				esc_url( ProCatalogue::PRICING_URL ),
+				esc_html__( 'Get Pro', 'sitehelm' )
+			);
+		}
+
 		return $ours + $links;
 	}
 }

@@ -7,6 +7,7 @@ namespace SiteHelm\Tests\Unit\Admin;
 use Brain\Monkey\Functions;
 use SiteHelm\Admin\AdminMenu;
 use SiteHelm\Admin\HomeScreen;
+use SiteHelm\Admin\ProCatalogue;
 use SiteHelm\Audit\AuditRecorder;
 use SiteHelm\Storage\AuditStore;
 use SiteHelm\Tests\Doubles\AdminDied;
@@ -119,5 +120,40 @@ final class HomeScreenTest extends TestCase {
 
 		$this->assertCount( 6, $this->wpdb->queries );
 		$this->assertStringContainsString( 'recorded_at', $this->wpdb->queries[0] );
+	}
+
+	/**
+	 * While the add-on is not active, "Where to go" ends with one Pro card:
+	 * what it adds, and the address where it is bought.
+	 */
+	public function testAnUnlicensedSiteSeesTheProCard(): void {
+		$html = $this->render( 0, [ 0, 0, 0 ], [], [] );
+
+		$this->assertStringContainsString( 'SiteHelm Pro', $html );
+		$this->assertStringContainsString( ProCatalogue::PRICING_URL, $html );
+		$this->assertStringContainsString( 'See what Pro adds', $html );
+	}
+
+	/**
+	 * A licensed site is not advertised to: the card disappears entirely.
+	 */
+	public function testALicensedSiteSeesNoProCard(): void {
+		$this->wpdb->varQueue    = [ 0, 0, 0, 0 ];
+		$this->wpdb->resultQueue = [ [], [] ];
+
+		ob_start();
+		( new HomeScreen(
+			new AuditStore(),
+			new ProCatalogue(
+				static fn(): array => [
+					'state' => ProCatalogue::STATE_ACTIVE,
+					'url'   => '',
+				]
+			)
+		) )->render();
+		$html = (string) ob_get_clean();
+
+		$this->assertStringNotContainsString( ProCatalogue::PRICING_URL, $html );
+		$this->assertStringNotContainsString( 'See what Pro adds', $html );
 	}
 }

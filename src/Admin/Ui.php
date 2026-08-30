@@ -106,6 +106,7 @@ final class Ui {
 			[ 'dashicons-book', __( 'Documentation', 'sitehelm' ), 'https://github.com/Mrshahidali420/SiteHelm#readme' ],
 			[ 'dashicons-megaphone', __( "What's new", 'sitehelm' ), 'https://github.com/Mrshahidali420/SiteHelm/blob/main/CHANGELOG.md' ],
 			[ 'dashicons-sos', __( 'Report a problem', 'sitehelm' ), 'https://github.com/Mrshahidali420/SiteHelm/issues' ],
+			[ 'dashicons-groups', __( 'Community', 'sitehelm' ), AdminMenu::COMMUNITY_URL ],
 		];
 
 		printf(

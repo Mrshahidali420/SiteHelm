@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace SiteHelm\Tests\Unit\Gateway;
 
 use Brain\Monkey\Functions;
+use SiteHelm\Admin\ProCatalogue;
 use SiteHelm\Change\ChangeEngine;
 use SiteHelm\Contracts\Domain;
 use SiteHelm\Contracts\ErrorCode;
@@ -832,6 +833,100 @@ final class DispatcherTest extends TestCase {
 
 		// The same operation still answers when the switch is left alone.
 		$this->assertIsArray( $this->dispatcher->dispatch( 'system-read', [ 'operation' => 'system-environment' ], $this->makeContext() ) );
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+
+	/**
+	 * An operation the published Pro catalogue names, called on a site whose
+	 * registry does not hold it, is told about the add-on rather than being
+	 * refused like a typo. The identifier in the message is the catalogue's
+	 * own constant, never the caller's text, and the remediation carries the
+	 * one address where the add-on is bought.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+	 */
+	public function test_an_unregistered_pro_operation_names_the_add_on(): void {
+		$this->assertArrayHasKey( 'product-create', ProCatalogue::OPERATIONS );
+
+		try {
+			$this->dispatcher->dispatch( 'content-write', [ 'operation' => 'product-create' ], $this->makeContext() );
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::IntegrationUnavailable, $e->errorCode );
+			$this->assertStringContainsString( 'SiteHelm Pro', $e->getMessage() );
+			$this->assertStringContainsString( 'product-create', $e->getMessage() );
+			$this->assertStringContainsString( ProCatalogue::PRICING_URL, (string) $e->remediation );
+		}
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+
+	/**
+	 * A REGISTERED Pro operation the operator has switched off must get the
+	 * generic refusal, not the upgrade hint: the add-on is already here, so
+	 * "install and license it" would be false, and the switched-off answer
+	 * must stay indistinguishable from an unknown operation's.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+	 */
+	public function test_a_switched_off_registered_pro_operation_gets_the_generic_refusal(): void {
+		$this->assertArrayHasKey( 'product-list', ProCatalogue::OPERATIONS );
+
+		$this->registry->register(
+			new OperationDefinition(
+				id: 'product-list',
+				domain: Domain::Content,
+				mode: Mode::Read,
+				description: 'List products.',
+				inputSchema: [
+					'type'                 => 'object',
+					'properties'           => [],
+					'additionalProperties' => false,
+				],
+				outputSchema: [
+					'type'                 => 'object',
+					'properties'           => [ 'products' => [ 'type' => 'array' ] ],
+					'additionalProperties' => false,
+				],
+				schemaVersion: 1,
+				requiredCapabilities: [ 'manage_options' ],
+				risk: Risk::Low,
+				isReadOnly: true,
+				isDestructive: false,
+				isIdempotent: true,
+				previewPolicy: PreviewPolicy::NotApplicable,
+				snapshotPolicy: SnapshotPolicy::NotApplicable,
+				rollbackPolicy: RollbackPolicy::NotApplicable,
+				module: ModuleId::Woocommerce,
+				supportedVersions: [
+					'wordpress'   => '>=6.6',
+					'woocommerce' => '>=8.0',
+				],
+				example: [
+					'operation' => 'product-list',
+					'arguments' => [],
+				],
+			),
+			static fn( array $input, OperationContext $context ): array => [ 'products' => [] ]
+		);
+
+		$switches   = new OperationSwitches( static fn(): array => [ 'product-list' ] );
+		$dispatcher = new Dispatcher(
+			$this->registry,
+			new CatalogBuilder( $this->registry, $switches ),
+			new PolicyEngine(),
+			new SchemaValidator(),
+			ChangeEngine::create(),
+			$switches
+		);
+
+		try {
+			$dispatcher->dispatch( 'content-read', [ 'operation' => 'product-list' ], $this->makeContext() );
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::InvalidInput, $e->errorCode );
+			$this->assertStringNotContainsString( 'Pro', $e->getMessage() );
+			$this->assertStringNotContainsString( 'product-list', $e->getMessage() );
+		}
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 }

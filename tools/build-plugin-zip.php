@@ -58,7 +58,7 @@ if ( str_contains( (string) file_get_contents( $psr4_file ), 'SiteHelm\\\\Tests'
 	);
 }
 
-$files = [ 'sitehelm.php', 'LICENSE', 'README.md', 'CHANGELOG.md' ];
+$files = [ 'sitehelm.php', 'LICENSE', 'README.md', 'CHANGELOG.md', 'readme.txt' ];
 
 // assets/ carries the admin console's stylesheet and script. Omitting it does
 // not break the plugin, which is exactly why it has to be listed deliberately:

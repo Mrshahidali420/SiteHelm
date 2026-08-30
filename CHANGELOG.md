@@ -11,6 +11,23 @@ an operation behaves.
 
 ## [Unreleased]
 
+## [0.8.0] — 2026-08-30
+
+### Added
+- **Updates straight from GitHub** — the plugin now answers WordPress's own update check
+  from its GitHub releases, so a new version appears on the Plugins screen and installs
+  with one click like any other plugin. Only the built release zip is ever offered, the
+  lookup is cached for twelve hours, and a failed lookup never slows an admin page down.
+  The console also says plainly when the installed version is behind the latest release.
+- **The console tells you when Pro would have helped** — calling a Pro operation without a
+  licence now refuses with a message that names SiteHelm Pro and where to get it, instead
+  of a bare "unavailable". The Home screen carries a Pro card, the Plugins row a Get Pro
+  link, and the menu an Upgrade entry — all of which disappear once a licence is active.
+- **Community** — a console link and help-menu entry to the SiteHelm community group, for
+  questions that deserve a faster answer than an issue tracker gives.
+- **WordPress.org listing files** — `readme.txt` in the directory format, with banners,
+  icons and console screenshots under `assets-wporg/`, ahead of the directory submission.
+
 ## [0.7.0] — 2026-08-29
 
 ### Changed

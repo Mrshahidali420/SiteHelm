@@ -38,6 +38,13 @@ final class ProCatalogue {
 	public const ADDON_SLUG = 'sitehelm-pro';
 
 	/**
+	 * Where the add-on is bought. Named here because more than the console
+	 * says it: the gateway's refusal for a Pro operation points an agent at
+	 * the same address the Tools tab points an owner at.
+	 */
+	public const PRICING_URL = 'https://wpsitehelm.com/pricing';
+
+	/**
 	 * The WooCommerce version the add-on's commerce operations require.
 	 *
 	 * Declared here rather than in the add-on because the free console has to

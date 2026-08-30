@@ -1395,8 +1395,9 @@ bounds it.
 `defined('SITEHELM_PLUGIN_FILE')`) filters `plugin_action_links_<basename>` and
 `PluginLinks::add()` prepends `sitehelm-connect` ("Connect" → `?page=sitehelm`) and
 `sitehelm-status` ("Status" → `?page=sitehelm-status`) to the row, only when the viewer
-holds `AdminMenu::CAPABILITY`; otherwise the row is returned untouched. Pure function,
-tested directly.
+holds `AdminMenu::CAPABILITY`; otherwise the row is returned untouched. While the site is
+not Pro-licensed it also appends an amber "Get Pro" link (`ProCatalogue::PRICING_URL`,
+new tab) after the row's own links. Pure function, tested directly.
 
 ---
 
@@ -1442,7 +1443,13 @@ edit the same option.
   optional reader callable (tests inject `static fn() => [...]`).
 - **Enforcement** — `Dispatcher` takes the switches as its sixth constructor argument and
   refuses a switched-off operation with the **same `InvalidInput` message as an unknown
-  operation**, so a client cannot tell the two apart. `CatalogBuilder($registry, $switches)`
+  operation**, so a client cannot tell the two apart. One deliberate exception sits before
+  both: an operation the registry does not hold whose id is a key of
+  `Admin\ProCatalogue::OPERATIONS` refuses with `IntegrationUnavailable`, naming SiteHelm
+  Pro and pointing the remediation at `ProCatalogue::PRICING_URL`. The ids are this
+  plugin's own published constants, so nothing untrusted is echoed; a **registered** Pro
+  operation the operator switched off still gets the generic answer, because the add-on is
+  already there and "install it" would be false. `CatalogBuilder($registry, $switches)`
   omits switched-off operations from the catalogue. `Diagnostics\OperationSchema` refuses a
   switched-off id with its unknown-name answer too (second ctor arg, defaults to reading the
   option itself because modules are built with no arguments by `IntegrationDirectory`).
@@ -1519,12 +1526,24 @@ change; labels, slugs and one new screen did.
 | History | `PAGE_ACTIVITY` = `sitehelm-activity` | `ActivityScreen` |
 | Health | `PAGE_STATUS` = `sitehelm-status` | `StatusScreen` |
 
-- **Home** (`HomeScreen($store = new AuditStore())`, `RECENT` = 5, `WINDOW` = 7 days) runs
+After the tab loop, `add_pages()` calls `add_outward_links()`: two `add_submenu_page`
+entries whose slug is a full URL and whose callback is omitted, which WordPress renders
+as plain links — "Community" (`AdminMenu::COMMUNITY_URL`, the Facebook group, always)
+and an orange "Upgrade to Pro" (`ProCatalogue::PRICING_URL`, only while
+`(new ProCatalogue())->probe()['state']` is not `STATE_ACTIVE` — a menu that keeps
+selling to someone who already paid reads as not knowing they paid). `admin_head`
+prints the orange style, `admin_footer` a two-line script adding
+`target="_blank" rel="noopener noreferrer"` to both.
+
+- **Home** (`HomeScreen($store = new AuditStore(), $pro = new ProCatalogue())`, `RECENT` = 5,
+  `WINDOW` = 7 days) runs
   six `AuditStore` queries in a fixed order — this-week count, failures this week, restores
   this week, … then the recent sample and the "lately" list — and says it in one sentence:
   "All good" / "N changes this week, nothing failed." or "N things could not be done this
   week", three `.sitehelm-statcard` tiles, a `.sitehelm-feed` of the last five sentences,
-  and a "Connect an app" call to action when the log is empty. Tests drive it with
+  and a "Connect an app" call to action when the log is empty. While the injected
+  `ProCatalogue` does not probe `STATE_ACTIVE`, a last card sells Pro by operation count
+  ("See what Pro adds" → `ProCatalogue::PRICING_URL`); a licensed site never sees it. Tests drive it with
   `FakeWpdb` queues in exactly that order (`varQueue` then `resultQueue`).
 - **`Admin\Phrasebook`** turns an audit row into a sentence: `sentence(row)` =
   client + verb (past tense; "could not …" on failure, "started to …" on pending,
@@ -2085,7 +2104,7 @@ must keep refusing it.
 - Console shell (`Ui::app_open`): `.wrap.sitehelm-app` → srt `<h1>` → `.sitehelm-appbar`
   (brand mark/title/version pill; actions = `.sitehelm-endpoint` copy row +
   `.sitehelm-helpmenu` "Get help" dropdown that opens on `:hover`/`:focus-within`, links to
-  README, CHANGELOG, issues) → `.sitehelm-appnav-wrap` tab bar → `<div class="sitehelm-content">`
+  README, CHANGELOG, issues, the Community group) → `.sitehelm-appnav-wrap` tab bar → `<div class="sitehelm-content">`
   white panel (24px, radius-lg) that `app_close()` closes together with the wrap. Stat tiles
   (`Ui::stat_grid`) render value **above** label in `.sitehelm-statcard__body` beside a 52px
   tinted icon, inside one gray `.sitehelm-statgrid` strip.
@@ -2221,3 +2240,27 @@ permission level an owner set for the builder governs them and no new dispatcher
   Elementor module is a free module. The Pro tally is 40; the free registry stays at 99.
 - **None of them is `Risk::Extreme`.** That tier belongs to the Code module alone, and a
   test in this repo enforces it.
+
+## 43. GitHub updates — how an install from GitHub stays current
+
+`sitehelm.php` carries `Update URI: https://github.com/Mrshahidali420/SiteHelm`, which
+makes core route this plugin's update question to the `update_plugins_github.com`
+filter instead of wordpress.org. `Admin\GithubUpdates` answers it:
+
+- **The offer** reads `releases/latest` from the GitHub API and offers ONLY the
+  release's own `sitehelm-<version>.zip` asset. GitHub's automatic source archives
+  unpack to `SiteHelm-<tag>/`, which WordPress installs BESIDE `sitehelm/` — two
+  half-broken copies — so a release without the built asset is silently not an
+  update. `tools/build-plugin-zip.php` writes entries under `sitehelm/`, which is
+  what makes the asset installable over the live folder.
+- **Both outcomes are cached** in the `sitehelm_github_release` transient: a found
+  release for twelve hours, a failed lookup for one (as the string `"miss"`). Core
+  refreshes the update transient on ordinary admin loads, so an uncached failure
+  would turn a GitHub outage into wp-admin latency.
+- **The console notice** (`admin_notices`, console screens only, `update_plugins`
+  capability) reads ONLY the cache and never fetches — core's own check fills it.
+- **Registration is outside `is_admin()`** in `Bootstrap\Plugin`, because core also
+  refreshes updates from cron and a headless site would otherwise stay behind.
+- **WP.org caveat:** if the plugin is ever accepted into the directory, the
+  `Update URI` header must be dropped from the zip submitted there — the header is
+  precisely what stops wordpress.org serving updates for the slug.
