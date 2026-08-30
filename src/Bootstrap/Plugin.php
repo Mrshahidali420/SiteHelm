@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace SiteHelm\Bootstrap;
 
 use SiteHelm\Admin\AdminMenu;
+use SiteHelm\Admin\GithubUpdates;
 use SiteHelm\Change\ChangeEngine;
 use SiteHelm\Contracts\IntegrationModule;
 use SiteHelm\Gateway\ContextFactory;
@@ -110,6 +111,11 @@ final class Plugin {
 		if ( is_admin() ) {
 			( new AdminMenu( $registry, $module_health, $dispatcher, $switches ) )->register();
 		}
+
+		// Outside is_admin(): core also refreshes the update transient from
+		// cron, and an updater bound only to admin visits would leave a
+		// headless site permanently behind.
+		( new GithubUpdates() )->register();
 
 		// The redirect router is the only part of this plugin that serves ordinary
 		// front-end traffic, and it is bound OUTSIDE the is_admin() branch above

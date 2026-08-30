@@ -8,6 +8,7 @@
  * Author:            SiteHelm
  * License:           GPL-2.0-or-later
  * Text Domain:       sitehelm
+ * Update URI:        https://github.com/Mrshahidali420/SiteHelm
  *
  * @package SiteHelm
  */

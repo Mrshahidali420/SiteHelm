@@ -2240,3 +2240,27 @@ permission level an owner set for the builder governs them and no new dispatcher
   Elementor module is a free module. The Pro tally is 40; the free registry stays at 99.
 - **None of them is `Risk::Extreme`.** That tier belongs to the Code module alone, and a
   test in this repo enforces it.
+
+## 43. GitHub updates — how an install from GitHub stays current
+
+`sitehelm.php` carries `Update URI: https://github.com/Mrshahidali420/SiteHelm`, which
+makes core route this plugin's update question to the `update_plugins_github.com`
+filter instead of wordpress.org. `Admin\GithubUpdates` answers it:
+
+- **The offer** reads `releases/latest` from the GitHub API and offers ONLY the
+  release's own `sitehelm-<version>.zip` asset. GitHub's automatic source archives
+  unpack to `SiteHelm-<tag>/`, which WordPress installs BESIDE `sitehelm/` — two
+  half-broken copies — so a release without the built asset is silently not an
+  update. `tools/build-plugin-zip.php` writes entries under `sitehelm/`, which is
+  what makes the asset installable over the live folder.
+- **Both outcomes are cached** in the `sitehelm_github_release` transient: a found
+  release for twelve hours, a failed lookup for one (as the string `"miss"`). Core
+  refreshes the update transient on ordinary admin loads, so an uncached failure
+  would turn a GitHub outage into wp-admin latency.
+- **The console notice** (`admin_notices`, console screens only, `update_plugins`
+  capability) reads ONLY the cache and never fetches — core's own check fills it.
+- **Registration is outside `is_admin()`** in `Bootstrap\Plugin`, because core also
+  refreshes updates from cron and a headless site would otherwise stay behind.
+- **WP.org caveat:** if the plugin is ever accepted into the directory, the
+  `Update URI` header must be dropped from the zip submitted there — the header is
+  precisely what stops wordpress.org serving updates for the slug.
