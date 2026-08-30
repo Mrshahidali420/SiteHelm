@@ -14,6 +14,7 @@ use SiteHelm\Modules\Acf\AcfModule;
 use SiteHelm\Modules\Core\CoreModule;
 use SiteHelm\Modules\Diagnostics\DiagnosticsModule;
 use SiteHelm\Modules\Elementor\ElementorModule;
+use SiteHelm\Modules\Extensions\ExtensionsModule;
 use SiteHelm\Modules\Forms\FormsModule;
 use SiteHelm\Modules\Media\MediaModule;
 use SiteHelm\Modules\Menus\MenusModule;
@@ -67,6 +68,7 @@ final class IntegrationDirectory {
 		MetaboxModule::class,
 		SeoModule::class,
 		FormsModule::class,
+		ExtensionsModule::class,
 	];
 
 	/**

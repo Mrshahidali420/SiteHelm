@@ -35,6 +35,29 @@ use SiteHelm\Tests\TestCase;
  * that named the modules itself would exempt any module added later, which is
  * precisely the case it exists to catch.
  *
+ * REQ-0085 NARROWED REQ-0053/REQ-0055 A SECOND TIME, in the same shape and for
+ * the same reason the Code module narrowed them the first time: installing a
+ * plugin or a theme adds executable PHP to the site, which is why
+ * `install_plugins` and `install_themes` sat in the execution list below from
+ * the day it was written. They are no longer there. What replaced the blanket
+ * exclusion is narrower than it, not weaker:
+ *
+ * - the two installs ship ONLY in the Pro add-on, which registers through
+ *   `sitehelm_register_operations` and never through the boot table this file
+ *   walks, so the free plugin still has no path from an agent to new code;
+ * - they take a wp.org slug and nothing else — there is no `url`, `package`,
+ *   `source`, `path` or `zip` property on either input schema, so the bytes
+ *   always come from wordpress.org's own API and never from an address a caller
+ *   chose;
+ * - what they install is stored DEACTIVATED, so installing is not running.
+ *
+ * The narrowing is pinned twice below: once by the survivor assertion, which
+ * proves the six capabilities that were never narrowed are still absent from the
+ * allowlist, and once by the narrowing assertion, which proves no operation the
+ * FREE plugin registers declares either install capability. Widening the
+ * allowlist was the deliberate act; letting a free operation reach the new grant
+ * would not be.
+ *
  * REQ-0056 (irreversible permanent deletion) IS DELIBERATELY NOT HERE. It is
  * already unreachable rather than merely absent: OperationDefinition's
  * constructor refuses any definition declaring `isDestructive` without preview,
@@ -80,6 +103,13 @@ final class ExcludedCapabilityTest extends TestCase {
 	 * requirements describe, so an operation declaring one would not need to be
 	 * named `system-php-eval` to be one.
 	 *
+	 * SIX, NOT EIGHT: `install_plugins` and `install_themes` were removed by
+	 * REQ-0085 under the narrowing the class docblock sets out. The six that
+	 * remain have no narrowing in view — each of them hands over a text editor
+	 * over the site's own PHP, the ability to replace WordPress itself, or an
+	 * upload path with no type checking, and none of those has a version that
+	 * takes a wordpress.org slug and stores the result inert.
+	 *
 	 * @var string[]
 	 */
 	private const EXECUTION_CAPABILITIES = [
@@ -87,10 +117,22 @@ final class ExcludedCapabilityTest extends TestCase {
 		'edit_files',
 		'edit_plugins',
 		'edit_themes',
-		'install_plugins',
-		'install_themes',
 		'update_core',
 		'unfiltered_upload',
+	];
+
+	/**
+	 * The capabilities REQ-0085 removed from the list above.
+	 *
+	 * Named here rather than written into the assertion so the narrowing has one
+	 * definition, and so a later requirement proposing to widen it again has to
+	 * come through this constant.
+	 *
+	 * @var string[]
+	 */
+	private const NARROWED_INSTALL_CAPABILITIES = [
+		'install_plugins',
+		'install_themes',
 	];
 
 	/**
@@ -178,6 +220,63 @@ final class ExcludedCapabilityTest extends TestCase {
 			[],
 			array_values( array_intersect( $allowed, self::EXECUTION_CAPABILITIES ) ),
 			'A capability granting arbitrary code or file access makes every other capability check on the operation decorative, and puts REQ-0053 and REQ-0055 one operation away rather than one design away.'
+		);
+	}
+
+	/**
+	 * REQ-0085's survivors: the six that were not narrowed are still excluded.
+	 *
+	 * The assertion above is a set intersection, and a set intersection against a
+	 * shrinking list gets quieter as the list shrinks — removing two entries from
+	 * `EXECUTION_CAPABILITIES` is exactly what REQ-0085 did, and removing the
+	 * other six would read the same way in a test report. This names them, so the
+	 * next removal has to be typed twice and argued for once.
+	 */
+	public function test_the_six_capabilities_the_narrowing_did_not_reach_are_still_excluded(): void {
+		$allowed = ( new ReflectionClass( OperationDefinition::class ) )->getConstant( 'ALLOWED_CAPABILITIES' );
+
+		$this->assertIsArray( $allowed );
+
+		$survivors = [ 'unfiltered_php', 'edit_files', 'edit_plugins', 'edit_themes', 'update_core', 'unfiltered_upload' ];
+
+		$this->assertSame(
+			$survivors,
+			self::EXECUTION_CAPABILITIES,
+			'REQ-0085 narrowed the install pair and nothing else. A shorter list here is a wider plugin, whatever the assertions below report.'
+		);
+
+		foreach ( $survivors as $capability ) {
+			$this->assertNotContains(
+				$capability,
+				$allowed,
+				"REQ-0053 and REQ-0055 exclude {$capability} permanently, and REQ-0085's narrowing did not reach it: it has no wordpress.org-slug-only form and nothing it installs can be stored inert."
+			);
+		}
+	}
+
+	/**
+	 * REQ-0085's narrowing: the free plugin still declares neither install
+	 * capability.
+	 *
+	 * `ALLOWED_CAPABILITIES` now admits both, so the constructor will no longer
+	 * refuse an operation asking for one — the guarantee moved from "cannot be
+	 * built" to "is not built here". The add-on's two installs register through
+	 * `sitehelm_register_operations`, which this sweep does not walk, so a hit
+	 * here means a free operation acquired the grant.
+	 */
+	public function test_no_free_operation_declares_an_install_capability(): void {
+		$offenders = [];
+
+		foreach ( $this->everyDefinition() as $id => $definition ) {
+			foreach ( array_intersect( $definition->requiredCapabilities, self::NARROWED_INSTALL_CAPABILITIES ) as $capability ) {
+				$offenders[] = $id . ' (' . $capability . ')';
+			}
+		}
+
+		$this->assertSame(
+			[],
+			$offenders,
+			'Installing a plugin or a theme puts new PHP on the site, which is why it ships only in the Pro add-on behind a licence check. A free operation holding the grant is REQ-0053 back through the side door.'
 		);
 	}
 

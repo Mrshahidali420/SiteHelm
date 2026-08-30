@@ -59,6 +59,28 @@ final class OperationDefinition {
 	 * primitive, not a meta capability, so it does not belong in
 	 * PolicyEngine::META_CAPABILITY_MAP. A narrowing test confines it to that one
 	 * operation.
+	 *
+	 * `activate_plugins`, `update_plugins`, `update_themes`, `switch_themes`,
+	 * `install_plugins` and `install_themes` are REQ-0085's six, and like the
+	 * commerce pair no built-in operation names any of them: the free plugin
+	 * only LISTS what is installed, and every operation that changes a plugin or
+	 * a theme ships in the SiteHelm Pro add-on. All six are site-wide WordPress
+	 * primitives rather than meta capabilities, so none belongs in
+	 * PolicyEngine::META_CAPABILITY_MAP, and a narrowing test in this repository
+	 * asserts that no free operation declares one.
+	 *
+	 * THE INSTALL PAIR IS A DELIBERATE NARROWING OF THE REQ-0053/REQ-0055
+	 * EXCLUSION, not an oversight in it. `install_plugins` and `install_themes`
+	 * put new code on the filesystem, which is why they sat in
+	 * ExcludedCapabilityTest's execution list until now. What admits them is the
+	 * same shape of guarded exception REQ-0053 already took for the Pro Code
+	 * module: an install resolves a WordPress.org slug through `plugins_api()`
+	 * or `themes_api()`, fetches only the `download_link` that API returns, and
+	 * stores the result deactivated. There is no argument that accepts a URL, a
+	 * zip or a filesystem path — the input schema has no such property to fill.
+	 * `unfiltered_php`, `edit_files`, `edit_plugins`, `edit_themes`,
+	 * `update_core` and `unfiltered_upload` stay permanently excluded, and
+	 * ExcludedCapabilityTest keeps them out of this list.
 	 */
 	private const ALLOWED_CAPABILITIES = [
 		'read',
@@ -76,6 +98,12 @@ final class OperationDefinition {
 		'edit_products',
 		'manage_woocommerce',
 		'unfiltered_html',
+		'activate_plugins',
+		'update_plugins',
+		'update_themes',
+		'switch_themes',
+		'install_plugins',
+		'install_themes',
 	];
 
 	/**

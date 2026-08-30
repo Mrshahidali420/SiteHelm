@@ -399,6 +399,14 @@ final class ModulesScreen {
 				return 'Contact Form 7 ' . FormsPresence::CF7_MIN_VERSION;
 			case ModuleId::Woocommerce:
 				return 'WooCommerce ' . ProCatalogue::WOOCOMMERCE_MIN_VERSION;
+
+			/*
+			 * ModuleId::Extensions is deliberately absent, and falls to the
+			 * default. What it reads is WordPress's own plugin and theme
+			 * inventories, so there is no plugin to name and no floor to print:
+			 * a requirement line for it would tell an owner to install
+			 * something in order to list what they have installed.
+			 */
 			default:
 				return '';
 		}
@@ -489,6 +497,8 @@ final class ModulesScreen {
 				return __( 'SEO metadata', 'sitehelm' );
 			case ModuleId::Forms:
 				return __( 'Forms', 'sitehelm' );
+			case ModuleId::Extensions:
+				return __( 'Plugins & themes', 'sitehelm' );
 			case ModuleId::Woocommerce:
 				return __( 'WooCommerce', 'sitehelm' );
 			case ModuleId::Code:
@@ -523,6 +533,8 @@ final class ModulesScreen {
 				return __( 'Read and set a post\'s search-engine title, description and visibility, in Yoast SEO or Rank Math.', 'sitehelm' );
 			case ModuleId::Forms:
 				return __( 'List the site\'s forms and read each form\'s fields, embed shortcode and recent entries.', 'sitehelm' );
+			case ModuleId::Extensions:
+				return __( 'List the plugins and themes this site has installed and which of them have an update waiting. Activating, updating, switching and installing come with SiteHelm Pro.', 'sitehelm' );
 			case ModuleId::Woocommerce:
 				return __( 'Read and edit products, prices, stock and categories, and read orders and customers. Orders and customers are never changed.', 'sitehelm' );
 			case ModuleId::Code:

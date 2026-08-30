@@ -140,9 +140,15 @@ final class OperationDefinitionTest extends TestCase {
 		);
 	}
 
+	/**
+	 * `unfiltered_php` rather than `install_plugins`, which this test used until
+	 * REQ-0085 admitted the install pair for the add-on's use. The example has to
+	 * be a capability the allowlist will never carry, or the test stops being
+	 * about the allowlist and starts being a countdown to the next widening.
+	 */
 	public function test_rejects_unknown_capability(): void {
 		$this->expectException( InvalidArgumentException::class );
-		$this->makeDefinition( [ 'requiredCapabilities' => [ 'install_plugins' ] ] );
+		$this->makeDefinition( [ 'requiredCapabilities' => [ 'unfiltered_php' ] ] );
 	}
 
 	public function test_rejects_schema_version_below_one(): void {

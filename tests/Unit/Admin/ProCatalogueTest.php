@@ -105,7 +105,7 @@ final class ProCatalogueTest extends TestCase {
 		$this->assertSame(
 			[
 				'content-read'  => [ 'product-list', 'product-get', 'product-category-list', 'order-list', 'order-get', 'customer-list', 'content-seo-schema-get' ],
-				'content-write' => [ 'product-create', 'product-update', 'seo-settings-set', 'content-seo-bulk-set', 'content-seo-schema-set', 'content-seo-audit-fix', 'code-snippet-write', 'code-snippet-activate', 'code-snippet-confirm', 'code-snippet-deactivate', 'code-snippet-delete', 'code-css-write', 'code-js-write', 'code-safe-mode-set', 'code-quarantine-clear' ],
+				'content-write' => [ 'product-create', 'product-update', 'seo-settings-set', 'content-seo-bulk-set', 'content-seo-schema-set', 'content-seo-audit-fix', 'code-snippet-write', 'code-snippet-activate', 'code-snippet-confirm', 'code-snippet-deactivate', 'code-snippet-delete', 'code-css-write', 'code-js-write', 'code-safe-mode-set', 'code-quarantine-clear', 'plugin-activate', 'plugin-deactivate', 'plugin-update', 'theme-switch', 'theme-update', 'plugin-install', 'theme-install' ],
 				'system-read'   => [ 'seo-404-log-list', 'seo-redirection-list', 'code-host-list', 'code-snippet-list', 'code-snippet-get', 'code-safe-mode-token', 'code-quarantine-list', 'code-health-check', 'code-scaffold-widget', 'code-scaffold-block', 'code-scaffold-theme-template' ],
 				'elementor-read'  => [ 'elementor-dynamic-tag-list', 'elementor-brand-kit-list' ],
 				'elementor-write' => [ 'elementor-popup-create', 'elementor-popup-settings-set', 'elementor-dynamic-tag-set', 'elementor-brand-kit-apply' ],
@@ -122,7 +122,7 @@ final class ProCatalogueTest extends TestCase {
 		}
 
 		$this->assertSame( [], ( new ProCatalogue() )->missing( $registry ) );
-		$this->assertSame( 40, ( new ProCatalogue() )->registered_count( $registry ) );
+		$this->assertSame( 47, ( new ProCatalogue() )->registered_count( $registry ) );
 	}
 
 	/**
@@ -263,6 +263,60 @@ final class ProCatalogueTest extends TestCase {
 			$code,
 			'The Code module ships exactly these eighteen operations. One more in the catalogue than in the add-on advertises a way to run code that does not exist.'
 		);
+	}
+
+	/**
+	 * REQ-0085's seven writes, described in the free console before any of them
+	 * exists.
+	 *
+	 * Same reason as the commerce and code lists above, with one that belongs to
+	 * this module alone: `ModuleId::Extensions` is a HYBRID, so the free plugin
+	 * registers two reads under it and the catalogue must describe the writes and
+	 * only the writes. An entry here that duplicated `system-plugin-list` would
+	 * lock a free operation behind a Pro badge on the Tools tab.
+	 */
+	public function testTheExtensionsWritesAreCataloguedAgainstTheExtensionsModule(): void {
+		$expected = [
+			'plugin-activate'   => 'content-write',
+			'plugin-deactivate' => 'content-write',
+			'plugin-update'     => 'content-write',
+			'theme-switch'      => 'content-write',
+			'theme-update'      => 'content-write',
+			'plugin-install'    => 'content-write',
+			'theme-install'     => 'content-write',
+		];
+
+		foreach ( $expected as $id => $dispatcher ) {
+			$this->assertArrayHasKey( $id, ProCatalogue::OPERATIONS, "The add-on registers '{$id}'; the free catalogue must describe it." );
+			$this->assertSame( $dispatcher, ProCatalogue::OPERATIONS[ $id ]['dispatcher'], $id );
+			$this->assertSame( ModuleId::Extensions, ProCatalogue::OPERATIONS[ $id ]['module'], $id );
+			$this->assertFalse( ProCatalogue::OPERATIONS[ $id ]['read'], $id );
+		}
+
+		$extensions = array_keys(
+			array_filter(
+				ProCatalogue::OPERATIONS,
+				static fn( array $entry ): bool => ModuleId::Extensions === $entry['module']
+			)
+		);
+
+		$this->assertSame(
+			array_keys( $expected ),
+			$extensions,
+			'The add-on ships exactly these seven plugin and theme writes. The module\'s two reads are free and must not appear here.'
+		);
+	}
+
+	/**
+	 * The hybrid module is not add-on-only.
+	 *
+	 * `ADDON_ONLY_MODULES` drives the card text that tells an owner a module is
+	 * waiting on the add-on. Extensions is not waiting on anything — it lists
+	 * plugins and themes on a site that has never heard of Pro — so a card
+	 * saying otherwise would misreport a working module as unavailable.
+	 */
+	public function testTheExtensionsModuleIsNotAddOnOnly(): void {
+		$this->assertNotContains( ModuleId::Extensions, ProCatalogue::ADDON_ONLY_MODULES );
 	}
 
 	/**
