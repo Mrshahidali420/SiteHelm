@@ -4,7 +4,7 @@ Tags: mcp, ai agent, automation, elementor, rest api
 Requires at least: 6.6
 Tested up to: 7.1
 Requires PHP: 8.1
-Stable tag: 0.8.0
+Stable tag: 0.9.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -12,7 +12,7 @@ Let an AI agent run your WordPress site safely: every write is previewed, snapsh
 
 == Description ==
 
-SiteHelm connects your WordPress site to any AI agent that speaks MCP (the Model Context Protocol) — Claude Desktop, Claude Code, and a growing number of editors and agent frameworks. The agent gets a catalogue of named operations covering content, media, menus, Elementor, custom fields, SEO, forms, comments, users and site settings. It does not get PHP, SQL or a shell — at any price.
+SiteHelm connects your WordPress site to any AI agent that speaks MCP (the Model Context Protocol) — Claude Desktop, Claude Code, and a growing number of editors and agent frameworks. The agent gets a catalogue of named operations covering content, media, menus, Elementor, custom fields, SEO, forms, comments, users, plugins and themes, and site settings. It does not get PHP, SQL or a shell — at any price.
 
 **Five gates on every write, none of them skippable by the caller:**
 
@@ -22,7 +22,7 @@ SiteHelm connects your WordPress site to any AI agent that speaks MCP (the Model
 4. **Verification** — the result is read back and compared against what the preview promised. A mismatch is reported as a failure, not a success.
 5. **Rollback** — anything recorded can be rolled back from the admin console.
 
-**What the plugin deliberately excludes:** there is no eval, no snippet store, no theme-file editor, no SQL passthrough and no WP-CLI passthrough. There is no permanent delete in the operation surface — a trash operation moves an item to the bin and declares that rollback is required.
+**What the plugin deliberately excludes:** there is no eval, no snippet store, no theme-file editor, no SQL passthrough and no WP-CLI passthrough. Installing a plugin or theme is a Pro operation and reaches WordPress.org and nowhere else: it takes a WordPress.org slug and nothing else, there is no argument anywhere in the plugin that accepts a URL, a zip or a file path, and what lands is stored deactivated. There is no permanent delete in the operation surface — a trash operation moves an item to the bin and declares that rollback is required.
 
 **You stay in control from wp-admin:**
 
@@ -34,9 +34,9 @@ SiteHelm connects your WordPress site to any AI agent that speaks MCP (the Model
 
 **Integrations** — where the plugin is active, SiteHelm speaks its API in-process: Elementor, ACF, Meta Box, Contact Form 7, and SEO metadata across seven providers in a defined precedence order. If an integration is missing, the operation refuses with a message naming what to activate.
 
-**Privacy** — SiteHelm contains no AI model and sends no content to any AI service. Authentication is a WordPress Application Password, so nothing about your site is stored anywhere else. The plugin makes no outbound call except the update check against its GitHub releases, the licence check for the optional Pro add-on, and the media-import fetch you explicitly request — and that fetch is guarded against reaching your internal network. No content, no URLs, nothing about your site travels with any of them.
+**Privacy** — SiteHelm contains no AI model and sends no content to any AI service. Authentication is a WordPress Application Password, so nothing about your site is stored anywhere else. The plugin makes no outbound call except the update check against its GitHub releases, the licence check for the optional Pro add-on, the WordPress.org lookup and download the optional Pro add-on makes when you ask it to install a plugin or theme, and the media-import fetch you explicitly request — and that fetch is guarded against reaching your internal network. No content, no URLs, nothing about your site travels with any of them.
 
-The free plugin is the whole safety model, permanently. An optional Pro add-on (sold separately via Freemius) adds operations for work that spans a whole site or a whole shop — bulk edits, WooCommerce, deep SEO, Elementor Pro surfaces and a code module. Pro never takes a free feature away, and the plugin is open source, so that is checkable rather than promised.
+The free plugin is the whole safety model, permanently. An optional Pro add-on (sold separately via Freemius) adds operations for work that spans a whole site or a whole shop — bulk edits, WooCommerce, deep SEO, Elementor Pro surfaces, plugin and theme management, and a code module. Pro never takes a free feature away, and the plugin is open source, so that is checkable rather than promised.
 
 == Installation ==
 
@@ -88,6 +88,10 @@ The refusal names which error code applies and what to do about it, and says how
 
 The full changelog for every release is maintained at
 https://github.com/Mrshahidali420/SiteHelm/blob/main/CHANGELOG.md
+
+= 0.9.0 =
+* Two new reads: system-plugin-list and system-theme-list report every installed plugin and theme, versions, which are active, and which have an update waiting — read from WordPress's own last check, never triggering a new one.
+* Acting on them — activate, deactivate, switch theme, update, install — is SiteHelm Pro 0.7.0. Installs take a WordPress.org slug and nothing else, and what lands is stored deactivated.
 
 = 0.8.0 =
 * Updates now come straight from the plugin's GitHub releases: new versions appear on the Plugins screen and install with one click.

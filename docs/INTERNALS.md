@@ -229,12 +229,25 @@ The checklist above still applies EXCEPT steps 3 and 4 — there is no class to 
   payload that passed through it can be conformed to directly.
 
 - **`ALLOWED_CAPABILITIES` (line ~41) is where three requirements are excluded, not
-  just where typos are caught.** The twelve entries are the whole vocabulary an
+  just where typos are caught.** The twenty-one entries are the whole vocabulary an
   operation may ask for; anything else throws at construction. REQ-0053 (arbitrary
   PHP), REQ-0054 (unrestricted SQL) and REQ-0055 (filesystem access) are enforced by
   what the list omits — `unfiltered_php`, `edit_files`, `edit_plugins`, `edit_themes`,
-  `install_plugins`, `install_themes`, `update_core`, `unfiltered_upload`. Adding any
-  of them is a one-line edit with a large blast radius, and
+  `update_core`, `unfiltered_upload`. Those six are permanent: no operation, free or
+  Pro, may ever ask for one, and `ExcludedCapabilityTest` carries a survivor test per
+  capability so removing one from the exclusion fails.
+- **`install_plugins` and `install_themes` are the one narrowing (REQ-0085), and what
+  replaced the blanket exclusion is narrower than it, not wider.** They were removed
+  from `ExcludedCapabilityTest::EXECUTION_CAPABILITIES` deliberately, argued in that
+  file's docblock, and what they buy is not arbitrary installation: the two operations
+  that declare them take a WordPress.org slug and nothing else, they are registered only
+  by the Pro add-on, and what they install is stored deactivated. There is no `url`,
+  `package`, `source`, `path` or `zip` property in either input schema, and a test
+  sweeps the schemas to prove those names appear nowhere; the only address ever fetched
+  is the `download_link` `plugins_api()`/`themes_api()` returns, asserted to begin
+  `https://downloads.wordpress.org/`. `ReservedCapabilityTest` pins the other half: no
+  **free** operation may declare either grant. Adding any capability here is a one-line
+  edit with a large blast radius, and
   `tests/Unit/Registry/ExcludedCapabilityTest.php` is what makes it visible. That file
   also sweeps every registered id for `php` / `eval` / `exec` / `shell` / `sql`
   segments, walking `Plugin::MODULE_CLASSES` so a module added later is covered
@@ -2237,7 +2250,7 @@ permission level an owner set for the builder governs them and no new dispatcher
   than echoing an id that points at nothing.
 - **Free-side surface.** `ProCatalogue::OPERATIONS` carries all six so the console lists
   them locked on a site without the add-on; `ADDON_ONLY_MODULES` is unchanged, because the
-  Elementor module is a free module. The Pro tally is 40; the free registry stays at 99.
+  Elementor module is a free module. The Pro tally at the time was 40 and the free registry 99; both moved with REQ-0085 — see section 44.
 - **None of them is `Risk::Extreme`.** That tier belongs to the Code module alone, and a
   test in this repo enforces it.
 
@@ -2264,3 +2277,71 @@ filter instead of wordpress.org. `Admin\GithubUpdates` answers it:
 - **WP.org caveat:** if the plugin is ever accepted into the directory, the
   `Update URI` header must be dropped from the zip submitted there — the header is
   precisely what stops wordpress.org serving updates for the slug.
+
+## 44. Plugins & themes (REQ-0085) — the inventory free, the writes Pro
+
+`ModuleId::Extensions` ("Plugins & Themes") is the twelfth module and the third built in
+the **hybrid** shape SEO and Forms established: the free plugin ships the reads, the Pro
+add-on registers the writes into the same module through `sitehelm_register_operations`.
+It is therefore NOT in `ProCatalogue::ADDON_ONLY_MODULES` — it does something on a site
+with no add-on — and the console lists the seven writes as locked rather than hiding them.
+
+- **The free half is two reads, and neither of them asks wordpress.org anything.**
+  `system-plugin-list` and `system-theme-list` (both `system-read`, both
+  `manage_options`, both `Risk::Low`) report the inventory with an update column read
+  **only** from WordPress's own `update_plugins` / `update_themes` transient — that
+  transient is core's cache of its last check, so the column carries an `updateChecked`
+  timestamp and is honest about being exactly as fresh as core made it. A read never
+  triggers a check. The plugin listing also carries `networkActivated`, because a single
+  site does not own that decision and the Pro writes refuse on it.
+- **The module depends on WordPress and nothing else,** so it is absent from
+  `OperationDefinition::PLUGIN_BACKED_MODULES` and its health is two states, not four:
+  Active when the plugin's own storage is ready, Inactive when it is not. A request in
+  which core's inventory functions are not loaded is a fact about the request, not about
+  the site, so each operation refuses it in its own guard (`ExtensionsPresence`) rather
+  than the module reporting the whole surface inactive.
+- **The Pro half is seven `content-write` operations** — `plugin-activate` (High),
+  `plugin-deactivate` (Medium), `plugin-update` (High), `theme-switch` (High),
+  `theme-update` (High), `plugin-install` (High), `theme-install` (High) — taking the
+  free registry to 101 and the Pro tally to 47, 148 between them. They ride
+  `content-write` for the same frozen-dispatcher reason `code-snippet-write` does: the
+  eleven dispatchers are a contract and there is no `system-write`.
+- **The reversibility split is the honest one, not the flattering one.** The three
+  option flips (activate, deactivate, switch) preview, snapshot the state they replace,
+  and restore it by re-running every guard they applied forwards, so a restore refuses
+  on exactly the grounds a forward call would rather than forcing a state the site would
+  now reject. The two updates and the two installs declare `PreviewPolicy::Required`
+  with `SnapshotPolicy::NotApplicable` and `RollbackPolicy::NotApplicable`, and refuse a
+  rollback attempt with `RollbackUnavailable`: WordPress has no clean downgrade, and a
+  rollback that silently did nothing is worse than one that says so. An update verifies
+  the installed `version` on read-back and **never** the update transient — verifying
+  against core's own cache would pass on a site where nothing had been written.
+- **The file-modification locks stop exactly four of the seven.** `DISALLOW_FILE_MODS`
+  and `DISALLOW_FILE_EDIT` refuse both updates and both installs, naming the constant in
+  the refusal (`DISALLOW_FILE_MODS` when both are set) so an operator knows which line
+  to look for. The three option flips write no files and are left alone; a site that
+  locked its file modifications did not ask to stop activating plugins.
+- **Installing is the narrowest surface in the plugin, by schema and not by check.**
+  The input is `{slug}` with `additionalProperties: false`; there is no `url`,
+  `package`, `source`, `path` or `zip` property to fill in, and
+  `InstallSourceGuardTest` sweeps the schemas for those names so it stays that way. The
+  slug is validated against `/^[a-z0-9][a-z0-9-]*$/`, capped at 200 characters, before
+  any network call, so a web address, a scheme, a `../`, a host or a `.zip` suffix never
+  leaves the site. The one address ever fetched is the `download_link` that
+  `plugins_api()` / `themes_api()` answers with, asserted to begin
+  `https://downloads.wordpress.org/` before a byte moves. What lands is stored
+  deactivated — a theme is never made live — so a failed install cannot leave running
+  code.
+- **Failure cleanup removes exactly what this call part-wrote.** The read-back verifies
+  the plugin or theme is actually present and at the expected version. If the upgrader
+  left behind the destination folder it created **in this call**, that folder and only
+  that folder is removed through `WP_Filesystem`, and the result says so; nothing the
+  site already had is ever touched. An upgrader returning `WP_Error`, `false` or `null`
+  throws `OperationException` so the change engine's compensate path runs and the audit
+  row closes `EXECUTION_FAILED` — an unreachable wordpress.org or an unknown slug is a
+  clean typed refusal, never a partial state.
+- **Capability policy moved with it.** `ALLOWED_CAPABILITIES` gained the module's six
+  grants and now holds twenty-one; `install_plugins` and `install_themes` left
+  `ExcludedCapabilityTest::EXECUTION_CAPABILITIES` under the argument recorded in
+  section 5, with the six remaining execution capabilities pinned by survivor tests and
+  the free side pinned by `ReservedCapabilityTest`.
