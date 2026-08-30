@@ -1,5 +1,5 @@
 === SiteHelm ===
-Contributors: sitehelm
+Contributors: mrshahidali
 Tags: mcp, ai agent, automation, elementor, rest api
 Requires at least: 6.6
 Tested up to: 7.1
