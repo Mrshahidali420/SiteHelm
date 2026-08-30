@@ -4,7 +4,7 @@ Tags: mcp, ai agent, automation, elementor, rest api
 Requires at least: 6.6
 Tested up to: 7.1
 Requires PHP: 8.1
-Stable tag: 0.7.0
+Stable tag: 0.8.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -89,6 +89,12 @@ The refusal names which error code applies and what to do about it, and says how
 The full changelog for every release is maintained at
 https://github.com/Mrshahidali420/SiteHelm/blob/main/CHANGELOG.md
 
+= 0.8.0 =
+* Updates now come straight from the plugin's GitHub releases: new versions appear on the Plugins screen and install with one click.
+* A console notice says when the installed version is behind the latest release.
+* Calling a Pro operation without a licence now refuses with a message naming SiteHelm Pro, instead of a bare unavailable.
+* Community link in the console.
+
 = 0.7.0 =
 * A dedicated risk tier for code-adjacent operations, refused by default at every permission level below full control.
 * Previews never reproduce an executable payload — code fields render as a byte count and digest, so a stored plan can never hold a live credential.
@@ -106,5 +112,5 @@ Earlier releases are recorded in the changelog linked above.
 
 == Upgrade Notice ==
 
-= 0.7.0 =
-Adds the code risk tier and payload-free previews. No breaking changes; update normally.
+= 0.8.0 =
+Adds one-click updates from GitHub releases and clearer Pro refusals. No breaking changes; update normally.
