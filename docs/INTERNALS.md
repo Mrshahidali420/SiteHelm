@@ -1620,20 +1620,19 @@ tab keeps a read-only Pro section that states the licence state and links there.
 stands: **every Pro unit calls the gate itself before it looks at anything else** — the
 bootstrap only wires.
 
-## 31. Pro SEO — settings, bulk metadata, Rank Math tables, schema, audit fixes
+## 31. Pro SEO — settings, Rank Math tables, schema
 
 Added 2026-08-23 (REQ-0098, Pro part); source *src/Seo/* in the private repo, registered by
 `ProSeo::register()` into `ModuleId::Seo` from `ProPlugin::register_operations()`.
 `ProSeo::operation_ids()` is the one list of Pro SEO ids: `seo-settings-get`,
-`seo-settings-set`, `content-seo-bulk-set`, `seo-404-log-list`, `seo-redirection-list`,
-`content-seo-schema-get`, `content-seo-schema-set`, `content-seo-audit-fix` (the last three
-added 2026-08-23 as Pro 0.2.0, completing REQ-0098).
+`seo-settings-set`, `seo-404-log-list`, `seo-redirection-list`, `content-seo-schema-get`,
+`content-seo-schema-set`. The two batched writes that shipped here — `content-seo-bulk-set`
+and `content-seo-audit-fix` — moved to the free plugin on 2026-08-30; see section 45.
 
 **Guard order, every unit, in this order and nowhere later:** licence gate →
-`user_can( manage_options )` (bulk set: `edit_post` per id) → `SeoPresence::provider()`
-(IntegrationUnavailable when neither plugin is active) → the target (`postType` must be
-a public registered type; bulk ids must all exist). Tests assert the unlicensed refusal
-lands before any capability check or query.
+`user_can( manage_options )` → `SeoPresence::provider()` (IntegrationUnavailable when
+neither plugin is active) → the target (`postType` must be a public registered type).
+Tests assert the unlicensed refusal lands before any capability check or query.
 
 **Settings (`seo-settings-get` / `seo-settings-set`).** `SeoSettingsFields` names the
 vocabulary: `SITE_FIELDS` = separator, knowledgeGraphName, knowledgeGraphLogo,
@@ -1655,16 +1654,6 @@ Target key `SeoSettingsFields::target_key( ?string $post_type )`.
 | titleTemplate / descriptionTemplate | `title-{type}`, `metadesc-{type}` | `pt_{type}_title`, `pt_{type}_description` |
 | noindex | `noindex-{type}` bool | **two keys**: `pt_{type}_custom_robots` `'on'` + `'noindex'` in the `pt_{type}_robots` list; reading is noindex only when both hold; writing `true` sets both, `false` removes `noindex` from the list and leaves `custom_robots` alone |
 | inSitemap | no switch: reads `!noindex`, **refused as a write** | `rank-math-options-sitemap.pt_{type}_sitemap` `'on'`/`'off'` |
-
-**Bulk metadata (`content-seo-bulk-set`).** `SeoBulkMetadataSet` reuses the free
-`SeoFields` vocabulary (TEXT_FIELDS + FLAG_FIELDS) and the free `SeoProvider`
-(`capture` / `apply`) per post; `MAX_IDS` 50; ids are de-duplicated in order. The target
-key is `TARGET_PREFIX . sha1( csv of ids )` (under 191 chars whatever the set) and the
-resolved id list is kept in `$ids_by_key` on the instance — so a fresh instance cannot
-apply or snapshot a plan it did not resolve (refused; `captureSnapshot` answers `null`).
-Snapshot `{provider, ids, posts: {id: fields}}`; restore refuses a state without posts or
-from another provider (RollbackUnavailable). Promise = read-back: `afterFields` is
-`{provider, ids, posts}` and `readBack` re-reads every post.
 
 **Rank Math tables (`seo-404-log-list`, `seo-redirection-list`).** Both extend
 `RankMathTableList`: `DEFAULT_LIMIT` 50, `MAX_LIMIT` 200, offset clamped to ≥ 0. A Yoast
@@ -1693,16 +1682,6 @@ Article family, else lowercase type; `off` on clear). Its `TYPES` is a 22-name a
 not Rank Math's full vocabulary. UNVERIFIED against live plugin output: Rank Math's exact
 `metadata` members and `isPrimary` serialisation — check both before relying on a write
 reaching the front end.
-
-**Audit fixes (`content-seo-audit-fix`).** `SeoAuditFix` re-uses the free `SeoAudit`
-handler for the page (so it skips the same posts), keeps the items whose findings
-intersect `fixes` (`FIXABLE_FINDINGS`: missing-description, description-too-long,
-title-too-long, noindex), and refuses TargetNotFound when none. Per post it builds changes
-through the free provider's `project()`; the trimmer is `mb_`-safe and falls back to the
-last space only when that keeps ≥ 60 % of the bound. The promise carries `fixes` and
-`unfixable` per post, and because `WriteVerifier` compares every promised key, both are
-memoised per target key and re-reported by `readBack()`, which re-reads only the posts the
-plan actually wrote. Apply stops at the first `apply()` false with the bulk op's wording.
 
 **Testing (private repo).** A `ProLicenceFixture` trait installs `AdminWordPressStubs`
 plus a throw-away keypair, `license()` stores a `site: *` key, `installYoast()` /
@@ -1832,7 +1811,8 @@ answers "which documents mention this phrase". Four things about it are load-bea
 
 The scan stops at `ContentSearch::MAX_SCANNED` (500) documents and sets `truncated`.
 Paging happens after the capability filter, so pages are not ragged. The bulk change
-that rewrites what this finds is REQ-0092's Pro half and is not built.
+that rewrites what this finds is not built; as of 2026-08-30 it is a free operation when
+it is, for the reason in section 45.
 
 ## 35. Elementor 4 global classes (REQ-0101) in one screen
 
@@ -2345,3 +2325,51 @@ with no add-on — and the console lists the seven writes as locked rather than 
   `ExcludedCapabilityTest::EXECUTION_CAPABILITIES` under the argument recorded in
   section 5, with the six remaining execution capabilities pinned by survivor tests and
   the free side pinned by `ReservedCapabilityTest`.
+
+## 45. Absorbed operations — the two batched SEO writes, and how a migration lands
+
+`content-seo-bulk-set` and `content-seo-audit-fix` shipped in the Pro add-on from
+2026-08-23 and moved into this plugin on 2026-08-30 (src/Modules/Seo/). Batch size stopped
+being a reason to charge: the free plugin already ships the single-post write each of them
+repeats, so an agent could reproduce either in a loop — but only by giving up the one
+preview, one snapshot and one rollback the batched form performs, which put the safer path
+behind the licence and the riskier one in front of it.
+
+**The hazard the move creates.** The free plugin and the add-on are two plugins that update
+on different schedules — this one through its own GitHub updater, the add-on through the
+store — so for a few days a site runs the new free half beside an add-on that still
+registers the same identifiers. Identifiers are permanent
+(`CapabilityRegistry::register()` throws on a duplicate), and the throw is the real damage:
+`Extensions::register_operations()` contains it **per hook, not per operation**, so the
+add-on's whole run stops at the first duplicate and everything behind it in that callback
+is simply missing for the rest of the request. On a licensed site that is paid
+functionality vanishing with nothing but an `error_log` line.
+
+**The rule: claim late and yield.** `Bootstrap\AbsorbedOperations::claim()` runs in
+`Plugin::register()` **after** `Extensions::register_operations()`, and skips any
+identifier `$registry->has()` already answers true for. An outdated add-on keeps serving
+its own licence-gated copy, every operation behind it still registers, and nothing is
+lost; when the add-on updates and stops registering them, the identifier is free and this
+plugin claims it. There is no version constant to keep in step — the registry's own answer
+is the whole condition — so the same class is where any future add-on-to-free migration
+goes, and third-party add-ons get the same protection for free.
+
+**Bulk metadata (`content-seo-bulk-set`).** `SeoBulkMetadataSet` reuses the free
+`SeoFields` vocabulary (TEXT_FIELDS + FLAG_FIELDS) and the free `SeoProvider`
+(`capture` / `apply`) per post; `MAX_IDS` 50; ids are de-duplicated in order. The target
+key is `TARGET_PREFIX . sha1( csv of ids )` (under 191 chars whatever the set) and the
+resolved id list is kept in `$ids_by_key` on the instance — so a fresh instance cannot
+apply or snapshot a plan it did not resolve (refused; `captureSnapshot` answers `null`).
+Snapshot `{provider, ids, posts: {id: fields}}`; restore refuses a state without posts or
+from another provider (RollbackUnavailable). Promise = read-back: `afterFields` is
+`{provider, ids, posts}` and `readBack` re-reads every post.
+
+**Audit fixes (`content-seo-audit-fix`).** `SeoAuditFix` re-uses the free `SeoAudit`
+handler for the page (so it skips the same posts), keeps the items whose findings
+intersect `fixes` (`FIXABLE_FINDINGS`: missing-description, description-too-long,
+title-too-long, noindex), and refuses TargetNotFound when none. Per post it builds changes
+through the free provider's `project()`; the trimmer is `mb_`-safe and falls back to the
+last space only when that keeps ≥ 60 % of the bound. The promise carries `fixes` and
+`unfixable` per post, and because `WriteVerifier` compares every promised key, both are
+memoised per target key and re-reported by `readBack()`, which re-reads only the posts the
+plan actually wrote. Apply stops at the first `apply()` false with the bulk op's wording.

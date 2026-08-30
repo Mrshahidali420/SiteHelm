@@ -36,7 +36,7 @@ SiteHelm connects your WordPress site to any AI agent that speaks MCP (the Model
 
 **Privacy** — SiteHelm contains no AI model and sends no content to any AI service. Authentication is a WordPress Application Password, so nothing about your site is stored anywhere else. The plugin makes no outbound call except the update check against its GitHub releases, the licence check for the optional Pro add-on, the WordPress.org lookup and download the optional Pro add-on makes when you ask it to install a plugin or theme, and the media-import fetch you explicitly request — and that fetch is guarded against reaching your internal network. No content, no URLs, nothing about your site travels with any of them.
 
-The free plugin is the whole safety model, permanently. An optional Pro add-on (sold separately via Freemius) adds operations for work that spans a whole site or a whole shop — bulk edits, WooCommerce, deep SEO, Elementor Pro surfaces, plugin and theme management, and a code module. Pro never takes a free feature away, and the plugin is open source, so that is checkable rather than promised.
+The free plugin is the whole safety model, permanently. An optional Pro add-on (sold separately via Freemius) adds operations for surfaces the free plugin does not reach — WooCommerce, the SEO plugin's own settings and schema, Elementor Pro's popups and dynamic tags, plugin and theme management, and a code module. Pro never takes a free feature away, and the plugin is open source, so that is checkable rather than promised.
 
 == Installation ==
 

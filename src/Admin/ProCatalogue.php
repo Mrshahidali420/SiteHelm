@@ -139,12 +139,6 @@ final class ProCatalogue {
 			'read'        => false,
 			'description' => "Set the SEO plugin's site-wide settings or one post type's settings from a strict allowlist. Previewed, reversible.",
 		],
-		'content-seo-bulk-set'         => [
-			'dispatcher'  => 'content-write',
-			'module'      => ModuleId::Seo,
-			'read'        => false,
-			'description' => 'Set the same search-engine metadata on up to fifty posts in one previewed, reversible change — title, description, canonical, focus keyword, noindex, nofollow and the social overrides.',
-		],
 		'seo-404-log-list'             => [
 			'dispatcher'  => 'system-read',
 			'module'      => ModuleId::Seo,
@@ -168,12 +162,6 @@ final class ProCatalogue {
 			'module'      => ModuleId::Seo,
 			'read'        => false,
 			'description' => "Set one post's schema type and fields, or clear it back to the plugin's default. Previewed, reversible.",
-		],
-		'content-seo-audit-fix'        => [
-			'dispatcher'  => 'content-write',
-			'module'      => ModuleId::Seo,
-			'read'        => false,
-			'description' => 'Fix a page of SEO audit findings as one previewed, reversible change — missing descriptions from the post\'s own text, over-long titles and descriptions trimmed, published posts taken off noindex.',
 		],
 		'code-host-list'               => [
 			'dispatcher'  => 'system-read',

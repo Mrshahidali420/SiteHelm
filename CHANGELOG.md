@@ -9,6 +9,23 @@ Every entry names the user-visible outcome. Internal refactors, test additions, 
 documentation-only changes are not listed unless they change what an agent can do or how
 an operation behaves.
 
+## [Unreleased]
+
+### Changed
+- **Bulk SEO metadata and audit fixes are free** — `content-seo-bulk-set` and
+  `content-seo-audit-fix` shipped in SiteHelm Pro from 0.2.0 and now ship here. Batch size
+  was never a good reason to charge: the free plugin already carries the single-post write
+  each of them repeats, so an agent could always reproduce either in a loop — but only by
+  giving up the one preview, one snapshot and one rollback the batched form performs. That
+  put the safer path behind the licence and the riskier one in front of it. Both operations
+  are unchanged in behaviour; they simply no longer ask for a licence.
+- **An add-on that has not caught up keeps working.** The two plugins update on their own
+  schedules, so a site can briefly run this version beside a SiteHelm Pro that still
+  registers the same two operations. It now yields: an identifier the add-on already holds
+  is left with the add-on, every other Pro operation still registers, and this plugin picks
+  the identifier up on the next add-on update. Nothing is lost in between, and the same
+  rule covers any future operation that moves out of the add-on.
+
 ## [0.9.0] — 2026-08-30
 
 ### Added
