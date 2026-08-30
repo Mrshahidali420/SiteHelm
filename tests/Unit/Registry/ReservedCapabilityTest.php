@@ -35,6 +35,15 @@ use SiteHelm\Tests\TestCase;
  * This file is the narrowing half of that widening. It asserts both directions:
  * the pair IS admitted by the allowlist (so the Pro operations can be built at
  * all), and NO operation the free plugin boots declares either one.
+ *
+ * REQ-0085 WIDENED IT BY SIX MORE, in the same position and for the same reason:
+ * `activate_plugins`, `update_plugins`, `update_themes`, `switch_themes`,
+ * `install_plugins` and `install_themes` are declared by the add-on's seven
+ * plugin and theme writes and by nothing the free plugin registers. The free
+ * half of that module ships two reads, and both gate on `manage_options`
+ * deliberately — a read that named the capability its Pro sibling writes with
+ * would refuse a caller who may see the site's configuration but not change it.
+ * So the same pair of directions is asserted for those six below.
  */
 final class ReservedCapabilityTest extends TestCase {
 
@@ -46,11 +55,34 @@ final class ReservedCapabilityTest extends TestCase {
 	private const RESERVED_FOR_THE_ADDON = [ 'edit_products', 'manage_woocommerce' ];
 
 	/**
+	 * REQ-0085's six, admitted for the add-on's plugin and theme writes alone.
+	 *
+	 * Kept as a list of its own rather than folded into the constant above,
+	 * because the two widenings are answerable to different requirements and a
+	 * failure should say which one moved.
+	 *
+	 * @var string[]
+	 */
+	private const RESERVED_FOR_THE_ADDON_EXTENSIONS = [
+		'activate_plugins',
+		'update_plugins',
+		'update_themes',
+		'switch_themes',
+		'install_plugins',
+		'install_themes',
+	];
+
+	/**
 	 * The size the free catalog is known to have reached, as a floor.
 	 *
 	 * Same reasoning as ExcludedCapabilityTest's floor: a sweep over an empty
 	 * catalog satisfies "no operation declares these" without consulting a single
 	 * operation, and reads identical to one that checked seventy-nine.
+	 *
+	 * DELIBERATELY NOT RAISED BY REQ-0085. The free catalog is well past this
+	 * number and the floor's whole job is to fail on an empty walk, so moving it
+	 * two at a time for every requirement that adds an operation is the diff
+	 * churn a floor exists to avoid.
 	 */
 	private const KNOWN_CATALOG_FLOOR = 79;
 
@@ -124,6 +156,54 @@ final class ReservedCapabilityTest extends TestCase {
 			[],
 			$offenders,
 			'These two capabilities exist in the allowlist for the SiteHelm Pro commerce module alone. A free operation reaching for one is either mis-gated or belongs in the add-on.'
+		);
+	}
+
+	/**
+	 * The widening direction for REQ-0085: all six are admitted.
+	 *
+	 * The add-on's plugin and theme writes declare one each, and an add-on cannot
+	 * add an entry to this allowlist — so removing one here does not fail a Pro
+	 * test that this repository would run; it fails at construction on a
+	 * customer's site, on an operation the free plugin has no copy of.
+	 */
+	public function test_the_allowlist_admits_the_six_extension_capabilities(): void {
+		$allowed = ( new ReflectionClass( OperationDefinition::class ) )->getConstant( 'ALLOWED_CAPABILITIES' );
+
+		$this->assertIsArray( $allowed );
+
+		foreach ( self::RESERVED_FOR_THE_ADDON_EXTENSIONS as $capability ) {
+			$this->assertContains(
+				$capability,
+				$allowed,
+				"REQ-0085's Pro writes declare '{$capability}'; removing it from the allowlist breaks one of them at construction on every site that has the add-on, and nothing in this repository would notice."
+			);
+		}
+	}
+
+	/**
+	 * The narrowing direction for REQ-0085: no free operation declares any of the
+	 * six.
+	 *
+	 * `activate_plugins` is the one to watch, and it is worse than it sounds: on
+	 * a single-site install WordPress maps `activate_plugins` to the same grant as
+	 * `install_plugins`, `update_plugins` and `delete_plugins`, so borrowing it to
+	 * gate a read would be gating that read on the right to install code. The two
+	 * free reads use `manage_options` for exactly that reason.
+	 */
+	public function test_no_free_operation_declares_a_reserved_extension_capability(): void {
+		$offenders = [];
+
+		foreach ( $this->everyDefinition() as $definition ) {
+			foreach ( array_intersect( $definition->requiredCapabilities, self::RESERVED_FOR_THE_ADDON_EXTENSIONS ) as $capability ) {
+				$offenders[] = $definition->id . ' (' . $capability . ')';
+			}
+		}
+
+		$this->assertSame(
+			[],
+			$offenders,
+			'These six exist in the allowlist for the SiteHelm Pro plugin and theme writes alone. A free operation reaching for one is gating a read on the right to change what runs on the site.'
 		);
 	}
 

@@ -9,7 +9,7 @@
 [![PHP](https://img.shields.io/badge/PHP-%3E%3D8.1-8892BF.svg)](https://php.net)
 [![WordPress](https://img.shields.io/badge/WordPress-%3E%3D6.6-21759B.svg)](https://wordpress.org)
 [![MCP](https://img.shields.io/badge/MCP-2025--06--18-orange.svg)](https://modelcontextprotocol.io/)
-[![Operations](https://img.shields.io/badge/operations-99-blueviolet.svg)](docs/OPERATIONS.md)
+[![Operations](https://img.shields.io/badge/operations-101-blueviolet.svg)](docs/OPERATIONS.md)
 [![Tests](https://img.shields.io/badge/tests-2%2C814-brightgreen.svg)](#how-this-is-tested)
 [![Coverage](https://img.shields.io/badge/coverage-%E2%89%A580%25-brightgreen.svg)](#how-this-is-tested)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
@@ -23,7 +23,7 @@
 
 ---
 
-SiteHelm is a WordPress plugin that exposes your site to AI agents over the [Model Context Protocol](https://modelcontextprotocol.io/). Claude, Claude Code, Cursor, VS Code, or any other MCP client can read your content, edit Elementor pages, manage media and menus, write ACF and Meta Box fields, and edit SEO metadata in Yoast or Rank Math — through **99 typed operations**, every one of them capability-checked, previewed before it runs, snapshotted before it changes anything, and verified afterwards by reading the site back.
+SiteHelm is a WordPress plugin that exposes your site to AI agents over the [Model Context Protocol](https://modelcontextprotocol.io/). Claude, Claude Code, Cursor, VS Code, or any other MCP client can read your content, edit Elementor pages, manage media and menus, write ACF and Meta Box fields, and edit SEO metadata in Yoast or Rank Math — through **101 typed operations**, every one of them capability-checked, previewed before it runs, snapshotted before it changes anything, and verified afterwards by reading the site back.
 
 The reason this project exists is the gap between *an agent can change your site* and *you would let an agent change a client's site*. Plenty of tools do the first. SiteHelm is built around the second.
 
@@ -66,7 +66,7 @@ SiteHelm makes a different trade. It is smaller in surface area and much stricte
 | **Undo** | Your backup plugin | A snapshot taken by the same plan, restorable by operation |
 | **Permissions** | Often a single API key | The authenticating WordPress user's real capabilities, re-checked per operation |
 | **Errors** | Whatever PHP threw | One of eleven typed error codes with an operator-facing remedy — never a stack trace, path, or SQL string |
-| **Surface** | 200+ loosely specified tools | 99 operations behind 11 dispatchers, each with a strict JSON Schema |
+| **Surface** | 200+ loosely specified tools | 101 operations behind 11 dispatchers, each with a strict JSON Schema |
 
 Fewer tools is deliberate. Every operation here has a written acceptance criterion, an input schema that rejects unknown properties, and a test that fails if the guard protecting it is deleted.
 
@@ -98,7 +98,7 @@ Writes that need it also record a rollback reference, so the change can be put b
 
 ## What it can do
 
-99 operations across nine modules, reached through 11 MCP tools (dispatchers). Call any dispatcher with no `operation` argument to get its catalogue — agents discover the surface at runtime instead of memorising it.
+101 operations across twelve modules, reached through 11 MCP tools (dispatchers). Call any dispatcher with no `operation` argument to get its catalogue — agents discover the surface at runtime instead of memorising it.
 
 <table>
 <tr><th align="left">Dispatcher</th><th align="left">Operations</th></tr>
@@ -112,7 +112,7 @@ Writes that need it also record a rollback reference, so the change can be put b
 <tr><td><code>elementor-write</code></td><td>Add, update, move, duplicate, remove elements; widget settings; global colours and typography; theme-template display conditions</td></tr>
 <tr><td><code>fields-read</code></td><td>ACF and Meta Box field groups, fields, and values</td></tr>
 <tr><td><code>fields-write</code></td><td>ACF and Meta Box field values</td></tr>
-<tr><td><code>system-read</code></td><td>Connection check, environment discovery, integration health, and the change audit log</td></tr>
+<tr><td><code>system-read</code></td><td>Connection check, environment discovery, integration health, the plugin and theme inventory, and the change audit log</td></tr>
 </table>
 
 **→ [Full operations reference](docs/OPERATIONS.md)** — every operation with its capability, risk, and rollback policy.
@@ -262,6 +262,7 @@ These are permanent exclusions, recorded as requirements so nobody proposes them
 - **No arbitrary PHP execution.** No `eval`, no code injection tool, no "run this snippet."
 - **No unrestricted SQL.** Every query goes through `$wpdb->prepare`; there is no pass-through query tool.
 - **No unrestricted filesystem access.** No arbitrary read, write, or delete of site files.
+- **No code from anywhere but WordPress.org.** Installing a plugin or theme is a Pro operation, it takes a WordPress.org slug and nothing else, and what lands is stored deactivated. There is no argument anywhere in the plugin that accepts a URL, a zip, or a file path, and the only address ever fetched is the download link WordPress.org itself answers with — checked against `https://downloads.wordpress.org/` before a byte moves.
 - **No irreversible permanent deletion.** Removal means trash or a reversible unlink, never `force_delete`.
 
 An agent that needs any of these needs a different tool, and you should think hard before giving it one.
@@ -322,7 +323,10 @@ V1 is complete — all 52 requirements shipped and verified. V1.1 is in progress
 first operations are here: the SEO plugin's own settings read and written as one reversible
 change, per-post metadata set across up to fifty posts at once, and Rank Math's 404 log and
 redirections. Forms came next, and WooCommerce with them — products, prices, stock and
-categories read and written, with orders and customers read-only for good. More bulk work
+categories read and written, with orders and customers read-only for good. Plugins and themes
+followed: the free plugin lists what is installed and what has an update waiting, and Pro
+activates, deactivates, switches, updates and installs — from WordPress.org, by slug, and
+deactivated on arrival. More bulk work
 follows. Everything safety-related stays
 free, and a free read never moves behind the paywall. See the roadmap for the Free/Pro split.
 

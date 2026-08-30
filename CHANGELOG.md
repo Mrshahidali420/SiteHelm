@@ -9,7 +9,26 @@ Every entry names the user-visible outcome. Internal refactors, test additions, 
 documentation-only changes are not listed unless they change what an agent can do or how
 an operation behaves.
 
-## [Unreleased]
+## [0.9.0] — 2026-08-30
+
+### Added
+- **Plugins and themes, listed** (REQ-0085) — `system-plugin-list` and `system-theme-list`
+  report every plugin and theme the site has installed: version, which are active, which
+  the network activated, which theme is live, and which have an update waiting. The update
+  column is read from WordPress's own last check and stamped with when that check happened,
+  so it is exactly as fresh as the Plugins screen and never sends the site off to
+  wordpress.org just because an agent asked a question.
+- **Acting on them is SiteHelm Pro 0.7.0** — activate, deactivate, switch theme, update
+  either, and install either. The three that flip an option are previewed, snapshotted and
+  reversible; the two updates and the two installs say plainly that they cannot be rolled
+  back, because WordPress has no clean way back to an older version and a rollback that
+  quietly did nothing would be worse than one that refuses. Installing reaches
+  WordPress.org and nowhere else: it takes a slug, there is no argument anywhere that
+  accepts a web address, a zip or a file path, and what is installed is stored switched off
+  — a theme is never made live. A site that sets `DISALLOW_FILE_MODS` or
+  `DISALLOW_FILE_EDIT` refuses the four file writes by name and keeps the three option
+  flips, because locking file modifications is not the same as declining to activate a
+  plugin.
 
 ## [0.8.0] — 2026-08-30
 
@@ -784,7 +803,8 @@ out of scope by design and will not be added. Code ships only through the Pro Co
 guard, and nothing SiteHelm stores ever executes during its own request. See
 [ROADMAP.md](ROADMAP.md).
 
-[Unreleased]: https://github.com/Mrshahidali420/SiteHelm/compare/v0.7.0...HEAD
+[0.9.0]: https://github.com/Mrshahidali420/SiteHelm/releases/tag/v0.9.0
+[0.8.0]: https://github.com/Mrshahidali420/SiteHelm/releases/tag/v0.8.0
 [0.7.0]: https://github.com/Mrshahidali420/SiteHelm/releases/tag/v0.7.0
 [0.6.0]: https://github.com/Mrshahidali420/SiteHelm/releases/tag/v0.6.0
 [0.5.0]: https://github.com/Mrshahidali420/SiteHelm/releases/tag/v0.5.0

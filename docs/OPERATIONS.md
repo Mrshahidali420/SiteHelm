@@ -1,6 +1,6 @@
 # Operations reference
 
-SiteHelm exposes **99 operations** through **11 MCP tools**, called dispatchers. Every operation is
+SiteHelm exposes **101 operations** through **11 MCP tools**, called dispatchers. Every operation is
 declared once, in code, with a strict input schema (`additionalProperties: false`), a required
 capability, a risk level, and preview, snapshot, and rollback policies. That declaration is the
 contract the gateway enforces and the catalogue an agent discovers.
@@ -419,7 +419,7 @@ what is actually in the database, so a restore puts back what was really there.
 
 ## System
 
-### `system-read` — 7 operations
+### `system-read` — 9 operations
 
 | Operation | Does | Capability |
 |---|---|---|
@@ -430,6 +430,8 @@ what is actually in the database, so a restore puts back what was really there.
 | `user-list` | Lists user accounts by role or search term, newest registration first, with the role slugs this site has registered | `list_users` |
 | `site-settings-read` | Reads the whole site-settings allowlist, typed, in one call — the same thirteen fields `site-settings-set` can change, and nothing else | `manage_options` |
 | `audit-list` | Reads the change ledger: what changed, when, by whom, and what can be rolled back | `manage_options` |
+| `system-plugin-list` | Lists every plugin installed on this site with its version, whether it is active, whether the network activated it, and whether an update is waiting | `manage_options` |
+| `system-theme-list` | Lists every theme installed on this site with its version, which one is live, and whether an update is waiting | `manage_options` |
 
 Start every session with `system-connection`, then `system-integrations`. It costs one call and
 tells an agent what is actually available before it plans anything.
@@ -561,6 +563,49 @@ missing; brand kits need only Elementor.
 > typography changes appearance, so `elementor-brand-kit-apply` is high risk, a rollback is
 > required, and a post that is not a kit is refused. An `elementor_active_kit` option naming
 > a kit that has been deleted is reported as no active kit rather than repeated back.
+
+### Plugins & themes (Pro) — seven Pro operations
+
+Shipped in SiteHelm Pro 0.7.0, registered into the **free** Plugins & Themes module: the
+inventory reads above are free, and these seven writes are the add-on's half. The reads ride
+`system-read` and the writes ride `content-write`; the eleven dispatchers are frozen and
+there is no `system-write`.
+
+| Operation | Dispatcher | Does | Capability | Rollback |
+|---|---|---|---|---|
+| `plugin-activate` | `content-write` | Switches one installed plugin on, snapshotting the state it replaces; refuses a plugin the network activated, because a single site does not own that decision | `activate_plugins` | supported |
+| `plugin-deactivate` | `content-write` | Switches one plugin off, snapshotted and reversible, and refuses a network-activated plugin for the same reason | `activate_plugins` | supported |
+| `plugin-update` | `content-write` | Updates one plugin to the version WordPress says is waiting, reporting the version it came from | `update_plugins` | not-applicable |
+| `theme-switch` | `content-write` | Makes a different installed theme the live one, recording the theme it replaced; the theme already live is refused rather than previewed as a change that moves nothing | `switch_themes` | supported |
+| `theme-update` | `content-write` | Updates one theme to the version WordPress says is waiting | `update_themes` | not-applicable |
+| `plugin-install` | `content-write` | Installs a plugin from WordPress.org by its slug and stores it **switched off** | `install_plugins` | not-applicable |
+| `theme-install` | `content-write` | Installs a theme from WordPress.org by its slug and does **not** make it live | `install_themes` | not-applicable |
+
+> **Installing reaches WordPress.org and nowhere else.** The input schema is a slug and
+> nothing else — there is no `url`, `package`, `source`, `path` or `zip` property anywhere in
+> it, and `additionalProperties: false` means one cannot be smuggled in. The slug is checked
+> against `/^[a-z0-9][a-z0-9-]*$/` before any network call, so a web address, a scheme, a
+> `../`, a host or a `.zip` suffix is refused without leaving the site. The only address ever
+> fetched is the `download_link` `plugins_api()`/`themes_api()` itself answers with, asserted
+> to begin `https://downloads.wordpress.org/` before a byte moves. What lands is stored
+> deactivated — a theme is never made live — so a failed install cannot leave running code,
+> and a failed install removes exactly the folder it part-wrote in this call and nothing the
+> site already had.
+>
+> **The three option flips can be undone; the four file writes cannot.** Activate, deactivate
+> and switch snapshot the state they replace and restore it by re-running every guard they
+> applied forwards, so a restore refuses on the same grounds a forward call would. The two
+> updates and the two installs declare `not-applicable` for both snapshot and rollback and
+> refuse a rollback attempt with `RollbackUnavailable`: WordPress has no clean downgrade, and
+> a rollback that quietly did nothing would be worse than one that says so. An update
+> verifies the installed `version` on read-back and never the update transient — that
+> transient is WordPress's cache of its last check, not a statement about what is on disk.
+>
+> **`DISALLOW_FILE_MODS` and `DISALLOW_FILE_EDIT` stop exactly the four file writes.** Both
+> updates and both installs are refused by name, with the constant named in the refusal
+> (`DISALLOW_FILE_MODS` when both are set), because a site that has locked its own file
+> modifications has answered this question already. The three option flips write no files and
+> are left alone.
 
 ### Code (Pro) — eighteen Pro operations
 

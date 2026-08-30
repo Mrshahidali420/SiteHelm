@@ -43,7 +43,7 @@ final class EnumsTest extends TestCase {
 			RollbackPolicy::class     => [ 'required', 'supported', 'not-applicable' ],
 			PermissionMode::class     => [ 'read-only', 'safe-write', 'trusted-write' ],
 			ModuleHealth::class       => [ 'active', 'inactive', 'version-blocked' ],
-			ModuleId::class           => [ 'core', 'diagnostics', 'media', 'menus', 'elementor', 'acf', 'metabox', 'seo', 'forms', 'woocommerce', 'code' ],
+			ModuleId::class           => [ 'core', 'diagnostics', 'media', 'menus', 'elementor', 'acf', 'metabox', 'seo', 'forms', 'extensions', 'woocommerce', 'code' ],
 			VerificationStatus::class => [ 'verified', 'verified-with-adjustments', 'not-applicable' ],
 			ErrorCode::class          => [
 				'authentication_failed',

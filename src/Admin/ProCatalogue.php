@@ -319,6 +319,48 @@ final class ProCatalogue {
 			'read'        => false,
 			'description' => 'Switch the active brand kit. Every page using global colours or global typography changes appearance, so the change is high risk and always reversible.',
 		],
+		'plugin-activate'              => [
+			'dispatcher'  => 'content-write',
+			'module'      => ModuleId::Extensions,
+			'read'        => false,
+			'description' => 'Switch one installed plugin on. Previewed first, and the state it was in is recorded so it can be put back.',
+		],
+		'plugin-deactivate'            => [
+			'dispatcher'  => 'content-write',
+			'module'      => ModuleId::Extensions,
+			'read'        => false,
+			'description' => 'Switch one plugin off. Previewed and reversible, and it refuses a plugin the network activated rather than changing something a single site does not own.',
+		],
+		'plugin-update'                => [
+			'dispatcher'  => 'content-write',
+			'module'      => ModuleId::Extensions,
+			'read'        => false,
+			'description' => 'Update one plugin to the version WordPress says is waiting. Previewed, and the version it came from is recorded — but WordPress has no clean way back to an old version, so this one cannot be rolled back.',
+		],
+		'theme-switch'                 => [
+			'dispatcher'  => 'content-write',
+			'module'      => ModuleId::Extensions,
+			'read'        => false,
+			'description' => 'Make a different installed theme the live one. Previewed, and the theme it replaced is recorded so it can be put back.',
+		],
+		'theme-update'                 => [
+			'dispatcher'  => 'content-write',
+			'module'      => ModuleId::Extensions,
+			'read'        => false,
+			'description' => 'Update one theme to the version WordPress says is waiting. Previewed, and not reversible, for the same reason a plugin update is not.',
+		],
+		'plugin-install'               => [
+			'dispatcher'  => 'content-write',
+			'module'      => ModuleId::Extensions,
+			'read'        => false,
+			'description' => 'Install a plugin from WordPress.org by its slug. There is no argument that accepts a web address, a zip or a file path, and what is installed is always stored switched off — switching it on is a separate, deliberate step.',
+		],
+		'theme-install'                => [
+			'dispatcher'  => 'content-write',
+			'module'      => ModuleId::Extensions,
+			'read'        => false,
+			'description' => 'Install a theme from WordPress.org by its slug, on the same terms as a plugin install: slug only, never a web address or a zip, and the theme is not made live.',
+		],
 	];
 
 	/**

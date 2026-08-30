@@ -230,7 +230,7 @@ final class ModulesScreenTest extends TestCase {
 		$html = $this->render( $health );
 
 		$this->assertStringContainsString( 'Some modules are not active', $html );
-		$this->assertStringContainsString( '9 of 11 active', $html );
+		$this->assertStringContainsString( '10 of 12 active', $html );
 	}
 
 	/**

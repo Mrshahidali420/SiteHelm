@@ -39,7 +39,7 @@ final class IntegrationHealthTest extends TestCase {
 	 *
 	 * @var string[]
 	 */
-	private const BOOT_ORDER = [ 'diagnostics', 'core', 'media', 'menus', 'elementor', 'acf', 'metabox', 'seo', 'forms' ];
+	private const BOOT_ORDER = [ 'diagnostics', 'core', 'media', 'menus', 'elementor', 'acf', 'metabox', 'seo', 'forms', 'extensions' ];
 
 	/**
 	 * Module identifiers no built-in module implements.
