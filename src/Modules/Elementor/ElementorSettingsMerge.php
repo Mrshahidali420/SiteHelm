@@ -100,6 +100,7 @@ final class ElementorSettingsMerge {
 	 *
 	 * @param ElementorTreeEdit     $edit     The raw-tree surgery primitives.
 	 * @param ElementorPropCoercion $coercion The prop normalizer and key guard.
+	 * @param ElementorIdMint       $mint     The deterministic namer for repeater rows.
 	 */
 	public function __construct(
 		private readonly ElementorTreeEdit $edit,
