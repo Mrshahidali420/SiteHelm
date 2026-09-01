@@ -305,7 +305,7 @@ final class ElementorModule implements IntegrationModule {
 		$writer   = new ElementorDocumentWriter( $api, $document, $cache );
 		$targets  = new ElementorWriteTarget( $document, $tree, $this->presence, $coercion, $writer );
 		$inputs   = new ElementorElementAddInput( $coercion, $edit );
-		$merge    = new ElementorSettingsMerge( $edit, $coercion );
+		$merge    = new ElementorSettingsMerge( $edit, $coercion, new ElementorIdMint() );
 		$diff     = new ElementorTreeDiff( $tree );
 
 		$registry->registerWrite(

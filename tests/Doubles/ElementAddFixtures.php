@@ -91,7 +91,7 @@ trait ElementAddFixtures {
 			new ElementorTreeDiff( $tree ),
 			new PayloadNormalizer(),
 			new ElementorElementAddInput( $coercion, $edit ),
-			new ElementorSettingsMerge( $edit, $coercion )
+			new ElementorSettingsMerge( $edit, $coercion, new ElementorIdMint() )
 		);
 	}
 

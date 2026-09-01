@@ -82,6 +82,20 @@ final class ElementorSettingsMerge {
 	public const ELEMENT_ID_REGEX = '/' . ElementorWriteFields::ELEMENT_ID_PATTERN . '/';
 
 	/**
+	 * The separator between a row seed's parts.
+	 *
+	 * A byte no control name, element id or key can contain, so two different
+	 * seeds cannot be assembled into one string.
+	 */
+	private const SEED_SEPARATOR = "\0";
+
+	/**
+	 * The domain a row seed opens with, keeping these ids clear of every other
+	 * minted name in the module.
+	 */
+	private const ROW_SEED_DOMAIN = 'settings-merge';
+
+	/**
 	 * Constructs the merge.
 	 *
 	 * @param ElementorTreeEdit     $edit     The raw-tree surgery primitives.
@@ -90,6 +104,7 @@ final class ElementorSettingsMerge {
 	public function __construct(
 		private readonly ElementorTreeEdit $edit,
 		private readonly ElementorPropCoercion $coercion,
+		private readonly ElementorIdMint $mint,
 	) {
 	}
 
@@ -299,6 +314,59 @@ final class ElementorSettingsMerge {
 			(string) ( $node[ self::NODE_SCHEMA_TYPE ] ?? '' ),
 			$settings,
 			(string) ( $node[ self::NODE_EL_TYPE ] ?? '' )
+		);
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- The module vocabulary is camelCase across every class.
+	/**
+	 * The requested settings with every repeater row of theirs named.
+	 *
+	 * THE DEFECT THIS CLOSES. A repeater row Elementor stores carries an `_id`,
+	 * and that `_id` is the only handle the editor and the generated stylesheet
+	 * have on the row: per-row styling is emitted as
+	 * `.elementor-repeater-item-<_id>`, and a row without one takes the
+	 * control's defaults forever and cannot be told apart from its siblings in
+	 * the editor. A row written here without an `_id` therefore stores cleanly,
+	 * reads back verbatim and renders — with every row looking identical and no
+	 * way to change that. `ElementorIdMint` already names the rows every write
+	 * that ORIGINATES an element makes; these three settings updates reach the
+	 * document through this class instead and so went past the mint entirely.
+	 *
+	 * NAMED ON THE REQUESTED HALF, NOT THE MERGED ONE, because the requested
+	 * half is what the payload carries: the promise is taken over the merge, but
+	 * `applyChange()` re-reads the approved settings out of the payload and
+	 * merges them again, so an id minted onto the merged map alone would be
+	 * dropped on the way to the write and the operator would be promised a row
+	 * the document never gets.
+	 *
+	 * THE STORED HALF IS STILL READ, for its row ids alone. The element goes on
+	 * holding every repeater this request does not mention, and a fresh id has
+	 * to clear those as well as the document's element ids — which is what
+	 * `ElementorIdMint::rowIds()` exists to answer.
+	 *
+	 * DETERMINISTIC AND IDEMPOTENT, both of which `planChange()` requires: the
+	 * seed quotes the element's own id and nothing that varies between preview
+	 * and apply, and a row that already carries an `_id` — the caller's, or one
+	 * minted by an earlier run over the same payload — keeps it untouched.
+	 *
+	 * @param array[]              $tree       The raw stored tree.
+	 * @param array<string, mixed> $node       The descriptor `node()` returned.
+	 * @param string               $element_id The element being changed.
+	 * @param array<string, mixed> $settings   The caller's requested settings.
+	 *
+	 * @return array<string, mixed> The same settings, with every unnamed row named.
+	 */
+	public function namedRows( array $tree, array $node, string $element_id, array $settings ): array {
+		$stored = $node[ ElementorPropCoercion::NODE_SETTINGS ] ?? [];
+
+		return $this->mint->nameRepeaters(
+			$settings,
+			implode( self::SEED_SEPARATOR, [ self::ROW_SEED_DOMAIN, $element_id ] ),
+			$this->mint->rowIds(
+				is_array( $stored ) ? $stored : [],
+				$this->edit->collectIds( $tree )
+			)
 		);
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid

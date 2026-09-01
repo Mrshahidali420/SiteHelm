@@ -502,8 +502,8 @@ final class ElementorElementsUpdate implements WriteOperation {
 	 * tree AS IT IS BEING BUILT, so an entry is always validated against the same
 	 * element the write will land on.
 	 *
-	 * @param array[]                          $tree    The raw stored tree.
-	 * @param array<int, array<string, mixed>> $changes  The normalized entries.
+	 * @param array[]                          $tree     The raw stored tree.
+	 * @param array<int, array<string, mixed>> $changes  The normalized entries, updated in place with their named repeater rows.
 	 * @param array<int, array<int, string>>   $warnings Collects each entry's media advisories, in entry order.
 	 *
 	 * @return array[] The merged tree, before coercion.
@@ -511,7 +511,7 @@ final class ElementorElementsUpdate implements WriteOperation {
 	 * @throws OperationException With ErrorCode::TargetNotFound or
 	 *                            ErrorCode::InvalidInput, naming the entry.
 	 */
-	private function merge_all( array $tree, array $changes, array &$warnings ): array {
+	private function merge_all( array $tree, array &$changes, array &$warnings ): array {
 		foreach ( $changes as $position => $entry ) {
 			$element_id = (string) ( $entry[ ElementorWriteFields::INPUT_ELEMENT_ID ] ?? '' );
 			$settings   = is_array( $entry[ ElementorElementAddInput::INPUT_SETTINGS ] ?? null )
@@ -520,12 +520,18 @@ final class ElementorElementsUpdate implements WriteOperation {
 
 			$tree = $this->rethrow_for(
 				(int) $position,
-				function () use ( $tree, $element_id, $settings, &$warnings ): array {
+				function () use ( $tree, $element_id, &$settings, &$warnings ): array {
 					$node = $this->merge->node( $tree, $element_id );
 
 					$this->merge->assertKnownKeys( $node, $settings );
 
 					$warnings[] = $this->merge->mediaWarnings( $node, $settings );
+
+					// The named settings are written back into the entry as well
+					// as merged here, because the payload carries the entries and
+					// `applyChange()` merges those rather than this tree. Naming
+					// is idempotent, so the apply pass renames nothing.
+					$settings = $this->merge->namedRows( $tree, $node, $element_id, $settings );
 
 					return $this->merge->withSettings(
 						$tree,
@@ -534,6 +540,8 @@ final class ElementorElementsUpdate implements WriteOperation {
 					);
 				}
 			);
+
+			$changes[ $position ][ ElementorElementAddInput::INPUT_SETTINGS ] = $settings;
 		}
 
 		return $tree;

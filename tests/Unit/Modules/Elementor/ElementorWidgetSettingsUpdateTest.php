@@ -774,4 +774,93 @@ final class ElementorWidgetSettingsUpdateTest extends TestCase {
 			],
 		];
 	}
+
+	// ------------------------------------------------- repeater row identity
+
+	/**
+	 * A repeater row written here is stored with an `_id` of its own.
+	 *
+	 * A ROW WITHOUT ONE STORES, READS BACK AND RENDERS, and can never be styled:
+	 * per-row rules are emitted as `.elementor-repeater-item-<_id>`, so a
+	 * nameless row takes the control's defaults for the life of the page and
+	 * cannot be told from its siblings in the editor either. The writes that
+	 * ORIGINATE an element have always named their rows; this one reaches the
+	 * document through the settings merge and went past the mint entirely.
+	 */
+	public function test_repeater_rows_are_written_with_an_identifier(): void {
+		$this->withElementor();
+		$this->storeRaw( (string) json_encode( $this->repeaterWidgetTree() ) );
+
+		$planned = $this->plan(
+			$this->widgetSettingsUpdate(),
+			$this->arguments(
+				[
+					'elementId' => 'w555555',
+					'settings'  => [
+						'icon_list' => [
+							[ 'text' => 'One' ],
+							[ 'text' => 'Two' ],
+						],
+					],
+					'device'    => 'mobile',
+				]
+			)
+		);
+
+		// Under the SUFFIXED key, unlike the media advisory above: an `_id` is
+		// not a control an operator names or reads, so rows are named by what
+		// the payload carries rather than by what the operator wrote.
+		$rows = $planned->payload['settings']['icon_list_mobile'];
+
+		$this->assertMatchesRegularExpression( '/^[0-9a-f]{7}$/', (string) $rows[0]['_id'], 'A stored row carries a minted identifier.' );
+		$this->assertNotSame( $rows[0]['_id'], $rows[1]['_id'], 'Two rows styled alike is the defect, not the fix.' );
+	}
+
+	/**
+	 * A row the caller named keeps the name it was given.
+	 */
+	public function test_a_row_that_already_carries_an_identifier_keeps_it(): void {
+		$this->withElementor();
+		$this->storeRaw( (string) json_encode( $this->repeaterWidgetTree() ) );
+
+		$planned = $this->plan(
+			$this->widgetSettingsUpdate(),
+			$this->arguments(
+				[
+					'elementId' => 'w555555',
+					'settings'  => [ 'icon_list' => [ [ '_id' => 'abc1234', 'text' => 'One' ] ] ],
+					'device'    => 'mobile',
+				]
+			)
+		);
+
+		$this->assertSame( 'abc1234', $planned->payload['settings']['icon_list_mobile'][0]['_id'], 'A named row is left exactly as it arrived.' );
+	}
+
+	/**
+	 * A document holding one classic widget that declares a repeater control.
+	 *
+	 * The shared fixture tree holds no repeater, and rippling one through it
+	 * would change what every unrelated case in this file asserts about.
+	 *
+	 * @return array[] The raw tree.
+	 */
+	private function repeaterWidgetTree(): array {
+		return [
+			[
+				'id'       => self::containerId(),
+				'elType'   => 'container',
+				'settings' => [ 'content_width' => 'boxed' ],
+				'elements' => [
+					[
+						'id'         => 'w555555',
+						'elType'     => 'widget',
+						'widgetType' => 'icon-list',
+						'settings'   => [ 'icon_list' => [] ],
+						'elements'   => [],
+					],
+				],
+			],
+		];
+	}
 }

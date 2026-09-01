@@ -264,6 +264,12 @@ final class ElementorWidgetSettingsUpdate implements WriteOperation {
 
 		$suffixed = $this->suffixed( $requested, $device );
 
+		// Named AFTER the suffix, unlike the advisory above, because rows are
+		// named by what the payload carries rather than by what the operator
+		// wrote: an `_id` is not a control an operator names or reads, so the
+		// key it sits under is the merged one either way.
+		$suffixed = $this->merge->namedRows( $tree, $node, $element_id, $suffixed );
+
 		$coerced = $this->coercion->coerceTree(
 			$this->merge->withSettings(
 				$tree,

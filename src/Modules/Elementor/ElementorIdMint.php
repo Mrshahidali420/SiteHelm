@@ -338,6 +338,27 @@ final class ElementorIdMint {
 
 		return $this->rows( $settings, $seed, $taken );
 	}
+
+	/**
+	 * Every row `_id` a settings map already holds, added to the given set.
+	 *
+	 * FOR THE CALLER THAT NAMES ONE HALF OF A MERGE. A partial settings update
+	 * carries only the controls the request mentions, so naming its rows sees
+	 * only those rows — while the element goes on holding every OTHER repeater
+	 * the document already stored, whose row ids are exactly the ones a fresh
+	 * name must not land on. `nameRepeaters()` cannot reach them, because the
+	 * map it is handed is not the one the element will end up with. This is the
+	 * seam through which that caller reads them out of the stored half and
+	 * hands them in as ids already spoken for.
+	 *
+	 * @param array<string, mixed> $settings One element's raw settings map.
+	 * @param string[]             $carried  The ids already spoken for.
+	 *
+	 * @return string[] The running id set.
+	 */
+	public function rowIds( array $settings, array $carried ): array {
+		return $this->harvest( $settings, $carried );
+	}
 	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 
 	/**

@@ -816,4 +816,94 @@ final class ElementorElementUpdateTest extends TestCase {
 
 		$this->assertSame( [], $planned->warnings, 'This is the write the advisory exists to ask for.' );
 	}
+
+	// ------------------------------------------------- repeater row identity
+
+	/**
+	 * A repeater row written here is stored with an `_id` of its own.
+	 *
+	 * A ROW WITHOUT ONE STORES, READS BACK AND RENDERS, and can never be styled:
+	 * per-row rules are emitted as `.elementor-repeater-item-<_id>`, so a
+	 * nameless row takes the control's defaults for the life of the page and
+	 * cannot be told from its siblings in the editor either. The writes that
+	 * ORIGINATE an element have always named their rows; this one reaches the
+	 * document through the settings merge and went past the mint entirely.
+	 */
+	public function test_repeater_rows_are_written_with_an_identifier(): void {
+		$this->withElementor();
+		$this->storeRaw( (string) json_encode( $this->repeaterWidgetTree() ) );
+
+		$operation = $this->elementUpdate();
+		$input     = $this->arguments(
+			[
+				'elementId' => 'w555555',
+				'settings'  => [
+					'icon_list' => [
+						[ 'text' => 'One' ],
+						[ 'text' => 'Two' ],
+					],
+				],
+			]
+		);
+
+		$planned = $operation->planChange( $this->resolved( $operation, $input ), $input, $this->context() );
+
+		$rows = $planned->payload['settings']['icon_list'];
+
+		$this->assertMatchesRegularExpression( '/^[0-9a-f]{7}$/', (string) $rows[0]['_id'], 'A stored row carries a minted identifier.' );
+		$this->assertMatchesRegularExpression( '/^[0-9a-f]{7}$/', (string) $rows[1]['_id'], 'Every row, not just the first.' );
+		$this->assertNotSame( $rows[0]['_id'], $rows[1]['_id'], 'Two rows styled alike is the defect, not the fix.' );
+	}
+
+	/**
+	 * A row the caller named keeps the name it was given.
+	 *
+	 * IDEMPOTENCE IS LOAD-BEARING, not a courtesy: `applyChange()` merges the
+	 * approved settings out of the payload, which already carry the ids the
+	 * plan promised, and a second naming pass that moved them would write a
+	 * document the operator was never shown.
+	 */
+	public function test_a_row_that_already_carries_an_identifier_keeps_it(): void {
+		$this->withElementor();
+		$this->storeRaw( (string) json_encode( $this->repeaterWidgetTree() ) );
+
+		$operation = $this->elementUpdate();
+		$input     = $this->arguments(
+			[
+				'elementId' => 'w555555',
+				'settings'  => [ 'icon_list' => [ [ '_id' => 'abc1234', 'text' => 'One' ] ] ],
+			]
+		);
+
+		$planned = $operation->planChange( $this->resolved( $operation, $input ), $input, $this->context() );
+
+		$this->assertSame( 'abc1234', $planned->payload['settings']['icon_list'][0]['_id'], 'A named row is left exactly as it arrived.' );
+	}
+
+	/**
+	 * A document holding one classic widget that declares a repeater control.
+	 *
+	 * The shared fixture tree holds no repeater, and rippling one through it
+	 * would change what every unrelated case in this file asserts about.
+	 *
+	 * @return array[] The raw tree.
+	 */
+	private function repeaterWidgetTree(): array {
+		return [
+			[
+				'id'       => self::containerId(),
+				'elType'   => 'container',
+				'settings' => [ 'content_width' => 'boxed' ],
+				'elements' => [
+					[
+						'id'         => 'w555555',
+						'elType'     => 'widget',
+						'widgetType' => 'icon-list',
+						'settings'   => [ 'icon_list' => [] ],
+						'elements'   => [],
+					],
+				],
+			],
+		];
+	}
 }

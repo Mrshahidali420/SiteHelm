@@ -228,6 +228,10 @@ final class ElementorElementUpdate implements WriteOperation {
 
 		$warnings = $this->merge->mediaWarnings( $node, $settings );
 
+		// Named before the merge AND before the payload, so the row ids the
+		// promise is taken over are the same ones `applyChange()` stores.
+		$settings = $this->merge->namedRows( $tree, $node, $element_id, $settings );
+
 		$coerced = $this->coercion->coerceTree(
 			$this->merge->withSettings(
 				$tree,

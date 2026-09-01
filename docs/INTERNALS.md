@@ -2110,6 +2110,22 @@ makes a new page to hold it.
   for every node it walks, so build, create and import get it from the same call they
   already made, and `ElementorElementAdd` calls it directly because it stores the
   caller's settings verbatim and can carry a repeater in them without carrying a tree.
+- **The three settings updates name their rows through `ElementorSettingsMerge::namedRows()`,
+  because they never touch the mint otherwise.** `elementor-element-update`,
+  `elementor-elements-update` and `elementor-widget-settings-update` reach the document
+  through the settings merge rather than through `nameTree()`, so until this was added
+  every repeater row they wrote was stored nameless — the same defect the tree paths had
+  had, on the three operations an agent reaches for most. Naming happens on the
+  REQUESTED half, not the merged one, because the payload carries the requested settings
+  and `applyChange()` merges them again out of it: an id minted onto the merged map alone
+  would be dropped on the way to the write. The stored half is still read, for its row
+  ids alone — `ElementorIdMint::rowIds()` exposes the harvest so a fresh id clears the
+  rows of every repeater the request does not mention. The seed quotes the element's own
+  id and nothing that varies between preview and apply, and a row already carrying an
+  `_id` keeps it, so the second pass over an approved payload renames nothing.
+  `elementor-widget-settings-update` names AFTER the device suffix goes on, the opposite
+  of the media advisory directly below, because an `_id` is not a control an operator
+  names or reads.
 - **A repeater is recognized STRUCTURALLY, because there is no control schema at plan
   time.** The value must be a non-empty list; every member must be a non-empty array;
   every member must be associative rather than itself a list; and the members must not

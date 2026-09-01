@@ -19,6 +19,7 @@ use SiteHelm\Modules\Elementor\ElementorDocumentWriter;
 use SiteHelm\Modules\Elementor\ElementorElementAddInput;
 use SiteHelm\Modules\Elementor\ElementorElementUpdate;
 use SiteHelm\Modules\Elementor\ElementorElementsUpdate;
+use SiteHelm\Modules\Elementor\ElementorIdMint;
 use SiteHelm\Modules\Elementor\ElementorPresence;
 use SiteHelm\Modules\Elementor\ElementorPropCoercion;
 use SiteHelm\Modules\Elementor\ElementorSettingsMerge;
@@ -174,7 +175,7 @@ trait SettingsUpdateFixtures {
 		return [
 			'targets'  => new ElementorWriteTarget( $document, $tree, $presence, $coercion, $writer ),
 			'document' => $document,
-			'merge'    => new ElementorSettingsMerge( $edit, $coercion ),
+			'merge'    => new ElementorSettingsMerge( $edit, $coercion, new ElementorIdMint() ),
 			'edit'     => $edit,
 			'coercion' => $coercion,
 			'writer'   => $writer,
