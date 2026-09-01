@@ -43,6 +43,15 @@ use SiteHelm\Tests\TestCase;
  * the settings row exactly as this write left it — a rollback reporting success
  * and reversing nothing.
  *
+ * THE SECOND CLAIM THIS FILE EXISTS FOR IS THAT A LAYOUT IS TWO ROWS. Elementor
+ * keeps the layout in `_elementor_page_settings['template']`, which its editor
+ * panel reads, and in `_wp_page_template`, which is the row WordPress's template
+ * loader actually serves the page from. This operation shipped writing only the
+ * first, so a layout change stored, read back, verified clean and changed
+ * nothing a visitor could see — and no test could catch it, because the doubles
+ * modelled only the row the code wrote. Every layout case below now asserts the
+ * CORE row, and the rollback cases assert both.
+ *
  * PROCESS ISOLATION IS LOAD-BEARING. `ELEMENTOR_VERSION` is a constant and
  * `Elementor\Plugin` is a class alias, both permanent for the life of a process,
  * and the guard-ordering cases distinguish "Elementor is absent" from "you may
@@ -551,26 +560,150 @@ final class ElementorPageSettingsSetTest extends TestCase {
 		}
 	}
 
+	// ------------------------------------------------------- the two rows
+
+	/**
+	 * EVERY LAYOUT LANDS THE CORE ROW, and `default` lands the EMPTY STRING
+	 * rather than the word `default`.
+	 *
+	 * The mapping was read off Elementor 4.2.3's own `availableTemplates`, which
+	 * offers `"" => Default template`, `elementor_canvas`, `elementor_header_footer`
+	 * and `elementor_theme`. It is identity for three of the four and not for the
+	 * fourth, and the fourth is the common one — so a fix that wrote the same
+	 * string into both rows would be wrong precisely where it is used most, and
+	 * would name a template file no theme carries.
+	 *
+	 * @dataProvider layoutRows
+	 *
+	 * @param string $layout        The layout a caller asks for.
+	 * @param string $settings_row  What Elementor's own row must end up holding.
+	 * @param string $core_row      What WordPress's template row must end up holding.
+	 */
+	public function test_every_layout_lands_both_rows( string $layout, string $settings_row, string $core_row ): void {
+		$this->withElementor();
+		$this->storePageFixture();
+		$this->storePageSettings( [ 'custom_css' => '.hero{}' ] );
+
+		$this->applied( $this->pageSettingsSet(), $this->arguments( [ 'layout' => $layout ] ) );
+
+		$this->assertSame( $settings_row, $this->storedPageSettings()['template'] );
+		$this->assertSame( $core_row, $this->storedPageTemplateRow() );
+		$this->assertSame( '.hero{}', $this->storedPageSettings()['custom_css'] );
+	}
+
+	/**
+	 * The four layouts with the row each one produces.
+	 *
+	 * @return array<string, array{0: string, 1: string, 2: string}> The cases.
+	 */
+	public static function layoutRows(): array {
+		return [
+			'default'      => [ 'default', 'default', '' ],
+			'canvas'       => [ 'canvas', 'elementor_canvas', 'elementor_canvas' ],
+			'headerFooter' => [ 'headerFooter', 'elementor_header_footer', 'elementor_header_footer' ],
+			'theme'        => [ 'theme', 'elementor_theme', 'elementor_theme' ],
+		];
+	}
+
+	/**
+	 * THE VERIFICATION READS THE ROW THAT RENDERS. A write that landed only
+	 * Elementor's row must FAIL verification rather than confirming itself, which
+	 * is the property whose absence let the defect ship: the promise and the
+	 * read-back were both computed from the row the write had just set, so they
+	 * agreed with each other and with nothing a visitor saw.
+	 */
+	public function test_the_promise_and_the_read_back_both_measure_the_core_row(): void {
+		$this->withElementor();
+		$this->storePageFixture();
+
+		$operation = $this->pageSettingsSet();
+		$input     = $this->arguments( [ 'layout' => 'canvas' ] );
+		$target    = $this->resolved( $operation, $input );
+		$planned   = $operation->planChange( $target, $input, $this->context() );
+
+		$this->assertSame( 'canvas', $planned->afterFields['layout'] ?? null );
+
+		$operation->captureSnapshot( $target, $this->context() );
+		$key = $operation->applyChange( $target, $planned, $this->context() );
+
+		$this->assertSame( 'canvas', $operation->readBack( $key, $this->context() )->fields['layout'] ?? null );
+
+		// The state the shipped defect left behind, built directly because no
+		// write path can now produce it: Elementor's row set, WordPress's not.
+		$this->forgetPageTemplate();
+
+		$this->assertSame( 'default', $operation->readBack( $key, $this->context() )->fields['layout'] ?? null );
+	}
+
+	/**
+	 * A REQUEST THAT NAMES ONLY `hideTitle` LEAVES THE CORE ROW EXACTLY AS IT IS,
+	 * including when it disagrees with Elementor's.
+	 *
+	 * Repairing a desync the caller did not ask about would make a title change
+	 * silently relayout the page — a change nobody previewed, on a page whose
+	 * owner asked for something else.
+	 */
+	public function test_a_hide_title_write_leaves_the_core_row_untouched(): void {
+		$this->withElementor();
+		$this->storePageFixture();
+		$this->storePageSettings( [ 'template' => 'elementor_canvas' ] );
+		$this->storePageTemplate( '' );
+
+		$this->applied( $this->pageSettingsSet(), $this->arguments( [ 'hideTitle' => true ] ) );
+
+		$this->assertSame( '', $this->storedPageTemplateRow() );
+		$this->assertSame( 'yes', $this->storedPageSettings()['hide_title'] );
+	}
+
 	// ------------------------------------------------------- the rollback
 
 	/**
-	 * The snapshot records the row, the page it belongs to, and WHETHER THERE WAS
-	 * A ROW AT ALL — the third separately, because an absent row and an empty one
-	 * are different states.
+	 * The snapshot records BOTH rows, the page they belong to, and WHETHER EACH
+	 * ROW WAS THERE AT ALL — the existence flags separately, because an absent
+	 * row and an empty one are different states and `get_post_meta()` answers
+	 * `''` for both.
+	 *
+	 * The two flags are separate for the same reason the two rows are: a page can
+	 * carry Elementor settings and no core template row, or a core template row
+	 * and no Elementor settings, and a rollback that inferred one from the other
+	 * would create a row the page never had.
 	 */
 	public function test_the_snapshot_records_the_row_and_whether_there_was_one(): void {
 		$this->withElementor();
 		$this->storePageFixture();
 		$this->storePageSettings( [ 'custom_css' => '.hero{}' ] );
+		$this->storePageTemplate( 'elementor_theme' );
 
 		$operation = $this->pageSettingsSet();
 		$input     = $this->arguments( [ 'layout' => 'canvas' ] );
 		$snapshot  = $operation->captureSnapshot( $this->resolved( $operation, $input ), $this->context() );
 
-		$this->assertSame( [ 'existed', 'post_id', 'settings' ], array_keys( (array) $snapshot ) );
+		$this->assertSame(
+			[ 'existed', 'page_template', 'post_id', 'settings', 'template_existed' ],
+			array_keys( (array) $snapshot )
+		);
 		$this->assertTrue( $snapshot['existed'] );
+		$this->assertTrue( $snapshot['template_existed'] );
 		$this->assertSame( self::DOCUMENT_ID, $snapshot['post_id'] );
 		$this->assertSame( [ 'custom_css' => '.hero{}' ], $snapshot['settings'] );
+		$this->assertSame( 'elementor_theme', $snapshot['page_template'] );
+	}
+
+	/**
+	 * A PAGE WITH NO CORE TEMPLATE ROW IS SNAPSHOTTED AS HAVING NONE, and the
+	 * recorded value is the empty string rather than null, so the restore path
+	 * never has to decide what an absent value means: the flag decides.
+	 */
+	public function test_the_snapshot_records_an_absent_core_row_as_absent(): void {
+		$this->withElementor();
+		$this->storePageFixture();
+
+		$operation = $this->pageSettingsSet();
+		$input     = $this->arguments( [ 'layout' => 'canvas' ] );
+		$snapshot  = $operation->captureSnapshot( $this->resolved( $operation, $input ), $this->context() );
+
+		$this->assertFalse( $snapshot['template_existed'] );
+		$this->assertSame( '', $snapshot['page_template'] );
 	}
 
 	/**
@@ -620,6 +753,132 @@ final class ElementorPageSettingsSetTest extends TestCase {
 			],
 			$this->storedPageSettings()
 		);
+	}
+
+	/**
+	 * A ROLLBACK PUTS BOTH ROWS BACK, and the core one back to the value it held
+	 * rather than to whatever the settings row implies.
+	 *
+	 * A rollback that restored only Elementor's row would leave the page
+	 * RENDERING the layout the write applied while reporting the layout the
+	 * rollback restored — a page in the same broken state the write itself used
+	 * to produce, reached by the mechanism whose whole purpose is to undo it.
+	 */
+	public function test_a_rollback_restores_both_layout_rows(): void {
+		$this->withElementor();
+		$this->storePageFixture();
+		$this->storePageSettings(
+			[
+				'custom_css' => '.hero{}',
+				'template'   => 'elementor_theme',
+			]
+		);
+		$this->storePageTemplate( 'elementor_theme' );
+
+		$operation = $this->pageSettingsSet();
+		$input     = $this->arguments( [ 'layout' => 'canvas' ] );
+		$target    = $this->resolved( $operation, $input );
+		$planned   = $operation->planChange( $target, $input, $this->context() );
+		$snapshot  = $operation->captureSnapshot( $target, $this->context() );
+
+		$operation->applyChange( $target, $planned, $this->context() );
+
+		$this->assertSame( 'elementor_canvas', $this->storedPageTemplateRow() );
+
+		$operation->restore( (array) $snapshot, $this->context() );
+
+		$this->assertSame( 'elementor_theme', $this->storedPageTemplateRow() );
+		$this->assertSame( 'elementor_theme', $this->storedPageSettings()['template'] );
+	}
+
+	/**
+	 * A ROLLBACK RESTORES A CORE ROW THAT HELD THE EMPTY STRING AS THE EMPTY
+	 * STRING, not as an absent row.
+	 *
+	 * `''` is how WordPress stores "the theme's default template", and it is a
+	 * row that exists. Deleting it instead would be a different page state
+	 * reached under the name of restoring one, and the two are indistinguishable
+	 * to `get_post_meta()` — which is exactly why the snapshot carries a flag.
+	 */
+	public function test_a_rollback_restores_an_empty_core_row_rather_than_deleting_it(): void {
+		$this->withElementor();
+		$this->storePageFixture();
+		$this->storePageTemplate( '' );
+
+		$operation = $this->pageSettingsSet();
+		$input     = $this->arguments( [ 'layout' => 'canvas' ] );
+		$target    = $this->resolved( $operation, $input );
+		$planned   = $operation->planChange( $target, $input, $this->context() );
+		$snapshot  = $operation->captureSnapshot( $target, $this->context() );
+
+		$operation->applyChange( $target, $planned, $this->context() );
+		$operation->restore( (array) $snapshot, $this->context() );
+
+		$this->assertArrayHasKey(
+			self::DOCUMENT_ID . '|' . ElementorPageSettings::META_PAGE_TEMPLATE,
+			$this->meta,
+			'A row holding the empty string is a row, and a rollback must leave it there.'
+		);
+		$this->assertSame( '', $this->storedPageTemplateRow() );
+	}
+
+	/**
+	 * A PAGE THAT HAD NO CORE TEMPLATE ROW COMES OUT OF A ROLLBACK WITH NONE.
+	 *
+	 * The assertion is that the meta key is ABSENT, not that it reads empty, for
+	 * the settings row's reason: `get_post_meta()` answers `''` for both and
+	 * cannot tell them apart.
+	 */
+	public function test_a_rollback_deletes_a_core_row_the_write_created(): void {
+		$this->withElementor();
+		$this->storePageFixture();
+		$this->forgetPageTemplate();
+
+		$operation = $this->pageSettingsSet();
+		$input     = $this->arguments( [ 'layout' => 'canvas' ] );
+		$target    = $this->resolved( $operation, $input );
+		$planned   = $operation->planChange( $target, $input, $this->context() );
+		$snapshot  = $operation->captureSnapshot( $target, $this->context() );
+
+		$operation->applyChange( $target, $planned, $this->context() );
+
+		$this->assertSame( 'elementor_canvas', $this->storedPageTemplateRow() );
+
+		$operation->restore( (array) $snapshot, $this->context() );
+
+		$this->assertArrayNotHasKey(
+			self::DOCUMENT_ID . '|' . ElementorPageSettings::META_PAGE_TEMPLATE,
+			$this->meta,
+			'A page that had no core template row must not come out of a rollback holding one.'
+		);
+	}
+
+	/**
+	 * A SNAPSHOT TAKEN BY AN OLDER SITEHELM LEAVES THE CORE ROW ALONE.
+	 *
+	 * Snapshots outlive releases: the audit store holds ones captured by versions
+	 * that never knew about `_wp_page_template`, and they carry no
+	 * `template_existed` member. Treating that absence as "there was no row"
+	 * would make the rollback delete a row it never recorded — the restore itself
+	 * becoming the destructive act, on pages whose owner asked only to undo
+	 * something.
+	 */
+	public function test_a_snapshot_from_before_this_fix_does_not_touch_the_core_row(): void {
+		$this->withElementor();
+		$this->storePageFixture();
+		$this->storePageTemplate( 'elementor_header_footer' );
+
+		$this->pageSettingsSet()->restore(
+			[
+				'post_id'  => self::DOCUMENT_ID,
+				'existed'  => true,
+				'settings' => [ 'custom_css' => '.hero{}' ],
+			],
+			$this->context()
+		);
+
+		$this->assertSame( 'elementor_header_footer', $this->storedPageTemplateRow() );
+		$this->assertSame( [ 'custom_css' => '.hero{}' ], $this->storedPageSettings() );
 	}
 
 	/**

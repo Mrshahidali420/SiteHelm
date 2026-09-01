@@ -82,12 +82,117 @@
                     "widgetTypeCounts"
                 ],
                 "additionalProperties": false
+            },
+            "pageSettings": {
+                "type": "object",
+                "description": "This page's Elementor page settings. Enough to reproduce the page elsewhere: the layout it actually renders with, whether the theme title is hidden, and the whole stored row behind both.",
+                "properties": {
+                    "layoutSync": {
+                        "type": "object",
+                        "description": "Elementor keeps a page's layout in two rows: the one its editor panel reads, and the page template WordPress renders from. They normally agree. When they do not, the page renders with the second one and the Elementor editor shows the first, which is reported here rather than guessed at.",
+                        "properties": {
+                            "inEffect": {
+                                "type": "string",
+                                "enum": [
+                                    "default",
+                                    "canvas",
+                                    "headerFooter",
+                                    "theme"
+                                ],
+                                "description": "The layout the page is actually rendered with."
+                            },
+                            "pageSettingsLayout": {
+                                "type": "string",
+                                "enum": [
+                                    "default",
+                                    "canvas",
+                                    "headerFooter",
+                                    "theme"
+                                ],
+                                "description": "The layout Elementor's own page-settings row claims, which is what its editor panel shows."
+                            },
+                            "agree": {
+                                "type": "boolean",
+                                "description": "False when the two rows disagree. Setting the layout again with elementor-page-settings-set writes both and brings them back into step."
+                            }
+                        },
+                        "required": [
+                            "inEffect",
+                            "pageSettingsLayout",
+                            "agree"
+                        ],
+                        "additionalProperties": false
+                    },
+                    "storedSettings": {
+                        "type": "object",
+                        "description": "The page settings exactly as the row stores them, under Elementor's own key names, including the background, padding and responsive values nothing here writes. A page whose settings have never been touched stores no row and answers an empty object."
+                    },
+                    "writableSettings": {
+                        "type": "object",
+                        "properties": {
+                            "layout": {
+                                "type": "string",
+                                "enum": [
+                                    "default",
+                                    "canvas",
+                                    "headerFooter",
+                                    "theme"
+                                ],
+                                "description": "Which page layout this page is actually rendered with, read from the page template WordPress serves it from. A page whose template is the theme's own, or one Elementor no longer offers, reports the default."
+                            },
+                            "hideTitle": {
+                                "type": "boolean",
+                                "description": "Whether the theme's page title is hidden on this page."
+                            }
+                        },
+                        "required": [
+                            "layout",
+                            "hideTitle"
+                        ],
+                        "additionalProperties": false
+                    }
+                },
+                "required": [
+                    "layoutSync",
+                    "storedSettings",
+                    "writableSettings"
+                ],
+                "additionalProperties": false
+            },
+            "hints": {
+                "type": "array",
+                "description": "Authoring warnings this particular page has earned, each detected from what is actually stored rather than offered as general advice. Always present, and an empty list when this page has nothing to warn about.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "code": {
+                            "type": "string",
+                            "enum": [
+                                "layout-not-set",
+                                "layout-desynced",
+                                "container-kit-padding"
+                            ],
+                            "description": "Which condition was detected."
+                        },
+                        "message": {
+                            "type": "string",
+                            "description": "What the condition means for this page and which operation changes it."
+                        }
+                    },
+                    "required": [
+                        "code",
+                        "message"
+                    ],
+                    "additionalProperties": false
+                }
             }
         },
         "required": [
             "document",
             "nodes",
-            "totals"
+            "totals",
+            "pageSettings",
+            "hints"
         ],
         "additionalProperties": false,
         "$defs": {

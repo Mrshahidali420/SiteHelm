@@ -56,10 +56,22 @@ use SiteHelm\Contracts\SnapshotPolicy;
  *     before the write, and this is the caller's input, which is exactly the side
  *     of that class's line where an undeclared key is refused.
  *
- * ELEMENT IDS ARE STORED AS THE CALLER SENT THEM. `elementor-template-apply`
- * re-mints every id as it inserts, so minting here would buy nothing and would
- * lose the correspondence between an imported template and the export it came
- * from — which is the only thing that makes two sites' templates diffable.
+ * AN ELEMENT ID THE CALLER SENT IS STORED AS IT WAS SENT; A NODE THAT ARRIVED
+ * WITHOUT ONE IS NAMED. Preserving supplied ids keeps the correspondence between
+ * an imported template and the export it came from, which is the only thing that
+ * makes two sites' templates diffable. Filling the gaps is a separate matter,
+ * and an earlier version of this docblock got it wrong: it argued that minting
+ * "would buy nothing" because `elementor-template-apply` re-mints every id as it
+ * inserts. `ElementorTemplateApply` uses `ElementorIdMint::reassign()`, which by
+ * design leaves an UNNAMED node unnamed — so a node imported without an id is
+ * still unnamed after the apply, and stays that way forever. That matters
+ * because Elementor generates its per-element CSS under the selector
+ * `.elementor-element-<id>`: a document holding unnamed nodes emits every rule
+ * under `.elementor-element-`, which matches every element on the page at once
+ * and collapses the whole layout's styling into one indiscriminate block.
+ * Naming is done HERE, at the only point where these elements are being
+ * originated rather than copied, and it is deterministic — see
+ * `ElementorIdMint::nameTree()` for why that distinction is the whole rule.
  *
  * NOTHING IS WRITTEN TO A DOCUMENT. An import creates a library post and touches
  * no page on the site; the template shows nowhere until it is applied.
@@ -67,6 +79,15 @@ use SiteHelm\Contracts\SnapshotPolicy;
  * @package SiteHelm
  */
 final class ElementorTemplateImport implements WriteOperation {
+
+	/**
+	 * The registered operation identifier.
+	 *
+	 * Named because it is also the first component of the naming seed, and a seed
+	 * that quoted a second spelling of this string would derive different
+	 * identifiers from the same request.
+	 */
+	public const OPERATION_ID = 'elementor-template-import';
 
 	/**
 	 * The input member carrying the tree to import.
@@ -139,6 +160,14 @@ final class ElementorTemplateImport implements WriteOperation {
 	private const SOURCE = 'Send the content member of an elementor-template-get result unchanged, or export the template from Elementor again.';
 
 	/**
+	 * Separates the parts of the naming seed.
+	 *
+	 * A pipe rather than the NUL `ElementorIdMint` uses internally; the mint
+	 * appends its own NUL-separated path and attempt to whatever it is handed.
+	 */
+	private const SEED_SEPARATOR = '|';
+
+	/**
 	 * The operation's registered definition.
 	 *
 	 * @return OperationDefinition The definition registered for
@@ -146,7 +175,7 @@ final class ElementorTemplateImport implements WriteOperation {
 	 */
 	public static function definition(): OperationDefinition {
 		return new OperationDefinition(
-			id: 'elementor-template-import',
+			id: self::OPERATION_ID,
 			domain: Domain::Elementor,
 			mode: Mode::Write,
 			description: 'Create a reusable Elementor library template from an element tree, such as one elementor-template-get exported from another site. The tree is validated against this site\'s installed widgets before anything is stored.',
@@ -219,12 +248,14 @@ final class ElementorTemplateImport implements WriteOperation {
 	 * @param ElementorTreeInput      $gates    The shared caller-supplied-tree gates.
 	 * @param ElementorPropCoercion   $coercion The coercion sweep.
 	 * @param ElementorDocumentWriter $writer   The verified document writer.
+	 * @param ElementorIdMint         $mint     The deterministic id derivation.
 	 */
 	public function __construct(
 		private readonly ElementorTemplateTarget $targets,
 		private readonly ElementorTreeInput $gates,
 		private readonly ElementorPropCoercion $coercion,
 		private readonly ElementorDocumentWriter $writer,
+		private readonly ElementorIdMint $mint,
 	) {
 	}
 
@@ -287,7 +318,8 @@ final class ElementorTemplateImport implements WriteOperation {
 			);
 		}
 
-		$totals = $this->gates->assertUsable( $content, self::SUBJECT, self::SOURCE );
+		$totals   = $this->gates->assertUsable( $content, self::SUBJECT, self::SOURCE );
+		$warnings = $this->gates->mediaWarnings( $content );
 
 		$payload = [
 			self::PAYLOAD_PAGE_SETTINGS => $this->page_settings( $input ),
@@ -296,7 +328,11 @@ final class ElementorTemplateImport implements WriteOperation {
 				'post_status' => 'publish',
 				'post_title'  => $title,
 			],
-			self::PAYLOAD_TREE          => $this->coercion->coerceTree( $content ),
+			self::PAYLOAD_TREE          => $this->mint->nameTree(
+				$this->coercion->coerceTree( $content ),
+				$this->seed( $type, $title ),
+				[]
+			),
 			self::PAYLOAD_TYPE          => $type,
 		];
 
@@ -309,7 +345,7 @@ final class ElementorTemplateImport implements WriteOperation {
 				ElementorTemplateTarget::FIELD_COUNT  => $totals['nodeCount'],
 			],
 			ElementorTemplateTarget::FIELD_ORDER,
-			[],
+			$warnings,
 			[
 				'maxDepth'    => $totals['maxDepth'],
 				'widgetTypes' => array_keys( $totals['widgetTypeCounts'] ),
@@ -445,5 +481,36 @@ final class ElementorTemplateImport implements WriteOperation {
 		$settings = $input[ self::INPUT_PAGE_SETTINGS ] ?? null;
 
 		return is_array( $settings ) ? $settings : [];
+	}
+
+	/**
+	 * The seed the names of the caller's unnamed nodes are derived from.
+	 *
+	 * THREE PARTS, ALL OF THEM REQUEST VALUES, AND NOTHING THAT COULD MOVE. An
+	 * import creates a post that does not exist yet, so there is no post id to
+	 * quote and no stored state to fingerprint; what is left is the operation id,
+	 * which separates these names from every other operation's, and the type and
+	 * title, which separate two different templates imported into the same
+	 * library. Both the preview run and the apply run read the same three values
+	 * out of the same request, so both mint the same ids and the payload
+	 * fingerprint is stable across them.
+	 *
+	 * TWO IMPORTS OF THE SAME TEMPLATE UNDER THE SAME TITLE DO PRODUCE THE SAME
+	 * NAMES, and that is harmless rather than a collision: they are two separate
+	 * library posts, each with its own `_elementor_data`, and Elementor scopes
+	 * element ids per document. `elementor-template-apply` re-mints the whole
+	 * subtree against the destination page in any case.
+	 *
+	 * The position path and the collision attempt are appended by the mint, and
+	 * must not be pre-mixed here, for the reason `ElementorElementAdd::seed()`
+	 * records.
+	 *
+	 * @param string $type  The template type being imported.
+	 * @param string $title The title the template is stored under.
+	 *
+	 * @return string The seed.
+	 */
+	private function seed( string $type, string $title ): string {
+		return implode( self::SEED_SEPARATOR, [ self::OPERATION_ID, $type, $title ] );
 	}
 }

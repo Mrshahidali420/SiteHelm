@@ -46,9 +46,9 @@ use Throwable;
  *     digest of that same raw value as it was BEFORE the write. It does NOT
  *     compare against the caller's `$tree`, and demanding that would break every
  *     API write on a real site: Elementor's own `Document::save()` NORMALISES
- *     what it is given — it mints ids for elements that lack them and fills in
- *     defaults — so a byte-equal re-read is not something a correct Elementor
- *     would ever produce. Normalisation is legitimate and expected. What issue
+ *     what it is given — it fills in control defaults and rewrites the shapes it
+ *     owns — so a byte-equal re-read is not something a correct Elementor would
+ *     ever produce. Normalisation is legitimate and expected. What issue
  *     #98 actually describes is a save that persists NOTHING, and the honest,
  *     achievable detection for that is "the stored document is byte-for-byte the
  *     one that was there before". So this path proves PERSISTENCE HAPPENED, and
@@ -56,6 +56,18 @@ use Throwable;
  *   - THE FALLBACK PATH ASKS "IS THE STORED DOCUMENT THE TREE I WROTE?" — the
  *     fallback wrote the exact bytes itself, past every normaliser, so it is
  *     entitled to demand them back, and a mismatch there is `ExecutionFailed`.
+ *
+ * WHAT NORMALISATION DOES NOT DO: MINT IDS. An earlier version of this docblock
+ * claimed `Document::save()` "mints ids for elements that lack them". IT DOES
+ * NOT, on either path this class writes through, and that sentence is the most
+ * likely reason nobody minted ids upstream — a safety net was documented, so it
+ * was trusted, and it was never there. Proven on a live site 2026-08-31: a
+ * 175-element tree stored with no ids rendered 175 elements with `data-id=""`,
+ * which collapsed every per-element rule onto the single empty selector
+ * `.elementor-element-` and destroyed the page while this class's oracle, and
+ * every oracle above it, reported success. Naming the tree is the CALLER's job
+ * and is done in `planChange()` by `ElementorIdMint::nameTree()`. Do not
+ * reintroduce a claim that anything downstream will name it.
  *
  * THE WEAKER API ORACLE IS SUFFICIENT BECAUSE OF WHAT SITS ABOVE IT, not as a
  * concession. This class's promise is "the document was persisted, by this

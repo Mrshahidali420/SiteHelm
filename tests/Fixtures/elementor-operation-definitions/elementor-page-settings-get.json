@@ -60,7 +60,7 @@
                             "headerFooter",
                             "theme"
                         ],
-                        "description": "Which page layout Elementor renders this page with. A page storing no layout, or one Elementor no longer offers, reports the default."
+                        "description": "Which page layout this page is actually rendered with, read from the page template WordPress serves it from. A page whose template is the theme's own, or one Elementor no longer offers, reports the default."
                     },
                     "hideTitle": {
                         "type": "boolean",
@@ -70,6 +70,42 @@
                 "required": [
                     "layout",
                     "hideTitle"
+                ],
+                "additionalProperties": false
+            },
+            "layoutSync": {
+                "type": "object",
+                "description": "Elementor keeps a page's layout in two rows: the one its editor panel reads, and the page template WordPress renders from. They normally agree. When they do not, the page renders with the second one and the Elementor editor shows the first, which is reported here rather than guessed at.",
+                "properties": {
+                    "inEffect": {
+                        "type": "string",
+                        "enum": [
+                            "default",
+                            "canvas",
+                            "headerFooter",
+                            "theme"
+                        ],
+                        "description": "The layout the page is actually rendered with."
+                    },
+                    "pageSettingsLayout": {
+                        "type": "string",
+                        "enum": [
+                            "default",
+                            "canvas",
+                            "headerFooter",
+                            "theme"
+                        ],
+                        "description": "The layout Elementor's own page-settings row claims, which is what its editor panel shows."
+                    },
+                    "agree": {
+                        "type": "boolean",
+                        "description": "False when the two rows disagree. Setting the layout again with elementor-page-settings-set writes both and brings them back into step."
+                    }
+                },
+                "required": [
+                    "inEffect",
+                    "pageSettingsLayout",
+                    "agree"
                 ],
                 "additionalProperties": false
             },
@@ -86,6 +122,7 @@
         "required": [
             "document",
             "writableSettings",
+            "layoutSync",
             "storedSettings",
             "settingsKeyCount"
         ],

@@ -38,7 +38,7 @@
                     "headerFooter",
                     "theme"
                 ],
-                "description": "The layout the page holds after the change."
+                "description": "The layout the page is rendered with after the change, read back from the page template WordPress serves it from rather than from Elementor's own settings row."
             },
             "hideTitle": {
                 "type": "boolean",

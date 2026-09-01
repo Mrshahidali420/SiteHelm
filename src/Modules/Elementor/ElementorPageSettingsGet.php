@@ -44,6 +44,20 @@ use SiteHelm\Contracts\SnapshotPolicy;
  * the cut. Such a row is not one Elementor produced, and saying so loudly is
  * the only answer that cannot be misread.
  *
+ * `writableSettings.layout` IS THE LAYOUT IN EFFECT, NOT THE ONE ELEMENTOR'S ROW
+ * CLAIMS. The two are stored separately — `_elementor_page_settings['template']`
+ * is what the editor panel shows, `_wp_page_template` is what WordPress serves
+ * the page from — and reporting the first would tell an operator the page is
+ * full width while every visitor sees the theme's header and title.
+ *
+ * WHEN THE TWO DISAGREE THE READ SAYS SO, in `layoutSync`, and does NOT repair
+ * it. Every page a shipped SiteHelm set a layout on is in that state right now,
+ * so the desync is the ordinary case rather than a curiosity, and an operator
+ * has to be told which of the two values is the one taking effect. Repairing it
+ * is not this operation's to do: a read that writes is a write with no preview,
+ * no snapshot and no rollback. `elementor-page-settings-set` writes both rows
+ * and brings them back into step.
+ *
  * THE GUARD ORDER IS `elementor-element-get`'s, for its reasons: `edit_post`
  * FIRST, before any lookup, so an unauthorized caller causes no database read
  * and cannot learn from the shape of a refusal whether this site runs
@@ -98,7 +112,8 @@ final class ElementorPageSettingsGet {
 				'type'                 => 'object',
 				'properties'           => [
 					'document'                            => ElementorFields::documentSummarySchema(),
-					ElementorPageSettings::FIELD_WRITABLE => self::writableSchema(),
+					ElementorPageSettings::FIELD_WRITABLE => ElementorPageSettings::writableSchema(),
+					ElementorPageSettings::FIELD_LAYOUT_SYNC => ElementorPageSettings::layoutSyncSchema(),
 					ElementorPageSettings::FIELD_STORED   => [
 						'type'        => 'object',
 						'description' => 'The page\'s Elementor page settings exactly as the row stores them, under Elementor\'s own key names. A page whose settings have never been touched stores no row at all and answers an empty object. Nothing here is trimmed: a row too large to report is refused rather than cut.',
@@ -112,6 +127,7 @@ final class ElementorPageSettingsGet {
 				'required'             => [
 					'document',
 					ElementorPageSettings::FIELD_WRITABLE,
+					ElementorPageSettings::FIELD_LAYOUT_SYNC,
 					ElementorPageSettings::FIELD_STORED,
 					ElementorPageSettingsTarget::FIELD_KEY_COUNT,
 				],
@@ -134,37 +150,6 @@ final class ElementorPageSettingsGet {
 			],
 		);
 	}
-
-	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- The module vocabulary is camelCase across every class.
-	/**
-	 * The declared schema for the two writable values.
-	 *
-	 * ONE DECLARATION, TWO OPERATIONS. `elementor-page-settings-set` promises
-	 * these same two fields, and a second spelling of their vocabulary here is a
-	 * second chance for the read and the write to describe the same value
-	 * differently.
-	 *
-	 * @return array<string, mixed> The JSON Schema fragment.
-	 */
-	private static function writableSchema(): array {
-		return [
-			'type'                 => 'object',
-			'properties'           => [
-				ElementorPageSettings::FIELD_LAYOUT     => [
-					'type'        => 'string',
-					'enum'        => array_keys( ElementorPageSettings::LAYOUTS ),
-					'description' => 'Which page layout Elementor renders this page with. A page storing no layout, or one Elementor no longer offers, reports the default.',
-				],
-				ElementorPageSettings::FIELD_HIDE_TITLE => [
-					'type'        => 'boolean',
-					'description' => 'Whether the theme\'s page title is hidden on this page.',
-				],
-			],
-			'required'             => ElementorPageSettings::FIELD_ORDER,
-			'additionalProperties' => false,
-		];
-	}
-	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 
 	// phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase -- $context->userId is the OperationContext contract's own property name.
 	// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The messages are literals written for end users and quote no stored content.
@@ -222,9 +207,12 @@ final class ElementorPageSettingsGet {
 			);
 		}
 
+		$page_template = ElementorPageSettings::storedPageTemplate( $document_id );
+
 		return [
 			'document'                                   => $summary,
-			ElementorPageSettings::FIELD_WRITABLE        => ElementorPageSettings::project( $stored ),
+			ElementorPageSettings::FIELD_WRITABLE        => ElementorPageSettings::project( $stored, $page_template ),
+			ElementorPageSettings::FIELD_LAYOUT_SYNC     => ElementorPageSettings::layoutSync( $stored, $page_template ),
 			ElementorPageSettings::FIELD_STORED          => $stored,
 			ElementorPageSettingsTarget::FIELD_KEY_COUNT => count( $stored ),
 		];

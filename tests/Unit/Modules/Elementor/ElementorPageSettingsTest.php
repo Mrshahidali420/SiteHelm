@@ -168,22 +168,39 @@ final class ElementorPageSettingsTest extends TestCase {
 	 * client never has to tell "not set" from "not reported".
 	 */
 	public function test_the_projection_always_reports_both_fields(): void {
-		$this->assertSame( ElementorPageSettings::FIELD_ORDER, array_keys( ElementorPageSettings::project( [] ) ) );
+		$this->assertSame( ElementorPageSettings::FIELD_ORDER, array_keys( ElementorPageSettings::project( [], '' ) ) );
 		$this->assertSame(
 			[
 				'layout'    => 'default',
 				'hideTitle' => false,
 			],
-			ElementorPageSettings::project( [] )
+			ElementorPageSettings::project( [], '' )
 		);
 	}
 
 	/**
-	 * A stored layout is reported under the name this plugin exposes, not the one
-	 * Elementor stores.
+	 * THE PROJECTED LAYOUT COMES FROM THE CORE PAGE-TEMPLATE ROW, NOT FROM
+	 * ELEMENTOR'S OWN, and this case is the bug itself written down.
+	 *
+	 * A page whose Elementor row says `elementor_canvas` while WordPress's row is
+	 * empty renders with the theme's header, footer and title — the layout the
+	 * Elementor row names is a claim nobody is acting on. Reporting that claim is
+	 * what let a write store a layout, read it back, verify clean, and change
+	 * nothing a visitor could see.
+	 */
+	public function test_the_projected_layout_is_the_row_that_renders_not_the_one_elementor_claims(): void {
+		$this->assertSame( 'canvas', ElementorPageSettings::project( [], 'elementor_canvas' )['layout'] );
+		$this->assertSame( 'default', ElementorPageSettings::project( [ 'template' => 'elementor_canvas' ], '' )['layout'] );
+	}
+
+	/**
+	 * The layout is reported under the name this plugin exposes, not the one
+	 * WordPress stores.
 	 */
 	public function test_a_stored_layout_is_reported_under_its_exposed_name(): void {
-		$this->assertSame( 'canvas', ElementorPageSettings::project( [ 'template' => 'elementor_canvas' ] )['layout'] );
+		$this->assertSame( 'canvas', ElementorPageSettings::project( [], 'elementor_canvas' )['layout'] );
+		$this->assertSame( 'headerFooter', ElementorPageSettings::project( [], 'elementor_header_footer' )['layout'] );
+		$this->assertSame( 'theme', ElementorPageSettings::project( [], 'elementor_theme' )['layout'] );
 	}
 
 	/**
@@ -192,25 +209,30 @@ final class ElementorPageSettingsTest extends TestCase {
 	 *
 	 * A theme or a third-party plugin can store a template name of its own here.
 	 * The field declares an enum, so echoing that value would break the client's
-	 * parse of an otherwise fine read; `default` is what Elementor renders for a
-	 * template it does not know, so it is the honest answer as well as the safe
-	 * one.
+	 * parse of an otherwise fine read; `default` is what this plugin's vocabulary
+	 * has for "a layout none of the four names", so it is the safe answer, and
+	 * the same rule holds whichever of the two rows the name was read from.
 	 */
 	public function test_an_unrecognised_layout_projects_as_the_default(): void {
-		$this->assertSame( 'default', ElementorPageSettings::project( [ 'template' => 'some-theme-template' ] )['layout'] );
-		$this->assertSame( 'default', ElementorPageSettings::project( [ 'template' => [ 'not', 'scalar' ] ] )['layout'] );
+		$this->assertSame( 'default', ElementorPageSettings::project( [], 'some-theme-template.php' )['layout'] );
+		$this->assertSame( 'default', ElementorPageSettings::layoutNameOf( [ 'template' => 'some-theme-template' ] ) );
+		$this->assertSame( 'default', ElementorPageSettings::layoutNameOf( [ 'template' => [ 'not', 'scalar' ] ] ) );
 	}
 
 	/**
 	 * The hide-title flag is true for Elementor's own stored `yes` and false for
 	 * everything else, including the `''` Elementor writes when the box is
 	 * cleared.
+	 *
+	 * IT IS READ FROM ELEMENTOR'S ROW AND ONLY FROM THERE, unlike the layout
+	 * beside it. Nothing in WordPress core renders a page title differently for
+	 * it, so there is no second row it could have drifted from.
 	 */
 	public function test_the_hide_title_flag_is_true_only_for_elementors_own_yes(): void {
-		$this->assertTrue( ElementorPageSettings::project( [ 'hide_title' => 'yes' ] )['hideTitle'] );
-		$this->assertFalse( ElementorPageSettings::project( [ 'hide_title' => '' ] )['hideTitle'] );
-		$this->assertFalse( ElementorPageSettings::project( [ 'hide_title' => 'no' ] )['hideTitle'] );
-		$this->assertFalse( ElementorPageSettings::project( [] )['hideTitle'] );
+		$this->assertTrue( ElementorPageSettings::project( [ 'hide_title' => 'yes' ], '' )['hideTitle'] );
+		$this->assertFalse( ElementorPageSettings::project( [ 'hide_title' => '' ], '' )['hideTitle'] );
+		$this->assertFalse( ElementorPageSettings::project( [ 'hide_title' => 'no' ], '' )['hideTitle'] );
+		$this->assertFalse( ElementorPageSettings::project( [], '' )['hideTitle'] );
 	}
 
 	// ------------------------------------------------------- applying a change
@@ -392,7 +414,10 @@ final class ElementorPageSettingsTest extends TestCase {
 				'layout'    => 'headerFooter',
 				'hideTitle' => true,
 			],
-			ElementorPageSettings::project( ElementorPageSettings::apply( [], $requested ) )
+			ElementorPageSettings::project(
+				ElementorPageSettings::apply( [], $requested ),
+				ElementorPageSettings::pageTemplateOf( ElementorPageSettings::apply( [], $requested ) )
+			)
 		);
 	}
 }

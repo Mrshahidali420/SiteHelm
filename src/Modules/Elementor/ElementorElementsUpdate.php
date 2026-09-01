@@ -140,7 +140,7 @@ final class ElementorElementsUpdate implements WriteOperation {
 								ElementorElementAddInput::INPUT_SETTINGS => [
 									'type'          => 'object',
 									'maxProperties' => ElementorElementAddInput::MAX_SETTINGS,
-									'description'   => 'The settings to change, keyed by setting name. A setting this entry does not name keeps the value the page already holds. The widget accepts only the settings it declares.',
+									'description'   => 'The settings to change, keyed by setting name. A setting this entry does not name keeps the value the page already holds. The element accepts only the settings its own type declares.',
 								],
 							],
 							'required'             => [
@@ -237,9 +237,11 @@ final class ElementorElementsUpdate implements WriteOperation {
 			throw $this->merge->documentNotFound();
 		}
 
-		$changes = $this->requested_changes( $input );
-		$tree    = $this->document->elements( $post_id );
-		$coerced = $this->coercion->coerceTree( $this->merge_all( $tree, $changes ) );
+		$changes  = $this->requested_changes( $input );
+		$tree     = $this->document->elements( $post_id );
+		$warnings = [];
+		$coerced  = $this->coercion->coerceTree( $this->merge_all( $tree, $changes, $warnings ) );
+		$warnings = ElementorMediaAdvisory::condense( $warnings );
 
 		$payload = [
 			ElementorWriteFields::INPUT_DOCUMENT => $post_id,
@@ -251,7 +253,7 @@ final class ElementorElementsUpdate implements WriteOperation {
 			$payload,
 			$this->promise( $coerced ),
 			ElementorWriteFields::FIELD_ORDER,
-			[],
+			$warnings,
 			$this->diff->diff( $tree, $coerced )
 		);
 	}
@@ -316,9 +318,14 @@ final class ElementorElementsUpdate implements WriteOperation {
 
 		$this->assert_all_present( $tree, $changes );
 
+		// The apply path re-merges to rebuild the tree, not to re-judge it: the
+		// advisories the operator saw belong to the plan they approved, and a
+		// second set produced here would be reported by nothing.
+		$unreported = [];
+
 		$this->writer->write(
 			$post_id,
-			$this->coercion->coerceTree( $this->merge_all( $tree, $changes ) ),
+			$this->coercion->coerceTree( $this->merge_all( $tree, $changes, $unreported ) ),
 			$this->merge->priorDigest( $this->captureSnapshot( $current, $context ), $post_id )
 		);
 
@@ -496,14 +503,15 @@ final class ElementorElementsUpdate implements WriteOperation {
 	 * element the write will land on.
 	 *
 	 * @param array[]                          $tree    The raw stored tree.
-	 * @param array<int, array<string, mixed>> $changes The normalized entries.
+	 * @param array<int, array<string, mixed>> $changes  The normalized entries.
+	 * @param array<int, array<int, string>>   $warnings Collects each entry's media advisories, in entry order.
 	 *
 	 * @return array[] The merged tree, before coercion.
 	 *
 	 * @throws OperationException With ErrorCode::TargetNotFound or
 	 *                            ErrorCode::InvalidInput, naming the entry.
 	 */
-	private function merge_all( array $tree, array $changes ): array {
+	private function merge_all( array $tree, array $changes, array &$warnings ): array {
 		foreach ( $changes as $position => $entry ) {
 			$element_id = (string) ( $entry[ ElementorWriteFields::INPUT_ELEMENT_ID ] ?? '' );
 			$settings   = is_array( $entry[ ElementorElementAddInput::INPUT_SETTINGS ] ?? null )
@@ -512,15 +520,17 @@ final class ElementorElementsUpdate implements WriteOperation {
 
 			$tree = $this->rethrow_for(
 				(int) $position,
-				function () use ( $tree, $element_id, $settings ): array {
-					$widget = $this->merge->widget( $tree, $element_id );
+				function () use ( $tree, $element_id, $settings, &$warnings ): array {
+					$node = $this->merge->node( $tree, $element_id );
 
-					$this->merge->assertKnownKeys( $widget[ ElementorPropCoercion::NODE_WIDGET_TYPE ], $settings );
+					$this->merge->assertKnownKeys( $node, $settings );
+
+					$warnings[] = $this->merge->mediaWarnings( $node, $settings );
 
 					return $this->merge->withSettings(
 						$tree,
 						$element_id,
-						$this->merge->merged( $widget[ ElementorPropCoercion::NODE_SETTINGS ], $settings )
+						$this->merge->merged( $node[ ElementorPropCoercion::NODE_SETTINGS ], $settings )
 					);
 				}
 			);

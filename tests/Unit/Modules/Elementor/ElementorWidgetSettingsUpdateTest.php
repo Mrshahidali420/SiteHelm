@@ -475,11 +475,15 @@ final class ElementorWidgetSettingsUpdateTest extends TestCase {
 	}
 
 	/**
-	 * The elType guard, shared with the sibling operation: a layout element has
-	 * no widget settings, and Elementor's own atomic update would "succeed"
-	 * against one by writing settings no renderer reads.
+	 * The elType dispatch, shared with the sibling operation: a container is
+	 * checked against the ELEMENT registry, so `title` — `e-heading`'s control,
+	 * and no container's — is refused rather than written to a node whose
+	 * renderer would never read it.
+	 *
+	 * Elementor's own atomic update "succeeds" against a container exactly here,
+	 * by reading `widgetType` without first reading `elType`.
 	 */
-	public function test_a_container_is_refused_rather_than_written_to_as_a_widget(): void {
+	public function test_a_widget_control_is_refused_on_a_container(): void {
 		$this->withElementor();
 		$this->storeFixture();
 
@@ -494,13 +498,13 @@ final class ElementorWidgetSettingsUpdateTest extends TestCase {
 					]
 				)
 			);
-			$this->fail( 'A layout element must not be treated as a widget.' );
+			$this->fail( 'A widget control must not be writable on a container.' );
 		} catch ( OperationException $exception ) {
 			$this->assertSame( ErrorCode::InvalidInput, $exception->errorCode );
 			$this->assertStringContainsString(
-				'layout element',
+				'a setting named "title"',
 				$exception->getMessage(),
-				'The refusal must be the elType one, not the unknown-key one that would also fire here.'
+				'The refusal must name the key the container does not declare.'
 			);
 		}
 	}
@@ -685,5 +689,89 @@ final class ElementorWidgetSettingsUpdateTest extends TestCase {
 				static fn( string $key ): bool => $key !== $written
 			)
 		);
+	}
+
+	// ------------------------------------------------------- media advisory
+
+	/**
+	 * A bare media URL warns, and warns under the key the OPERATOR wrote.
+	 *
+	 * This path suffixes settings per device, and the advisory is deliberately
+	 * taken before the suffix goes on: an operator told to fix
+	 * `"image_mobile"` would go looking for a control by that name and find
+	 * nothing. The value itself is the same defect either way — WordPress builds
+	 * `srcset`, the `wp-image` class and lazy-loading from the attachment record,
+	 * so a url with no id serves one full-size file to every visitor.
+	 */
+	public function test_a_bare_media_url_warns_under_the_key_the_operator_wrote(): void {
+		$this->withElementor();
+		$this->storeRaw( (string) json_encode( $this->classicWidgetTree() ) );
+
+		$planned = $this->plan(
+			$this->widgetSettingsUpdate(),
+			$this->arguments(
+				[
+					'elementId' => 'w444444',
+					'settings'  => [ 'image' => [ 'url' => 'https://elsewhere.example/hero.jpg' ] ],
+					'device'    => 'mobile',
+				]
+			)
+		);
+
+		$this->assertCount( 1, $planned->warnings, 'One bare media value earns one advisory.' );
+		$this->assertStringContainsString( '"image"', $planned->warnings[0], 'The suffixed key is not a control an operator can go and fix.' );
+	}
+
+	/**
+	 * A media value carrying its attachment is the correct write and says
+	 * nothing, which is what keeps the advisory worth reading.
+	 */
+	public function test_a_media_value_with_an_attachment_warns_about_nothing(): void {
+		$this->withElementor();
+		$this->storeRaw( (string) json_encode( $this->classicWidgetTree() ) );
+
+		$planned = $this->plan(
+			$this->widgetSettingsUpdate(),
+			$this->arguments(
+				[
+					'elementId' => 'w444444',
+					'settings'  => [
+						'image' => [
+							'id'  => 4242,
+							'url' => 'https://example.test/hero.jpg',
+						],
+					],
+				]
+			)
+		);
+
+		$this->assertSame( [], $planned->warnings, 'This is the write the advisory exists to ask for.' );
+	}
+
+	/**
+	 * A tree holding one CLASSIC widget, built here rather than in the shared
+	 * fixture: the advisory is confined to the classic side, and every widget in
+	 * the shared tree is atomic, whose typed prop envelope already enforces the
+	 * id/url pair in `ElementorPropCoercion`.
+	 *
+	 * @return array[] The raw tree.
+	 */
+	private function classicWidgetTree(): array {
+		return [
+			[
+				'id'       => self::containerId(),
+				'elType'   => 'container',
+				'settings' => [ 'content_width' => 'boxed' ],
+				'elements' => [
+					[
+						'id'         => 'w444444',
+						'elType'     => 'widget',
+						'widgetType' => 'html',
+						'settings'   => [ 'html' => '<p>Original</p>' ],
+						'elements'   => [],
+					],
+				],
+			],
+		];
 	}
 }

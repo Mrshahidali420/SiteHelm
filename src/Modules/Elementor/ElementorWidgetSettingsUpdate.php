@@ -238,7 +238,7 @@ final class ElementorWidgetSettingsUpdate implements WriteOperation {
 	 * @throws OperationException With ErrorCode::TargetNotFound when the document
 	 *                           or the element is not there, or
 	 *                           ErrorCode::InvalidInput when the request names an
-	 *                           element that is not a widget, an unknown device,
+	 *                           element recording no readable type, an unknown device,
 	 *                           or a setting the widget does not declare.
 	 */
 	public function planChange( TargetState $current, array $input, OperationContext $context ): PlannedChange {
@@ -252,10 +252,15 @@ final class ElementorWidgetSettingsUpdate implements WriteOperation {
 		$device     = $this->requested_device( $input );
 		$requested  = $this->requested_settings( $input );
 
-		$tree   = $this->document->elements( $post_id );
-		$widget = $this->merge->widget( $tree, $element_id );
+		$tree = $this->document->elements( $post_id );
+		$node = $this->merge->node( $tree, $element_id );
 
-		$this->merge->assertKnownKeys( $widget[ ElementorPropCoercion::NODE_WIDGET_TYPE ], $requested );
+		$this->merge->assertKnownKeys( $node, $requested );
+
+		// Judged on the caller's own spelling, before the device suffix goes on:
+		// a condition references base control names and so does a control's
+		// declared type, so `image_mobile` would find no descriptor at all.
+		$warnings = $this->merge->mediaWarnings( $node, $requested );
 
 		$suffixed = $this->suffixed( $requested, $device );
 
@@ -263,7 +268,7 @@ final class ElementorWidgetSettingsUpdate implements WriteOperation {
 			$this->merge->withSettings(
 				$tree,
 				$element_id,
-				$this->merge->merged( $widget[ ElementorPropCoercion::NODE_SETTINGS ], $suffixed )
+				$this->merge->merged( $node[ ElementorPropCoercion::NODE_SETTINGS ], $suffixed )
 			)
 		);
 
@@ -279,7 +284,7 @@ final class ElementorWidgetSettingsUpdate implements WriteOperation {
 			$payload,
 			$this->promise( $coerced ),
 			ElementorWriteFields::FIELD_ORDER,
-			[],
+			$warnings,
 			$this->diff->diff( $tree, $coerced )
 		);
 	}
@@ -516,9 +521,9 @@ final class ElementorWidgetSettingsUpdate implements WriteOperation {
 	 * @param TargetState          $current    The resolved document.
 	 * @param OperationContext     $context    The request context.
 	 *
-	 * @throws OperationException With ErrorCode::Conflict when the widget is gone,
-	 *                            ErrorCode::InvalidInput when the element is no
-	 *                            longer a widget, or ErrorCode::ExecutionFailed
+	 * @throws OperationException With ErrorCode::Conflict when the element is
+	 *                            gone, ErrorCode::InvalidInput when it records no
+	 *                            readable type, or ErrorCode::ExecutionFailed
 	 *                            when the save did not land.
 	 */
 	private function store(
@@ -534,13 +539,13 @@ final class ElementorWidgetSettingsUpdate implements WriteOperation {
 			throw $this->merge->elementGone();
 		}
 
-		$widget = $this->merge->widget( $tree, $element_id );
+		$node = $this->merge->node( $tree, $element_id );
 
 		$merged = $this->coercion->coerceTree(
 			$this->merge->withSettings(
 				$tree,
 				$element_id,
-				$this->merge->merged( $widget[ ElementorPropCoercion::NODE_SETTINGS ], $suffixed )
+				$this->merge->merged( $node[ ElementorPropCoercion::NODE_SETTINGS ], $suffixed )
 			)
 		);
 

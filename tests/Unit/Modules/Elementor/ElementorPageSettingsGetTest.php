@@ -93,6 +93,18 @@ final class ElementorPageSettingsGetTest extends TestCase {
 	private array $settings = [];
 
 	/**
+	 * The stored `_wp_page_template` value per identifier.
+	 *
+	 * THE SECOND ROW IS MODELLED BECAUSE THE BUG LIVED IN THE GAP BETWEEN THE
+	 * TWO. A double that knew only `_elementor_page_settings` could not express a
+	 * page whose layout is stored and not rendering, so every assertion written
+	 * against it was an assertion about half a page.
+	 *
+	 * @var array<int, mixed>
+	 */
+	private array $pageTemplates = [];
+
+	/**
 	 * Every store lookup the operation made, in order.
 	 *
 	 * This is what makes the ordering cases able to fail: the refusal alone is
@@ -116,6 +128,7 @@ final class ElementorPageSettingsGetTest extends TestCase {
 		$this->posts           = [ self::DOCUMENT_ID => $this->makeRow( self::DOCUMENT_ID, 'page', 'Home', 'publish' ) ];
 		$this->editModes       = [ self::DOCUMENT_ID => 'builder' ];
 		$this->settings        = [];
+		$this->pageTemplates   = [];
 
 		$this->stubWordPress();
 	}
@@ -161,7 +174,7 @@ final class ElementorPageSettingsGetTest extends TestCase {
 	}
 
 	/**
-	 * The output schema is closed and requires all four members, so a client can
+	 * The output schema is closed and requires all five members, so a client can
 	 * read the response without testing for absent keys.
 	 */
 	public function test_the_output_schema_is_closed_and_requires_every_member(): void {
@@ -169,11 +182,11 @@ final class ElementorPageSettingsGetTest extends TestCase {
 
 		$this->assertFalse( $schema['additionalProperties'] );
 		$this->assertSame(
-			[ 'document', 'writableSettings', 'storedSettings', 'settingsKeyCount' ],
+			[ 'document', 'writableSettings', 'layoutSync', 'storedSettings', 'settingsKeyCount' ],
 			array_keys( $schema['properties'] )
 		);
 		$this->assertSame(
-			[ 'document', 'writableSettings', 'storedSettings', 'settingsKeyCount' ],
+			[ 'document', 'writableSettings', 'layoutSync', 'storedSettings', 'settingsKeyCount' ],
 			$schema['required']
 		);
 	}
@@ -305,10 +318,11 @@ final class ElementorPageSettingsGetTest extends TestCase {
 	 */
 	public function test_the_writable_half_translates_the_same_row_into_the_names_the_write_accepts(): void {
 		$this->withElementor();
-		$this->settings[ self::DOCUMENT_ID ] = [
+		$this->settings[ self::DOCUMENT_ID ]      = [
 			'template'   => 'elementor_canvas',
 			'hide_title' => 'yes',
 		];
+		$this->pageTemplates[ self::DOCUMENT_ID ] = 'elementor_canvas';
 
 		$this->assertSame(
 			[
@@ -320,6 +334,120 @@ final class ElementorPageSettingsGetTest extends TestCase {
 	}
 
 	/**
+	 * THE REPORTED LAYOUT IS THE ONE IN EFFECT, and this case is the shipped bug
+	 * stated as an expectation.
+	 *
+	 * A page written by a SiteHelm that only knew Elementor's own row is in
+	 * exactly this state: its settings row says canvas, WordPress renders the
+	 * theme's template, and every visitor sees the header and the title.
+	 * Reporting `canvas` here would confirm an operator's wrong belief with the
+	 * plugin's own authority.
+	 */
+	public function test_the_writable_half_reports_the_layout_wordpress_actually_renders(): void {
+		$this->withElementor();
+		$this->settings[ self::DOCUMENT_ID ]      = [ 'template' => 'elementor_canvas' ];
+		$this->pageTemplates[ self::DOCUMENT_ID ] = '';
+
+		$this->assertSame( 'default', $this->get()['writableSettings']['layout'] );
+	}
+
+	/**
+	 * WHEN THE TWO ROWS DISAGREE THE READ SAYS SO, naming both values, so an
+	 * operator can see which of the two is rendering and which is only claimed.
+	 *
+	 * The desynced state is built directly in the fixture meta rather than
+	 * through a write, because no write path this plugin now ships can produce
+	 * one — which is the whole point of the fix.
+	 */
+	public function test_a_disagreement_between_the_two_layout_rows_is_reported(): void {
+		$this->withElementor();
+		$this->settings[ self::DOCUMENT_ID ]      = [ 'template' => 'elementor_canvas' ];
+		$this->pageTemplates[ self::DOCUMENT_ID ] = '';
+
+		$this->assertSame(
+			[
+				'inEffect'           => 'default',
+				'pageSettingsLayout' => 'canvas',
+				'agree'              => false,
+			],
+			$this->get()['layoutSync']
+		);
+	}
+
+	/**
+	 * Two rows that agree report agreement, so `agree` is a fact about the page
+	 * rather than a constant this read always answers false to.
+	 */
+	public function test_two_rows_that_agree_are_reported_as_agreeing(): void {
+		$this->withElementor();
+		$this->settings[ self::DOCUMENT_ID ]      = [ 'template' => 'elementor_header_footer' ];
+		$this->pageTemplates[ self::DOCUMENT_ID ] = 'elementor_header_footer';
+
+		$this->assertSame(
+			[
+				'inEffect'           => 'headerFooter',
+				'pageSettingsLayout' => 'headerFooter',
+				'agree'              => true,
+			],
+			$this->get()['layoutSync']
+		);
+	}
+
+	/**
+	 * A PAGE NOBODY HAS TOUCHED AGREES WITH ITSELF. Both rows are absent, both
+	 * read as the default, and a client must not be told a fresh page is broken.
+	 */
+	public function test_a_page_with_neither_row_reports_agreement_on_the_default(): void {
+		$this->withElementor();
+
+		$this->assertSame(
+			[
+				'inEffect'           => 'default',
+				'pageSettingsLayout' => 'default',
+				'agree'              => true,
+			],
+			$this->get()['layoutSync']
+		);
+	}
+
+	/**
+	 * THE READ WRITES NOTHING, even when it has just found the two rows out of
+	 * step and knows exactly what would put them back.
+	 *
+	 * Repairing here would be a write with no preview, no snapshot and no
+	 * rollback, performed by an operation whose declared policies all say
+	 * NotApplicable and whose caller asked a question.
+	 */
+	public function test_the_read_does_not_repair_a_disagreement_it_finds(): void {
+		$this->withElementor();
+		$this->settings[ self::DOCUMENT_ID ]      = [ 'template' => 'elementor_canvas' ];
+		$this->pageTemplates[ self::DOCUMENT_ID ] = '';
+
+		$wrote = false;
+
+		Functions\when( 'update_post_meta' )->alias(
+			static function () use ( &$wrote ): bool {
+				$wrote = true;
+
+				return true;
+			}
+		);
+		Functions\when( 'delete_post_meta' )->alias(
+			static function () use ( &$wrote ): bool {
+				$wrote = true;
+
+				return true;
+			}
+		);
+
+		$this->get();
+
+		$this->assertFalse( $wrote );
+		$this->assertSame( '', $this->pageTemplates[ self::DOCUMENT_ID ] );
+		$this->assertSame( [ 'template' => 'elementor_canvas' ], $this->settings[ self::DOCUMENT_ID ] );
+	}
+
+	/**
 	 * A layout Elementor no longer offers — a theme template, say — is reported
 	 * as the default in the writable half while the row itself still shows what
 	 * is really stored. The two halves disagreeing here is the design: one is an
@@ -327,7 +455,8 @@ final class ElementorPageSettingsGetTest extends TestCase {
 	 */
 	public function test_an_unrecognised_layout_is_reported_as_the_default_without_hiding_the_stored_value(): void {
 		$this->withElementor();
-		$this->settings[ self::DOCUMENT_ID ] = [ 'template' => 'theme-full-width' ];
+		$this->settings[ self::DOCUMENT_ID ]      = [ 'template' => 'theme-full-width' ];
+		$this->pageTemplates[ self::DOCUMENT_ID ] = 'theme-full-width';
 
 		$result = $this->get();
 
@@ -353,7 +482,7 @@ final class ElementorPageSettingsGetTest extends TestCase {
 		$this->withElementor();
 
 		$this->assertSame(
-			[ 'document', 'writableSettings', 'storedSettings', 'settingsKeyCount' ],
+			[ 'document', 'writableSettings', 'layoutSync', 'storedSettings', 'settingsKeyCount' ],
 			array_keys( $this->get() )
 		);
 	}
@@ -447,6 +576,10 @@ final class ElementorPageSettingsGetTest extends TestCase {
 
 				if ( ElementorPageSettings::META_KEY === $key ) {
 					return $this->settings[ $id ] ?? '';
+				}
+
+				if ( ElementorPageSettings::META_PAGE_TEMPLATE === $key ) {
+					return $this->pageTemplates[ $id ] ?? '';
 				}
 
 				return ElementorDocument::META_EDIT_MODE === $key ? ( $this->editModes[ $id ] ?? '' ) : '';

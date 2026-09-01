@@ -32,6 +32,17 @@ final class WriteTargetFakePlugin {
 	public mixed $widgets_manager = null;
 
 	/**
+	 * The structural element registry.
+	 *
+	 * Declared rather than left to a dynamic property, because the write path
+	 * reads it for every node that is not a widget and a fixture site that
+	 * silently had none would make every container case unrepresentable.
+	 *
+	 * @var mixed
+	 */
+	public mixed $elements_manager = null;
+
+	/**
 	 * The documents manager.
 	 *
 	 * @var mixed

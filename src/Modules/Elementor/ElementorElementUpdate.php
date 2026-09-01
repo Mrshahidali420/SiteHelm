@@ -122,7 +122,7 @@ final class ElementorElementUpdate implements WriteOperation {
 					ElementorElementAddInput::INPUT_SETTINGS => [
 						'type'          => 'object',
 						'maxProperties' => ElementorElementAddInput::MAX_SETTINGS,
-						'description'   => 'The settings to change, keyed by setting name. A setting the request does not name keeps the value the page already holds. The widget accepts only the settings it declares.',
+						'description'   => 'The settings to change, keyed by setting name. A setting the request does not name keeps the value the page already holds. The element accepts only the settings its own type declares.',
 					],
 				],
 				'required'             => [
@@ -208,8 +208,8 @@ final class ElementorElementUpdate implements WriteOperation {
 	 * @throws OperationException With ErrorCode::TargetNotFound when the document
 	 *                           or the element is not there, or
 	 *                           ErrorCode::InvalidInput when the request names an
-	 *                           element that is not a widget or a setting the
-	 *                           widget does not declare.
+	 *                           a setting the element's own type does not
+	 *                           declare.
 	 */
 	public function planChange( TargetState $current, array $input, OperationContext $context ): PlannedChange {
 		$post_id = ElementorWriteTarget::postIdFromKey( $current->targetKey );
@@ -221,16 +221,18 @@ final class ElementorElementUpdate implements WriteOperation {
 		$element_id = $this->merge->requestedElementId( $input );
 		$settings   = $this->requested_settings( $input );
 
-		$tree   = $this->document->elements( $post_id );
-		$widget = $this->merge->widget( $tree, $element_id );
+		$tree = $this->document->elements( $post_id );
+		$node = $this->merge->node( $tree, $element_id );
 
-		$this->merge->assertKnownKeys( $widget[ ElementorPropCoercion::NODE_WIDGET_TYPE ], $settings );
+		$this->merge->assertKnownKeys( $node, $settings );
+
+		$warnings = $this->merge->mediaWarnings( $node, $settings );
 
 		$coerced = $this->coercion->coerceTree(
 			$this->merge->withSettings(
 				$tree,
 				$element_id,
-				$this->merge->merged( $widget[ ElementorPropCoercion::NODE_SETTINGS ], $settings )
+				$this->merge->merged( $node[ ElementorPropCoercion::NODE_SETTINGS ], $settings )
 			)
 		);
 
@@ -245,7 +247,7 @@ final class ElementorElementUpdate implements WriteOperation {
 			$payload,
 			$this->promise( $coerced ),
 			ElementorWriteFields::FIELD_ORDER,
-			[],
+			$warnings,
 			$this->diff->diff( $tree, $coerced )
 		);
 	}
@@ -285,9 +287,9 @@ final class ElementorElementUpdate implements WriteOperation {
 	 * somebody else changed between preview and apply survives instead of being
 	 * reverted by a change that never mentioned it.
 	 *
-	 * `assertKnownKeys()` RUNS AGAIN, against the widget type read at apply. It
+	 * `assertKnownKeys()` RUNS AGAIN, against the type read at apply. It
 	 * ran at preview too, and the second run is not redundant: the element could
-	 * have been swapped for a different widget type in between, and issue #102
+	 * have been swapped for a different type in between, and issue #102
 	 * means a key the new widget does not declare would be discarded by
 	 * Elementor rather than refused.
 	 *
@@ -446,15 +448,15 @@ final class ElementorElementUpdate implements WriteOperation {
 			throw $this->merge->elementGone();
 		}
 
-		$widget = $this->merge->widget( $tree, $element_id );
+		$node = $this->merge->node( $tree, $element_id );
 
-		$this->merge->assertKnownKeys( $widget[ ElementorPropCoercion::NODE_WIDGET_TYPE ], $settings );
+		$this->merge->assertKnownKeys( $node, $settings );
 
 		$merged = $this->coercion->coerceTree(
 			$this->merge->withSettings(
 				$tree,
 				$element_id,
-				$this->merge->merged( $widget[ ElementorPropCoercion::NODE_SETTINGS ], $settings )
+				$this->merge->merged( $node[ ElementorPropCoercion::NODE_SETTINGS ], $settings )
 			)
 		);
 

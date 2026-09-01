@@ -133,6 +133,14 @@ final class ElementorDocumentCreate implements WriteOperation {
 	private const SOURCE = 'Send the content member of an elementor-document-get or elementor-template-get result, shaped the way it reports one.';
 
 	/**
+	 * Separates the parts of the naming seed.
+	 *
+	 * A pipe rather than the NUL `ElementorIdMint` uses internally; the mint
+	 * appends its own NUL-separated path and attempt to whatever it is handed.
+	 */
+	private const SEED_SEPARATOR = '|';
+
+	/**
 	 * Constructs the operation.
 	 *
 	 * @param ElementorDocumentCreateTarget $targets  Shared creation target resolution.
@@ -140,6 +148,7 @@ final class ElementorDocumentCreate implements WriteOperation {
 	 * @param ElementorPropCoercion         $coercion The prop normalizer.
 	 * @param ElementorPageSettingsTarget   $settings The verified page-settings writer.
 	 * @param ElementorDocumentWriter       $writer   The verified document writer.
+	 * @param ElementorIdMint               $mint     The deterministic id derivation.
 	 */
 	public function __construct(
 		private readonly ElementorDocumentCreateTarget $targets,
@@ -147,6 +156,7 @@ final class ElementorDocumentCreate implements WriteOperation {
 		private readonly ElementorPropCoercion $coercion,
 		private readonly ElementorPageSettingsTarget $settings,
 		private readonly ElementorDocumentWriter $writer,
+		private readonly ElementorIdMint $mint,
 	) {
 	}
 
@@ -250,9 +260,19 @@ final class ElementorDocumentCreate implements WriteOperation {
 	 * Validates the request and builds the page that will be created.
 	 *
 	 * DETERMINISTIC BY CONSTRUCTION: every value in the payload comes from the
-	 * request. There is no clock, no counter and no minted id here, which matters
-	 * because the engine fingerprints this payload at preview and compares the
-	 * fingerprint at apply.
+	 * request. There is no clock and no counter here, which matters because the
+	 * engine fingerprints this payload at preview and compares the fingerprint at
+	 * apply.
+	 *
+	 * A STARTING LAYOUT'S UNNAMED NODES ARE NAMED, and that does not cost the
+	 * determinism above: `ElementorIdMint` is a pure function of the seed it is
+	 * handed, and this seed quotes only request values, so both runs derive the
+	 * same ids. Storing them unnamed instead is what `elementor-document-build`
+	 * used to do, and the consequence was a destroyed page rather than a cosmetic
+	 * gap — Elementor generates per-element CSS under `.elementor-element-<id>`,
+	 * so unnamed nodes emit every rule under `.elementor-element-`, which matches
+	 * every element on the page at once. A draft created that way looks correct in
+	 * every read of its stored tree and renders as one collapsed block.
 	 *
 	 * @param TargetState          $current The pending state.
 	 * @param array<string, mixed> $input   The validated arguments.
@@ -286,17 +306,23 @@ final class ElementorDocumentCreate implements WriteOperation {
 			);
 		}
 
-		$content = $input[ self::INPUT_CONTENT ] ?? null;
-		$tree    = [];
-		$totals  = [
+		$content  = $input[ self::INPUT_CONTENT ] ?? null;
+		$tree     = [];
+		$warnings = [];
+		$totals   = [
 			'nodeCount'        => 0,
 			'maxDepth'         => 0,
 			'widgetTypeCounts' => [],
 		];
 
 		if ( is_array( $content ) && [] !== $content ) {
-			$totals = $this->gates->assertUsable( $content, self::SUBJECT, self::SOURCE );
-			$tree   = $this->coercion->coerceTree( $content );
+			$totals   = $this->gates->assertUsable( $content, self::SUBJECT, self::SOURCE );
+			$warnings = $this->gates->mediaWarnings( $content );
+			$tree     = $this->mint->nameTree(
+				$this->coercion->coerceTree( $content ),
+				$this->seed( $post_type, $title ),
+				[]
+			);
 		}
 
 		$payload = [
@@ -318,7 +344,7 @@ final class ElementorDocumentCreate implements WriteOperation {
 				ElementorDocumentCreateTarget::FIELD_COUNT => $totals['nodeCount'],
 			],
 			ElementorDocumentCreateTarget::FIELD_ORDER,
-			[],
+			$warnings,
 			[
 				'maxDepth'    => $totals['maxDepth'],
 				'widgetTypes' => array_keys( $totals['widgetTypeCounts'] ),
@@ -389,7 +415,17 @@ final class ElementorDocumentCreate implements WriteOperation {
 			// which re-reads the row: `update_post_meta()` answers true on a site
 			// whose meta filter dropped the value, so a layout stored that way would
 			// be reported as set and simply not be there.
-			$this->settings->store( $post_id, $settings );
+			//
+			// BOTH ROWS, or the page is born desynced. A page created with
+			// `layout: canvas` that carried only Elementor's own row would report
+			// itself full width to every read and render with the theme's header
+			// and title for every visitor, from the moment it existed — and nothing
+			// short of a later `elementor-page-settings-set` would ever put the two
+			// back in step. Deriving the core row from `$settings` is sound HERE and
+			// nowhere else: this row was built a line ago from an empty map for a
+			// page that did not exist a moment ago, so there is no prior core value
+			// it could be disagreeing with.
+			$this->settings->store( $post_id, $settings, ElementorPageSettings::pageTemplateOf( $settings ) );
 		}
 
 		// UNCONDITIONAL, AND EVEN FOR AN EMPTY TREE. Without a stored
@@ -523,4 +559,32 @@ final class ElementorDocumentCreate implements WriteOperation {
 		return $schema;
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+
+	/**
+	 * The seed the names of the starting layout's unnamed nodes are derived from.
+	 *
+	 * THREE PARTS, ALL OF THEM REQUEST VALUES, AND NOTHING THAT COULD MOVE. The
+	 * page being created does not exist yet, so there is no post id to quote and
+	 * no stored state to fingerprint; the operation id separates these names from
+	 * every other operation's, and the post type and title separate two different
+	 * drafts. Both the preview run and the apply run read the same three values
+	 * out of the same request, so both mint the same ids and the payload
+	 * fingerprint is stable across them.
+	 *
+	 * TWO DRAFTS CREATED FROM THE SAME REQUEST DO TAKE THE SAME ELEMENT IDS, and
+	 * that is not a collision: they are two separate posts, each with its own
+	 * `_elementor_data`, and Elementor scopes element ids per document.
+	 *
+	 * The position path and the collision attempt are appended by the mint, and
+	 * must not be pre-mixed here, for the reason `ElementorElementAdd::seed()`
+	 * records.
+	 *
+	 * @param string $post_type The kind of page being created.
+	 * @param string $title     The title the page is created under.
+	 *
+	 * @return string The seed.
+	 */
+	private function seed( string $post_type, string $title ): string {
+		return implode( self::SEED_SEPARATOR, [ self::OPERATION_ID, $post_type, $title ] );
+	}
 }

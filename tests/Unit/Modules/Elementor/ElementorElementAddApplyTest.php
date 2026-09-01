@@ -247,6 +247,38 @@ final class ElementorElementAddApplyTest extends TestCase {
 	}
 
 	/**
+	 * The same §6.3 rule for a CLASSIC widget, where nothing is reshaped.
+	 *
+	 * `html` extends `Widget_Base` and declares controls rather than props, so it
+	 * stores plain values. Before the atomic/classic split this operation refused
+	 * the whole document with an execution_failed the moment a classic widget was
+	 * named — which is most widgets on most sites. The stored setting must now
+	 * come back exactly as it was sent, envelope and all absent.
+	 */
+	public function test_a_classic_widget_is_added_with_its_settings_stored_verbatim(): void {
+		$this->withElementor();
+		$this->storeRaw( (string) json_encode( $this->fixtureTree() ) );
+
+		$markup    = '<p>Hand-written markup</p>';
+		$input     = $this->arguments(
+			[
+				'elType'     => 'widget',
+				'widgetType' => 'html',
+				'settings'   => [ 'html' => $markup ],
+			]
+		);
+		$operation = $this->operation();
+		$target    = $operation->resolveTarget( $input, $this->context() );
+		$planned   = $operation->planChange( $target, $input, $this->context() );
+
+		$operation->applyChange( $target, $planned, $this->context() );
+
+		$stored = $this->flatten( $this->storedTree() )[ $planned->payload[ ElementorElementAdd::PAYLOAD_ELEMENT_ID ] ];
+
+		$this->assertSame( $markup, $stored['settings']['html'], 'A classic control stores a plain value; an envelope here would corrupt the widget.' );
+	}
+
+	/**
 	 * §6.3, THE FAILING HALF — issue #102.
 	 *
 	 * Elementor reports the save successful and stores the element with the

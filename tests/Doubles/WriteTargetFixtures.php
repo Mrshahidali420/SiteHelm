@@ -70,6 +70,31 @@ trait WriteTargetFixtures {
 	 * fallback — the path a site without a bootable document API really takes,
 	 * and the one whose stored bytes these tests can observe.
 	 *
+	 * THE REGISTRY CARRIES ONE OF EACH VOCABULARY. `e-heading` is atomic and
+	 * declares props; `html` is classic and declares controls, one of which
+	 * (`section_title`) carries no `default` and is therefore layout rather than
+	 * a writable setting. A fixture site of atomic widgets only would let the
+	 * whole classic write path go unexercised, which is exactly how a page
+	 * holding one `html` widget came to be unsaveable.
+	 *
+	 * `icon-list` IS THE THIRD SHAPE, AND IT IS THERE FOR THE REPEATER. Its one
+	 * writable control holds a LIST OF ROWS rather than a scalar, which is the
+	 * only shape in which `ElementorIdMint::nameRepeaters()` has anything to do:
+	 * a registry of scalar-valued controls would let every row of every
+	 * repeater-backed widget — icon-list, tabs, accordion, slides, price-list —
+	 * be stored without the `_id` Elementor styles it by, while the suite stayed
+	 * green.
+	 *
+	 * THE ELEMENT REGISTRY IS PART OF THE SITE TOO. `container` is registered
+	 * with the controls a real container declares — `padding`, `content_width`,
+	 * `flex_gap`, and one `section` control carrying no `default` — and
+	 * deliberately WITHOUT `title`, which is `e-heading`'s. That absence is what
+	 * makes the wrong-registry failure visible: a container checked against
+	 * widget schema would accept `title`, write it, verify green, and change
+	 * nothing on the page. A fixture with no element registry at all is how a
+	 * blanket refusal of every layout element looked correct to the whole suite
+	 * while container padding was unwritable on real sites.
+	 *
 	 * Only ever called from within a test, because the alias and the constant
 	 * are permanent for the life of the process.
 	 */
@@ -85,6 +110,94 @@ trait WriteTargetFixtures {
 					[
 						'title' => new WriteTargetFakePropType( 'string' ),
 						'image' => new WriteTargetFakePropType( 'image' ),
+					]
+				),
+				'html'      => new WriteTargetFakeClassicWidget(
+					[
+						'html'          => [
+							'type'    => 'code',
+							'default' => '',
+						],
+
+						// A media control, declared as Elementor declares one,
+						// so the classic-widget media advisory has a widget to
+						// judge as well as a container.
+						'image'         => [
+							'type'    => 'media',
+							'default' => [],
+						],
+						'section_title' => [ 'type' => 'section' ],
+						'_margin'       => [
+							'type'    => 'dimensions',
+							'default' => [],
+						],
+
+						// The condition defect, declared the way Elementor
+						// declares it. Without a gated control in the fixture
+						// registry, every write path could stop making the
+						// renderability check and this suite would stay green.
+						'_border_border' => [
+							'type'    => 'select',
+							'default' => '',
+						],
+						'_border_color'  => [
+							'type'      => 'color',
+							'default'   => '',
+							'condition' => [ '_border_border!' => [ '', 'none' ] ],
+						],
+					]
+				),
+				'icon-list' => new WriteTargetFakeClassicWidget(
+					[
+						'icon_list' => [
+							'type'    => 'repeater',
+							'default' => [],
+						],
+					]
+				),
+			]
+		);
+
+		$plugin->elements_manager = new WriteTargetFakeElements(
+			[
+				'container' => new WriteTargetFakeClassicWidget(
+					[
+						'padding'        => [
+							'type'    => 'dimensions',
+							'default' => [],
+						],
+						'content_width'  => [
+							'type'    => 'select',
+							'default' => 'boxed',
+						],
+						'flex_gap'       => [
+							'type'    => 'gaps',
+							'default' => [],
+						],
+						'section_layout' => [ 'type' => 'section' ],
+
+						// A container gates its background exactly as a widget
+						// does, and the element registry is checked by the same
+						// seam. See the `html` widget above.
+						'background_background' => [
+							'type'    => 'choose',
+							'default' => '',
+						],
+						'background_color'      => [
+							'type'      => 'color',
+							'default'   => '',
+							'condition' => [ 'background_background' => [ 'classic', 'gradient' ] ],
+						],
+
+						// A media control, declared as Elementor declares one,
+						// so the classic-widget media advisory has something to
+						// judge. Without it the tree paths could stop asking
+						// and this suite would stay green.
+						'background_image'      => [
+							'type'      => 'media',
+							'default'   => [],
+							'condition' => [ 'background_background' => [ 'classic' ] ],
+						],
 					]
 				),
 			]

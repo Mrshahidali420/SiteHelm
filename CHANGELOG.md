@@ -11,6 +11,29 @@ an operation behaves.
 
 ## [Unreleased]
 
+### Added
+- **SiteHelm now tells the agent driving it how to build a page.** Connecting returns a short
+  set of instructions: how a write is previewed and then applied, and the four mistakes that
+  produce a page which reports success and still looks wrong — leaving the layout at its
+  default so the theme's header, footer and title stay put, leaving containers at Elementor's
+  10px kit padding so nothing runs edge to edge, writing a hover colour that only works over a
+  light background, and giving a section's CSS class names general enough to collide with the
+  theme. They are deliberately terse, because they are sent on every connection.
+- **`elementor-document-get` reports what a page has earned a note about.** Alongside its
+  elements it now returns `hints`: whether the layout is still the default, whether the two
+  layout records disagree, and how many top-level containers will inherit the kit's padding.
+  The list is always there and is usually empty — it only ever says something the page itself
+  demonstrates, never general advice.
+
+- **Every Elementor write now says so when an image will be served without `srcset`.** A
+  media setting given an image URL with no media-library attachment stores and renders, but
+  WordPress cannot build `srcset` or `sizes` for it, cannot add the `wp-image` class, and will
+  not lazy-load it — so the page serves one full-size file to every visitor. The plan now
+  carries a warning naming the setting, and a bulk write that degrades many images reports the
+  totals instead of a wall of sentences. It is a warning, not a refusal: the write still
+  happens, because pointing a widget at an image outside the library is a legitimate thing to
+  ask for.
+
 ### Changed
 - **Bulk SEO metadata and audit fixes are free** — `content-seo-bulk-set` and
   `content-seo-audit-fix` shipped in SiteHelm Pro from 0.2.0 and now ship here. Batch size
@@ -25,6 +48,52 @@ an operation behaves.
   is left with the add-on, every other Pro operation still registers, and this plugin picks
   the identifier up on the next add-on update. Nothing is lost in between, and the same
   rule covers any future operation that moves out of the add-on.
+
+### Fixed
+- **A style setting Elementor would store but never render is now refused.** Elementor hides a
+  control whose group switcher is unset, and drops its value at CSS-generation time: writing
+  `background_color` without `background_background`, or `border_color` without
+  `border_border`, was accepted, saved, read back unchanged, and rendered nowhere. Those
+  writes are now refused before the save, naming the companion setting and the values it
+  accepts, so the fix is one more key in the same request rather than a page that reports
+  success and looks untouched. The check reads only what the widget itself declares, so it
+  leaves alone the groups that genuinely need no switcher — typography and box shadow — and
+  stands aside on anything it cannot read with certainty.
+- **Setting an Elementor page layout actually changes the page now.** WordPress and
+  Elementor each keep their own record of which template a page uses, and only WordPress's
+  decides what a visitor sees. SiteHelm was writing Elementor's, so `canvas` or
+  `headerFooter` was stored, read back correctly, and reported as verified while the page
+  went on rendering with the theme's header, footer and title — the change looked done from
+  every angle except the site itself. Both records are now written together, and rolling
+  back restores both. Reads report the layout the page is really rendered with, and say so
+  when the two records disagree; every page an earlier version set a layout on is in that
+  state, and setting the layout again repairs it. Pages created with a layout are no longer
+  born that way.
+- **`elementor-document-get` now returns the page's own page settings** — the layout it
+  renders with, whether the theme title is hidden, and the whole stored row behind both.
+  Reading a page used to answer only its elements, so anything built from that read came out
+  inside the wrong page frame, and there was no way to tell.
+- **Elementor edits work on ordinary widgets again.** Elementor ships two kinds of widget:
+  the newer atomic ones, and the classic ones nearly every page is actually built from —
+  HTML, Heading, Image, Text Editor, Button, Shortcode, and everything third-party plugins
+  add. SiteHelm could only read the newer kind's settings, so a write touching a classic
+  widget was refused with a message blaming Elementor for not being loaded, and retrying
+  never helped. Worse, because a save validates the whole page at once, a single classic
+  widget anywhere on it blocked every edit to that page. SiteHelm now recognises both kinds,
+  writes each in the form Elementor stores it, and still refuses a setting the widget does
+  not accept — so an edit is never silently discarded.
+- **Containers, sections and columns can be styled again.** Every Elementor settings write
+  used to refuse anything that was not a widget, so padding, width, background and gap on a
+  container — the settings that decide whether a section runs edge to edge — could not be
+  changed by any operation at all. A page built entirely through SiteHelm therefore kept
+  Elementor's default 10px on all four sides of every container and there was nothing an
+  agent could do about it. Elementor keeps two registries of settings, one for widgets and
+  one for layout elements, and SiteHelm only ever read the first; it now reads whichever one
+  owns the element in hand. A container is still never checked against a widget's settings,
+  which is what the old refusal was really protecting.
+- **Adding a container with a setting it does not accept is refused.** The check already ran
+  when a container was edited, but not when one was created, so a misspelled key was accepted,
+  quietly dropped by Elementor, and reported as written. Both paths now check the same way.
 
 ## [0.9.0] — 2026-08-30
 

@@ -335,6 +335,133 @@ final class ElementorDocumentBuildTest extends TestCase {
 		);
 	}
 
+	// ------------------------------------------------------- element naming
+
+	/**
+	 * THE DEFECT THIS BLOCK EXISTS FOR. A caller who composed a layout from
+	 * scratch has no ids to send, and a document stored with unnamed nodes makes
+	 * Elementor generate every per-element rule under the selector
+	 * `.elementor-element-` — the empty id suffix — which matches every element
+	 * on the page at once. A 175-element page built this way rendered with
+	 * `data-id=""` throughout and one stylesheet selector carrying 27 merged
+	 * rules, so every padding, colour and width the caller wrote landed on
+	 * everything. The write verified green the whole time, because the tree that
+	 * was stored was exactly the tree that had been promised.
+	 */
+	public function test_a_layout_sent_with_no_ids_is_planned_with_an_id_on_every_node(): void {
+		$this->withElementor();
+		$this->storePageFixture();
+
+		$planned = $this->plan( $this->documentBuild(), $this->request( $this->unnamedTree() ) );
+
+		$ids = $this->plannedIds( $planned );
+
+		$this->assertCount( 3, $ids );
+
+		foreach ( $ids as $id ) {
+			$this->assertMatchesRegularExpression( '/^[0-9a-f]{7}$/', $id );
+		}
+
+		$this->assertSame( $ids, array_values( array_unique( $ids ) ) );
+	}
+
+	/**
+	 * THE SAME DEFECT ONE LEVEL DOWN. Elementor gives every REPEATER ROW its own
+	 * `_id` and generates that row's CSS under `.elementor-repeater-item-<_id>`.
+	 * A live page built through this operation rendered 93 icon-list rows with
+	 * correct content, zero occurrences of `elementor-repeater-item` in its HTML
+	 * and zero `.elementor-repeater-item-*` selectors in its stylesheet, so every
+	 * row was permanently beyond the reach of any per-row rule and Elementor's
+	 * editor had no stable handle on which row was which.
+	 */
+	public function test_a_repeater_sent_with_no_row_ids_is_planned_with_an_id_on_every_row(): void {
+		$this->withElementor();
+		$this->storePageFixture();
+
+		$planned = $this->plan( $this->documentBuild(), $this->request( $this->iconListTree() ) );
+
+		$rows = $planned->payload[ ElementorDocumentBuild::PAYLOAD_TREE ][0]['elements'][0]['settings']['icon_list'];
+
+		$this->assertCount( 2, $rows );
+		$this->assertMatchesRegularExpression( '/^[0-9a-f]{7}$/', $rows[0]['_id'] );
+		$this->assertMatchesRegularExpression( '/^[0-9a-f]{7}$/', $rows[1]['_id'] );
+		$this->assertNotSame( $rows[0]['_id'], $rows[1]['_id'] );
+	}
+
+	/**
+	 * The row names reach the STORED bytes, not only the plan: it is the stored
+	 * `_id` Elementor's CSS generator reads.
+	 */
+	public function test_the_written_document_holds_the_row_names_that_were_planned(): void {
+		$this->withElementor();
+		$this->storePageFixture();
+
+		$this->applied( $this->documentBuild(), $this->request( $this->iconListTree() ) );
+
+		$stored = json_decode( $this->storedRaw(), true );
+
+		foreach ( $stored[0]['elements'][0]['settings']['icon_list'] as $row ) {
+			$this->assertMatchesRegularExpression( '/^[0-9a-f]{7}$/', $row['_id'] );
+		}
+	}
+
+	/**
+	 * An id the caller DID send survives untouched, so a caller writing back a
+	 * tree an `elementor-document-get` reported keeps the correspondence between
+	 * what they hold and what the page stores.
+	 */
+	public function test_the_ids_the_caller_supplied_are_stored_exactly_as_sent(): void {
+		$this->withElementor();
+		$this->storePageFixture();
+
+		$layout = $this->unnamedTree();
+		// The container is named by the caller; both headings under it are not.
+		$layout[0]['id'] = 'c999999';
+
+		$planned = $this->plan( $this->documentBuild(), $this->request( $layout ) );
+
+		$ids = $this->plannedIds( $planned );
+
+		$this->assertSame( 'c999999', $ids[0] );
+		$this->assertNotSame( 'c999999', $ids[1] );
+		$this->assertNotSame( 'c999999', $ids[2] );
+	}
+
+	/**
+	 * NAMING MUST NOT COST THE DETERMINISM THE PLAN TOKEN DEPENDS ON. This is the
+	 * regression that would break preview and apply: the ids are minted from a
+	 * seed the request already pins, so both runs derive the same ones and the
+	 * payload digest does not move.
+	 */
+	public function test_planning_an_unnamed_layout_twice_produces_the_same_payload(): void {
+		$this->withElementor();
+		$this->storePageFixture();
+
+		$operation = $this->documentBuild();
+		$layout    = $this->unnamedTree();
+
+		$this->assertSame(
+			$this->plan( $operation, $this->request( $layout ) )->payload,
+			$this->plan( $operation, $this->request( $layout ) )->payload
+		);
+	}
+
+	/**
+	 * The names reach the STORED bytes, not only the plan: it is the stored id
+	 * that Elementor's CSS generator reads.
+	 */
+	public function test_the_written_document_holds_the_names_that_were_planned(): void {
+		$this->withElementor();
+		$this->storePageFixture();
+
+		$this->applied( $this->documentBuild(), $this->request( $this->unnamedTree() ) );
+
+		$stored = json_decode( $this->storedRaw(), true );
+
+		$this->assertMatchesRegularExpression( '/^[0-9a-f]{7}$/', (string) $stored[0]['id'] );
+		$this->assertMatchesRegularExpression( '/^[0-9a-f]{7}$/', (string) $stored[0]['elements'][0]['id'] );
+	}
+
 	// ------------------------------------------------------- applying
 
 	/**
@@ -396,6 +523,84 @@ final class ElementorDocumentBuildTest extends TestCase {
 		} catch ( OperationException $exception ) {
 			$this->assertSame( ErrorCode::ExecutionFailed, $exception->errorCode );
 		}
+	}
+
+	// ------------------------------------------------------- media advisory
+
+	/**
+	 * A BULK BUILD IS THE PATH THAT PRODUCED THE DEFECT, so it is the path that
+	 * has to carry the advisory. A page cloned from another site arrives here as
+	 * one tree of forty widgets whose media values hold a `url` and no
+	 * attachment id: it stores cleanly, reads back verbatim, verifies green, and
+	 * serves full-size unresponsive images to every visitor. The plan is the only
+	 * place an operator sees it before it lands.
+	 */
+	public function test_a_build_carrying_a_bare_media_url_warns_on_the_plan(): void {
+		$this->withElementor();
+		$this->storePageFixture();
+
+		$operation = $this->documentBuild();
+		$request   = $this->request( $this->treeWithBareMedia() );
+		$planned   = $operation->planChange( $this->resolved( $operation, $request ), $request, $this->context() );
+
+		$this->assertCount( 1, $planned->warnings, 'One bare media value earns one advisory.' );
+		$this->assertStringContainsString( '"background_image"', $planned->warnings[0], 'The operator has to learn which setting to fix.' );
+		$this->assertStringContainsString( 'srcset', $planned->warnings[0], 'Naming the consequence is what makes it worth reading.' );
+	}
+
+	/**
+	 * The advisory is a warning, not a gate: the build still happens, because a
+	 * url-only image renders — badly, but visibly — and pointing a widget at an
+	 * image outside this library is a legitimate thing to ask for.
+	 */
+	public function test_a_bare_media_url_does_not_stop_the_build(): void {
+		$this->withElementor();
+		$this->storePageFixture();
+
+		$this->applied( $this->documentBuild(), $this->request( $this->treeWithBareMedia() ) );
+
+		$this->assertSame(
+			[ 'url' => 'https://elsewhere.example/hero.jpg' ],
+			json_decode( $this->storedRaw(), true )[0]['settings']['background_image'],
+			'The write the operator asked for still lands.'
+		);
+	}
+
+	/**
+	 * A build whose media carries its attachment says nothing at all, which is
+	 * the ordinary case and the one an advisory must not be noisy about.
+	 */
+	public function test_a_build_carrying_an_attachment_id_warns_about_nothing(): void {
+		$this->withElementor();
+		$this->storePageFixture();
+
+		$tree = $this->treeWithBareMedia();
+		$tree[0]['settings']['background_image']['id'] = 4242;
+
+		$operation = $this->documentBuild();
+		$request   = $this->request( $tree );
+		$planned   = $operation->planChange( $this->resolved( $operation, $request ), $request, $this->context() );
+
+		$this->assertSame( [], $planned->warnings, 'This is the write the advisory exists to ask for.' );
+	}
+
+	/**
+	 * `planChange()` runs at preview and again at apply, and a plan whose
+	 * warnings moved between the two would not be the plan that was approved.
+	 */
+	public function test_the_advisory_is_the_same_on_both_evaluations(): void {
+		$this->withElementor();
+		$this->storePageFixture();
+
+		$operation = $this->documentBuild();
+		$request   = $this->request( $this->treeWithBareMedia() );
+		$target    = $this->resolved( $operation, $request );
+
+		$this->assertSame(
+			$operation->planChange( $target, $request, $this->context() )->warnings,
+			$operation->planChange( $target, $request, $this->context() )->warnings,
+			'Two evaluations of one request have to agree.'
+		);
 	}
 
 	// ------------------------------------------------------- rollback
@@ -466,6 +671,104 @@ final class ElementorDocumentBuildTest extends TestCase {
 		return $this->arguments(
 			[ ElementorDocumentBuild::INPUT_CONTENT => null === $content ? $this->buildTree() : $content ]
 		);
+	}
+
+	/**
+	 * The same layout with EVERY id left out, which is what a caller who composed
+	 * a page from scratch sends.
+	 *
+	 * @return array[] The layout.
+	 */
+	private function unnamedTree(): array {
+		$tree = $this->buildTree();
+
+		unset( $tree[0]['id'], $tree[0]['elements'][0]['id'], $tree[0]['elements'][1]['id'] );
+
+		return $tree;
+	}
+
+	/**
+	 * A layout holding one REPEATER-BACKED widget, with no `_id` on any row,
+	 * which is what a caller composing an icon list from scratch sends.
+	 *
+	 * @return array[] The layout.
+	 */
+	private function iconListTree(): array {
+		return [
+			[
+				'id'       => 'c999999',
+				'elType'   => 'container',
+				'elements' => [
+					[
+						'id'         => 'w993333',
+						'elType'     => 'widget',
+						'widgetType' => 'icon-list',
+						'settings'   => [
+							'icon_list' => [
+								[ 'text' => 'Fast setup' ],
+								[ 'text' => 'No lock-in' ],
+							],
+						],
+						'elements'   => [],
+					],
+				],
+			],
+		];
+	}
+
+	/**
+	 * Every id the planned payload's tree carries, in document order.
+	 *
+	 * @param PlannedChange $planned The plan.
+	 *
+	 * @return string[] The ids.
+	 */
+	private function plannedIds( PlannedChange $planned ): array {
+		return $this->treeIds( $planned->payload[ ElementorDocumentBuild::PAYLOAD_TREE ] );
+	}
+
+	/**
+	 * Every id a raw element list carries, at any depth, in document order.
+	 *
+	 * @param array[] $elements The element list.
+	 *
+	 * @return string[] The ids.
+	 */
+	private function treeIds( array $elements ): array {
+		$ids = [];
+
+		foreach ( $elements as $element ) {
+			if ( ! is_array( $element ) ) {
+				continue;
+			}
+
+			if ( isset( $element['id'] ) ) {
+				$ids[] = (string) $element['id'];
+			}
+
+			if ( isset( $element['elements'] ) && is_array( $element['elements'] ) ) {
+				$ids = array_merge( $ids, $this->treeIds( $element['elements'] ) );
+			}
+		}
+
+		return $ids;
+	}
+
+	/**
+	 * The same layout with the container's background pointed at an image URL
+	 * carrying no attachment id, which is what a cloned page arrives as.
+	 *
+	 * @return array[] The layout.
+	 */
+	private function treeWithBareMedia(): array {
+		$tree = $this->buildTree();
+
+		$tree[0]['settings'] = [
+			'background_background' => 'classic',
+			'background_image'      => [ 'url' => 'https://elsewhere.example/hero.jpg' ],
+		];
+
+		return $tree;
 	}
 
 	/**

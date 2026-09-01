@@ -1921,6 +1921,13 @@ and whose `_elementor_data` is a document like any other.
 - **Undeclared setting keys are refused** (`assertKnownKeys()`), because Elementor
   DISCARDS an unrecognised key instead of reporting it — content deleted and reported as
   a success, in a template built to be applied to page after page.
+- **A node imported without an id is NAMED at import; one that carries an id keeps it.**
+  `ElementorIdMint::nameTree()` fills only the gaps, seeded from the operation id, the
+  template type and the title, so both `planChange()` runs derive the same names and the
+  payload digest does not move. It has to happen here rather than at apply, because
+  `-apply` re-mints through `reassign()`, which by design leaves an unnamed node
+  unnamed — so an unnamed import stays unnamed for the rest of its life. See section 37
+  for what that costs.
 - **`elementor-theme-template-create` creates an empty published document with no
   display conditions**, and warns saying so, pointing at
   `elementor-theme-conditions-set`. It is the one operation here requiring
@@ -1952,6 +1959,42 @@ tree: `elementor-page-settings-get`, `elementor-page-settings-set`,
   restore the page's content and leave the settings exactly as it found them. The
   target distinguishes "the row was absent" from "the row was empty", so rolling
   back a page that never had settings deletes the row rather than storing `[]`.
+- **A layout is TWO rows, and only one of them renders anything.** Elementor keeps
+  it in `_elementor_page_settings['template']`, which its editor panel reads, and in
+  `_wp_page_template` (`ElementorPageSettings::META_PAGE_TEMPLATE`), which is the row
+  WordPress's own template loader serves the page from. Elementor's save syncs both.
+  SiteHelm shipped writing only the first, so a layout change stored, read back,
+  reported `verification: verified`, and changed nothing a visitor could see — the
+  same defect shape as the SSRF pin-key bug: a write whose self-check reports success
+  while the write is inert. `ElementorPageSettings::PAGE_TEMPLATES` is the whole
+  vocabulary, read off Elementor 4.2.3's own `availableTemplates`:
+
+  | SiteHelm `layout` | `_elementor_page_settings['template']` | `_wp_page_template` |
+  | --- | --- | --- |
+  | `default` | `default` | `''` (empty string) |
+  | `canvas` | `elementor_canvas` | `elementor_canvas` |
+  | `headerFooter` | `elementor_header_footer` | `elementor_header_footer` |
+  | `theme` | `elementor_theme` | `elementor_theme` |
+
+  **The mapping is identity for three rows and not for the fourth, and the fourth is
+  the common one.** A fix that wrote the same string into both rows would name a
+  template file no theme carries, precisely on the value used most.
+  `ElementorPageSettingsTarget::store()` writes and re-reads both; `snapshot()`
+  records the core row with its OWN `template_existed` flag, because a page can carry
+  Elementor settings and no core row or the reverse; `restore()` puts both back,
+  deleting rather than emptying where the flag says the row was absent. A snapshot
+  taken before this fix carries no `template_existed` member at all, and its ABSENCE
+  means "leave that row alone" — reading it as "there was no row" would make the
+  rollback delete a row it never recorded.
+- **`fieldsFor()` measures the EFFECTIVE layout**, taking the core value as a second
+  required parameter (`fieldsFor( array $stored, string $page_template )`) rather than
+  a post id, so it stays pure and can measure a row that does not exist yet — which is
+  what a promise is. Verification that read Elementor's own row would keep confirming
+  the inert state, which is the whole bug.
+- **A request naming no layout leaves the core row exactly as it is**
+  (`nextPageTemplate()`), including when it disagrees with the settings row. A
+  `hideTitle`-only write silently relayouting the page would be a change nobody
+  previewed.
 - **`ElementorPageSettings` is the closed allowlist, shared by both halves.**
   `SETTING_MAP` translates SiteHelm's names to Elementor's stored keys
   (`layout` -> `template`, `hideTitle` -> `hide_title`); `LAYOUTS` names the four
@@ -1965,6 +2008,29 @@ tree: `elementor-page-settings-get`, `elementor-page-settings-set`,
   above `MAX_STORED_KEYS` is **refused** with `ExecutionFailed`, never trimmed: a
   trimmed map is indistinguishable from a complete one to the client that reads it,
   and a client that wrote one back would delete the rest.
+- **`writableSettings.layout` is the layout IN EFFECT, and a disagreement is
+  reported, not repaired.** The read carries a fifth member, `layoutSync`
+  (`inEffect`, `pageSettingsLayout`, `agree`). Every page a shipped SiteHelm set a
+  layout on is desynced right now, so this is the ordinary case rather than a
+  curiosity. Read handlers have no `warnings` channel — `OperationResult::$warnings`
+  is populated only by the write path — so the disagreement is a distinct response
+  member. The read does **not** write: repairing here would be a write with no
+  preview, no snapshot and no rollback, from an operation whose declared policies all
+  say `NotApplicable`.
+- **`elementor-document-get` carries `pageSettings` too**, built by
+  `ElementorPageSettings::report()` and declared by `reportSchema()`: `layoutSync`,
+  `storedSettings`, `writableSettings`. Without it a client cloning a live page over
+  MCP learns the elements and nothing about the shell they sit in, and reproduces
+  them inside the wrong page with no way to know. It refuses nothing — unlike
+  `elementor-page-settings-get`, whose `MAX_STORED_KEYS` refusal protects a caller
+  about to write the row back; failing a whole document read over a fat settings row
+  would deny an operator the tree they asked for.
+- **`elementor-template-import` and `elementor-template-apply` need no equivalent.**
+  Import writes `META_PAGE_SETTINGS` onto a NEW `elementor_library` post, and
+  WordPress's template loader does not consult `_wp_page_template` for library
+  templates — Elementor renders them itself — so a saved template cannot be born
+  desynced. Apply touches only `_elementor_data`; it never reads or writes page
+  settings, so it cannot land a layout at all.
 - **A reorder is a whole permutation, never a partial one.** The rule lives in
   `ElementorTreeEdit::reorder()`, not in the operation, so no second spelling of it
   can drift. The order must name every one of the parent's direct children exactly
@@ -2002,6 +2068,69 @@ makes a new page to hold it.
   a tree using one is refused with `IntegrationUnavailable` rather than stored
   unchecked. A registry that cannot be read at all is let through, and the key gate
   refuses on its own terms.
+- **Every node the caller sends is stored WITH an id, and an id they sent is kept.**
+  Build and create both run `ElementorIdMint::nameTree()` over the coerced tree,
+  immediately after `coerceTree()` and **before** the promise is built, so the digest
+  describes the tree that is actually stored. Nodes that arrived with a usable id are
+  left byte-for-byte alone; nodes without one — missing key, non-scalar, or empty
+  string — are named. THIS IS NOT COSMETIC. Elementor generates per-element CSS under
+  the selector `.elementor-element-<id>`, so a document holding unnamed nodes emits
+  every rule under `.elementor-element-`, which matches **every** element on the page
+  at once: a 175-element page built without ids rendered with `data-id=""` throughout
+  and one generated selector carrying 27 merged rules, every padding, colour and width
+  landing on everything. The write verified green throughout, because the stored tree
+  was exactly the promised tree.
+- **Naming is digest-stable, which is why it may live in `planChange()`.** The mint is
+  a pure function of its seed; build seeds `operationId|postId` and create seeds
+  `operationId|postType|title`, all values both the preview run and the apply run read
+  identically, so the two runs mint the same ids and the payload fingerprint does not
+  move. The earlier docblock claim that minting "would make the same request plan
+  differently twice" was simply wrong about `ElementorIdMint`, and it is the reason the
+  defect above shipped.
+- **`nameTree()` and `reassign()` are deliberately opposite and must not be unified.**
+  `reassign()` COPIES elements that already exist, so a node with no usable id was
+  unaddressable where it stood and stays unaddressable in the copy — inventing one
+  would be Phase 6a's rejected derived identity. `nameTree()` ORIGINATES elements that
+  have never existed anywhere, so the minted id *becomes* the stored id and nothing is
+  misrepresented; it is the same case `ElementorElementAdd` already covers for the
+  single leaf it inserts. Both walk children the way `ElementorTreeDiff` does — a
+  non-array where a child belongs is skipped **without consuming a position**, so paths
+  agree across the three.
+- **Every REPEATER ROW is stored with an `_id` too, and one the caller sent is kept.**
+  Elementor gives each row its own `_id` and generates that row's CSS under
+  `.elementor-repeater-item-<_id>`, exactly as it does per element. SiteHelm wrote rows
+  with none: a live page carrying 16 icon-list widgets rendered 93 rows with correct
+  content, **zero** occurrences of `elementor-repeater-item` in its HTML and **zero**
+  `.elementor-repeater-item-*` selectors in `post-57.css`, so every row was permanently
+  beyond the reach of any per-row rule and the editor's row identity — active tab, open
+  accordion, current slide — had no stable handle. The blast radius is every
+  repeater-backed widget: icon-list, tabs, accordion, toggle, slides, carousel,
+  price-list, social-icons, form fields, and any third-party widget with a repeater
+  control. `ElementorIdMint::nameRepeaters()` fills only the gaps; `nameTree()` calls it
+  for every node it walks, so build, create and import get it from the same call they
+  already made, and `ElementorElementAdd` calls it directly because it stores the
+  caller's settings verbatim and can carry a repeater in them without carrying a tree.
+- **A repeater is recognized STRUCTURALLY, because there is no control schema at plan
+  time.** The value must be a non-empty list; every member must be a non-empty array;
+  every member must be associative rather than itself a list; and the members must not
+  be Elementor's attachment-list shape (`id`/`url`, which is what `gallery` and
+  `background_slideshow_gallery` store and is emphatically not a repeater). A malformed
+  member disqualifies the **whole setting** rather than being skipped in place — the
+  opposite of `nameTree()`'s skip rule, and deliberately so: there the surrounding list
+  is unambiguously an element list, here the scalar is itself evidence the value was
+  never a repeater. Erring toward not minting is the safe direction; a row without an
+  `_id` merely cannot be styled, whereas an `_id` in a non-repeater setting is data the
+  widget never asked for. The known trade: a genuine repeater whose rows declare only
+  controls literally named `id` and `url` is not recognized.
+- **Row seeds quote the ELEMENT's id, the setting key and the row's position**, so two
+  widgets holding byte-identical repeater content diverge, two repeater controls on one
+  widget diverge, and rows 0 and 1 diverge. Row `_id`s join the same running id set as
+  element ids, and nested repeaters (a row whose own value holds a repeater) fall out of
+  the recursion unbounded — a PHP array is a finite tree. `nameRepeaters()` is NOT called
+  from `ElementorTemplateApply`, `ElementorElementDuplicate`, `ElementorElementUpdate`,
+  `ElementorElementsUpdate` or `ElementorWidgetSettingsUpdate`: those COPY or ADDRESS
+  elements that already exist, so minting there would be the derived-identity defect
+  Phase 6a rejected — the same rule that separates `nameTree()` from `reassign()`.
 - **Build and clear both refuse a write that would not move the bytes.** Identical
   digest for a build, an already-empty page for a clear, both `InvalidInput`. The
   writer cannot tell a save that changed nothing from a save Elementor dropped, so
@@ -2022,9 +2151,16 @@ makes a new page to hold it.
   would refuse the page the create just reported making.
 - **Create's page-settings row goes through `ElementorPageSettingsTarget::store()`**,
   the same verified writer `elementor-page-settings-set` uses, which re-reads the
-  row. No layout requested means no row written at all — Elementor reads an absent
-  row as the theme's own layout. `ElementorPageSettings::validLayout()` is private;
-  the public path is `requested()` then `apply()`.
+  row, and it writes **both** layout rows (see §37): a page created with
+  `layout: canvas` that carried only Elementor's row would be born desynced and stay
+  that way until someone ran `elementor-page-settings-set` on it. The core value is
+  derived from the settings row through `ElementorPageSettings::pageTemplateOf()`,
+  which is sound HERE and nowhere else — the row was built a line earlier from an
+  empty map for a page that did not exist a moment ago, so there is no prior core
+  value it could be disagreeing with. No layout requested means no row written at
+  all — Elementor reads an absent row as the theme's own layout.
+  `ElementorPageSettings::validLayout()` is private; the public path is `requested()`
+  then `apply()`.
 - **A create cannot be rolled back.** `restore()` always throws
   `RollbackUnavailable`, and a failed tree write leaves the post in place:
   deleting it would be a second destructive write on a failure path, taken without a
@@ -2373,3 +2509,292 @@ last space only when that keeps ≥ 60 % of the bound. The promise carries `fixe
 `unfixable` per post, and because `WriteVerifier` compares every promised key, both are
 memoised per target key and re-reported by `readBack()`, which re-reads only the posts the
 plan actually wrote. Apply stops at the first `apply()` false with the bulk op's wording.
+
+## 46. Atomic vs classic Elementor widgets — the two write vocabularies
+
+Elementor ships **two widget vocabularies at once**, and every Elementor write path has to
+know which one it is looking at. Conflating them was a real defect: until it was fixed, no
+write could touch a classic widget on any site.
+
+**Atomic (V4) widgets** — `e-heading`, `e-paragraph`, `e-div-block` — declare
+`get_props_schema()` and store every value in a typed envelope, `{"$$type": …, "value": …}`.
+**Classic widgets** — `html`, `heading`, `image`, `text-editor`, `button`, `shortcode`, and
+every third-party widget ever shipped — extend `Widget_Base`, declare **controls** through
+`get_controls()`, and store plain scalars and arrays. Enveloping a classic setting hands
+Elementor's classic renderer an array where it expects a string and corrupts the widget on
+the very save meant to edit it; leaving an atomic prop unenveloped locks the page (#101).
+
+**`ElementorWidgetSchema` makes classic-ness a third answer.** `ElementorApi::propSchema()`
+had two: a prop schema, or null. Null means "nothing was read" and the coercion layer
+refuses on it — so every classic widget answered null and was refused as though Elementor
+were broken. Because `coerceTree()` sweeps the whole stored document, one classic widget
+anywhere made the entire page unwritable. The three answers are now distinct and must never
+collapse into each other:
+
+| Answer | Meaning | Write path |
+|---|---|---|
+| `null` | nothing was read — unknown type, unaddressable registry, neither method | refuse (`ExecutionFailed`) |
+| `atomic( [] )` | read in the atomic vocabulary, declares no props | proceed |
+| `classic( … )` | read in the control vocabulary | proceed, no envelopes |
+
+**A control is a writable setting if and only if it declares a `default`.** `Controls_Stack`
+holds layout and UI controls — `section`, `tab`, `tabs`, `raw_html`, `alert`, `heading`,
+`divider` — in the same list as data controls, and only the data ones carry a default,
+because only they hold a value. Verified against Elementor 4.2.3's `html` widget: **297
+controls, of which exactly 266 declare `default`, and the 31 that do not are exactly those
+seven non-data types.** Naming the types instead would hardcode a list that drifts with
+every release; reflecting on the control objects would reach past the public API
+`ElementorApi` is confined to. `default` is already read straight off the raw control array
+by `descriptor()`, so it is a property of Elementor's controls rather than of any projection
+here. Note also that a classic widget's own `get_controls()` **already includes** the
+common/advanced controls (`_margin`, `_padding`, `_element_id`, `_css_classes`, motion_fx) —
+there is no need to union with a `common` widget, and nothing anchors on that name.
+
+**What each side does.** `ElementorPropCoercion::coerce_settings()` runs the envelope
+coercion for an atomic widget and returns a classic widget's settings byte-identical.
+`assertKnownKeys()` runs for **both** — #102 discards an unrecognised classic setting as
+readily as an unrecognised prop — judging an atomic key against declared props and a classic
+key against the control names that declare a `default`. So `html` and `_margin` are accepted
+on the `html` widget; `section_title` and `_section_style` are refused as layout rather than
+data.
+
+**`controlSchema()` is a response projection, not a write check.** It describes *every*
+control to a client, sections and tabs included, and also serves structural elements which
+have no write vocabulary at all. `widgetSchema()` answers the narrower question — which of
+these may a caller write.
+
+**Testing rule this produced.** The defect survived nine phases because the only widget
+double implemented `get_props_schema()`, so the suite modelled atomic widgets exclusively; a
+double that can only express one shape of an integration makes the suite's green evidence
+about the double, not about Elementor. `tests/Doubles/WriteTargetFakeClassicWidget.php`
+exists to hold the other shape, and the regression test sweeps a tree mixing `e-heading`
+with `html`.
+
+**A declared key is not necessarily a rendered key.** `assertKnownKeys()` answers "does this
+widget accept this setting"; a classic control can accept a value and still never render it,
+because a `condition` on it is unsatisfied. See §49.
+
+## 47. Elementor's two schema registries — widgets and layout elements
+
+Elementor answers "what settings does this accept?" from **two** registries, and a write that
+knows only one refuses half the page:
+
+| Node | Resolved through | Keyed by |
+|---|---|---|
+| `elType: widget` | `widgets_manager->get_widget_types()` | the node's `widgetType` |
+| `container`, `section`, `column` | `elements_manager->get_element_types()` | the node's `elType` |
+
+`ElementorApi::widgetSchema()` and `ElementorApi::elementSchema()` differ only in which of the
+two they resolve from. Both hand the resolved object to the private `stack_schema()`, which
+performs the atomic-vs-classic classification described in §46, so the two entry points cannot
+drift on what an unreadable stack does. A container is an ordinary `Controls_Stack`, so it
+classifies classic and its writable settings are the controls declaring a `default` — the same
+rule §46 states for classic widgets. `widgetSchema( 'container' )` is null, and that is
+correct: the wrong registry genuinely finds nothing.
+
+**The rule is now "validate every node against its own type's vocabulary."** It replaces an
+older rule — "refuse anything that is not a widget" — which was written to stop a container
+being checked against widget schema and achieved it by making container settings unwritable
+altogether. Padding, width, background and gap could not be set by any operation, so a page
+built entirely through SiteHelm kept Elementor's 10px kit padding on every container and could
+never be full-bleed. The protection the old rule was really providing still holds, because the
+registry is chosen from `elType` before anything is checked;
+`ElementorElementUpdateTest::test_a_control_a_widget_declares_but_a_container_does_not_is_refused_on_a_container()`
+pins it by applying a widget-only control to a container and requiring a refusal.
+
+`ElementorPropCoercion` caches schemas by `elType|type`, never by type alone: the two
+registries are separate namespaces and a widget and an element sharing a name would otherwise
+poison each other's entry. `assertKnownKeys()` runs on **both** the add and the update path for
+layout elements — an unreadable registry is `ExecutionFailed` on both, and an add carrying no
+settings at all reaches no registry.
+
+## 48. Shipped authoring guidance — instructions and hints
+
+Two surfaces, deliberately different in when they arrive.
+
+**`SiteHelm\Gateway\ServerInstructions`** is a fourth top-level member of the `initialize`
+result, beside `protocolVersion`, `capabilities` and `serverInfo`. It carries the general
+rules: preview-then-apply, and the four mistakes that produce a page which reports success and
+still looks wrong. It is sent on **every** connection, so it has a character ceiling pinned by
+`ServerInstructionsTest::MAX_LENGTH`. The ceiling is the point: a fifth point is paid for out
+of an existing one unless someone raises it on purpose.
+
+**`ElementorDocumentHints`** is the complement. Instructions are read once and easy to forget
+by the time an agent is mid-build; a hint arrives on the read the page is being rebuilt from.
+It rides `elementor-document-get` and no other operation. The vocabulary — codes, message text,
+order, schema — lives only in that class, and `CODE_ORDER` doubles as the schema's `code` enum
+so the emitted codes and the declared ones cannot drift.
+
+A hint is only ever emitted for a condition the plugin can **detect** on the page in hand:
+`layout-not-set`, `layout-desynced`, `container-kit-padding`. General advice belongs in the
+instructions, not here. The member is always present and often empty — an `additionalProperties:
+false` schema with `hints` in `required`, on §5's rule that a member appearing only sometimes is
+one a client cannot tell from an empty one. `handle()` reads the page-settings row once and
+gives the same array to both the `pageSettings` member and the hint emitter, so a hint can never
+contradict the member it tells the operator to go and read.
+
+## 49. Condition-gated controls — the switcher gate
+
+A classic control may declare a **`condition`** naming a companion control and the values
+that switch it on. `Controls_Stack::is_control_visible()` evaluates that condition at
+CSS-generation time and skips an unsatisfied control **entirely**. Write `background_color`
+without `background_background`, or `border_color` without `border_border`, and the value is
+accepted, persisted, returned verbatim by the next read, and rendered nowhere. Every check
+the module already made passed: the key is declared (§46), the classic branch leaves the
+value byte-identical, and the post-write verification read finds it stored. The write is a
+success by every measure the plugin had, and the operator's change is invisible.
+
+`ElementorPageSettings` had already met this once and answered it locally, with a closed
+allowlist that excluded `background_color` for exactly this reason. That fix never reached
+the element paths. §49 is the general answer.
+
+**The seam is `ElementorPropCoercion::assertKnownKeys()`, extended rather than forked.** It
+is the single choke point every write already passes through — `ElementorSettingsMerge`,
+`ElementorElementAddInput`, `ElementorTreeInput` — so every present and future caller
+inherits the gate. A sibling `assertRenderableKeys()` would have re-created the gap the
+page-settings fix came through: two checks are two chances for a call site to stop making
+one of them. Order inside the method is load-bearing — **existence first, renderability
+second** — because an undeclared key has no descriptor to judge and would otherwise trade a
+precise "this element does not accept that setting" for silence.
+
+**The condition is judged against the EFFECTIVE settings**, meaning the stored settings with
+the request laid over them, on the same additive rule as `ElementorSettingsMerge::merged()`
+(re-spelled inside the coercion layer rather than called, to avoid a dependency cycle). A
+switcher stored by an earlier write satisfies a condition exactly as one sent in this
+request does; judging the request alone would refuse every partial update that edits a gated
+setting without re-sending its companion. `ElementorSettingsMerge::assertKnownKeys()` is the
+only caller that has a stored side and passes it; a new element and a whole-tree build
+legitimately have none, and their requested map is correctly the effective one.
+
+**The declarations ride the existing schema cache.** `ElementorApi::stack_schema()` copies
+each writable control's `condition`, `conditions` and `default` out of the raw stack in the
+pass that already collects the names, and `ElementorWidgetSchema` transports them raw and
+uninterpreted. A 175-element `elementor-document-build` therefore pays **zero** extra
+registry reads: the stack is already read once per widget type per request.
+
+**`ElementorConditionGate` refuses only when it is certain.** It is a final, non-instantiable
+class of pure static methods — not injected, because a pure function of three arrays needs no
+collaborator and no test double. A false refusal blocks a legitimate write, a whole-document
+build included, and is strictly worse than the silent no-render it prevents, which an
+operator can at least diagnose with a read. What it understands is exhaustively: a classic
+`condition` whose keys are a plain control name with an optional trailing `!`, whose values
+are a string or a list of strings, and whose referenced control is declared in the stack with
+a string-valued effective setting or default. Entries AND, on Elementor's own semantics,
+which is why **one** unsatisfied entry is enough to refuse.
+
+Everything else fails open, and each trigger has its own test: the nested `conditions`
+relation/terms form, even alongside a classic `condition`, because an OR term might rescue
+the control; a `name[sub_key]` index; a condition value that is not string-shaped, or an
+empty list; a referenced effective value that is not a string, which removes every corner
+where Elementor's loose comparison and this one could disagree; a referenced key carried by
+`__dynamic__` or `__globals__`, whose real value arrives at render time; a referenced
+control absent from the stack; and an atomic widget, which carries no descriptors at all.
+
+**The oracle is the declared condition, never a switcher heuristic**, and that distinction is
+what keeps **popover groups** writable. Typography and box shadow have a starter control too
+— `typography_typography`, `box_shadow_box_shadow_type` — but those are `render_type: ui`
+and their siblings declare **no** condition on them: a font size written without the starter
+renders perfectly well. A rule shaped as "a `foo_foo` starter must accompany its group" would
+refuse those writes on a pattern match with nothing upstream agreeing.
+
+**The negated form is first-class**, because Border uses it: `[ 'border!' => [ '', 'none' ] ]`
+means "visible while the border style is anything but unset or none". Reading the bang as
+part of the control name would look up a control called `border!`, find nothing, and fail
+open on every border write — the gate would pass its positive tests and do nothing for half
+the defect it was written for.
+
+**Only written keys are judged.** A stored setting the request does not touch is the site's
+own history and is never re-litigated, so a page written before this gate can still be saved
+by the very operation that would repair it. `coerceTree()` gates nothing at all.
+
+**The refusal names the companion and its values**, because it is the primary teaching
+surface for this defect and is read by a client that by construction did not read the schema
+docs. Positive: *"Elementor will store a setting named "x" but never render it: it only takes
+effect while a setting named "y" is set to one of: …"*. Negated: *"… set to something other
+than: …"*. Both control names go through `describe_key()` and every listed value through
+`describe_values()` — quoted when it is a short word-character token, named when it is the
+empty string, described by length otherwise, and the list capped at six. Nothing from the
+stored tree is echoed and no registry is enumerated.
+
+**Rejected: auto-writing the companion.** The satisfying value is a content decision —
+`classic`, `gradient` and `video` are three different backgrounds — so guessing one would be
+a silent write of a value nobody chose. Naming it in the refusal puts the choice where it
+belongs, while the caller still holds the write.
+
+**`controlSchema()` still does not project conditions**, and its description says why: the
+write path evaluates them and refuses with the companion named, so a client never needs to
+re-implement an evaluator over a projection of the whole stack. The old rationale — "a client
+writing settings cannot act on them" — was false and is gone from both the operation's schema
+and `ElementorApi::descriptor()`'s docblock.
+
+### Classic-widget media values without an attachment id
+
+**The defect.** An Elementor media control stores a pair — `{ id, url }` — and only the `id`
+half connects the value to the media library. WordPress builds `srcset` and `sizes` from the
+attachment record, adds the `wp-image-<id>` class from it, decides native lazy-loading from
+it, and every image optimiser, CDN offloader and alt-text plugin hooks the attachment rather
+than the URL. A media value carrying a `url` and no `id` stores cleanly, reads back verbatim,
+passes the post-write verification, and puts one unresponsive full-size image on the page.
+Measured on a page cloned from another site: fourteen content images, zero `srcset`, zero
+`wp-image-` classes, zero lazy-loaded, all fourteen hotlinked from the source domain. It is
+the fourth instance of this project's recurring defect shape — a write that verifies green by
+measuring the row it wrote rather than the thing that takes effect.
+
+`ElementorPropCoercion` already enforced `id` XOR `url` for **atomic** widgets, where a typed
+prop envelope makes it a schema rule. Classic widgets carry no envelope — the core controls
+and every third-party widget hand their settings through byte-identical — so nothing looked
+at their media values at all.
+
+**`ElementorMediaAdvisory` warns; it does not refuse**, and the contrast with
+`ElementorConditionGate` is the whole design. An unsatisfied condition renders **nothing**, so
+refusing is the only outcome that tells the truth. A url-only media value renders — badly,
+but visibly — and pointing a widget at an image deliberately outside this site's library is
+legitimate. Refusing would block a write Elementor performs correctly; silence would let a
+whole page of unoptimised images ship under a green verification.
+
+**The oracle is the declared control `type`, never the value's shape.** Elementor's **URL**
+control stores `{ url, is_external, nofollow }` — an array with a `url` and no `id`, byte-for-
+byte the shape being looked for. A rule written as "an array with a url and no id" would fire
+on every link and button on the site, and an advisory that cries on ordinary writes is one an
+operator learns to scroll past. `ElementorApi`'s classic descriptor therefore carries `type`
+alongside `condition`, `conditions` and `default`, at no extra registry read.
+
+**What is said nothing about**, exhaustively: an undeclared control, or one declared without a
+type; any type but `media`; a value that is not an array; a value carrying a usable `id`
+(`int` or numeric string, `0` and `'0'` excluded — those are Elementor's own placeholder for
+absence); a value with neither an id nor a non-empty url, which is a control being cleared;
+and a control bound through `__dynamic__` or `__globals__`. Only written keys are judged, on
+the condition gate's own reasoning.
+
+**Two entry points, seven operations.** `ElementorPropCoercion::mediaWarnings()` answers for
+one widget and returns `[]` for an atomic one or an unreadable schema — an unreadable schema
+is not an error on this path, because nothing is being refused.
+`ElementorSettingsMerge::mediaWarnings()` is its node-shaped twin, and deliberately does
+**not** pass the stored side the way `assertKnownKeys()` does: a media value is judged on
+itself, and re-reporting a pre-existing bare image on every unrelated write would make the
+advisory noise. The four single-element paths — `elementor-element-update`,
+`elementor-widget-settings-update`, `elementor-elements-update`, `elementor-element-add` —
+reach it there; `elementor-widget-settings-update` judges the requested settings **before**
+the device suffix goes on, because a control's declared type is keyed by the base name and
+`image_mobile` would find no descriptor at all.
+
+The three bulk paths — `elementor-document-build`, `elementor-document-create`,
+`elementor-template-import` — reach it through `ElementorTreeInput::mediaWarnings()`, a public
+walker mirroring `assert_declared_keys()`'s recursion but returning rather than throwing. It
+is separate from `assertUsable()` on purpose: `ElementorDocumentBuild` discards that call's
+return value, and folding the advisories into it would have discarded them too. It judges
+layout elements as well as widgets — a container's background image is a media control like
+any other.
+
+**`ElementorMediaAdvisory::condense()` lists below `BULK_LIMIT` (5) and summarises above it.**
+A cloned page can degrade forty images at once, and forty sentences naming forty keys is a
+wall an operator scrolls past — hiding the finding as surely as silence would. Under the cap
+the key names survive, because that is what fixes them one at a time; over it, one sentence
+carries the setting total **and** the element total, because their ratio is the diagnosis: one
+widget with four bare images is a missed upload, four widgets with one each is a page copied
+from somewhere else.
+
+**The judgement is pure** — no clock, no registry read, no iteration over anything but the
+caller's own arrays in their given order — so `planChange()` produces byte-identical warnings
+at preview and again at apply. The advisories ride `PlannedChange::$warnings` into
+`WriteSettlement` like any other.

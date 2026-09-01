@@ -17,8 +17,10 @@ use SiteHelm\Contracts\OperationException;
 use SiteHelm\Contracts\PermissionMode;
 use SiteHelm\Modules\Elementor\ElementorDocument;
 use SiteHelm\Modules\Elementor\ElementorDocumentGet;
+use SiteHelm\Modules\Elementor\ElementorDocumentHints;
 use SiteHelm\Modules\Elementor\ElementorFields;
 use SiteHelm\Modules\Elementor\ElementorModule;
+use SiteHelm\Modules\Elementor\ElementorPageSettings;
 use SiteHelm\Modules\Elementor\ElementorPresence;
 use SiteHelm\Modules\Elementor\ElementorTree;
 use SiteHelm\Registry\CapabilityRegistry;
@@ -107,6 +109,24 @@ final class ElementorDocumentGetTest extends TestCase {
 	private array $editModes = [];
 
 	/**
+	 * The stored `_elementor_page_settings` value per identifier.
+	 *
+	 * @var array<int, mixed>
+	 */
+	private array $settings = [];
+
+	/**
+	 * The stored `_wp_page_template` value per identifier.
+	 *
+	 * BOTH LAYOUT ROWS ARE MODELLED. A double that knew only Elementor's own row
+	 * cannot express a page whose layout is stored and not rendering, which is the
+	 * state every page a shipped SiteHelm wrote a layout to is in.
+	 *
+	 * @var array<int, mixed>
+	 */
+	private array $pageTemplates = [];
+
+	/**
 	 * Every post lookup the operation made, in order.
 	 *
 	 * This is what makes the ordering test below able to fail: a refusal alone
@@ -131,6 +151,8 @@ final class ElementorDocumentGetTest extends TestCase {
 		$this->posts           = [ self::DOCUMENT_ID => $this->makeRow( self::DOCUMENT_ID, 'page', 'Home', 'publish' ) ];
 		$this->editModes       = [ self::DOCUMENT_ID => 'builder' ];
 		$this->data            = [ self::DOCUMENT_ID => $this->encode( $this->sampleTree() ) ];
+		$this->settings        = [];
+		$this->pageTemplates   = [];
 
 		$this->stubWordPress();
 	}
@@ -230,6 +252,14 @@ final class ElementorDocumentGetTest extends TestCase {
 					return $this->data[ $id ] ?? '';
 				}
 
+				if ( ElementorPageSettings::META_KEY === $key ) {
+					return $this->settings[ $id ] ?? '';
+				}
+
+				if ( ElementorPageSettings::META_PAGE_TEMPLATE === $key ) {
+					return $this->pageTemplates[ $id ] ?? '';
+				}
+
 				return ElementorDocument::META_EDIT_MODE === $key ? ( $this->editModes[ $id ] ?? '' ) : '';
 			}
 		);
@@ -289,7 +319,338 @@ final class ElementorDocumentGetTest extends TestCase {
 	public function test_the_response_carries_the_document_summary_the_nodes_and_the_totals(): void {
 		$this->withElementor();
 
-		$this->assertSame( [ 'document', 'nodes', 'totals' ], array_keys( $this->get() ) );
+		$this->assertSame( [ 'document', 'nodes', 'totals', 'pageSettings', 'hints' ], array_keys( $this->get() ) );
+	}
+
+	/**
+	 * THE PAGE'S OWN FRAME IS PART OF READING THE PAGE.
+	 *
+	 * Without this member a client cloning a live page over MCP learns its
+	 * elements and nothing about the shell they sit in — not that the page is
+	 * full width, not that the theme title is hidden — and reproduces the
+	 * elements inside the wrong page with no way to know it did. That is why a
+	 * real clone came out wrong.
+	 */
+	public function test_the_response_carries_the_pages_own_page_settings(): void {
+		$this->withElementor();
+		$this->settings[ self::DOCUMENT_ID ]      = [
+			'template'   => 'elementor_canvas',
+			'hide_title' => 'yes',
+			'custom_css' => '.hero{}',
+		];
+		$this->pageTemplates[ self::DOCUMENT_ID ] = 'elementor_canvas';
+
+		$this->assertSame(
+			[
+				'layoutSync'     => [
+					'inEffect'           => 'canvas',
+					'pageSettingsLayout' => 'canvas',
+					'agree'              => true,
+				],
+				'storedSettings' => [
+					'template'   => 'elementor_canvas',
+					'hide_title' => 'yes',
+					'custom_css' => '.hero{}',
+				],
+				'writableSettings' => [
+					'layout'    => 'canvas',
+					'hideTitle' => true,
+				],
+			],
+			$this->get()['pageSettings']
+		);
+	}
+
+	/**
+	 * THE LAYOUT REPORTED IS THE ONE IN EFFECT, so a clone built from this read
+	 * reproduces the page a visitor sees rather than the one Elementor's editor
+	 * panel claims. A page written by a shipped SiteHelm is in exactly this
+	 * state, which makes it the ordinary case rather than a curiosity.
+	 */
+	public function test_the_page_settings_member_reports_the_layout_that_renders(): void {
+		$this->withElementor();
+		$this->settings[ self::DOCUMENT_ID ]      = [ 'template' => 'elementor_canvas' ];
+		$this->pageTemplates[ self::DOCUMENT_ID ] = '';
+
+		$settings = $this->get()['pageSettings'];
+
+		$this->assertSame( 'default', $settings['writableSettings']['layout'] );
+		$this->assertFalse( $settings['layoutSync']['agree'] );
+	}
+
+	/**
+	 * A STORED VALUE THAT IS NOT A MAP REPORTS AS AN EMPTY MAP rather than
+	 * passing through, on `elementor-template-get`'s rule: the declared output
+	 * says this member is an object, and a stored string reaching a client that
+	 * trusted the schema is a defect in the client that this operation caused.
+	 */
+	public function test_a_page_settings_row_that_is_not_a_map_reports_as_an_empty_map(): void {
+		$this->withElementor();
+		$this->settings[ self::DOCUMENT_ID ] = 'not-a-map';
+
+		$this->assertSame( [], $this->get()['pageSettings']['storedSettings'] );
+	}
+
+	/**
+	 * The declared output names the member and requires it, so a client can read
+	 * the response without testing for an absent key.
+	 *
+	 * IT PINS THE DECLARATION AGAINST THE RESPONSE, not against a second copy of
+	 * the list. A member added to the payload and not to the schema, or the
+	 * reverse, is a catalog that lies about its own operation, and
+	 * `additionalProperties: false` turns the first of those into a validation
+	 * failure at every client that checks.
+	 */
+	public function test_the_output_schema_declares_the_page_settings_and_hints_members(): void {
+		$this->withElementor();
+
+		$schema   = ElementorDocumentGet::definition()->outputSchema;
+		$expected = [ 'document', 'nodes', 'totals', 'pageSettings', 'hints' ];
+
+		$this->assertSame( $expected, array_keys( $schema['properties'] ) );
+		$this->assertSame( $expected, $schema['required'] );
+		$this->assertSame( $expected, array_keys( $this->get() ) );
+		$this->assertFalse( $schema['properties']['pageSettings']['additionalProperties'] );
+		$this->assertFalse( $schema['properties']['hints']['items']['additionalProperties'] );
+		$this->assertSame(
+			ElementorDocumentHints::CODE_ORDER,
+			$schema['properties']['hints']['items']['properties']['code']['enum'],
+			'The declared codes must be the ones the emitter can emit, or a client filtering on the enum silently stops matching.'
+		);
+	}
+
+	// ------------------------------------------------------------------ hints
+
+	/**
+	 * The codes a result reports, in the order it reported them.
+	 *
+	 * @param array<string, mixed> $result The operation result.
+	 *
+	 * @return string[] The codes.
+	 */
+	private function hintCodes( array $result ): array {
+		return array_map(
+			static fn( array $hint ): string => $hint[ ElementorDocumentHints::FIELD_CODE ],
+			$result[ ElementorDocumentHints::FIELD_HINTS ]
+		);
+	}
+
+	/**
+	 * One hint's message, or '' when the result does not carry that code.
+	 *
+	 * @param array<string, mixed> $result The operation result.
+	 * @param string               $code   The code to find.
+	 *
+	 * @return string The message.
+	 */
+	private function hintMessage( array $result, string $code ): string {
+		foreach ( $result[ ElementorDocumentHints::FIELD_HINTS ] as $hint ) {
+			if ( $code === $hint[ ElementorDocumentHints::FIELD_CODE ] ) {
+				return $hint[ ElementorDocumentHints::FIELD_MESSAGE ];
+			}
+		}
+
+		return '';
+	}
+
+	/**
+	 * A page whose layout renders `canvas`, whose two rows agree, and whose one
+	 * top-level container declares its own padding: nothing to warn about.
+	 */
+	private function cleanPage(): void {
+		$this->settings[ self::DOCUMENT_ID ]      = [ 'template' => 'elementor_canvas' ];
+		$this->pageTemplates[ self::DOCUMENT_ID ] = 'elementor_canvas';
+		$this->data[ self::DOCUMENT_ID ]          = $this->encode(
+			[
+				[
+					'id'       => 'aaa111',
+					'elType'   => 'container',
+					'settings' => [ 'padding' => [ 'top' => '0' ] ],
+					'elements' => [],
+				],
+			]
+		);
+	}
+
+	/**
+	 * THE MEMBER IS ALWAYS THERE. A hints member that appeared only on a page
+	 * with something wrong is one a client cannot tell from a member it failed
+	 * to parse, and the two would then mean the same thing by accident.
+	 */
+	public function test_a_page_with_nothing_to_report_carries_an_empty_hint_list(): void {
+		$this->withElementor();
+		$this->cleanPage();
+
+		$result = $this->get();
+
+		$this->assertArrayHasKey( ElementorDocumentHints::FIELD_HINTS, $result );
+		$this->assertSame( [], $result[ ElementorDocumentHints::FIELD_HINTS ] );
+	}
+
+	public function test_a_page_left_at_the_default_layout_is_told_the_theme_chrome_still_renders(): void {
+		$this->withElementor();
+		$this->cleanPage();
+		$this->pageTemplates[ self::DOCUMENT_ID ] = '';
+		$this->settings[ self::DOCUMENT_ID ]      = [ 'template' => 'default' ];
+
+		$result = $this->get();
+
+		$this->assertSame( [ ElementorDocumentHints::CODE_LAYOUT_NOT_SET ], $this->hintCodes( $result ) );
+		$this->assertSame(
+			ElementorDocumentHints::MESSAGE_LAYOUT_NOT_SET,
+			$this->hintMessage( $result, ElementorDocumentHints::CODE_LAYOUT_NOT_SET )
+		);
+	}
+
+	public function test_a_page_carrying_a_layout_is_not_told_to_set_one(): void {
+		$this->withElementor();
+		$this->cleanPage();
+
+		$this->assertNotContains( ElementorDocumentHints::CODE_LAYOUT_NOT_SET, $this->hintCodes( $this->get() ) );
+	}
+
+	/**
+	 * The state every page a shipped SiteHelm set a layout on is in: Elementor's
+	 * own row says canvas, the row WordPress renders from says nothing.
+	 */
+	public function test_a_page_whose_two_layout_rows_disagree_is_told_which_one_renders(): void {
+		$this->withElementor();
+		$this->cleanPage();
+		$this->settings[ self::DOCUMENT_ID ]      = [ 'template' => 'elementor_canvas' ];
+		$this->pageTemplates[ self::DOCUMENT_ID ] = 'elementor_theme';
+
+		$result = $this->get();
+
+		$this->assertSame( [ ElementorDocumentHints::CODE_LAYOUT_DESYNCED ], $this->hintCodes( $result ) );
+		$this->assertSame(
+			ElementorDocumentHints::MESSAGE_LAYOUT_DESYNCED,
+			$this->hintMessage( $result, ElementorDocumentHints::CODE_LAYOUT_DESYNCED )
+		);
+	}
+
+	public function test_a_page_whose_two_layout_rows_agree_is_not_told_they_disagree(): void {
+		$this->withElementor();
+		$this->cleanPage();
+
+		$this->assertNotContains( ElementorDocumentHints::CODE_LAYOUT_DESYNCED, $this->hintCodes( $this->get() ) );
+	}
+
+	/**
+	 * The desync hint and the not-set hint are separate conditions and a page
+	 * can be in both: Elementor's row claims canvas and nothing renders it.
+	 */
+	public function test_both_layout_hints_fire_together_in_the_declared_order(): void {
+		$this->withElementor();
+		$this->cleanPage();
+		$this->settings[ self::DOCUMENT_ID ]      = [ 'template' => 'elementor_canvas' ];
+		$this->pageTemplates[ self::DOCUMENT_ID ] = '';
+
+		$this->assertSame(
+			[ ElementorDocumentHints::CODE_LAYOUT_NOT_SET, ElementorDocumentHints::CODE_LAYOUT_DESYNCED ],
+			$this->hintCodes( $this->get() )
+		);
+	}
+
+	/**
+	 * ONE HINT CARRYING A COUNT, not one hint per container. A page built out of
+	 * a dozen unpadded containers would otherwise bury everything else in the
+	 * member under twelve copies of one sentence.
+	 */
+	public function test_top_level_containers_with_no_padding_are_counted_into_one_hint(): void {
+		$this->withElementor();
+		$this->cleanPage();
+		$this->data[ self::DOCUMENT_ID ] = $this->encode(
+			[
+				[
+					'id'       => 'aaa111',
+					'elType'   => 'container',
+					'settings' => [ 'background_color' => '#fff' ],
+					'elements' => [],
+				],
+				[
+					'id'       => 'bbb222',
+					'elType'   => 'container',
+					'settings' => [ 'padding' => [ 'top' => '0' ] ],
+					'elements' => [],
+				],
+				[
+					'id'       => 'ccc333',
+					'elType'   => 'container',
+					'elements' => [],
+				],
+			]
+		);
+
+		$result = $this->get();
+
+		$this->assertSame( [ ElementorDocumentHints::CODE_CONTAINER_KIT_PADDING ], $this->hintCodes( $result ) );
+		$this->assertSame(
+			sprintf( ElementorDocumentHints::MESSAGE_CONTAINER_KIT_PADDING, 2 ),
+			$this->hintMessage( $result, ElementorDocumentHints::CODE_CONTAINER_KIT_PADDING )
+		);
+	}
+
+	/**
+	 * NESTED CONTAINERS ARE NOT COUNTED. Only a top-level container can run edge
+	 * to edge — a nested one is inset by its parent whatever it declares — so
+	 * counting the whole tree would fire this hint on every page ever built.
+	 */
+	public function test_a_nested_container_with_no_padding_earns_no_hint(): void {
+		$this->withElementor();
+		$this->cleanPage();
+		$this->data[ self::DOCUMENT_ID ] = $this->encode(
+			[
+				[
+					'id'       => 'aaa111',
+					'elType'   => 'container',
+					'settings' => [ 'padding' => [ 'top' => '0' ] ],
+					'elements' => [
+						[
+							'id'       => 'bbb222',
+							'elType'   => 'container',
+							'settings' => [],
+							'elements' => [],
+						],
+					],
+				],
+			]
+		);
+
+		$this->assertSame( [], $this->get()[ ElementorDocumentHints::FIELD_HINTS ] );
+	}
+
+	/**
+	 * A widget is not a container and does not inherit the kit's container
+	 * padding, so a top-level one earns nothing.
+	 */
+	public function test_a_top_level_widget_is_not_counted_as_an_unpadded_container(): void {
+		$this->withElementor();
+		$this->cleanPage();
+		$this->data[ self::DOCUMENT_ID ] = $this->encode(
+			[
+				[
+					'id'         => 'aaa111',
+					'elType'     => 'widget',
+					'widgetType' => 'heading',
+					'settings'   => [ 'title' => 'Hello' ],
+					'elements'   => [],
+				],
+			]
+		);
+
+		$this->assertSame( [], $this->get()[ ElementorDocumentHints::FIELD_HINTS ] );
+	}
+
+	/**
+	 * A page in all three states reports all three, in the declared order, so a
+	 * client reading two responses reads one ordering.
+	 */
+	public function test_every_hint_a_page_earns_arrives_in_the_declared_order(): void {
+		$this->withElementor();
+		$this->settings[ self::DOCUMENT_ID ]      = [ 'template' => 'elementor_canvas' ];
+		$this->pageTemplates[ self::DOCUMENT_ID ] = '';
+
+		$this->assertSame( ElementorDocumentHints::CODE_ORDER, $this->hintCodes( $this->get() ) );
 	}
 
 	public function test_the_document_summary_is_the_shared_projection_the_listing_also_returns(): void {

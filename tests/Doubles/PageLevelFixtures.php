@@ -20,6 +20,7 @@ use SiteHelm\Modules\Elementor\ElementorDocumentBuild;
 use SiteHelm\Modules\Elementor\ElementorDocumentClear;
 use SiteHelm\Modules\Elementor\ElementorDocumentWriter;
 use SiteHelm\Modules\Elementor\ElementorElementLabelSet;
+use SiteHelm\Modules\Elementor\ElementorIdMint;
 use SiteHelm\Modules\Elementor\ElementorElementsReorder;
 use SiteHelm\Modules\Elementor\ElementorPageSettings;
 use SiteHelm\Modules\Elementor\ElementorPageSettingsSet;
@@ -142,7 +143,8 @@ trait PageLevelFixtures {
 			$parts['gates'],
 			$parts['coercion'],
 			$parts['writer'],
-			$parts['diff']
+			$parts['diff'],
+			new ElementorIdMint()
 		);
 	}
 
@@ -311,6 +313,51 @@ trait PageLevelFixtures {
 	 */
 	private function storePageSettings( array $settings ): void {
 		$this->meta[ self::DOCUMENT_ID . '|' . ElementorPageSettings::META_KEY ] = $settings;
+	}
+
+	/**
+	 * The core page-template row as it now reads, or null when there is no row.
+	 *
+	 * NULL AND `''` ARE DIFFERENT ANSWERS and the tests turn on the difference.
+	 * WordPress's default layout is stored as the EMPTY STRING, so a helper that
+	 * folded an absent row into `''` could not tell a page whose template was set
+	 * back to the default from a page whose row a rollback deleted — which is
+	 * exactly the pair the restore cases have to separate.
+	 *
+	 * @return string|null The stored value, or null when the row is absent.
+	 */
+	private function storedPageTemplateRow(): ?string {
+		$key = self::DOCUMENT_ID . '|' . ElementorPageSettings::META_PAGE_TEMPLATE;
+
+		if ( ! array_key_exists( $key, $this->meta ) ) {
+			return null;
+		}
+
+		$raw = $this->meta[ $key ];
+
+		return is_string( $raw ) ? $raw : '';
+	}
+
+	/**
+	 * Stores one core page-template row.
+	 *
+	 * Written into the fixture meta directly rather than through the target's own
+	 * `store()`, on `storePageSettings()`'s rule: no case is set up by the method
+	 * it is about to test. It is also the only way to build the DESYNCED state —
+	 * the two rows disagreeing — because no write path this plugin now ships can
+	 * produce one.
+	 *
+	 * @param string $page_template The row to store.
+	 */
+	private function storePageTemplate( string $page_template ): void {
+		$this->meta[ self::DOCUMENT_ID . '|' . ElementorPageSettings::META_PAGE_TEMPLATE ] = $page_template;
+	}
+
+	/**
+	 * Removes the core page-template row, leaving the page with no row at all.
+	 */
+	private function forgetPageTemplate(): void {
+		unset( $this->meta[ self::DOCUMENT_ID . '|' . ElementorPageSettings::META_PAGE_TEMPLATE ] );
 	}
 
 	/**

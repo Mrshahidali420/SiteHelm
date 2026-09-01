@@ -17,7 +17,7 @@
             "settings": {
                 "type": "object",
                 "maxProperties": 200,
-                "description": "The settings to change, keyed by setting name. A setting the request does not name keeps the value the page already holds. The widget accepts only the settings it declares."
+                "description": "The settings to change, keyed by setting name. A setting the request does not name keeps the value the page already holds. The element accepts only the settings its own type declares."
             }
         },
         "required": [

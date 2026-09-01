@@ -258,6 +258,76 @@ final class ElementorTreeInput {
 	}
 	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- The module vocabulary is camelCase across every class.
+	/**
+	 * The media advisories a whole submitted tree earns.
+	 *
+	 * SEPARATE FROM `assertUsable()`, DELIBERATELY, and not folded into its
+	 * return value. Every gate that runs in there refuses; this one reports, and
+	 * a caller that discards the totals (`ElementorDocumentBuild` does) would
+	 * silently discard the advisories with them. A second call the operation has
+	 * to make on purpose cannot be dropped by accident.
+	 *
+	 * IT WALKS THE SAME SHAPE `assert_declared_keys()` WALKS, one level at a
+	 * time, descending into `elements`, and it judges layout elements as well as
+	 * widgets: a container's background image is a media control like any other,
+	 * and the el_type answers its schema when there is no widget type.
+	 *
+	 * THE PER-ELEMENT SHAPE IS PRESERVED as far as `condense()`, rather than
+	 * being flattened here, because the summary a bulk write earns counts
+	 * elements as well as settings — and a whole page cloned from another site is
+	 * told apart from one widget with a missed upload by exactly that ratio.
+	 *
+	 * @param array $content The caller's tree, already through assertUsable().
+	 *
+	 * @return array<int, string> The advisories, empty when every media value carries its attachment.
+	 */
+	public function mediaWarnings( array $content ): array {
+		return ElementorMediaAdvisory::condense( $this->media_warnings_per_element( $content ) );
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+
+	/**
+	 * One entry per element in tree order, each holding that element's advisories.
+	 *
+	 * @param array $nodes One level of the caller's tree.
+	 *
+	 * @return array<int, array<int, string>> The per-element advisories.
+	 */
+	private function media_warnings_per_element( array $nodes ): array {
+		$collected = [];
+
+		foreach ( $nodes as $node ) {
+			if ( ! is_array( $node ) ) {
+				continue;
+			}
+
+			$widget_type = $node[ ElementorPropCoercion::NODE_WIDGET_TYPE ] ?? null;
+			$el_type     = $node[ ElementorSettingsMerge::NODE_EL_TYPE ] ?? null;
+			$settings    = $node[ ElementorPropCoercion::NODE_SETTINGS ] ?? null;
+			$is_widget   = is_string( $widget_type ) && '' !== $widget_type;
+			$schema_type = $is_widget ? $widget_type : $el_type;
+
+			if ( is_string( $schema_type ) && '' !== $schema_type && is_array( $settings ) && [] !== $settings ) {
+				$collected[] = $this->coercion->mediaWarnings(
+					$schema_type,
+					$settings,
+					$is_widget ? ElementorElementAddInput::EL_TYPE_WIDGET : $schema_type
+				);
+			}
+
+			$children = $node[ ElementorPropCoercion::NODE_CHILDREN ] ?? null;
+
+			if ( is_array( $children ) ) {
+				foreach ( $this->media_warnings_per_element( $children ) as $child ) {
+					$collected[] = $child;
+				}
+			}
+		}
+
+		return $collected;
+	}
+
 	/**
 	 * Refuses any setting key the widget that carries it does not declare.
 	 *

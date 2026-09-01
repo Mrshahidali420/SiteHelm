@@ -307,21 +307,27 @@ final class ElementorElementUpdateTest extends TestCase {
 	// ------------------------------------------------------- input refusals
 
 	/**
-	 * THE elType CHECK, and the reason this operation has one.
+	 * THE elType DISPATCH, and the protection it must keep while permitting a
+	 * container write.
 	 *
-	 * Elementor's own `update-atomic-widget` reads a node's `widgetType` without
-	 * first checking `elType`, so it "succeeds" against a container by writing
-	 * settings no renderer reads — a write that verifies, reports done, and
-	 * changes nothing an operator can see. This must be a refusal instead.
+	 * `title` is `e-heading`'s control and NOT a container's. Elementor renders a
+	 * container from its own settings and ignores widget settings entirely, so a
+	 * container validated against widget schema would accept this key, store it,
+	 * verify green and change nothing an operator can see — the exact failure
+	 * Elementor's own `update-atomic-widget` produces by reading `widgetType`
+	 * without first reading `elType`.
 	 *
-	 * THE MESSAGE IS ASSERTED, not just the code. A container carries no
-	 * `widgetType`, so the unknown-key guard downstream refuses this request too
-	 * and with the same InvalidInput — asserting the code alone would leave this
-	 * test green with the elType check deleted, which is precisely the defect it
-	 * exists to catch. Mutation-proved: replacing the elType condition with
-	 * `false` leaves the code identical and fails on the message.
+	 * THIS IS THE TEST THAT SEPARATES THE FIX FROM ITS DISSOLUTION. The blanket
+	 * refusal of every layout element that this operation used to carry is gone —
+	 * a container's padding is writable now, and the case below proves it — so
+	 * the only thing standing between a container and a widget's vocabulary is
+	 * that the schema is resolved from the ELEMENT registry. Point
+	 * `assertKnownKeys()` at the widget registry instead and this fails: the
+	 * fixture container declares `padding`, `content_width` and `flex_gap`, and
+	 * the fixture `e-heading` declares `title`, so exactly one of the two
+	 * vocabularies accepts this request.
 	 */
-	public function test_a_container_named_with_widget_shaped_settings_is_refused_rather_than_silently_succeeding(): void {
+	public function test_a_control_a_widget_declares_but_a_container_does_not_is_refused_on_a_container(): void {
 		$this->withElementor();
 		$this->storeFixture();
 
@@ -330,14 +336,118 @@ final class ElementorElementUpdateTest extends TestCase {
 				$this->elementUpdate(),
 				$this->arguments( [ 'elementId' => 'c111111', 'settings' => [ 'title' => 'Our services' ] ] )
 			);
-			$this->fail( 'A layout element must not be treated as a widget.' );
+			$this->fail( 'A widget control must not be writable on a container.' );
 		} catch ( OperationException $exception ) {
 			$this->assertSame( ErrorCode::InvalidInput, $exception->errorCode );
 			$this->assertStringContainsString(
-				'layout element',
+				'a setting named "title"',
 				$exception->getMessage(),
-				'The refusal must be the elType one, not the unknown-key one that would also fire here.'
+				'The refusal must name the key the container does not declare.'
 			);
+		}
+
+		$this->assertSame(
+			[ 'content_width' => 'boxed' ],
+			$this->storedSettings( 'c111111' ),
+			'Nothing may have been written.'
+		);
+	}
+
+	/**
+	 * The defect this operation shipped with: a container's own settings were
+	 * unwritable by any operation.
+	 *
+	 * Elementor's kit insets every container by 10px on all four sides, so a
+	 * page built entirely through this plugin could never be made full-bleed —
+	 * there was no operation that could set a container's padding to 0. The
+	 * write has to reach the STORED TREE, not merely be planned, which is why
+	 * this reads the settings back out of the fixture meta.
+	 *
+	 * `content_width` is asserted alongside because the merge is additive: a
+	 * container write that replaced the settings map would be visible here as a
+	 * lost value rather than only as a missing one.
+	 */
+	public function test_a_container_setting_is_written_to_the_stored_tree(): void {
+		$this->withElementor();
+		$this->storeFixture();
+
+		$this->applied(
+			$this->elementUpdate(),
+			$this->arguments(
+				[
+					'elementId' => 'c111111',
+					'settings'  => [ 'padding' => [ 'top' => '0' ] ],
+				]
+			)
+		);
+
+		$this->assertSame( [ 'top' => '0' ], $this->settingValue( 'c111111', 'padding' ) );
+		$this->assertSame( 'boxed', $this->settingValue( 'c111111', 'content_width' ) );
+	}
+
+	/**
+	 * A node whose type the registry cannot read at all is still refused, and
+	 * the refusal NAMES THE TYPE.
+	 *
+	 * The one refusal the dispatch keeps. `unknown-block` is registered in
+	 * neither registry — the shape a page holds after the plugin that provided
+	 * an element type is deactivated — and an operator who is told only that
+	 * "an element" could not be read has to go and find it themselves.
+	 */
+	public function test_an_element_type_the_registry_cannot_read_is_refused_and_named(): void {
+		$this->withElementor();
+		$this->storeRaw(
+			(string) json_encode(
+				[
+					[
+						'id'       => 'c111111',
+						'elType'   => 'unknown-block',
+						'settings' => [],
+						'elements' => [],
+					],
+				]
+			)
+		);
+
+		try {
+			$this->plan(
+				$this->elementUpdate(),
+				$this->arguments( [ 'elementId' => 'c111111', 'settings' => [ 'padding' => [] ] ] )
+			);
+			$this->fail( 'An unreadable element type must be refused.' );
+		} catch ( OperationException $exception ) {
+			$this->assertSame( ErrorCode::ExecutionFailed, $exception->errorCode );
+			$this->assertStringContainsString( '"unknown-block"', $exception->getMessage() );
+		}
+	}
+
+	/**
+	 * A node recording no `elType` at all has no vocabulary to be checked
+	 * against, and is refused before any tree is edited.
+	 */
+	public function test_an_element_recording_no_kind_is_refused(): void {
+		$this->withElementor();
+		$this->storeRaw(
+			(string) json_encode(
+				[
+					[
+						'id'       => 'c111111',
+						'settings' => [],
+						'elements' => [],
+					],
+				]
+			)
+		);
+
+		try {
+			$this->plan(
+				$this->elementUpdate(),
+				$this->arguments( [ 'elementId' => 'c111111', 'settings' => [ 'padding' => [] ] ] )
+			);
+			$this->fail( 'An element recording no kind must be refused.' );
+		} catch ( OperationException $exception ) {
+			$this->assertSame( ErrorCode::InvalidInput, $exception->errorCode );
+			$this->assertStringContainsString( 'does not record what kind of element it is', $exception->getMessage() );
 		}
 	}
 
@@ -369,6 +479,70 @@ final class ElementorElementUpdateTest extends TestCase {
 		} catch ( OperationException $exception ) {
 			$this->assertSame( ErrorCode::InvalidInput, $exception->errorCode );
 		}
+	}
+
+	/**
+	 * A setting Elementor would store and never render is refused HERE, not only
+	 * in the coercion layer's own tests.
+	 *
+	 * The gate lives inside `assertKnownKeys()` precisely so that every write
+	 * path inherits it without an edit; this asserts that the inheritance is
+	 * real for the commonest write of all. The fixture container declares
+	 * `background_color` gated on `background_background`, and the stored
+	 * container holds neither.
+	 */
+	public function test_a_setting_whose_companion_switcher_is_unset_is_refused(): void {
+		$this->withElementor();
+		$this->storeFixture();
+
+		try {
+			$this->plan(
+				$this->elementUpdate(),
+				$this->arguments( [ 'elementId' => 'c111111', 'settings' => [ 'background_color' => '#ff0000' ] ] )
+			);
+			$this->fail( 'A background colour with no background switcher stores and renders nothing.' );
+		} catch ( OperationException $exception ) {
+			$this->assertSame( ErrorCode::InvalidInput, $exception->errorCode );
+			$this->assertStringContainsString(
+				'a setting named "background_background"',
+				$exception->getMessage(),
+				'The refusal must name the companion the caller has to send.'
+			);
+		}
+	}
+
+	/**
+	 * The remediation the refusal asks for is accepted on this same path.
+	 *
+	 * A refusal naming a companion that the operation then also rejects would be
+	 * worse than no gate at all, so the working direction is pinned beside the
+	 * refusing one.
+	 */
+	public function test_the_same_write_carrying_its_companion_switcher_is_planned(): void {
+		$this->withElementor();
+		$this->storeFixture();
+
+		$planned = $this->plan(
+			$this->elementUpdate(),
+			$this->arguments(
+				[
+					'elementId' => 'c111111',
+					'settings'  => [
+						'background_background' => 'classic',
+						'background_color'      => '#ff0000',
+					],
+				]
+			)
+		);
+
+		$this->assertSame(
+			[
+				'background_background' => 'classic',
+				'background_color'      => '#ff0000',
+			],
+			$planned->payload['settings'],
+			'Sending the companion alongside is the whole remediation; it has to reach the payload intact.'
+		);
 	}
 
 	/**
@@ -588,5 +762,58 @@ final class ElementorElementUpdateTest extends TestCase {
 		$tree[0]['elements'][0]['settings']['title_tablet'] = $tablet_title;
 
 		return $tree;
+	}
+
+	// ------------------------------------------------------- media advisory
+
+	/**
+	 * A MEDIA VALUE WITH NO ATTACHMENT ID STORES, READS BACK AND VERIFIES GREEN,
+	 * and still puts an unresponsive full-size image on the page: WordPress
+	 * builds `srcset`, the `wp-image` class and lazy-loading from the attachment
+	 * record, not the URL. The plan is where an operator sees it in time.
+	 */
+	public function test_a_bare_media_url_warns_on_the_plan(): void {
+		$this->withElementor();
+		$this->storeFixture();
+
+		$operation = $this->elementUpdate();
+		$input     = $this->arguments(
+			[
+				'elementId' => self::containerId(),
+				'settings'  => [
+					'background_background' => 'classic',
+					'background_image'      => [ 'url' => 'https://elsewhere.example/hero.jpg' ],
+				],
+			]
+		);
+
+		$planned = $operation->planChange( $this->resolved( $operation, $input ), $input, $this->context() );
+
+		$this->assertCount( 1, $planned->warnings, 'One bare media value earns one advisory.' );
+		$this->assertStringContainsString( '"background_image"', $planned->warnings[0], 'The operator has to learn which setting to fix.' );
+	}
+
+	/**
+	 * A media value carrying its attachment is the correct write and says
+	 * nothing, which is what keeps the advisory worth reading.
+	 */
+	public function test_a_media_value_with_an_attachment_warns_about_nothing(): void {
+		$this->withElementor();
+		$this->storeFixture();
+
+		$operation = $this->elementUpdate();
+		$input     = $this->arguments(
+			[
+				'elementId' => self::containerId(),
+				'settings'  => [
+					'background_background' => 'classic',
+					'background_image'      => [ 'id' => 4242, 'url' => 'https://example.test/hero.jpg' ],
+				],
+			]
+		);
+
+		$planned = $operation->planChange( $this->resolved( $operation, $input ), $input, $this->context() );
+
+		$this->assertSame( [], $planned->warnings, 'This is the write the advisory exists to ask for.' );
 	}
 }

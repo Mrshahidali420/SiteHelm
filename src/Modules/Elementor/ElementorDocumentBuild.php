@@ -110,6 +110,16 @@ final class ElementorDocumentBuild implements WriteOperation {
 	private const SOURCE = 'Send the content member of an elementor-document-get or elementor-template-get result, shaped the way it reports one.';
 
 	/**
+	 * Separates the parts of the naming seed.
+	 *
+	 * A pipe rather than the NUL `ElementorIdMint` uses internally, because this
+	 * seed is assembled from an operation id and a decimal integer, neither of
+	 * which can contain one; the mint appends its own NUL-separated path and
+	 * attempt to whatever it is handed.
+	 */
+	private const SEED_SEPARATOR = '|';
+
+	/**
 	 * Constructs the operation.
 	 *
 	 * @param ElementorWriteTarget    $targets  The shared Elementor write target.
@@ -119,6 +129,7 @@ final class ElementorDocumentBuild implements WriteOperation {
 	 * @param ElementorPropCoercion   $coercion The prop normalizer.
 	 * @param ElementorDocumentWriter $writer   The verified three-layer save.
 	 * @param ElementorTreeDiff       $diff     The structural preview detail.
+	 * @param ElementorIdMint         $mint     The deterministic id derivation.
 	 */
 	public function __construct(
 		private readonly ElementorWriteTarget $targets,
@@ -128,6 +139,7 @@ final class ElementorDocumentBuild implements WriteOperation {
 		private readonly ElementorPropCoercion $coercion,
 		private readonly ElementorDocumentWriter $writer,
 		private readonly ElementorTreeDiff $diff,
+		private readonly ElementorIdMint $mint,
 	) {
 	}
 
@@ -236,11 +248,24 @@ final class ElementorDocumentBuild implements WriteOperation {
 	 * Gates the caller's layout and promises what the page becomes.
 	 *
 	 * DETERMINISTIC BY CONSTRUCTION: every step is a pure function of the request
-	 * and the stored document. There is no clock, no counter and no minted value
-	 * here, which matters because the engine fingerprints this payload at preview
-	 * and compares the fingerprint at apply. Ids the caller supplied are kept as
-	 * they were sent for exactly that reason — minting one would make the same
-	 * request plan differently twice.
+	 * and the stored document. There is no clock and no counter here, which
+	 * matters because the engine fingerprints this payload at preview and compares
+	 * the fingerprint at apply.
+	 *
+	 * IDS THE CALLER SUPPLIED ARE KEPT EXACTLY AS THEY WERE SENT, AND A NODE THAT
+	 * ARRIVED WITHOUT ONE IS NAMED. Naming does not cost the determinism above,
+	 * because `ElementorIdMint` is a pure function of the seed it is handed and
+	 * this seed quotes only the operation id and the post id — both of which the
+	 * preview run and the apply run see identically — so the payload digest is the
+	 * same on both runs by construction. An earlier version of this method stored
+	 * the tree verbatim on the argument that minting "would make the same request
+	 * plan differently twice"; that argument was simply wrong about the mint, and
+	 * the price of it was a broken page: Elementor generates per-element CSS under
+	 * `.elementor-element-<id>`, so a document holding unnamed nodes emits every
+	 * rule under `.elementor-element-`, which matches every element at once and
+	 * collapses the whole page's styling into one indiscriminate block. The write
+	 * verified green the entire time, because the tree that was stored was
+	 * precisely the tree that had been promised.
 	 *
 	 * @param TargetState          $current The resolved document.
 	 * @param array<string, mixed> $input   The validated arguments.
@@ -273,8 +298,11 @@ final class ElementorDocumentBuild implements WriteOperation {
 
 		$this->gates->assertUsable( $content, self::SUBJECT, self::SOURCE );
 
+		$warnings = $this->gates->mediaWarnings( $content );
+
 		$before  = $this->document->elements( $post_id );
 		$coerced = $this->coercion->coerceTree( $content );
+		$coerced = $this->mint->nameTree( $coerced, $this->seed( $post_id ), [] );
 		$promise = $this->promise( $coerced );
 
 		$this->assert_moves( $post_id, $promise[ ElementorWriteFields::FIELD_DIGEST ] );
@@ -289,7 +317,7 @@ final class ElementorDocumentBuild implements WriteOperation {
 			$payload,
 			$promise,
 			ElementorWriteFields::FIELD_ORDER,
-			[],
+			$warnings,
 			$this->diff->diff( $before, $coerced )
 		);
 	}
@@ -444,6 +472,31 @@ final class ElementorDocumentBuild implements WriteOperation {
 			'This page already holds exactly this layout, so there is nothing to write.',
 			'Read the page with elementor-document-get to see what it holds, and send a layout that differs from it.'
 		);
+	}
+
+	/**
+	 * The seed the names of the caller's unnamed nodes are derived from.
+	 *
+	 * TWO PARTS, AND DELIBERATELY NOTHING ELSE. The operation id separates this
+	 * write's names from every other operation's, and the post id separates the
+	 * same layout built onto two different pages, so two pages never end up
+	 * sharing element ids. Nothing that could differ between the preview run and
+	 * the apply run appears here: not the stored digest, which this operation
+	 * REPLACES rather than edits, and not the request, which is already the thing
+	 * being named. Both runs therefore assemble the same seed and mint the same
+	 * ids, which is what keeps the payload fingerprint stable across them.
+	 *
+	 * The position path and the collision attempt are appended by the mint. This
+	 * seed must not carry either, for the reason `ElementorElementAdd::seed()`
+	 * records: a caller that pre-varied the seed would walk the collision space
+	 * from a different starting point than the mint expects.
+	 *
+	 * @param int $post_id The document's post identifier.
+	 *
+	 * @return string The seed.
+	 */
+	private function seed( int $post_id ): string {
+		return implode( self::SEED_SEPARATOR, [ self::OPERATION_ID, (string) $post_id ] );
 	}
 
 	/**

@@ -101,6 +101,12 @@ final class ElementorElementAddInput {
 	public const EL_TYPE_WIDGET = 'widget';
 
 	/**
+	 * The modern layout element, named because more than one caller asks for it
+	 * by name and a second literal is a second thing to keep true.
+	 */
+	public const EL_TYPE_CONTAINER = 'container';
+
+	/**
 	 * The greatest number of characters a widget type name may have.
 	 */
 	public const WIDGET_TYPE_MAX_LENGTH = 64;
@@ -216,24 +222,40 @@ final class ElementorElementAddInput {
 	 * an empty settings map arrives, and refusing it would refuse an element that
 	 * simply carries no settings.
 	 *
-	 * `assertKnownKeys()` runs for a WIDGET AND FOR NOTHING ELSE, because it asks
-	 * Elementor's widget registry what a widget type declares and there is no such
-	 * declaration for a container, a section, or a column. Running it on those
-	 * would refuse every layout element on this site, since the registry has no
-	 * entry to answer with — a guard whose failure mode is refusing correct
-	 * requests rather than catching wrong ones.
+	 * `assertKnownKeys()` RUNS FOR A LAYOUT ELEMENT TOO, and the docblock that
+	 * used to say it could not was wrong by the time it was read. It claimed
+	 * there is no schema declaration for a container, a section or a column;
+	 * there is. `ElementorApi::elementSchema()` resolves them through
+	 * `elements_manager` — the registry a container is actually registered in —
+	 * and `assertKnownKeys()` takes an `$el_type` saying which registry to ask.
+	 * Skipping the check left a container's settings stored unvalidated on the
+	 * ONE path that stores them without a prior read, so Elementor discarded an
+	 * unrecognised key (#102) while the add reported success. The update path
+	 * has checked layout elements since the registry split; this brings the add
+	 * path level with it, refusals and all — an unreadable registry is
+	 * `ExecutionFailed` here exactly as it is there.
+	 *
+	 * A REQUEST CARRYING NO SETTINGS REACHES NO REGISTRY. There is no key to
+	 * judge, so asking would only introduce a way for `elementor-element-add` to
+	 * refuse a plain empty container on a site whose registry is momentarily
+	 * unreadable — a refusal earned by nothing in the request.
+	 *
+	 * The schema type for a layout element IS its `elType`, which is the answer
+	 * `ElementorSettingsMerge::node()` gives for the same question on the update
+	 * path.
 	 *
 	 * @param string|null          $widget_type The requested widget type.
 	 * @param array<string, mixed> $input       The validated arguments.
+	 * @param string|null          $el_type     The requested element kind, or null to check nothing.
 	 *
 	 * @return array<string, mixed> The settings.
 	 *
 	 * @throws OperationException With ErrorCode::InvalidInput when the settings are
-	 *                           not a map or hold a key the widget does not declare,
-	 *                           or ErrorCode::ExecutionFailed when the widget's
-	 *                           schema cannot be read.
+	 *                           not a map or hold a key the element does not
+	 *                           declare, or ErrorCode::ExecutionFailed when the
+	 *                           element's schema cannot be read.
 	 */
-	public function requestedSettings( ?string $widget_type, array $input ): array {
+	public function requestedSettings( ?string $widget_type, array $input, ?string $el_type = null ): array {
 		$settings = $input[ self::INPUT_SETTINGS ] ?? [];
 
 		if ( ! is_array( $settings ) || ( [] !== $settings && array_is_list( $settings ) ) ) {
@@ -246,6 +268,12 @@ final class ElementorElementAddInput {
 
 		if ( null !== $widget_type ) {
 			$this->coercion->assertKnownKeys( $widget_type, $settings );
+
+			return $settings;
+		}
+
+		if ( null !== $el_type && [] !== $settings ) {
+			$this->coercion->assertKnownKeys( $el_type, $settings, $el_type );
 		}
 
 		return $settings;
