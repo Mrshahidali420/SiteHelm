@@ -43,7 +43,7 @@ Rollback →  restore from the snapshot the plan recorded
 - [Connect your AI client](#connect-your-ai-client)
 - [Your first call](#your-first-call)
 - [Safety model](#safety-model)
-- [What SiteHelm will never do](#what-sitehelm-will-never-do)
+- [What an agent does not get](#what-an-agent-does-not-get)
 - [Architecture](#architecture)
 - [How this is tested](#how-this-is-tested)
 - [Requirements](#requirements)
@@ -255,15 +255,15 @@ Then ask an agent for something real. Good first prompts:
 
 **URL fetching is hardened.** Importing media from a URL is the most dangerous surface in the plugin, and it is treated that way: the host is resolved and validated before the connection, private, loopback, link-local, and reserved ranges are refused, every redirect hop is re-validated and re-pinned, the resolved address is pinned so the connection cannot be re-pointed between check and fetch, the wire read is capped, and the refusal is deliberately digit-free so it cannot become an SSRF oracle.
 
-## What SiteHelm will never do
+## What an agent does not get
 
-These are permanent exclusions, recorded as requirements so nobody proposes them again:
+Not "not yet". Decided, and not revisited — recorded as requirements so nobody proposes them again:
 
 - **No arbitrary PHP execution.** No `eval`, no code injection tool, no "run this snippet."
 - **No unrestricted SQL.** Every query goes through `$wpdb->prepare`; there is no pass-through query tool.
 - **No unrestricted filesystem access.** No arbitrary read, write, or delete of site files.
 - **No code from anywhere but WordPress.org.** Installing a plugin or theme is a Pro operation, it takes a WordPress.org slug and nothing else, and what lands is stored deactivated. There is no argument anywhere in the plugin that accepts a URL, a zip, or a file path, and the only address ever fetched is the download link WordPress.org itself answers with — checked against `https://downloads.wordpress.org/` before a byte moves.
-- **No irreversible permanent deletion.** Removal means trash or a reversible unlink, never `force_delete`.
+- **No irreversible deletion.** Removal means trash or a reversible unlink, not `force_delete`.
 
 An agent that needs any of these needs a different tool, and you should think hard before giving it one.
 

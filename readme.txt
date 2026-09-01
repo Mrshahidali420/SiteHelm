@@ -12,7 +12,7 @@ Let an AI agent run your WordPress site safely: every write is previewed, snapsh
 
 == Description ==
 
-SiteHelm connects your WordPress site to any AI agent that speaks MCP (the Model Context Protocol) — Claude Desktop, Claude Code, and a growing number of editors and agent frameworks. The agent gets a catalogue of named operations covering content, media, menus, Elementor, custom fields, SEO, forms, comments, users, plugins and themes, and site settings. It does not get PHP, SQL or a shell — at any price.
+SiteHelm connects your WordPress site to any AI agent that speaks MCP (the Model Context Protocol) — Claude Desktop, Claude Code, and a growing number of editors and agent frameworks. The agent gets a catalogue of named operations covering content, media, menus, Elementor, custom fields, SEO, forms, comments, users, plugins and themes, and site settings. It does not get PHP, SQL or a shell.
 
 **Five gates on every write, none of them skippable by the caller:**
 
@@ -58,7 +58,7 @@ Five gates on every write, and none of them can be skipped by the caller: previe
 
 = Can the agent run PHP or SQL? =
 
-No, and not at any price. These are excluded from the product rather than held back for a paid tier.
+No. Neither has a route through the plugin — not held back for a paid tier, just not built.
 
 = Can the agent give itself more permission? =
 
