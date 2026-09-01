@@ -116,6 +116,7 @@ final class McpServer {
 				'name'    => 'SiteHelm',
 				'version' => SITEHELM_VERSION,
 			],
+			'instructions'    => ServerInstructions::text(),
 		];
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
