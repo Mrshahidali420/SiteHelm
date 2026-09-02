@@ -14,24 +14,28 @@ use SiteHelm\Contracts\OperationException;
 
 /**
  * What `elementor-element-update` and `elementor-widget-settings-update` do
- * IDENTICALLY: name an element, refuse it if it is not a widget, refuse a
- * setting key the widget does not declare, merge the requested values over the
+ * IDENTICALLY: name an element, read the type whose schema governs it, refuse a
+ * setting key that type does not declare, merge the requested values over the
  * ones already stored, and put the result back into the tree.
  *
  * SEPARATE FROM BOTH OPERATIONS FOR THE REASON `ElementorElementAddInput` IS
- * SEPARATE FROM `ElementorElementAdd`. Two copies of the elType guard is two
+ * SEPARATE FROM `ElementorElementAdd`. Two copies of the elType dispatch is two
  * chances for one of them to stop checking; two copies of the merge is two
  * answers to "does an update replace the settings map or add to it"; and two
  * copies of a refusal message is a pair that drifts the first time one is
  * reworded. The difference between the two operations is the DEVICE SUFFIX and
  * nothing else, and that lives in the operation that has a device.
  *
- * THE elType GUARD IS THE POINT OF THIS CLASS. Elementor's own
+ * THE elType DISPATCH IS THE POINT OF THIS CLASS. Elementor's own
  * `update-atomic-widget` does not check `elType` before reading a node's
  * `widgetType`, so it "succeeds" against a container by writing settings no
  * renderer will ever read — a write that verifies, reports done, and changes
- * nothing an operator can see. `widget()` refuses that as `InvalidInput` before
- * any tree is edited.
+ * nothing an operator can see. `node()` reads `elType` FIRST and resolves each
+ * node's schema from its own registry: a widget's from the widget registry, a
+ * container's, a section's and a column's from the element registry. A
+ * container is therefore never checked against widget schema, and — unlike the
+ * blanket refusal this class carried until the container-padding defect — its
+ * padding, width, background and gap are writable.
  *
  * THE MERGE IS ADDITIVE AND THE BASE IS THE CALLER'S PROBLEM, not this class's:
  * `merged()` is handed the base it should merge over. Both operations hand it
@@ -58,6 +62,17 @@ final class ElementorSettingsMerge {
 	public const NODE_ID = 'id';
 
 	/**
+	 * The `node()` member naming the registry type whose schema governs a node.
+	 *
+	 * NOT A KEY ANY STORED NODE CARRIES. It is this class's own answer to "which
+	 * type name should the registry be asked about", which is `widgetType` for a
+	 * widget and `elType` for everything else. Naming it separately is what
+	 * stops a caller from reaching for `widgetType` on a container and getting
+	 * either null or, worse, a leftover import value.
+	 */
+	public const NODE_SCHEMA_TYPE = 'schemaType';
+
+	/**
 	 * The delimited form of the shared element-id declaration.
 	 *
 	 * Built from `ElementorWriteFields::ELEMENT_ID_PATTERN`, which is stored in
@@ -67,14 +82,30 @@ final class ElementorSettingsMerge {
 	public const ELEMENT_ID_REGEX = '/' . ElementorWriteFields::ELEMENT_ID_PATTERN . '/';
 
 	/**
+	 * The separator between a row seed's parts.
+	 *
+	 * A byte no control name, element id or key can contain, so two different
+	 * seeds cannot be assembled into one string.
+	 */
+	private const SEED_SEPARATOR = "\0";
+
+	/**
+	 * The domain a row seed opens with, keeping these ids clear of every other
+	 * minted name in the module.
+	 */
+	private const ROW_SEED_DOMAIN = 'settings-merge';
+
+	/**
 	 * Constructs the merge.
 	 *
 	 * @param ElementorTreeEdit     $edit     The raw-tree surgery primitives.
 	 * @param ElementorPropCoercion $coercion The prop normalizer and key guard.
+	 * @param ElementorIdMint       $mint     The deterministic namer for repeater rows.
 	 */
 	public function __construct(
 		private readonly ElementorTreeEdit $edit,
 		private readonly ElementorPropCoercion $coercion,
+		private readonly ElementorIdMint $mint,
 	) {
 	}
 
@@ -110,16 +141,35 @@ final class ElementorSettingsMerge {
 	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 
 	// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The messages are literals written for end users and quote no stored content.
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- The module vocabulary is camelCase across every class.
 	/**
-	 * The widget the request names, with its stored settings.
+	 * The node the request names, with the type whose schema governs it and the
+	 * settings it currently holds.
 	 *
-	 * `elType` IS READ BEFORE `widgetType`, which is the whole guard. A node's
-	 * `widgetType` member is only meaningful on a node whose `elType` is
-	 * `widget`; a container that happens to carry one — a leftover from an
-	 * import, or a member a third-party plugin wrote — would otherwise be
-	 * treated as a widget and written to, and Elementor renders a container from
-	 * its own settings and ignores the widget ones entirely. The write would
-	 * verify. Nothing on the page would change.
+	 * EVERY NODE IS VALIDATED AGAINST ITS OWN REGISTRY'S SCHEMA, AND A CONTAINER
+	 * IS NEVER VALIDATED AGAINST WIDGET SCHEMA. That is the invariant, and it is
+	 * the reason `elType` is read BEFORE `widgetType` rather than a reason to
+	 * refuse a container outright. Elementor renders a container from its own
+	 * settings and ignores widget settings entirely, so a container checked
+	 * against a widget's vocabulary — because it carries a leftover `widgetType`
+	 * from an import, or because the code simply assumed widget-ness — would
+	 * accept keys no renderer reads: a write that verifies, reports done, and
+	 * changes nothing an operator can see.
+	 *
+	 * THE REMEDY IS RESOLUTION, NOT REFUSAL. A widget's schema is read from the
+	 * widget registry by its `widgetType`; every other node's is read from the
+	 * element registry by its own `elType`, which is where a container, a
+	 * section and a column declare their controls. Refusing every layout element
+	 * instead — which this class did until the container-padding defect — left
+	 * padding, width, background and gap unwritable by any operation, so a page
+	 * built through this plugin could never be made full-bleed.
+	 *
+	 * THE ONLY REFUSAL LEFT IS A NODE WHOSE TYPE CANNOT BE READ AT ALL: a node
+	 * stored as a widget that records no `widgetType`, or a node recording no
+	 * usable `elType`. Both name the member that is missing, because the operator
+	 * has to know which one to go and fix. A type the registry does not KNOW is
+	 * a different refusal and belongs one layer down, in
+	 * `ElementorPropCoercion`, which is where the registry is read.
 	 *
 	 * A well-formed identifier the document does not hold is `TargetNotFound`
 	 * rather than `InvalidInput`, on `ElementorElementAddInput`'s reasoning: the
@@ -128,70 +178,197 @@ final class ElementorSettingsMerge {
 	 * @param array[] $tree       The raw stored tree.
 	 * @param string  $element_id The element identifier.
 	 *
-	 * @return array<string, mixed> Keys 'widgetType' (string) and 'settings' (array).
+	 * @return array<string, mixed> Keys 'elType' (string), 'schemaType' (string,
+	 *                              the registry type whose schema governs the
+	 *                              node) and 'settings' (array).
 	 *
 	 * @throws OperationException With ErrorCode::TargetNotFound when the document
 	 *                           does not hold the element, or
-	 *                           ErrorCode::InvalidInput when it is not a widget.
+	 *                           ErrorCode::InvalidInput when the node records no
+	 *                           readable type.
 	 */
-	public function widget( array $tree, string $element_id ): array {
+	public function node( array $tree, string $element_id ): array {
 		$found = $this->edit->find( $tree, $element_id );
 
 		if ( null === $found ) {
 			throw $this->elementNotFound();
 		}
 
-		$node = is_array( $found['node'] ?? null ) ? $found['node'] : [];
+		$node    = is_array( $found['node'] ?? null ) ? $found['node'] : [];
+		$el_type = $node[ self::NODE_EL_TYPE ] ?? null;
 
-		if ( ElementorElementAddInput::EL_TYPE_WIDGET !== ( $node[ self::NODE_EL_TYPE ] ?? null ) ) {
+		if ( ! is_string( $el_type ) || '' === $el_type ) {
 			throw new OperationException(
 				ErrorCode::InvalidInput,
-				'The element this request names is a layout element rather than a widget, and only a widget has settings this operation can change.',
-				'Read the page with elementor-document-get and retry naming an element it reports as a widget.'
+				'The element this request names does not record what kind of element it is, so there is no vocabulary its settings could be checked against.',
+				'Open the page in the Elementor editor and re-save it so the element records its type, then retry.'
 			);
 		}
 
-		$widget_type = $node[ ElementorPropCoercion::NODE_WIDGET_TYPE ] ?? null;
+		$schema_type = $el_type;
 
-		if ( ! is_string( $widget_type ) || '' === $widget_type ) {
-			throw new OperationException(
-				ErrorCode::InvalidInput,
-				'The element this request names is stored as a widget but does not record which widget it is, so its settings cannot be checked before they are written.',
-				'Open the page in the Elementor editor and re-save it so the element records its widget type, then retry.'
-			);
+		if ( ElementorElementAddInput::EL_TYPE_WIDGET === $el_type ) {
+			$widget_type = $node[ ElementorPropCoercion::NODE_WIDGET_TYPE ] ?? null;
+
+			if ( ! is_string( $widget_type ) || '' === $widget_type ) {
+				throw new OperationException(
+					ErrorCode::InvalidInput,
+					'The element this request names is stored as a widget but does not record which widget it is, so its settings cannot be checked before they are written.',
+					'Open the page in the Elementor editor and re-save it so the element records its widget type, then retry.'
+				);
+			}
+
+			$schema_type = $widget_type;
 		}
 
 		$settings = $node[ ElementorPropCoercion::NODE_SETTINGS ] ?? null;
 
 		return [
-			ElementorPropCoercion::NODE_WIDGET_TYPE => $widget_type,
-			ElementorPropCoercion::NODE_SETTINGS    => is_array( $settings ) ? $settings : [],
+			self::NODE_EL_TYPE                   => $el_type,
+			self::NODE_SCHEMA_TYPE               => $schema_type,
+			ElementorPropCoercion::NODE_SETTINGS => is_array( $settings ) ? $settings : [],
 		];
 	}
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 
 	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- The module vocabulary is camelCase across every class.
 	/**
-	 * Refuses every requested key the widget does not declare.
+	 * Refuses every requested key the node's own type does not declare.
 	 *
 	 * BEFORE ANY WRITE, always, and delegated whole to `ElementorPropCoercion`
-	 * so there is one answer to what a widget accepts. Elementor discards an
+	 * so there is one answer to what a type accepts. Elementor discards an
 	 * unrecognised alias key instead of refusing it (#102), so a check made
 	 * after the save is made on content that is already gone.
 	 *
-	 * The keys checked are the ones the CALLER SENT, before any device suffix is
-	 * applied, because the widget registry declares `title` and never
-	 * `title_tablet`.
+	 * IT TAKES THE WHOLE DESCRIPTOR `node()` RETURNED rather than a bare type
+	 * name, and that is the guard rather than a convenience. The kind and the
+	 * type name have to travel together to pick the registry; a caller that
+	 * passed a container's type without its kind would have it looked up among
+	 * the widgets, which is the wrong-vocabulary write this class exists to
+	 * prevent.
 	 *
-	 * @param string               $widget_type The stored widget type.
-	 * @param array<string, mixed> $settings    The caller's requested settings.
+	 * The keys checked are the ones the CALLER SENT, before any device suffix is
+	 * applied, because the registry declares `padding` and never
+	 * `padding_tablet`.
+	 *
+	 * THE NODE'S STORED SETTINGS TRAVEL WITH THE REQUEST, and this method is the
+	 * reason the coercion layer accepts them at all. Elementor renders a control
+	 * only while its declared `condition` holds against the settings the element
+	 * WILL hold, so the renderability half of that check needs the stored side as
+	 * well as the requested one. This is the only caller that has the stored side
+	 * — `node()` already put it there, at the cost of nothing, so no extra read
+	 * happens here — and passing it is what stops a partial update being refused
+	 * for omitting a companion switcher the element has held since the day it was
+	 * created. A caller with genuinely no stored side (a new element, a
+	 * whole-tree build) passes none, and its requested map is correctly the
+	 * effective one.
+	 *
+	 * THE SIGNATURE IS UNCHANGED ON PURPOSE. Every caller here already hands over
+	 * the whole descriptor, so the stored settings were always in reach; making
+	 * them a parameter would have put the burden of remembering them on four call
+	 * sites and given each one a way to forget.
+	 *
+	 * A DEVICE-SUFFIXED REQUEST IS JUDGED ON ITS BASE-NAMED KEYS AND THAT IS
+	 * CORRECT: conditions reference base control names, so `padding` is the name
+	 * a condition would cite. A condition satisfied only on one breakpoint is a
+	 * shape the gate does not model and it fails open there, per its own rules.
+	 *
+	 * @param array<string, mixed> $node     The descriptor `node()` returned.
+	 * @param array<string, mixed> $settings The caller's requested settings.
 	 *
 	 * @throws OperationException With ErrorCode::InvalidInput when a key is not
-	 *                            declared, or ErrorCode::ExecutionFailed when the
-	 *                            widget's schema cannot be read.
+	 *                            declared or would be stored without rendering,
+	 *                            or ErrorCode::ExecutionFailed when the type's
+	 *                            schema cannot be read.
 	 */
-	public function assertKnownKeys( string $widget_type, array $settings ): void {
-		$this->coercion->assertKnownKeys( $widget_type, $settings );
+	public function assertKnownKeys( array $node, array $settings ): void {
+		$stored = $node[ ElementorPropCoercion::NODE_SETTINGS ] ?? [];
+
+		$this->coercion->assertKnownKeys(
+			(string) ( $node[ self::NODE_SCHEMA_TYPE ] ?? '' ),
+			$settings,
+			(string) ( $node[ self::NODE_EL_TYPE ] ?? '' ),
+			is_array( $stored ) ? $stored : []
+		);
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- The module vocabulary is camelCase across every class.
+	/**
+	 * The advisories this write earns, in the node shape every caller here holds.
+	 *
+	 * THE STORED SIDE IS NOT PASSED, and that is the difference from
+	 * `assertKnownKeys()`. A condition is judged against the settings the
+	 * element WILL hold, so the stored half is load-bearing there. A media value
+	 * is judged on itself: an image the document already holds without an
+	 * attachment is the site's own history, and re-reporting it on every
+	 * unrelated write to the same widget would make the advisory noise.
+	 *
+	 * @param array<string, mixed> $node     The descriptor `node()` returned.
+	 * @param array<string, mixed> $settings The caller's requested settings.
+	 *
+	 * @return array<int, string> The advisories, empty when there are none.
+	 */
+	public function mediaWarnings( array $node, array $settings ): array {
+		return $this->coercion->mediaWarnings(
+			(string) ( $node[ self::NODE_SCHEMA_TYPE ] ?? '' ),
+			$settings,
+			(string) ( $node[ self::NODE_EL_TYPE ] ?? '' )
+		);
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- The module vocabulary is camelCase across every class.
+	/**
+	 * The requested settings with every repeater row of theirs named.
+	 *
+	 * THE DEFECT THIS CLOSES. A repeater row Elementor stores carries an `_id`,
+	 * and that `_id` is the only handle the editor and the generated stylesheet
+	 * have on the row: per-row styling is emitted as
+	 * `.elementor-repeater-item-<_id>`, and a row without one takes the
+	 * control's defaults forever and cannot be told apart from its siblings in
+	 * the editor. A row written here without an `_id` therefore stores cleanly,
+	 * reads back verbatim and renders — with every row looking identical and no
+	 * way to change that. `ElementorIdMint` already names the rows every write
+	 * that ORIGINATES an element makes; these three settings updates reach the
+	 * document through this class instead and so went past the mint entirely.
+	 *
+	 * NAMED ON THE REQUESTED HALF, NOT THE MERGED ONE, because the requested
+	 * half is what the payload carries: the promise is taken over the merge, but
+	 * `applyChange()` re-reads the approved settings out of the payload and
+	 * merges them again, so an id minted onto the merged map alone would be
+	 * dropped on the way to the write and the operator would be promised a row
+	 * the document never gets.
+	 *
+	 * THE STORED HALF IS STILL READ, for its row ids alone. The element goes on
+	 * holding every repeater this request does not mention, and a fresh id has
+	 * to clear those as well as the document's element ids — which is what
+	 * `ElementorIdMint::rowIds()` exists to answer.
+	 *
+	 * DETERMINISTIC AND IDEMPOTENT, both of which `planChange()` requires: the
+	 * seed quotes the element's own id and nothing that varies between preview
+	 * and apply, and a row that already carries an `_id` — the caller's, or one
+	 * minted by an earlier run over the same payload — keeps it untouched.
+	 *
+	 * @param array[]              $tree       The raw stored tree.
+	 * @param array<string, mixed> $node       The descriptor `node()` returned.
+	 * @param string               $element_id The element being changed.
+	 * @param array<string, mixed> $settings   The caller's requested settings.
+	 *
+	 * @return array<string, mixed> The same settings, with every unnamed row named.
+	 */
+	public function namedRows( array $tree, array $node, string $element_id, array $settings ): array {
+		$stored = $node[ ElementorPropCoercion::NODE_SETTINGS ] ?? [];
+
+		return $this->mint->nameRepeaters(
+			$settings,
+			implode( self::SEED_SEPARATOR, [ self::ROW_SEED_DOMAIN, $element_id ] ),
+			$this->mint->rowIds(
+				is_array( $stored ) ? $stored : [],
+				$this->edit->collectIds( $tree )
+			)
+		);
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 

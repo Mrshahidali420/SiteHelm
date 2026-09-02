@@ -53,6 +53,21 @@ use SiteHelm\Contracts\SnapshotPolicy;
  * settings row exactly as this write left it — a rollback reporting success and
  * reversing nothing. See `ElementorPageSettingsTarget`.
  *
+ * A LAYOUT IS TWO WRITES, NOT ONE. Elementor keeps the layout in its own
+ * `_elementor_page_settings` row and in WordPress's `_wp_page_template`, and
+ * only the second is consulted when a visitor is served the page. Writing the
+ * first alone stores a layout that reads back correctly through every channel
+ * this plugin has — including its own verification — while the page renders
+ * exactly as it did before. `ElementorPageSettingsTarget::store()` writes and
+ * re-reads both, and `ElementorPageSettings::nextPageTemplate()` is the one
+ * formula the promise, the write and the verification compute the second row
+ * from.
+ *
+ * A REQUEST THAT NAMES ONLY `hideTitle` LEAVES BOTH LAYOUT ROWS UNTOUCHED, even
+ * on a page whose two rows disagree. Repairing that here would change what a
+ * visitor sees as a side effect of a change about something else, and without
+ * saying so in the promise.
+ *
  * THE STORED ROW IS RE-READ AT APPLY rather than carried in the payload, on
  * `ElementorElementMove`'s pattern: the payload describes the two values being
  * CHANGED, so a background colour somebody else set between preview and apply
@@ -158,7 +173,7 @@ final class ElementorPageSettingsSet implements WriteOperation {
 				ElementorPageSettings::FIELD_LAYOUT     => [
 					'type'        => 'string',
 					'enum'        => array_keys( ElementorPageSettings::LAYOUTS ),
-					'description' => 'The layout the page holds after the change.',
+					'description' => 'The layout the page is rendered with after the change, read back from the page template WordPress serves it from rather than from Elementor\'s own settings row.',
 				],
 				ElementorPageSettings::FIELD_HIDE_TITLE => [
 					'type'        => 'boolean',
@@ -239,7 +254,10 @@ final class ElementorPageSettingsSet implements WriteOperation {
 
 		return new PlannedChange(
 			$payload,
-			$this->targets->fieldsFor( $next ),
+			$this->targets->fieldsFor(
+				$next,
+				ElementorPageSettings::nextPageTemplate( ElementorPageSettings::storedPageTemplate( $post_id ), $requested )
+			),
 			ElementorPageSettingsTarget::FIELD_ORDER
 		);
 	}
@@ -302,7 +320,11 @@ final class ElementorPageSettingsSet implements WriteOperation {
 			}
 		}
 
-		$this->targets->store( $post_id, ElementorPageSettings::apply( ElementorPageSettings::stored( $post_id ), $requested ) );
+		$this->targets->store(
+			$post_id,
+			ElementorPageSettings::apply( ElementorPageSettings::stored( $post_id ), $requested ),
+			ElementorPageSettings::nextPageTemplate( ElementorPageSettings::storedPageTemplate( $post_id ), $requested )
+		);
 
 		return ElementorPageSettings::targetKey( $post_id );
 	}

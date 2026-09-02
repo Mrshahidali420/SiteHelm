@@ -87,6 +87,43 @@ final class ElementorPropCoercionTest extends TestCase {
 				'e-paragraph' => new CoercionFakeWidget(
 					[ 'paragraph' => new CoercionFakePropType( 'string' ) ]
 				),
+				'html'        => new CoercionFakeClassicWidget(
+					[
+						'html'           => [
+							'type'    => 'code',
+							'default' => '',
+						],
+						'_margin'        => [
+							'type'    => 'dimensions',
+							'default' => [],
+						],
+						'section_title'  => [ 'type' => 'section' ],
+						'_section_style' => [ 'type' => 'section' ],
+
+						// The two halves of the condition defect, declared as
+						// Elementor declares them: Background positive against
+						// the group-prefixed switcher, Border negated.
+						'_background_background' => [
+							'type'    => 'choose',
+							'default' => '',
+						],
+						'_background_color'      => [
+							'type'      => 'color',
+							'default'   => '',
+							'condition' => [ '_background_background' => [ 'classic', 'gradient' ] ],
+						],
+						'_border_border'         => [
+							'type'    => 'select',
+							'default' => '',
+						],
+						'_border_color'          => [
+							'type'      => 'color',
+							'default'   => '',
+							'condition' => [ '_border_border!' => [ '', 'none' ] ],
+						],
+					]
+				),
+				'stranger'    => new CoercionFakeStranger(),
 			]
 		);
 
@@ -509,6 +546,333 @@ final class ElementorPropCoercionTest extends TestCase {
 
 		$this->assertTrue( true, 'An empty settings map names no key the schema could refuse.' );
 	}
+
+	/**
+	 * THE REGRESSION TEST. One classic widget anywhere made the page unwritable.
+	 *
+	 * Elementor's ~160 classic widgets declare controls rather than props, so
+	 * reading only `get_props_schema()` answered null for every one of them and
+	 * the sweep — which is whole-tree by design — turned that null into a hard
+	 * refusal of the entire document. A site whose page holds one `html` widget
+	 * could not be saved at all, and the refusal named neither the widget nor the
+	 * reason.
+	 *
+	 * Both halves are asserted together because either alone would pass a broken
+	 * implementation: the atomic settings must still be enveloped, and the
+	 * classic ones must come back byte-identical.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_a_tree_mixing_an_atomic_and_a_classic_widget_sweeps_through_without_refusal(): void {
+		$this->installElementor();
+
+		$tree = [
+			$this->widget( 'e-heading', [ 'title' => 'Atomic' ], 'aaaaaaa' ),
+			$this->widget(
+				'html',
+				[
+					'html'    => '<p>Classic</p>',
+					'_margin' => [
+						'unit' => 'px',
+						'top'  => '10',
+					],
+				],
+				'bbbbbbb'
+			),
+		];
+
+		$coerced = $this->coercion->coerceTree( $tree );
+
+		$this->assertSame(
+			[ '$$type' => 'string', 'value' => 'Atomic' ],
+			$coerced[0]['settings']['title'],
+			'An atomic prop must still be enveloped.'
+		);
+		$this->assertSame(
+			$tree[1]['settings'],
+			$coerced[1]['settings'],
+			'A classic widget stores plain values; enveloping them would corrupt the widget this save was meant to edit.'
+		);
+	}
+
+	/**
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_a_classic_widgets_declared_control_is_accepted(): void {
+		$this->installElementor();
+
+		$this->coercion->assertKnownKeys( 'html', [ 'html' => '<p>x</p>' ] );
+
+		$this->assertTrue( true, 'assertKnownKeys() returns nothing; not throwing is the whole assertion.' );
+	}
+
+	/**
+	 * The common and advanced controls are part of `get_controls()` already.
+	 *
+	 * Pinned because the obvious wrong fix is to union the widget's controls with
+	 * a separate `common` widget's; `_margin` is present on the widget itself,
+	 * and a fix that reached for `common` would be solving a problem Elementor
+	 * does not have.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_a_classic_widgets_advanced_control_is_accepted(): void {
+		$this->installElementor();
+
+		$this->coercion->assertKnownKeys( 'html', [ '_margin' => [ 'unit' => 'px' ] ] );
+
+		$this->assertTrue( true, 'assertKnownKeys() returns nothing; not throwing is the whole assertion.' );
+	}
+
+	/**
+	 * #102 applies to a classic widget exactly as it does to an atomic one.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_a_classic_widget_key_it_does_not_declare_is_refused(): void {
+		$this->installElementor();
+
+		try {
+			$this->coercion->assertKnownKeys( 'html', [ 'content' => 'x' ] );
+			$this->fail( 'A key a classic widget does not declare must be refused before the write.' );
+		} catch ( OperationException $exception ) {
+			$this->assertSame( ErrorCode::InvalidInput, $exception->errorCode );
+			$this->assertStringContainsString( 'content', $exception->getMessage(), 'The refusal must name the field it refused.' );
+		}
+	}
+
+	/**
+	 * A control declaring no `default` is layout, not a writable setting.
+	 *
+	 * `section_title` and `_section_style` are `section` controls: they open a
+	 * panel in the editor and hold no value. Writing to one stores a setting the
+	 * widget never reads, so the discriminator is the presence of a `default`
+	 * rather than a hardcoded list of control types that drifts every release.
+	 *
+	 * @dataProvider provideClassicControlsThatHoldNoValue
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 *
+	 * @param string $key The layout control's name.
+	 */
+	public function test_a_classic_control_that_declares_no_default_is_refused( string $key ): void {
+		$this->installElementor();
+
+		try {
+			$this->coercion->assertKnownKeys( 'html', [ $key => 'x' ] );
+			$this->fail( 'A control that holds no value is not a setting a caller may write.' );
+		} catch ( OperationException $exception ) {
+			$this->assertSame( ErrorCode::InvalidInput, $exception->errorCode );
+		}
+	}
+
+	/**
+	 * The `html` widget's layout controls, in the two forms it declares them.
+	 *
+	 * @return array<string, array{string}>
+	 */
+	public static function provideClassicControlsThatHoldNoValue(): array {
+		return [
+			'a section opener'   => [ 'section_title' ],
+			'a style section'    => [ '_section_style' ],
+		];
+	}
+
+	/**
+	 * THE DEFECT, through the layer that refuses it.
+	 *
+	 * Every check this module already made passed on this write: the key is
+	 * declared, the value is a plain string, the classic branch returns it
+	 * byte-identical, and the post-write verification read would have found it
+	 * stored. Elementor renders nothing.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_a_setting_whose_condition_is_unsatisfied_is_refused_with_the_companion_named(): void {
+		$this->installElementor();
+
+		try {
+			$this->coercion->assertKnownKeys( 'html', [ '_background_color' => '#ff0000' ] );
+			$this->fail( 'A setting Elementor stores but never renders must be refused before the write.' );
+		} catch ( OperationException $exception ) {
+			$this->assertSame( ErrorCode::InvalidInput, $exception->errorCode );
+			$this->assertSame(
+				'Elementor will store a setting named "_background_color" but never render it: it only takes effect while a setting named "_background_background" is set to one of: "classic", "gradient".',
+				$exception->getMessage(),
+				'The message is the primary teaching surface for this defect: it must name the companion control AND the values that switch the setting on.'
+			);
+			$this->assertSame(
+				'Include that companion setting with one of those values in the same request, then retry.',
+				$exception->remediation
+			);
+		}
+	}
+
+	/**
+	 * The negated form gets its own sentence, because "one of" would be a lie.
+	 *
+	 * Border's sub-controls declare `[ 'border!' => [ '', 'none' ] ]`, and the
+	 * empty string is named rather than quoted: `""` in a sentence reads as a
+	 * typo, and an operator told to use something other than an empty value
+	 * knows what to do.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_a_negated_condition_is_refused_in_its_own_words(): void {
+		$this->installElementor();
+
+		try {
+			$this->coercion->assertKnownKeys( 'html', [ '_border_color' => '#000000' ] );
+			$this->fail( 'A border colour with no border style renders nothing and must be refused.' );
+		} catch ( OperationException $exception ) {
+			$this->assertSame( ErrorCode::InvalidInput, $exception->errorCode );
+			$this->assertSame(
+				'Elementor will store a setting named "_border_color" but never render it: it only takes effect while a setting named "_border_border" is set to something other than: an empty value, "none".',
+				$exception->getMessage()
+			);
+			$this->assertSame(
+				'Include that companion setting with a value outside that list in the same request, then retry.',
+				$exception->remediation
+			);
+		}
+	}
+
+	/**
+	 * The stored side is what makes a partial update possible.
+	 *
+	 * Without it every edit of a gated setting would have to re-send its
+	 * companion, which is not how anyone edits one.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_a_companion_the_element_already_stores_lets_the_write_through(): void {
+		$this->installElementor();
+
+		$this->coercion->assertKnownKeys(
+			'html',
+			[ '_background_color' => '#ff0000' ],
+			'widget',
+			[ '_background_background' => 'classic' ]
+		);
+
+		$this->assertTrue( true, 'assertKnownKeys() returns nothing; not throwing is the whole assertion.' );
+	}
+
+	/**
+	 * Sending the companion alongside is the remediation; it must actually work.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_the_remediation_the_refusal_asks_for_is_accepted(): void {
+		$this->installElementor();
+
+		$this->coercion->assertKnownKeys(
+			'html',
+			[
+				'_background_background' => 'classic',
+				'_background_color'      => '#ff0000',
+			]
+		);
+
+		$this->assertTrue( true, 'assertKnownKeys() returns nothing; not throwing is the whole assertion.' );
+	}
+
+	/**
+	 * The unknown-key refusal keeps winning, and keeps its exact wording.
+	 *
+	 * The order is load-bearing: an undeclared key has no control descriptor, so
+	 * the gate could only fail open on it, and running the gate first would
+	 * replace a precise message about a misspelled key with silence.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_an_undeclared_key_is_still_refused_as_an_undeclared_key(): void {
+		$this->installElementor();
+
+		try {
+			$this->coercion->assertKnownKeys(
+				'html',
+				[
+					'_background_color' => '#ff0000',
+					'content'           => 'x',
+				]
+			);
+			$this->fail( 'An undeclared key must still be refused.' );
+		} catch ( OperationException $exception ) {
+			$this->assertSame(
+				'This element does not accept a setting named "content", and Elementor discards a setting it does not recognise instead of reporting it.',
+				$exception->getMessage(),
+				'Existence is checked before renderability, and the older refusal keeps the wording callers already read.'
+			);
+		}
+	}
+
+	/**
+	 * DETERMINISM. The gate runs at preview and again at apply, on separate
+	 * evaluations of the same request, and must say the same thing both times.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_the_refusal_is_byte_identical_across_two_evaluations(): void {
+		$this->installElementor();
+
+		$messages = [];
+
+		for ( $attempt = 0; $attempt < 2; $attempt++ ) {
+			try {
+				$this->coercion->assertKnownKeys( 'html', [ '_background_color' => '#ff0000' ] );
+			} catch ( OperationException $exception ) {
+				$messages[] = $exception->getMessage();
+			}
+		}
+
+		$this->assertCount( 2, $messages );
+		$this->assertSame( $messages[0], $messages[1], 'Preview and apply evaluate this separately; a message that moved between them would move the plan digest with it.' );
+	}
+
+	/**
+	 * A stored tree is swept, never gated. `coerceTree()` judges the site's own
+	 * history and a page holding an inert setting must stay saveable — including
+	 * by the very operation that could repair it.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_a_stored_tree_holding_an_inert_setting_still_sweeps_clean(): void {
+		$this->installElementor();
+
+		$tree = [ $this->widget( 'html', [ '_background_color' => '#ff0000' ] ) ];
+
+		$this->assertSame( $tree, $this->coercion->coerceTree( $tree ), 'The sweep judges no conditions; only a caller\'s input is gated.' );
+	}
+
+	/**
+	 * The third answer stays a refusal: neither vocabulary is not a vocabulary.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_a_widget_declaring_neither_props_nor_controls_still_refuses(): void {
+		$this->installElementor();
+
+		try {
+			$this->coercion->assertKnownKeys( 'stranger', [ 'title' => 'x' ] );
+			$this->fail( 'A widget that declares nothing readable must refuse, never pass.' );
+		} catch ( OperationException $exception ) {
+			$this->assertSame( ErrorCode::ExecutionFailed, $exception->errorCode );
+		}
+	}
 }
 
 /**
@@ -592,6 +956,39 @@ final class CoercionFakeWidget {
 	public function get_props_schema(): array {
 		return $this->schema;
 	}
+}
+
+/**
+ * Stands in for `Widget_Base`, and deliberately not for an atomic widget.
+ *
+ * The absence of `get_props_schema()` is the fidelity claim: `widgetSchema()`
+ * classifies on which method a widget implements, so a double carrying both
+ * would leave the classic branch unreachable.
+ */
+final class CoercionFakeClassicWidget {
+
+	/**
+	 * Constructs the double.
+	 *
+	 * @param array<string, array<string, mixed>> $controls What get_controls() answers.
+	 */
+	public function __construct( private array $controls ) {
+	}
+
+	/**
+	 * The widget's declared controls, keyed by control name.
+	 *
+	 * @return array<string, array<string, mixed>> The controls.
+	 */
+	public function get_controls(): array {
+		return $this->controls;
+	}
+}
+
+/**
+ * A registered widget that declares neither vocabulary.
+ */
+final class CoercionFakeStranger {
 }
 
 /**

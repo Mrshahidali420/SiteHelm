@@ -26,6 +26,7 @@ use SiteHelm\Modules\Elementor\ElementorTreeDiff;
 use SiteHelm\Modules\Elementor\ElementorTreeEdit;
 use SiteHelm\Modules\Elementor\ElementorWriteFields;
 use SiteHelm\Tests\Doubles\ElementAddFixtures;
+use SiteHelm\Tests\Doubles\WriteTargetFakePlugin;
 use SiteHelm\Tests\TestCase;
 
 /**
@@ -373,6 +374,10 @@ final class ElementorElementAddTest extends TestCase {
 	 * and this assertion would hold whichever of the two `promise()` digested —
 	 * a test that cannot fail. With these two characters in the tree the encodings
 	 * genuinely differ, and digesting the slashed form fails here.
+	 *
+	 * THE KEY IS ONE THE FIXTURE CONTAINER DECLARES, because the add path now
+	 * checks a layout element's keys against the element registry. The value is
+	 * what this case is about; the key only has to be legitimate.
 	 */
 	public function test_the_promised_digest_is_taken_over_the_bytes_a_read_produces(): void {
 		$this->withElementor();
@@ -382,7 +387,7 @@ final class ElementorElementAddTest extends TestCase {
 			$this->arguments(
 				[
 					'elType'   => 'container',
-					'settings' => [ 'title' => 'Our "best" services \\ everywhere' ],
+					'settings' => [ 'content_width' => 'Our "best" services \\ everywhere' ],
 				]
 			)
 		);
@@ -599,9 +604,10 @@ final class ElementorElementAddTest extends TestCase {
 	 * setting names, and storing one would give the element settings keyed 0, 1,
 	 * 2 that Elementor reads as nothing at all.
 	 *
-	 * `container` IS THE CASE THAT MATTERS, because the widget-registry key check
-	 * is correctly skipped for a layout element — so if the list were not refused
-	 * here nothing further down would object to storing it.
+	 * `container` IS THE CASE THAT MATTERS, because a list has no setting names
+	 * for the key check below to judge — every one of its keys is an integer —
+	 * so if the list were not refused here nothing further down would object to
+	 * storing it.
 	 */
 	public function test_settings_sent_as_a_list_are_refused(): void {
 		$this->withElementor();
@@ -628,6 +634,41 @@ final class ElementorElementAddTest extends TestCase {
 	}
 
 	/**
+	 * THIS OPERATION STORES THE CALLER'S SETTINGS VERBATIM, so a repeater in them
+	 * arrives unnamed. It cannot take a nested tree, but it can perfectly well add
+	 * one icon-list, one tabs widget or one price list, and Elementor generates
+	 * each of their rows' CSS under `.elementor-repeater-item-<_id>`: a row stored
+	 * without one renders and can never be styled individually. The row names must
+	 * be in the PAYLOAD as well as the tree, because the payload is what the
+	 * preview promises and what the apply run is digest-compared against.
+	 */
+	public function test_a_repeater_in_the_settings_is_added_with_an_id_on_every_row(): void {
+		$this->withElementor();
+		$this->storeRaw( (string) json_encode( $this->fixtureTree() ) );
+
+		$planned = $this->plan(
+			$this->arguments(
+				[
+					'elType'     => 'widget',
+					'widgetType' => 'icon-list',
+					'settings'   => [
+						'icon_list' => [
+							[ 'text' => 'Fast setup' ],
+							[ 'text' => 'No lock-in' ],
+						],
+					],
+				]
+			)
+		);
+
+		$rows = $planned->payload[ ElementorElementAddInput::INPUT_SETTINGS ]['icon_list'];
+
+		$this->assertMatchesRegularExpression( '/^[0-9a-f]{7}$/', (string) $rows[0]['_id'] );
+		$this->assertMatchesRegularExpression( '/^[0-9a-f]{7}$/', (string) $rows[1]['_id'] );
+		$this->assertNotSame( $rows[0]['_id'], $rows[1]['_id'] );
+	}
+
+	/**
 	 * The empty array stays accepted. It is how an empty settings map arrives once
 	 * the shared validator has decoded `{}`, and refusing it would refuse every
 	 * element that simply carries no settings of its own.
@@ -637,6 +678,91 @@ final class ElementorElementAddTest extends TestCase {
 		$this->storeRaw( (string) json_encode( $this->fixtureTree() ) );
 
 		$planned = $this->plan( $this->arguments( [ 'elType' => 'container', 'settings' => [] ] ) );
+
+		$this->assertSame( [], $planned->payload[ ElementorElementAddInput::INPUT_SETTINGS ] );
+	}
+
+	/**
+	 * Issue #102 on the LAYOUT side of the registry split. The add path used to
+	 * skip the key check for anything that was not a widget, on the reasoning
+	 * that a container has no schema to check against — which stopped being true
+	 * when `ElementorApi::elementSchema()` started resolving layout elements
+	 * through `elements_manager`. Until this ran, a container's settings were
+	 * stored unvalidated on the one path that stores settings without a prior
+	 * read, and Elementor discarded the unrecognised key while the add reported
+	 * success.
+	 *
+	 * `title` IS THE KEY THAT MATTERS: it is `e-heading`'s and deliberately not
+	 * the fixture container's, so a check made against the wrong registry would
+	 * accept it and this case would pass for the wrong reason.
+	 */
+	public function test_a_setting_a_container_does_not_declare_is_refused(): void {
+		$this->withElementor();
+		$this->storeRaw( (string) json_encode( $this->fixtureTree() ) );
+
+		$this->assertRefusal(
+			ErrorCode::InvalidInput,
+			$this->arguments( [ 'elType' => 'container', 'settings' => [ 'title' => 'Nope' ] ] )
+		);
+	}
+
+	/**
+	 * The other half of the same guard: a key the container's own registry entry
+	 * declares is accepted and reaches the payload unchanged. Without this the
+	 * refusal above would be satisfied by a guard that refused every container
+	 * setting, which is the failure the element registry double exists to make
+	 * visible.
+	 */
+	public function test_a_setting_a_container_declares_is_accepted_and_stored(): void {
+		$this->withElementor();
+		$this->storeRaw( (string) json_encode( $this->fixtureTree() ) );
+
+		$planned = $this->plan(
+			$this->arguments(
+				[
+					'elType'   => 'container',
+					'settings' => [ 'padding' => [ 'top' => '0' ] ],
+				]
+			)
+		);
+
+		$this->assertSame(
+			[ 'padding' => [ 'top' => '0' ] ],
+			$planned->payload[ ElementorElementAddInput::INPUT_SETTINGS ]
+		);
+	}
+
+	/**
+	 * AN UNREADABLE REGISTRY REFUSES, exactly as it does on the update path: the
+	 * integration is reachable and this particular save's validation step is
+	 * what failed, which is `ExecutionFailed` and is retryable. A permissive
+	 * pass here would be the shape the coercion layer exists to rule out — a
+	 * safety check that silently disables itself when it cannot run.
+	 */
+	public function test_a_container_add_refuses_when_the_element_registry_cannot_be_read(): void {
+		$this->withElementor();
+		$this->storeRaw( (string) json_encode( $this->fixtureTree() ) );
+
+		WriteTargetFakePlugin::$instance->elements_manager = null;
+
+		$this->assertRefusal(
+			ErrorCode::ExecutionFailed,
+			$this->arguments( [ 'elType' => 'container', 'settings' => [ 'padding' => [] ] ] )
+		);
+	}
+
+	/**
+	 * A PLAIN CONTAINER STILL WORKS ON A SITE WHOSE REGISTRY IS UNREADABLE.
+	 * There is no key to judge, so nothing asks the registry anything, and a
+	 * refusal here would be one the request earned by proposing nothing at all.
+	 */
+	public function test_a_container_with_no_settings_is_added_without_consulting_the_registry(): void {
+		$this->withElementor();
+		$this->storeRaw( (string) json_encode( $this->fixtureTree() ) );
+
+		WriteTargetFakePlugin::$instance->elements_manager = null;
+
+		$planned = $this->plan( $this->arguments( [ 'elType' => 'container' ] ) );
 
 		$this->assertSame( [], $planned->payload[ ElementorElementAddInput::INPUT_SETTINGS ] );
 	}
@@ -654,5 +780,58 @@ final class ElementorElementAddTest extends TestCase {
 		} catch ( OperationException $exception ) {
 			$this->assertSame( $expected, $exception->errorCode );
 		}
+	}
+
+	// ------------------------------------------------------- media advisory
+
+	/**
+	 * The add path stores settings without a prior read, so it is the one place a
+	 * bare media value can enter a page that never had one. A url with no
+	 * attachment id stores, reads back and verifies green, and still serves one
+	 * full-size file to every visitor: `srcset`, the `wp-image` class and
+	 * lazy-loading all come from the attachment record.
+	 */
+	public function test_a_bare_media_url_warns_on_the_plan(): void {
+		$this->withElementor();
+		$this->storeRaw( (string) json_encode( $this->fixtureTree() ) );
+
+		$planned = $this->plan(
+			$this->arguments(
+				[
+					'elType'     => 'widget',
+					'widgetType' => 'html',
+					'settings'   => [ 'image' => [ 'url' => 'https://elsewhere.example/hero.jpg' ] ],
+				]
+			)
+		);
+
+		$this->assertCount( 1, $planned->warnings, 'One bare media value earns one advisory.' );
+		$this->assertStringContainsString( '"image"', $planned->warnings[0], 'The operator has to learn which setting to fix.' );
+	}
+
+	/**
+	 * A media value carrying its attachment is the correct write and says
+	 * nothing, which is what keeps the advisory worth reading.
+	 */
+	public function test_a_media_value_with_an_attachment_warns_about_nothing(): void {
+		$this->withElementor();
+		$this->storeRaw( (string) json_encode( $this->fixtureTree() ) );
+
+		$planned = $this->plan(
+			$this->arguments(
+				[
+					'elType'     => 'widget',
+					'widgetType' => 'html',
+					'settings'   => [
+						'image' => [
+							'id'  => 4242,
+							'url' => 'https://example.test/hero.jpg',
+						],
+					],
+				]
+			)
+		);
+
+		$this->assertSame( [], $planned->warnings, 'This is the write the advisory exists to ask for.' );
 	}
 }

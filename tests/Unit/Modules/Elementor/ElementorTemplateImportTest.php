@@ -23,6 +23,7 @@ use SiteHelm\Contracts\SnapshotPolicy;
 use SiteHelm\Modules\Elementor\ElementorDocument;
 use SiteHelm\Modules\Elementor\ElementorDocumentWriter;
 use SiteHelm\Modules\Elementor\ElementorFields;
+use SiteHelm\Modules\Elementor\ElementorIdMint;
 use SiteHelm\Modules\Elementor\ElementorPresence;
 use SiteHelm\Modules\Elementor\ElementorTemplateImport;
 use SiteHelm\Modules\Elementor\ElementorTemplateLibrary;
@@ -193,7 +194,8 @@ final class ElementorTemplateImportTest extends TestCase {
 			$this->templateTarget(),
 			new ElementorTreeInput( new ElementorTree(), $this->propCoercion(), new ElementorPresence() ),
 			$this->propCoercion(),
-			$this->documentWriter()
+			$this->documentWriter(),
+			new ElementorIdMint()
 		);
 
 		try {
@@ -238,8 +240,7 @@ final class ElementorTemplateImportTest extends TestCase {
 	}
 
 	/**
-	 * IDS ARE STORED AS THE CALLER SENT THEM. `elementor-template-apply` re-mints
-	 * every id as it inserts, so minting here would buy nothing and would lose the
+	 * AN ID THE CALLER SENT IS STORED AS IT WAS SENT, which keeps the
 	 * correspondence between an imported template and the export it came from —
 	 * the only thing that makes two sites' templates diffable.
 	 */
@@ -248,6 +249,75 @@ final class ElementorTemplateImportTest extends TestCase {
 
 		$this->assertSame( 'imported1', $tree[0]['id'] );
 		$this->assertSame( 'imported2', $tree[0]['elements'][0]['id'] );
+	}
+
+	/**
+	 * A NODE THAT ARRIVED WITHOUT AN ID IS NAMED HERE, AND NOWHERE ELSE WILL DO.
+	 * `elementor-template-apply` re-mints through `ElementorIdMint::reassign()`,
+	 * which by design leaves an unnamed node unnamed, so a template imported with
+	 * unnamed nodes stays unnamed for the rest of its life. Elementor keys its
+	 * per-element CSS on the id, so every rule such a document generates lands
+	 * under `.elementor-element-` and therefore on every element on the page at
+	 * once.
+	 */
+	public function test_a_node_imported_without_an_id_is_named(): void {
+		$tree = $this->plan( $this->arguments( $this->unnamedContent() ) )
+			->payload[ ElementorTemplateImport::PAYLOAD_TREE ];
+
+		$this->assertMatchesRegularExpression( '/^[0-9a-f]{7}$/', (string) $tree[0]['id'] );
+		$this->assertMatchesRegularExpression( '/^[0-9a-f]{7}$/', (string) $tree[0]['elements'][0]['id'] );
+		$this->assertNotSame( $tree[0]['id'], $tree[0]['elements'][0]['id'] );
+	}
+
+	/**
+	 * THE SAME DEFECT ONE LEVEL DOWN, and it outlives the import for the same
+	 * reason the element one did: `elementor-template-apply` re-mints through
+	 * `ElementorIdMint::reassign()`, which by design invents nothing, so rows
+	 * stored here without an `_id` stay without one for the life of every page
+	 * the template is ever applied to. Elementor generates each row's CSS under
+	 * `.elementor-repeater-item-<_id>`, so those rows can never be styled
+	 * individually and the editor has no stable handle on which row is which.
+	 */
+	public function test_a_repeater_row_imported_without_an_id_is_named(): void {
+		$tree = $this->plan( $this->arguments( $this->iconListContent() ) )
+			->payload[ ElementorTemplateImport::PAYLOAD_TREE ];
+
+		$rows = $tree[0]['elements'][0]['settings']['icon_list'];
+
+		$this->assertCount( 2, $rows );
+		$this->assertMatchesRegularExpression( '/^[0-9a-f]{7}$/', (string) $rows[0]['_id'] );
+		$this->assertMatchesRegularExpression( '/^[0-9a-f]{7}$/', (string) $rows[1]['_id'] );
+		$this->assertNotSame( $rows[0]['_id'], $rows[1]['_id'] );
+	}
+
+	/**
+	 * Naming fills only the gaps: an id the caller did send is untouched even when
+	 * a sibling or a child of it had none.
+	 */
+	public function test_naming_leaves_the_ids_the_caller_did_send_alone(): void {
+		$content                                = $this->unnamedContent();
+		$content[ ElementorTemplateImport::INPUT_CONTENT ][0]['id'] = 'imported1';
+
+		$tree = $this->plan( $this->arguments( $content ) )
+			->payload[ ElementorTemplateImport::PAYLOAD_TREE ];
+
+		$this->assertSame( 'imported1', $tree[0]['id'] );
+		$this->assertNotSame( 'imported1', $tree[0]['elements'][0]['id'] );
+	}
+
+	/**
+	 * NAMING MUST NOT COST DETERMINISM. `planChange()` runs at preview and again
+	 * at apply, and the two payloads are digest-compared, so a naming pass that
+	 * moved between the runs would refuse every import it ever planned.
+	 */
+	public function test_planning_an_unnamed_import_twice_produces_the_same_payload(): void {
+		$arguments = $this->arguments( $this->unnamedContent() );
+		$operation = $this->operation();
+
+		$this->assertSame(
+			$operation->planChange( $this->pendingState(), $arguments, $this->context() )->payload,
+			$operation->planChange( $this->pendingState(), $arguments, $this->context() )->payload
+		);
 	}
 
 	/**
@@ -732,7 +802,8 @@ final class ElementorTemplateImportTest extends TestCase {
 			$this->templateTarget(),
 			new ElementorTreeInput( new ElementorTree(), $this->propCoercion(), new ElementorPresence() ),
 			$this->propCoercion(),
-			$this->documentWriter()
+			$this->documentWriter(),
+			new ElementorIdMint()
 		);
 	}
 
@@ -776,6 +847,114 @@ final class ElementorTemplateImportTest extends TestCase {
 			],
 			$overrides
 		);
+	}
+
+	/**
+	 * Content holding one REPEATER-BACKED widget whose rows carry no `_id`,
+	 * which is what a caller composing an icon list from scratch sends.
+	 *
+	 * @return array<string, mixed> The override.
+	 */
+	private function iconListContent(): array {
+		return [
+			ElementorTemplateImport::INPUT_CONTENT => [
+				[
+					'id'       => 'imported1',
+					'elType'   => 'container',
+					'settings' => [],
+					'elements' => [
+						[
+							'id'         => 'imported3',
+							'elType'     => 'widget',
+							'widgetType' => 'icon-list',
+							'settings'   => [
+								'icon_list' => [
+									[ 'text' => 'Fast setup' ],
+									[ 'text' => 'No lock-in' ],
+								],
+							],
+							'elements'   => [],
+						],
+					],
+				],
+			],
+		];
+	}
+
+	/**
+	 * The same content with EVERY id left out, as an `arguments()` override.
+	 *
+	 * @return array<string, mixed> The override.
+	 */
+	private function unnamedContent(): array {
+		$content = $this->arguments()[ ElementorTemplateImport::INPUT_CONTENT ];
+
+		unset( $content[0]['id'], $content[0]['elements'][0]['id'] );
+
+		return [ ElementorTemplateImport::INPUT_CONTENT => $content ];
+	}
+
+	/**
+	 * A layout of widgets whose images all point at bare URLs.
+	 *
+	 * @param int $count How many widgets to build.
+	 *
+	 * @return array[] The layout.
+	 */
+	private function bareMediaTree( int $count ): array {
+		$widgets = [];
+
+		for ( $index = 0; $index < $count; $index++ ) {
+			$widgets[] = [
+				'elType'     => 'widget',
+				'widgetType' => 'icon-list',
+				'settings'   => [ 'image' => [ 'url' => 'https://elsewhere.example/' . $index . '.jpg' ] ],
+				'elements'   => [],
+			];
+		}
+
+		return [
+			[
+				'elType'   => 'container',
+				'settings' => [],
+				'elements' => $widgets,
+			],
+		];
+	}
+
+	// ------------------------------------------------------- media advisory
+
+	/**
+	 * AN IMPORT IS SOMEONE ELSE'S LAYOUT, which is precisely where media values
+	 * arrive holding a `url` and no attachment id: the export was written
+	 * against another site's library, and every image in it will render without
+	 * srcset, without the wp-image class and without lazy-loading while the
+	 * write verifies green.
+	 */
+	public function test_an_imported_bare_media_url_warns_on_the_plan(): void {
+		$planned = $this->plan( $this->arguments( [ ElementorTemplateImport::INPUT_CONTENT => $this->bareMediaTree( 1 ) ] ) );
+
+		$this->assertCount( 1, $planned->warnings, 'One bare media value earns one advisory.' );
+		$this->assertStringContainsString( '"image"', $planned->warnings[0], 'A small import is fixed one key at a time.' );
+	}
+
+	/**
+	 * Past the cap the report becomes one sentence, because a whole imported
+	 * template is not fixed one key at a time and forty sentences is a wall an
+	 * operator scrolls past — which would hide the finding as surely as silence.
+	 */
+	public function test_a_bulk_import_is_summarised_rather_than_listed(): void {
+		$planned = $this->plan( $this->arguments( [ ElementorTemplateImport::INPUT_CONTENT => $this->bareMediaTree( 9 ) ] ) );
+
+		$this->assertCount( 1, $planned->warnings, 'Past the cap the report is one sentence.' );
+		$this->assertStringContainsString( '9 image settings across 9 elements', $planned->warnings[0], 'Both counts are said, because their ratio is the diagnosis.' );
+	}
+
+	/**
+	 * An import whose media carries its attachment says nothing at all.
+	 */
+	public function test_a_clean_import_warns_about_nothing(): void {
+		$this->assertSame( [], $this->plan( $this->arguments() )->warnings, 'An advisory that fires on ordinary writes is one nobody reads.' );
 	}
 
 	/**

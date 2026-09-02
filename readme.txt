@@ -4,7 +4,7 @@ Tags: mcp, ai agent, automation, elementor, rest api
 Requires at least: 6.6
 Tested up to: 7.1
 Requires PHP: 8.1
-Stable tag: 0.9.0
+Stable tag: 0.10.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -12,7 +12,7 @@ Let an AI agent run your WordPress site safely: every write is previewed, snapsh
 
 == Description ==
 
-SiteHelm connects your WordPress site to any AI agent that speaks MCP (the Model Context Protocol) — Claude Desktop, Claude Code, and a growing number of editors and agent frameworks. The agent gets a catalogue of named operations covering content, media, menus, Elementor, custom fields, SEO, forms, comments, users, plugins and themes, and site settings. It does not get PHP, SQL or a shell — at any price.
+SiteHelm connects your WordPress site to any AI agent that speaks MCP (the Model Context Protocol) — Claude Desktop, Claude Code, and a growing number of editors and agent frameworks. The agent gets a catalogue of named operations covering content, media, menus, Elementor, custom fields, SEO, forms, comments, users, plugins and themes, and site settings. It does not get PHP, SQL or a shell.
 
 **Five gates on every write, none of them skippable by the caller:**
 
@@ -36,7 +36,7 @@ SiteHelm connects your WordPress site to any AI agent that speaks MCP (the Model
 
 **Privacy** — SiteHelm contains no AI model and sends no content to any AI service. Authentication is a WordPress Application Password, so nothing about your site is stored anywhere else. The plugin makes no outbound call except the update check against its GitHub releases, the licence check for the optional Pro add-on, the WordPress.org lookup and download the optional Pro add-on makes when you ask it to install a plugin or theme, and the media-import fetch you explicitly request — and that fetch is guarded against reaching your internal network. No content, no URLs, nothing about your site travels with any of them.
 
-The free plugin is the whole safety model, permanently. An optional Pro add-on (sold separately via Freemius) adds operations for work that spans a whole site or a whole shop — bulk edits, WooCommerce, deep SEO, Elementor Pro surfaces, plugin and theme management, and a code module. Pro never takes a free feature away, and the plugin is open source, so that is checkable rather than promised.
+The free plugin is the whole safety model, permanently. An optional Pro add-on (sold separately via Freemius) adds operations for surfaces the free plugin does not reach — WooCommerce, the SEO plugin's own settings and schema, Elementor Pro's popups and dynamic tags, plugin and theme management, and a code module. Pro never takes a free feature away, and the plugin is open source, so that is checkable rather than promised.
 
 == Installation ==
 
@@ -58,7 +58,7 @@ Five gates on every write, and none of them can be skipped by the caller: previe
 
 = Can the agent run PHP or SQL? =
 
-No, and not at any price. These are excluded from the product rather than held back for a paid tier.
+No. Neither has a route through the plugin — not held back for a paid tier, just not built.
 
 = Can the agent give itself more permission? =
 
@@ -88,6 +88,13 @@ The refusal names which error code applies and what to do about it, and says how
 
 The full changelog for every release is maintained at
 https://github.com/Mrshahidali420/SiteHelm/blob/main/CHANGELOG.md
+
+= 0.10.0 =
+* Bulk SEO metadata and audit fixes are free: content-seo-bulk-set and content-seo-audit-fix move out of Pro, because the free plugin already has the single write and a batch of it is not a reason to pay.
+* Connecting now returns short instructions on how a write is previewed and applied, and the four Elementor mistakes that produce a page which reports success and still looks wrong.
+* Elementor pages written without element ids lost every style on them; every element now gets an id as it is written, and a page left in that state repairs itself on the next write. Repeater rows get ids on the same terms, so a single row can be styled.
+* Elementor style settings that would be stored but never rendered are refused, naming the companion switch they need; an image set by URL alone is flagged, because it is served without srcset.
+* Setting an Elementor page layout actually changes the page now, and elementor-document-get returns the page's own settings.
 
 = 0.9.0 =
 * Two new reads: system-plugin-list and system-theme-list report every installed plugin and theme, versions, which are active, and which have an update waiting — read from WordPress's own last check, never triggering a new one.

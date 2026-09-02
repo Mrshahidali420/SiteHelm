@@ -348,9 +348,9 @@ final class ElementorElementsUpdateTest extends TestCase {
 	 * The underlying refusal survives being re-reported.
 	 *
 	 * Naming the entry must not cost the operator the reason. This entry names a
-	 * container, so the elType refusal beneath it — the one that separates "this
-	 * is not a widget" from the unknown-key refusal that would also fire on a
-	 * container — has to still be readable through the position prefix.
+	 * container and sends `title`, which is `e-heading`'s control and not a
+	 * container's, so the wrong-vocabulary refusal beneath it has to still be
+	 * readable through the position prefix — including the key it names.
 	 */
 	public function test_the_refusal_keeps_the_reason_it_was_reported_for(): void {
 		$this->withElementor();
@@ -361,12 +361,35 @@ final class ElementorElementsUpdateTest extends TestCase {
 				$this->elementsUpdate(),
 				$this->batch( [ $this->change( 'c111111', [ 'title' => 'Our services' ] ) ] )
 			);
-			$this->fail( 'A layout element must not be treated as a widget.' );
+			$this->fail( 'A widget control must not be writable on a container.' );
 		} catch ( OperationException $exception ) {
 			$this->assertSame( ErrorCode::InvalidInput, $exception->errorCode );
 			$this->assertStringContainsString( 'Change 1 in this request', $exception->getMessage() );
-			$this->assertStringContainsString( 'layout element', $exception->getMessage() );
+			$this->assertStringContainsString( 'a setting named "title"', $exception->getMessage() );
 		}
+	}
+
+	/**
+	 * A batch may change a container's own settings alongside a widget's, which
+	 * is the shape a full-bleed page needs: zero the container's padding and set
+	 * the heading in one approved change.
+	 */
+	public function test_a_batch_may_change_a_container_and_a_widget_together(): void {
+		$this->withElementor();
+		$this->storeFixture();
+
+		$this->applied(
+			$this->elementsUpdate(),
+			$this->batch(
+				[
+					$this->change( 'c111111', [ 'padding' => [ 'top' => '0' ] ] ),
+					$this->change( 'w111111', [ 'title' => 'Our services' ] ),
+				]
+			)
+		);
+
+		$this->assertSame( [ 'top' => '0' ], $this->settingValue( 'c111111', 'padding' ) );
+		$this->assertSame( 'Our services', $this->settingValue( 'w111111', 'title' ) );
 	}
 
 	/**
@@ -704,6 +727,153 @@ final class ElementorElementsUpdateTest extends TestCase {
 		return [
 			$this->change( 'w111111', [ 'title' => 'Our services' ] ),
 			$this->change( 'w222222', [ 'title' => 'What it costs' ] ),
+		];
+	}
+
+	// ------------------------------------------------------- media advisory
+
+	/**
+	 * A BATCH IS WHERE THIS DEFECT ARRIVES AT SCALE. A media value with no
+	 * attachment id stores, reads back and verifies green, and still puts an
+	 * unresponsive full-size image on the page, because WordPress builds
+	 * `srcset`, the `wp-image` class and lazy-loading from the attachment record
+	 * rather than the URL. The plan is where an operator sees it in time.
+	 */
+	public function test_a_bare_media_url_warns_on_the_plan(): void {
+		$this->withElementor();
+		$this->storeFixture();
+
+		$planned = $this->plan(
+			$this->elementsUpdate(),
+			$this->batch(
+				[
+					$this->change(
+						self::containerId(),
+						[
+							'background_background' => 'classic',
+							'background_image'      => [ 'url' => 'https://elsewhere.example/hero.jpg' ],
+						]
+					),
+				]
+			)
+		);
+
+		$this->assertCount( 1, $planned->warnings, 'One bare media value earns one advisory.' );
+		$this->assertStringContainsString( '"background_image"', $planned->warnings[0], 'The operator has to learn which setting to fix.' );
+	}
+
+	/**
+	 * A media value carrying its attachment is the correct write and says
+	 * nothing, which is what keeps the advisory worth reading.
+	 */
+	public function test_a_media_value_with_an_attachment_warns_about_nothing(): void {
+		$this->withElementor();
+		$this->storeFixture();
+
+		$planned = $this->plan(
+			$this->elementsUpdate(),
+			$this->batch(
+				[
+					$this->change(
+						self::containerId(),
+						[
+							'background_background' => 'classic',
+							'background_image'      => [
+								'id'  => 4242,
+								'url' => 'https://example.test/hero.jpg',
+							],
+						]
+					),
+				]
+			)
+		);
+
+		$this->assertSame( [], $planned->warnings, 'This is the write the advisory exists to ask for.' );
+	}
+
+	// ------------------------------------------------- repeater row identity
+
+	/**
+	 * A repeater row written here is stored with an `_id` of its own.
+	 *
+	 * A ROW WITHOUT ONE STORES, READS BACK AND RENDERS, and can never be styled:
+	 * per-row rules are emitted as `.elementor-repeater-item-<_id>`, so a
+	 * nameless row takes the control's defaults for the life of the page and
+	 * cannot be told from its siblings in the editor either. The writes that
+	 * ORIGINATE an element have always named their rows; this one reaches the
+	 * document through the settings merge and went past the mint entirely.
+	 */
+	public function test_repeater_rows_are_written_with_an_identifier(): void {
+		$this->withElementor();
+		$this->storeRaw( (string) json_encode( $this->repeaterWidgetTree() ) );
+
+		$planned = $this->plan(
+			$this->elementsUpdate(),
+			$this->batch(
+				[
+					$this->change(
+						'w555555',
+						[
+							'icon_list' => [
+								[ 'text' => 'One' ],
+								[ 'text' => 'Two' ],
+							],
+						]
+					),
+				]
+			)
+		);
+
+		$rows = $planned->payload['changes'][0]['settings']['icon_list'];
+
+		$this->assertMatchesRegularExpression( '/^[0-9a-f]{7}$/', (string) $rows[0]['_id'], 'A stored row carries a minted identifier.' );
+		$this->assertNotSame( $rows[0]['_id'], $rows[1]['_id'], 'Two rows styled alike is the defect, not the fix.' );
+	}
+
+	/**
+	 * A row the caller named keeps the name it was given.
+	 *
+	 * IDEMPOTENCE IS LOAD-BEARING HERE ABOVE ALL, because this operation names
+	 * its rows inside the same walk `applyChange()` runs a second time over the
+	 * approved entries. A pass that renamed anything would write a document the
+	 * operator was never shown.
+	 */
+	public function test_a_row_that_already_carries_an_identifier_keeps_it(): void {
+		$this->withElementor();
+		$this->storeRaw( (string) json_encode( $this->repeaterWidgetTree() ) );
+
+		$planned = $this->plan(
+			$this->elementsUpdate(),
+			$this->batch( [ $this->change( 'w555555', [ 'icon_list' => [ [ '_id' => 'abc1234', 'text' => 'One' ] ] ] ) ] )
+		);
+
+		$this->assertSame( 'abc1234', $planned->payload['changes'][0]['settings']['icon_list'][0]['_id'], 'A named row is left exactly as it arrived.' );
+	}
+
+	/**
+	 * A document holding one classic widget that declares a repeater control.
+	 *
+	 * The shared fixture tree holds no repeater, and rippling one through it
+	 * would change what every unrelated case in this file asserts about.
+	 *
+	 * @return array[] The raw tree.
+	 */
+	private function repeaterWidgetTree(): array {
+		return [
+			[
+				'id'       => self::containerId(),
+				'elType'   => 'container',
+				'settings' => [ 'content_width' => 'boxed' ],
+				'elements' => [
+					[
+						'id'         => 'w555555',
+						'elType'     => 'widget',
+						'widgetType' => 'icon-list',
+						'settings'   => [ 'icon_list' => [] ],
+						'elements'   => [],
+					],
+				],
+			],
 		];
 	}
 }

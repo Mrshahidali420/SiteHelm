@@ -23,6 +23,7 @@ use SiteHelm\Contracts\SnapshotPolicy;
 use SiteHelm\Gateway\ContextFactory;
 use SiteHelm\Gateway\Dispatcher;
 use SiteHelm\Gateway\McpServer;
+use SiteHelm\Gateway\ServerInstructions;
 use SiteHelm\Policy\PolicyEngine;
 use SiteHelm\Registry\CapabilityRegistry;
 use SiteHelm\Registry\CatalogBuilder;
@@ -165,6 +166,28 @@ final class McpServerTest extends TestCase {
 		$this->assertSame( 1, $response['id'] );
 		$this->assertSame( McpServer::PROTOCOL_VERSION, $response['result']['protocolVersion'] );
 		$this->assertSame( 'SiteHelm', $response['result']['serverInfo']['name'] );
+	}
+
+	/**
+	 * Test that initialize carries the server instructions.
+	 *
+	 * The member is asserted here rather than only in ServerInstructionsTest
+	 * because the string being correct and the string being SENT are two
+	 * different facts, and only the second one is what a client actually gets.
+	 */
+	public function test_initialize_carries_server_instructions(): void {
+		$response = $this->server->handle(
+			[
+				'jsonrpc' => '2.0',
+				'id'      => 1,
+				'method'  => 'initialize',
+				'params'  => [],
+			]
+		);
+		$this->assertArrayHasKey( 'instructions', $response['result'] );
+		$this->assertIsString( $response['result']['instructions'] );
+		$this->assertNotSame( '', trim( $response['result']['instructions'] ) );
+		$this->assertSame( ServerInstructions::text(), $response['result']['instructions'] );
 	}
 
 	/**

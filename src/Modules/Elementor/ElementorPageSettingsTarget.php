@@ -32,6 +32,13 @@ use SiteHelm\Contracts\OperationException;
  * target's `resolve()` measures the document's tree, and this target's fields
  * are a different measurement of a different row.
  *
+ * IT OWNS TWO ROWS, NOT ONE. A page's layout is stored twice — in Elementor's
+ * `_elementor_page_settings` and in WordPress's own `_wp_page_template` — and
+ * only the second decides what a visitor is served. This target writes, re-reads,
+ * snapshots and restores both, because a version that handled only the first
+ * stored a layout, read it back correctly, reported `verified`, and changed
+ * nothing on the front end. See `ElementorPageSettings::PAGE_TEMPLATES`.
+ *
  * THE KEY COUNT IS A PROMISED FIELD, not a diagnostic. It is the one measurement
  * that catches the defect this operation is most likely to have: a write that
  * replaced the settings row instead of merging into it lands the two allowlisted
@@ -78,6 +85,28 @@ final class ElementorPageSettingsTarget {
 	 * the name of undoing one.
 	 */
 	public const SNAPSHOT_EXISTED = 'existed';
+
+	/**
+	 * The snapshot member carrying the recorded core template-loader row.
+	 */
+	public const SNAPSHOT_PAGE_TEMPLATE = 'page_template';
+
+	/**
+	 * The snapshot member recording whether a core template row was there at all.
+	 *
+	 * SEPARATE FROM THE ROW FOR `SNAPSHOT_EXISTED`'s REASON, and the distinction
+	 * bites harder here: WordPress spells the default page template as the EMPTY
+	 * STRING, so an absent row and a row holding `''` both read back as `''` and
+	 * are genuinely different states. A restore that could not tell them apart
+	 * would leave `_wp_page_template` behind on every page that never had one.
+	 *
+	 * ITS ABSENCE FROM A SNAPSHOT MEANS "LEAVE THAT ROW ALONE", not "there was
+	 * no row". Snapshots taken by a SiteHelm that only knew about one row are
+	 * sitting in the audit store right now, and treating their silence as
+	 * "absent" would make rolling one back DELETE a page template this plugin
+	 * never wrote — a rollback causing the exact damage rollbacks exist to undo.
+	 */
+	public const SNAPSHOT_TEMPLATE_EXISTED = 'template_existed';
 
 	/**
 	 * Constructs the target.
@@ -131,7 +160,10 @@ final class ElementorPageSettingsTarget {
 		return new TargetState(
 			ElementorPageSettings::targetKey( $post_id ),
 			true,
-			$this->fieldsFor( ElementorPageSettings::stored( $post_id ) )
+			$this->fieldsFor(
+				ElementorPageSettings::stored( $post_id ),
+				ElementorPageSettings::storedPageTemplate( $post_id )
+			)
 		);
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
@@ -144,12 +176,21 @@ final class ElementorPageSettingsTarget {
 	 * here cannot disagree by a cast, which is the failure mode a second spelling
 	 * of a measurement produces and the one nothing downstream would catch.
 	 *
-	 * @param array<string, mixed> $stored The stored settings row.
+	 * IT TAKES BOTH ROWS, AND THE SECOND ONE IS WHERE THE LAYOUT COMES FROM.
+	 * Measuring `layout` from the settings row is precisely how this operation
+	 * came to report `verified` on pages it had not changed: the promise, the
+	 * write and the verification all consulted the row the write had set, and
+	 * none of them consulted the row WordPress renders from. The method stays
+	 * PURE and takes the value rather than a post id, so it can measure a row
+	 * that does not exist yet — which is exactly what a promise is.
+	 *
+	 * @param array<string, mixed> $stored        The stored settings row.
+	 * @param string               $page_template The core template-loader value the page holds.
 	 *
 	 * @return array<string, mixed> The three fields, in FIELD_ORDER.
 	 */
-	public function fieldsFor( array $stored ): array {
-		$fields = ElementorPageSettings::project( $stored );
+	public function fieldsFor( array $stored, string $page_template ): array {
+		$fields = ElementorPageSettings::project( $stored, $page_template );
 
 		$fields[ self::FIELD_KEY_COUNT ] = count( $stored );
 
@@ -190,9 +231,11 @@ final class ElementorPageSettingsTarget {
 		}
 
 		$snapshot = [
-			self::SNAPSHOT_EXISTED  => metadata_exists( 'post', $post_id, ElementorPageSettings::META_KEY ),
-			self::SNAPSHOT_POST_ID  => $post_id,
-			self::SNAPSHOT_SETTINGS => ElementorPageSettings::stored( $post_id ),
+			self::SNAPSHOT_EXISTED          => metadata_exists( 'post', $post_id, ElementorPageSettings::META_KEY ),
+			self::SNAPSHOT_PAGE_TEMPLATE    => ElementorPageSettings::storedPageTemplate( $post_id ),
+			self::SNAPSHOT_POST_ID          => $post_id,
+			self::SNAPSHOT_SETTINGS         => ElementorPageSettings::stored( $post_id ),
+			self::SNAPSHOT_TEMPLATE_EXISTED => metadata_exists( 'post', $post_id, ElementorPageSettings::META_PAGE_TEMPLATE ),
 		];
 		ksort( $snapshot, SORT_STRING );
 
@@ -209,13 +252,42 @@ final class ElementorPageSettingsTarget {
 	 * map on the way through, and a strict comparison of two arrays that went
 	 * around that loop compares key ORDER, which serialisation does not promise.
 	 *
+	 * BOTH ROWS, AND BOTH RE-READ. The reasoning above is not specific to the
+	 * settings row: a meta filter can rewrite or drop `_wp_page_template` exactly
+	 * as it can rewrite the settings row, and the second row is the one that
+	 * decides what a visitor sees — so a layout that landed in Elementor's row
+	 * and not in WordPress's is the failure this whole method exists to make
+	 * impossible to report as success.
+	 *
+	 * @param int                  $post_id       The document's post identifier.
+	 * @param array<string, mixed> $settings      The row to store.
+	 * @param string               $page_template The core template-loader value to store.
+	 *
+	 * @throws OperationException With ErrorCode::ExecutionFailed when either row
+	 *                            did not land.
+	 */
+	public function store( int $post_id, array $settings, string $page_template ): void {
+		$this->storeSettings( $post_id, $settings );
+		$this->storePageTemplate( $post_id, $page_template );
+	}
+
+	/**
+	 * Stores the Elementor settings row and re-reads it.
+	 *
+	 * THE RE-READ IS NOT OPTIONAL. `update_post_meta()` answers true on a site
+	 * whose meta filter rewrote or dropped the value, so the only evidence a
+	 * write landed is reading the row back and comparing it. The comparison is
+	 * loose rather than strict because WordPress serialises and unserialises the
+	 * map on the way through, and a strict comparison of two arrays that went
+	 * around that loop compares key ORDER, which serialisation does not promise.
+	 *
 	 * @param int                  $post_id  The document's post identifier.
 	 * @param array<string, mixed> $settings The row to store.
 	 *
 	 * @throws OperationException With ErrorCode::ExecutionFailed when the row did
 	 *                            not land.
 	 */
-	public function store( int $post_id, array $settings ): void {
+	private function storeSettings( int $post_id, array $settings ): void {
 		update_post_meta( $post_id, ElementorPageSettings::META_KEY, $settings );
 
 		$stored = ElementorPageSettings::stored( $post_id );
@@ -232,11 +304,69 @@ final class ElementorPageSettingsTarget {
 	}
 
 	/**
+	 * Stores the core template-loader row and re-reads it.
+	 *
+	 * A STRICT COMPARISON HERE, unlike the settings row: this value is a string
+	 * and goes through no serialisation, so there is no key order to forgive and
+	 * a loose comparison would accept `0` for `''`.
+	 *
+	 * @param int    $post_id       The document's post identifier.
+	 * @param string $page_template The core template-loader value to store.
+	 *
+	 * @throws OperationException With ErrorCode::ExecutionFailed when the row did
+	 *                            not land.
+	 */
+	private function storePageTemplate( int $post_id, string $page_template ): void {
+		update_post_meta( $post_id, ElementorPageSettings::META_PAGE_TEMPLATE, $page_template );
+
+		if ( ElementorPageSettings::storedPageTemplate( $post_id ) !== $page_template ) {
+			throw new OperationException(
+				ErrorCode::ExecutionFailed,
+				'The page layout was saved into Elementor\'s own settings but the page template WordPress renders this page from did not change, so this write is not reported as done.',
+				'Read the page with elementor-page-settings-get to see what it now holds, then retry with a fresh plan.',
+				[ 'plan approved', 'snapshot captured', 'Elementor page settings written' ]
+			);
+		}
+	}
+
+	/**
+	 * Removes one of the two rows, and proves it is gone.
+	 *
+	 * @param int    $post_id  The document's post identifier.
+	 * @param string $meta_key The row to remove.
+	 *
+	 * @throws OperationException With ErrorCode::ExecutionFailed when the row is
+	 *                            still there.
+	 */
+	private function deleteRow( int $post_id, string $meta_key ): void {
+		delete_post_meta( $post_id, $meta_key );
+
+		if ( metadata_exists( 'post', $post_id, $meta_key ) ) {
+			throw new OperationException(
+				ErrorCode::ExecutionFailed,
+				'The page still holds an Elementor page-settings record after the rollback tried to remove the one this change created.',
+				'Read the page with elementor-page-settings-get to see what it now holds.',
+				[]
+			);
+		}
+	}
+
+	/**
 	 * Puts a recorded settings row back.
+	 *
+	 * BOTH ROWS COME BACK, and they are restored independently because they were
+	 * recorded independently: a page can perfectly well have carried a settings
+	 * row and no page template, or the reverse, and a rollback that treated them
+	 * as one state would invent whichever of them it had not been told about.
 	 *
 	 * THE ABSENT-ROW CASE DELETES RATHER THAN WRITING AN EMPTY MAP, for the
 	 * reason `SNAPSHOT_EXISTED` records: a page that had no settings row must not
 	 * come out of a rollback with one.
+	 *
+	 * A SNAPSHOT THAT SAYS NOTHING ABOUT THE PAGE TEMPLATE LEAVES IT ALONE. Those
+	 * snapshots were taken by a SiteHelm that never wrote that row, so it holds
+	 * whatever it held before the change; deleting it on their silence would make
+	 * the rollback the destructive step. See `SNAPSHOT_TEMPLATE_EXISTED`.
 	 *
 	 * @param array<string, mixed> $restore_state The recorded restore state.
 	 * @param OperationContext     $context       The request context.
@@ -264,26 +394,45 @@ final class ElementorPageSettingsTarget {
 		}
 
 		$recorded = $restore_state[ self::SNAPSHOT_SETTINGS ] ?? null;
-		$settings = is_array( $recorded ) ? $recorded : [];
 
-		if ( true !== ( $restore_state[ self::SNAPSHOT_EXISTED ] ?? null ) ) {
-			delete_post_meta( $post_id, ElementorPageSettings::META_KEY );
-
-			if ( metadata_exists( 'post', $post_id, ElementorPageSettings::META_KEY ) ) {
-				throw new OperationException(
-					ErrorCode::ExecutionFailed,
-					'The page still holds an Elementor page-settings record after the rollback tried to remove the one this change created.',
-					'Read the page with elementor-page-settings-get to see what it now holds.',
-					[]
-				);
-			}
-
-			return ElementorPageSettings::targetKey( $post_id );
+		if ( true === ( $restore_state[ self::SNAPSHOT_EXISTED ] ?? null ) ) {
+			$this->storeSettings( $post_id, is_array( $recorded ) ? $recorded : [] );
+		} else {
+			$this->deleteRow( $post_id, ElementorPageSettings::META_KEY );
 		}
 
-		$this->store( $post_id, $settings );
+		$this->restorePageTemplate( $post_id, $restore_state );
 
 		return ElementorPageSettings::targetKey( $post_id );
+	}
+
+	/**
+	 * Puts the recorded core template-loader row back, or leaves it alone.
+	 *
+	 * SILENCE IS NOT ABSENCE. A snapshot carrying no `SNAPSHOT_TEMPLATE_EXISTED`
+	 * member predates this plugin knowing the row existed, so the row is whatever
+	 * it was before the change and the only correct action is none.
+	 *
+	 * @param int                  $post_id       The document's post identifier.
+	 * @param array<string, mixed> $restore_state The recorded restore state.
+	 *
+	 * @throws OperationException With ErrorCode::ExecutionFailed when the row did
+	 *                            not go back.
+	 */
+	private function restorePageTemplate( int $post_id, array $restore_state ): void {
+		if ( ! array_key_exists( self::SNAPSHOT_TEMPLATE_EXISTED, $restore_state ) ) {
+			return;
+		}
+
+		if ( true !== $restore_state[ self::SNAPSHOT_TEMPLATE_EXISTED ] ) {
+			$this->deleteRow( $post_id, ElementorPageSettings::META_PAGE_TEMPLATE );
+
+			return;
+		}
+
+		$recorded = $restore_state[ self::SNAPSHOT_PAGE_TEMPLATE ] ?? null;
+
+		$this->storePageTemplate( $post_id, is_string( $recorded ) ? $recorded : '' );
 	}
 	// phpcs:enable Generic.CodeAnalysis.UnusedFunctionParameter.FoundAfterLastUsed
 

@@ -73,6 +73,28 @@ trait TemplateLibraryFixtures {
 						'image' => new WriteTargetFakePropType( 'image' ),
 					]
 				),
+				// A REPEATER-BACKED CLASSIC WIDGET, whose one writable control
+				// holds a list of ROWS rather than a scalar. It is the only shape
+				// in which `ElementorIdMint::nameRepeaters()` has anything to do,
+				// so without it a template could be imported with every row
+				// stored unnamed while the suite stayed green.
+				'icon-list' => new WriteTargetFakeClassicWidget(
+					[
+						'icon_list' => [
+							'type'    => 'repeater',
+							'default' => [],
+						],
+
+						// A media control, declared as Elementor declares one.
+						// An import is someone else's library, so this is the
+						// registry entry that lets the media advisory be
+						// exercised on the path it exists for.
+						'image'     => [
+							'type'    => 'media',
+							'default' => [],
+						],
+					]
+				),
 			]
 		);
 

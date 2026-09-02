@@ -289,8 +289,14 @@ final class ElementorApi {
 	 * naming a setting the widget really does accept.
 	 *
 	 * NULL AND `[]` ARE DIFFERENT ANSWERS. `[]` means this widget was read and
-	 * declares no props — true of a pre-atomic widget's atomic schema. Null means
-	 * nothing was read, and the coercion layer refuses on it.
+	 * declares no props. Null means nothing was read.
+	 *
+	 * NULL IS NO LONGER A REFUSAL ON ITS OWN. A classic widget declares controls
+	 * rather than props and answers null here, which is why the write path asks
+	 * `widgetSchema()` instead: that classifier turns this null into either the
+	 * classic vocabulary or the refusal. This method keeps its narrow question —
+	 * what atomic props does this widget declare? — because REQ-0067's response
+	 * projection and the template importer both ask exactly that.
 	 *
 	 * @param string $widget_type The widget type name.
 	 *
@@ -309,6 +315,177 @@ final class ElementorApi {
 			return null;
 		}
 
+		return $this->prop_descriptors( $widget );
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- The module vocabulary is camelCase across every class.
+	/**
+	 * Which settings one widget type declares, and in which vocabulary.
+	 *
+	 * ELEMENTOR HAS TWO WIDGET VOCABULARIES AT ONCE and the write path has to
+	 * know which one it is looking at. An atomic (V4) widget answers
+	 * `get_props_schema()` and stores every value in a typed envelope. A classic
+	 * widget — `html`, `heading`, `image`, `button`, `shortcode` and every
+	 * third-party widget — extends `Widget_Base`, answers `get_controls()`, and
+	 * stores plain values. Reading only the first vocabulary made every classic
+	 * widget indistinguishable from an unreadable registry, which refused the
+	 * whole page: see `ElementorWidgetSchema` for why that is a third answer
+	 * rather than a widened null.
+	 *
+	 * A CONTROL IS A WRITABLE SETTING IF AND ONLY IF IT DECLARES A `default`.
+	 * `Controls_Stack` holds layout and UI controls — `section`, `tab`, `tabs`,
+	 * `raw_html`, `alert`, `heading`, `divider` — in the same list as the data
+	 * controls, and only the data ones carry a default, because only they hold a
+	 * value. Verified against Elementor 4.2.3's `html` widget: 297 controls, of
+	 * which exactly 266 declare `default` and the 31 that do not are exactly
+	 * those seven non-data types. Naming the types instead would hardcode a list
+	 * that drifts with every release, and reflecting on the control objects would
+	 * reach past the public API this file is confined to. `default` is already
+	 * read straight off the raw control array by `descriptor()`, so it is a
+	 * property of Elementor's controls rather than of any projection here.
+	 *
+	 * NULL STILL MEANS "NOTHING WAS READ" and is still a refusal at the coercion
+	 * layer: an unknown type, an unaddressable registry, or a widget declaring
+	 * neither method.
+	 *
+	 * ONLY THE RESOLUTION IS THIS METHOD'S OWN. The classification above is
+	 * `stack_schema()`'s, shared with `elementSchema()`, which asks the same
+	 * question of the element registry.
+	 *
+	 * @param string $widget_type The widget type name.
+	 *
+	 * @return ElementorWidgetSchema|null The schema, or null when unreadable.
+	 */
+	public function widgetSchema( string $widget_type ): ?ElementorWidgetSchema {
+		return $this->stack_schema( $this->widget( $widget_type ) );
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- The module vocabulary is camelCase across every class.
+	/**
+	 * Which settings one STRUCTURAL element type declares, and in which
+	 * vocabulary.
+	 *
+	 * THE SAME QUESTION `widgetSchema()` ANSWERS, ASKED OF THE OTHER REGISTRY.
+	 * A container, a section and a column are ordinary `Controls_Stack`
+	 * descendants — they answer `get_controls()` exactly as a classic widget
+	 * does, and Elementor's V4 layout elements (`e-div-block`, `e-flexbox`)
+	 * answer `get_props_schema()` exactly as an atomic widget does. What differs
+	 * is only WHERE the type is resolved: a widget through `widgets_manager`,
+	 * everything else through `elements_manager`. Resolving a container through
+	 * the widget registry finds nothing, which is why the settings write path
+	 * could not change a container's padding at all.
+	 *
+	 * VALIDATING A CONTAINER AGAINST A WIDGET'S SCHEMA IS THE FAILURE THIS
+	 * METHOD EXISTS TO PREVENT, not one it introduces. Elementor renders a
+	 * container from its own settings and ignores a widget's entirely, so a
+	 * write checked against the wrong registry's vocabulary would verify green
+	 * and change nothing on the page. Each node is checked against the schema of
+	 * ITS OWN type, read from ITS OWN registry.
+	 *
+	 * NULL STILL MEANS "NOTHING WAS READ", on `widgetSchema()`'s reasoning: an
+	 * unknown type, an unaddressable registry, or an element declaring neither
+	 * vocabulary. It is a refusal at the coercion layer, never a permissive pass.
+	 *
+	 * @param string $el_type The structural element type name.
+	 *
+	 * @return ElementorWidgetSchema|null The schema, or null when unreadable.
+	 */
+	public function elementSchema( string $el_type ): ?ElementorWidgetSchema {
+		return $this->stack_schema( $this->element( $el_type ) );
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+
+	/**
+	 * Classifies one resolved `Controls_Stack` into the write vocabulary it
+	 * declares.
+	 *
+	 * SHARED BY `widgetSchema()` AND `elementSchema()` so the two can never
+	 * drift on what an unreadable stack does — the reason `prop_descriptors()`
+	 * is shared between `propSchema()` and `widgetSchema()`. Two copies of this
+	 * classification would be two answers to "is a container with no controls
+	 * unreadable or empty", and the write path refuses on one and permits on the
+	 * other.
+	 *
+	 * The stack is whatever the registry answered, which is why it is typed
+	 * `?object` and not `object`: an unresolvable type is null here rather than
+	 * at two call sites.
+	 *
+	 * A DATA CONTROL'S GATING DECLARATION TRAVELS WITH ITS NAME, RAW. The same
+	 * pass that keeps the names copies each writable control's `condition`,
+	 * `conditions` and `default` out of the stack unchanged, because this is the
+	 * only place the raw stack is in hand and re-reading it later would cost a
+	 * second registry read per widget type on every write. Nothing is
+	 * interpreted here — an absent key is carried as null rather than as an
+	 * empty array, so `ElementorConditionGate` can still tell "declares no
+	 * condition" from "declares an empty one". A missing `default` is
+	 * impossible: it is the discriminator that selected the control.
+	 *
+	 * @param object|null $stack The resolved widget or element, or null.
+	 *
+	 * @return ElementorWidgetSchema|null The schema, or null when unreadable.
+	 */
+	private function stack_schema( ?object $stack ): ?ElementorWidgetSchema {
+		if ( null === $stack ) {
+			return null;
+		}
+
+		if ( method_exists( $stack, 'get_props_schema' ) ) {
+			$descriptors = $this->prop_descriptors( $stack );
+
+			return null === $descriptors ? null : ElementorWidgetSchema::atomic( $descriptors );
+		}
+
+		if ( ! method_exists( $stack, 'get_controls' ) ) {
+			return null;
+		}
+
+		$controls = $stack->get_controls();
+
+		if ( ! is_array( $controls ) ) {
+			return null;
+		}
+
+		$names       = [];
+		$descriptors = [];
+
+		foreach ( $controls as $name => $control ) {
+			if ( ! is_array( $control ) || ! array_key_exists( 'default', $control ) ) {
+				continue;
+			}
+
+			$names[]                       = (string) $name;
+			$descriptors[ (string) $name ] = [
+				'condition'  => $control['condition'] ?? null,
+				'conditions' => $control['conditions'] ?? null,
+				'default'    => $control['default'],
+				// The declared control type, carried for ElementorMediaAdvisory,
+				// which separates a media control from a URL control on
+				// Elementor's own vocabulary rather than on the shape of the
+				// value — the two store the same shape.
+				'type'       => $control['type'] ?? null,
+			];
+		}
+
+		return ElementorWidgetSchema::classic( $names, $descriptors );
+	}
+
+	/**
+	 * Projects one atomic widget's declared prop types into descriptors.
+	 *
+	 * Shared by `propSchema()` and `widgetSchema()` so the two can never drift
+	 * on what an unreadable prop does. The caller has already established that
+	 * the widget declares `get_props_schema()`.
+	 *
+	 * ONE UNREADABLE PROP MAKES THE WHOLE SCHEMA UNREADABLE, on `propSchema()`'s
+	 * stated reasoning.
+	 *
+	 * @param object $widget The atomic widget.
+	 *
+	 * @return array<string, array<string, string>>|null The descriptors, or null.
+	 */
+	private function prop_descriptors( object $widget ): ?array {
 		$schema = $widget->get_props_schema();
 
 		if ( ! is_array( $schema ) ) {
@@ -333,7 +510,6 @@ final class ElementorApi {
 
 		return $descriptors;
 	}
-	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 
 	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- The module vocabulary is camelCase across every class.
 	/**
@@ -347,14 +523,20 @@ final class ElementorApi {
 	 * control vocabulary drifts between versions, and a stale table describes a
 	 * widget the running editor no longer has.
 	 *
-	 * THIS DOES NOT REPLACE `propSchema()` AND MUST NOT BE CONFUSED WITH IT.
-	 * That method reads `get_props_schema()`, which only Elementor's newer atomic
-	 * widgets implement, and its null is a signal to the coercion layer to refuse
-	 * a write. This reads `get_controls()`, which every widget and every
-	 * structural element inherits from `Controls_Stack`, so one accessor covers
-	 * both. Widening `propSchema()` instead would change what every Phase 6b
-	 * write does when it cannot read a schema, which is not a change this
-	 * operation is entitled to make.
+	 * THIS IS A RESPONSE PROJECTION, NOT A WRITE CHECK, and that is the whole
+	 * difference between it and `widgetSchema()`. Both read `get_controls()`,
+	 * which every widget and every structural element inherits from
+	 * `Controls_Stack`; this one describes EVERY control to a client, layout and
+	 * UI controls included, because a client asking what a widget looks like
+	 * wants the sections and tabs too. `widgetSchema()` answers a narrower
+	 * question — which of these may a caller WRITE — and so keeps only the
+	 * controls declaring a `default`. This one also serves structural elements,
+	 * which have no write vocabulary at all.
+	 *
+	 * IT ALSO DOES NOT REPLACE `propSchema()`, which reads the atomic prop
+	 * vocabulary. Controls and props are two different declarations, and
+	 * Elementor's widgets are split between them: see `ElementorWidgetSchema`
+	 * for the split and for what each answer means to the write path.
 	 *
 	 * NULL DOES NOT MEAN "NO SUCH TYPE" HERE. It means nothing was read. The
 	 * caller establishes existence first, from `ElementorPresence::widgetTypes()`
@@ -458,9 +640,21 @@ final class ElementorApi {
 	 *
 	 * NOTHING ELSE IS PROJECTED. `selectors`, `condition`, `dynamic`,
 	 * `responsive` and the rest describe how Elementor RENDERS and SHOWS a
-	 * control in its own editor, not what value the control accepts, and a
-	 * client writing settings cannot act on them. Returning them would multiply
-	 * the size of a response nobody can use.
+	 * control in its own editor, not what value the control accepts, and
+	 * returning them would multiply the size of a response by members most
+	 * clients would never read.
+	 *
+	 * THE OLD RATIONALE FOR OMITTING `condition` — "a client writing settings
+	 * cannot act on them" — WAS FALSE AND MUST NOT COME BACK. A condition is
+	 * exactly what decides whether a written value renders, and a client that
+	 * could not see one was the defect `ElementorConditionGate` was written for.
+	 * The omission survives on a better argument: the WRITE PATH evaluates the
+	 * condition itself and refuses an unsatisfied write with the companion
+	 * control and its accepted values named, so a client is told the one
+	 * condition that concerns it at the moment it matters, and never has to
+	 * re-implement an evaluator over a projection of the whole stack. The write
+	 * path reads the RAW control stack through `stack_schema()` for that, not
+	 * this projection, which is why narrowing here costs the gate nothing.
 	 *
 	 * A control that is not an array, or whose guaranteed keys are missing or
 	 * the wrong shape, answers null and takes the whole schema with it.

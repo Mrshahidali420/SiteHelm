@@ -280,14 +280,27 @@ final class ElementorElementAdd implements WriteOperation {
 
 		$el_type     = $this->inputs->requestedElType( $input );
 		$widget_type = $this->inputs->requestedWidgetType( $el_type, $input );
-		$settings    = $this->inputs->requestedSettings( $widget_type, $input );
+		$settings    = $this->inputs->requestedSettings( $widget_type, $input, $el_type );
 		$index       = $this->inputs->requestedIndex( $input );
 
 		$tree      = $this->document->elements( $post_id );
 		$parent_id = $this->inputs->requestedParent( $tree, $input );
 
-		$element_id = $this->mint->mint(
-			$this->seed( $post_id, $current, $el_type, $widget_type, $settings, $parent_id, $index ),
+		$seed       = $this->seed( $post_id, $current, $el_type, $widget_type, $settings, $parent_id, $index );
+		$element_id = $this->mint->mint( $seed, $this->edit->collectIds( $tree ) );
+
+		// THE SETTINGS ARE STORED VERBATIM, SO A REPEATER IN THEM ARRIVES HERE
+		// UNNAMED. This operation cannot take a nested tree, but it can perfectly
+		// well add one icon-list, one tabs widget or one price list, and every row
+		// of those is a repeater row Elementor styles through
+		// `.elementor-repeater-item-<_id>`. Naming happens AFTER the element id is
+		// minted because the row seed quotes that id, and BEFORE `$settings` reaches
+		// either the node or the payload, so the promise and the write agree. No
+		// element-tree minting belongs here: the one element this operation
+		// originates is named on the line above, and there are no others.
+		$settings = $this->mint->nameRepeaters(
+			$settings,
+			$seed . self::SEED_SEPARATOR . $element_id,
 			$this->edit->collectIds( $tree )
 		);
 
@@ -306,6 +319,15 @@ final class ElementorElementAdd implements WriteOperation {
 		$edited  = $this->edit->insert( $tree, $parent_id, $index, $node );
 		$coerced = $this->coercion->coerceTree( $edited );
 
+		// A new element has no stored side, so the requested settings ARE the
+		// effective ones. The widget type answers the schema when there is one;
+		// a layout element declares its own controls under its el_type.
+		$warnings = $this->coercion->mediaWarnings(
+			$widget_type ?? $el_type,
+			$settings,
+			null === $widget_type ? $el_type : ElementorElementAddInput::EL_TYPE_WIDGET
+		);
+
 		$payload = [
 			ElementorWriteFields::INPUT_DOCUMENT        => $post_id,
 			ElementorElementAddInput::INPUT_EL_TYPE     => $el_type,
@@ -322,7 +344,7 @@ final class ElementorElementAdd implements WriteOperation {
 			$payload,
 			$this->promise( $coerced ),
 			ElementorWriteFields::FIELD_ORDER,
-			[],
+			$warnings,
 			$this->diff->diff( $tree, $coerced )
 		);
 	}

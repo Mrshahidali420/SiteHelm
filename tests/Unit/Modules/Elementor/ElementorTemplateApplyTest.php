@@ -735,7 +735,7 @@ final class ElementorTemplateApplyTest extends TestCase {
 			new ElementorIdMint(),
 			new ElementorStyleRemap(),
 			$coercion,
-			new ElementorSettingsMerge( $edit, $coercion ),
+			new ElementorSettingsMerge( $edit, $coercion, new ElementorIdMint() ),
 			new ElementorTreeDiff( $tree ),
 			$tree,
 			$presence,

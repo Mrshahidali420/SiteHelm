@@ -62,7 +62,27 @@ use SiteHelm\Contracts\SnapshotPolicy;
  *
  * `settings` are NOT returned (spec Decision 4). REQ-0033's acceptance asks for
  * structure, not content; Phase 6b's element read will need them and can add a
- * scoped, opt-in projection then.
+ * scoped, opt-in projection then. PAGE settings are a different member and are
+ * returned, because they are not element content: they are the page's own frame
+ * — the layout it renders with and whether the theme title shows — and without
+ * them a client reproducing this page elsewhere reproduces its elements inside
+ * the wrong shell and has no way to know it did. `elementor-template-get`
+ * already returns them under the same member name, so a client that reads a
+ * saved template and a live page reads one vocabulary rather than two.
+ *
+ * THE LAYOUT REPORTED IS THE ONE IN EFFECT. Elementor keeps it in two rows and
+ * only `_wp_page_template` renders anything; reporting the other would describe
+ * a page nobody sees. Where the two disagree the member says so rather than
+ * choosing silently, and it does not repair it — a read that writes is a write
+ * with no preview, no snapshot and no rollback.
+ *
+ * `hints` RIDES THIS READ AND NO OTHER, because this is the read a client
+ * clones or rebuilds a page from and therefore the last moment before it
+ * repeats one of the mistakes `ServerInstructions` warns about generally. Every
+ * hint is emitted from something this method has just read; see
+ * `ElementorDocumentHints`. The member is ALWAYS present and is an empty list
+ * on a page with nothing to report, because a member that came and went is one
+ * a client cannot tell from a member it failed to parse.
  *
  * @package SiteHelm
  */
@@ -102,7 +122,7 @@ final class ElementorDocumentGet {
 			id: 'elementor-document-get',
 			domain: Domain::Elementor,
 			mode: Mode::Read,
-			description: 'Return one Elementor document\'s stored element tree, normalized into stable nodes with their types, derived labels, nesting depth and child counts, plus whole-tree totals. Element settings are not returned.',
+			description: 'Return one Elementor document\'s stored element tree, normalized into stable nodes with their types, derived labels, nesting depth and child counts, plus whole-tree totals and the page\'s own page settings — the layout it actually renders with and whether the theme title is hidden, and any authoring hints this particular page has earned. Element settings are not returned.',
 			inputSchema: [
 				'type'                 => 'object',
 				'properties'           => [
@@ -119,15 +139,17 @@ final class ElementorDocumentGet {
 				'$id'                  => self::OUTPUT_SCHEMA_ID,
 				'type'                 => 'object',
 				'properties'           => [
-					'document' => ElementorFields::documentSummarySchema(),
-					'nodes'    => [
+					'document'                          => ElementorFields::documentSummarySchema(),
+					'nodes'                             => [
 						'type'        => 'array',
 						'items'       => [ '$ref' => '#/$defs/' . ElementorFields::NODE_DEF ],
 						'description' => 'The document\'s top-level elements, each carrying its own children, in stored order.',
 					],
-					'totals'   => ElementorFields::treeTotalsSchema(),
+					'totals'                            => ElementorFields::treeTotalsSchema(),
+					ElementorPageSettings::FIELD_PAGE_SETTINGS => ElementorPageSettings::reportSchema(),
+					ElementorDocumentHints::FIELD_HINTS => ElementorDocumentHints::schema(),
 				],
-				'required'             => [ 'document', 'nodes', 'totals' ],
+				'required'             => [ 'document', 'nodes', 'totals', ElementorPageSettings::FIELD_PAGE_SETTINGS, ElementorDocumentHints::FIELD_HINTS ],
 				'additionalProperties' => false,
 				'$defs'                => [ ElementorFields::NODE_DEF => ElementorFields::nodeSchema() ],
 			],
@@ -227,12 +249,20 @@ final class ElementorDocumentGet {
 		// as themselves. Catching either to answer an empty tree instead would
 		// report a damaged document as a blank one, which is the shape that lets a
 		// Phase 6b write overwrite real content and report success.
-		$normalized = $this->tree->normalize( $this->document->elements( $document_id ) );
+		$elements   = $this->document->elements( $document_id );
+		$normalized = $this->tree->normalize( $elements );
+
+		// Read once, reported twice. The hints reason about the same settings
+		// row the response carries, so they cannot contradict the member they
+		// send an operator to look at.
+		$page_settings = ElementorPageSettings::report( $document_id );
 
 		return [
-			'document' => $summary,
-			'nodes'    => $normalized['nodes'],
-			'totals'   => $normalized['totals'],
+			'document'                                 => $summary,
+			'nodes'                                    => $normalized['nodes'],
+			'totals'                                   => $normalized['totals'],
+			ElementorPageSettings::FIELD_PAGE_SETTINGS => $page_settings,
+			ElementorDocumentHints::FIELD_HINTS        => ElementorDocumentHints::forDocument( $page_settings, $elements ),
 		];
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase

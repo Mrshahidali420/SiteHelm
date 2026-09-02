@@ -177,7 +177,7 @@ trait RelocationFixtures {
 		return [
 			'targets'  => new ElementorWriteTarget( $document, $tree, $presence, $coercion, $writer ),
 			'document' => $document,
-			'merge'    => new ElementorSettingsMerge( $edit, $coercion ),
+			'merge'    => new ElementorSettingsMerge( $edit, $coercion, new ElementorIdMint() ),
 			'edit'     => $edit,
 			'coercion' => $coercion,
 			'writer'   => $writer,

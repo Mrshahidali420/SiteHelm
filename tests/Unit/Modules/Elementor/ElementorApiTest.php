@@ -106,13 +106,15 @@ final class ElementorApiTest extends TestCase {
 	 *
 	 * @param object|null $documents The value the `documents` property holds.
 	 * @param object|null $widgets   The value the `widgets_manager` property holds.
+	 * @param object|null $elements  The value the `elements_manager` property holds.
 	 *
 	 * @return ApiFakePlugin The singleton.
 	 */
-	private function pluginWith( ?object $documents = null, ?object $widgets = null ): ApiFakePlugin {
-		$plugin                  = new ApiFakePlugin();
-		$plugin->documents       = $documents;
-		$plugin->widgets_manager = $widgets;
+	private function pluginWith( ?object $documents = null, ?object $widgets = null, ?object $elements = null ): ApiFakePlugin {
+		$plugin                   = new ApiFakePlugin();
+		$plugin->documents        = $documents;
+		$plugin->widgets_manager  = $widgets;
+		$plugin->elements_manager = $elements;
 
 		return $plugin;
 	}
@@ -413,6 +415,226 @@ final class ElementorApiTest extends TestCase {
 		$this->assertNotSame( false, $answer, 'false would claim the flush ran and failed.' );
 	}
 
+	/**
+	 * The classifier's first answer: an atomic widget, carrying its props.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_a_widget_declaring_props_is_classified_atomic(): void {
+		$widget = new ApiFakeAtomicWidget( [ 'title' => new ApiFakePropType( 'string' ) ] );
+
+		$this->installElementor( $this->pluginWith( null, new ApiFakeWidgets( [ 'e-heading' => $widget ] ) ) );
+
+		$schema = $this->api->widgetSchema( 'e-heading' );
+
+		$this->assertNotNull( $schema );
+		$this->assertTrue( $schema->isAtomic() );
+		$this->assertSame( [ 'title' => [ 'type' => 'string' ] ], $schema->props() );
+		$this->assertTrue( $schema->declares( 'title' ) );
+	}
+
+	/**
+	 * The classifier's second answer, and the one the defect had no room for.
+	 *
+	 * A classic widget declares CONTROLS, and a control is a writable setting if
+	 * and only if it declares a `default`. Elementor's own `html` widget reports
+	 * 297 controls of which exactly 266 declare one; the 31 that do not are
+	 * exactly its `section`, `raw_html`, `tab`, `tabs`, `alert`, `heading` and
+	 * `divider` controls, which hold no value at all. The fixture below is that
+	 * shape in miniature.
+	 *
+	 * `props()` is empty rather than absent: a control is not a prop and has no
+	 * prop type to report, and the caller must never envelope one.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_a_widget_declaring_controls_is_classified_classic(): void {
+		$widget = new ApiFakeClassicWidget(
+			[
+				'html'          => [
+					'type'    => 'code',
+					'default' => '',
+				],
+				'_margin'       => [
+					'type'    => 'dimensions',
+					'default' => [],
+				],
+				'section_title' => [ 'type' => 'section' ],
+			]
+		);
+
+		$this->installElementor( $this->pluginWith( null, new ApiFakeWidgets( [ 'html' => $widget ] ) ) );
+
+		$schema = $this->api->widgetSchema( 'html' );
+
+		$this->assertNotNull( $schema );
+		$this->assertFalse( $schema->isAtomic() );
+		$this->assertSame( [], $schema->props(), 'A control has no prop type, and enveloping one would corrupt the widget.' );
+		$this->assertTrue( $schema->declares( 'html' ), 'A control declaring a default holds a value.' );
+		$this->assertTrue( $schema->declares( '_margin' ), 'The advanced controls are already on the widget; no union with a common widget is needed.' );
+		$this->assertFalse( $schema->declares( 'section_title' ), 'A control declaring no default is layout, not a setting.' );
+	}
+
+	/**
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_a_widget_type_the_registry_does_not_know_has_no_classifiable_schema(): void {
+		$this->installElementor( $this->pluginWith( null, new ApiFakeWidgets( [] ) ) );
+
+		$this->assertNull( $this->api->widgetSchema( 'not-a-widget' ) );
+	}
+
+	/**
+	 * Null survives as the third answer beside atomic and classic: a widget
+	 * answering neither method was not read, and the write path refuses on it.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_a_widget_declaring_neither_vocabulary_has_no_classifiable_schema(): void {
+		$this->installElementor( $this->pluginWith( null, new ApiFakeWidgets( [ 'stranger' => new ApiFakeStranger() ] ) ) );
+
+		$this->assertNull( $this->api->widgetSchema( 'stranger' ) );
+	}
+
+	/**
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_a_classic_widget_whose_controls_are_not_a_list_cannot_be_classified(): void {
+		$this->installElementor( $this->pluginWith( null, new ApiFakeWidgets( [ 'html' => new ApiFakeClassicWidget( 'controls' ) ] ) ) );
+
+		$this->assertNull( $this->api->widgetSchema( 'html' ) );
+	}
+
+	public function test_a_site_without_elementor_cannot_classify_a_widget_and_says_so(): void {
+		$this->assertNull( $this->api->widgetSchema( 'e-heading' ) );
+	}
+
+	/**
+	 * A container is an ordinary `Controls_Stack`, and it lives in the OTHER
+	 * registry.
+	 *
+	 * Resolving it through the widget manager finds nothing at all, which is why
+	 * a settings write could not change a container's padding: the schema came
+	 * back null and the write was refused before it began.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_a_container_declaring_controls_is_classified_classic(): void {
+		$container = new ApiFakeClassicWidget(
+			[
+				'padding'        => [
+					'type'    => 'dimensions',
+					'default' => [],
+				],
+				'section_layout' => [ 'type' => 'section' ],
+			]
+		);
+
+		$this->installElementor( $this->pluginWith( null, new ApiFakeWidgets( [] ), new ApiFakeElements( [ 'container' => $container ] ) ) );
+
+		$schema = $this->api->elementSchema( 'container' );
+
+		$this->assertNotNull( $schema );
+		$this->assertFalse( $schema->isAtomic() );
+		$this->assertTrue( $schema->declares( 'padding' ) );
+		$this->assertFalse( $schema->declares( 'section_layout' ), 'A control declaring no default is layout, not a setting.' );
+		$this->assertNull( $this->api->widgetSchema( 'container' ), 'A container is not in the widget registry, and that is the whole reason this method exists.' );
+	}
+
+	/**
+	 * Elementor 4's layout elements declare props rather than controls, exactly
+	 * as its widgets do, so the atomic branch has to serve the element registry
+	 * too.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_an_element_declaring_props_is_classified_atomic(): void {
+		$block = new ApiFakeAtomicWidget( [ 'padding' => new ApiFakePropType( 'dimensions' ) ] );
+
+		$this->installElementor( $this->pluginWith( null, null, new ApiFakeElements( [ 'e-div-block' => $block ] ) ) );
+
+		$schema = $this->api->elementSchema( 'e-div-block' );
+
+		$this->assertNotNull( $schema );
+		$this->assertTrue( $schema->isAtomic() );
+		$this->assertSame( [ 'padding' => [ 'type' => 'dimensions' ] ], $schema->props() );
+	}
+
+	/**
+	 * THE SHARED-HELPER CONTRACT. The two entry points differ in WHICH REGISTRY
+	 * they resolve from and in nothing else, so the same stack shape must
+	 * classify identically through both. Two copies of the classification would
+	 * eventually answer differently about a stack declaring neither vocabulary,
+	 * or about controls that are not a list — and the write path refuses on one
+	 * answer and permits on the other.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_the_two_registries_classify_the_same_stack_shape_identically(): void {
+		$controls = [
+			'padding'        => [
+				'type'    => 'dimensions',
+				'default' => [],
+			],
+			'section_layout' => [ 'type' => 'section' ],
+		];
+
+		$this->installElementor(
+			$this->pluginWith(
+				null,
+				new ApiFakeWidgets(
+					[
+						'classic' => new ApiFakeClassicWidget( $controls ),
+						'atomic'  => new ApiFakeAtomicWidget( [ 'padding' => new ApiFakePropType( 'dimensions' ) ] ),
+						'neither' => new ApiFakeStranger(),
+						'broken'  => new ApiFakeClassicWidget( 'controls' ),
+					]
+				),
+				new ApiFakeElements(
+					[
+						'classic' => new ApiFakeClassicWidget( $controls ),
+						'atomic'  => new ApiFakeAtomicWidget( [ 'padding' => new ApiFakePropType( 'dimensions' ) ] ),
+						'neither' => new ApiFakeStranger(),
+						'broken'  => new ApiFakeClassicWidget( 'controls' ),
+					]
+				)
+			)
+		);
+
+		foreach ( [ 'classic', 'atomic', 'neither', 'broken' ] as $type ) {
+			$widget  = $this->api->widgetSchema( $type );
+			$element = $this->api->elementSchema( $type );
+
+			$this->assertSame(
+				null === $widget ? null : [ $widget->isAtomic(), $widget->props(), $widget->declares( 'padding' ) ],
+				null === $element ? null : [ $element->isAtomic(), $element->props(), $element->declares( 'padding' ) ],
+				sprintf( 'The two registries must classify a "%s" stack identically.', $type )
+			);
+		}
+	}
+
+	/**
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_an_element_type_the_registry_does_not_know_has_no_classifiable_schema(): void {
+		$this->installElementor( $this->pluginWith( null, null, new ApiFakeElements( [] ) ) );
+
+		$this->assertNull( $this->api->elementSchema( 'container' ) );
+	}
+
+	public function test_a_site_without_elementor_cannot_classify_an_element_and_says_so(): void {
+		$this->assertNull( $this->api->elementSchema( 'container' ) );
+	}
+
 	public function test_the_named_elementor_symbols_are_frozen(): void {
 		// Pinned because every guard in the class is written against these two
 		// names, and a silent rename would turn a guarded reach into an
@@ -455,6 +677,17 @@ final class ApiFakePlugin {
 	 * @var mixed
 	 */
 	public mixed $widgets_manager = null;
+
+	/**
+	 * The element registry, or whatever a third party has substituted.
+	 *
+	 * A container, a section and a column live here rather than in
+	 * `widgets_manager`, which is why the double had to grow this member before
+	 * a container's own schema could be read at all.
+	 *
+	 * @var mixed
+	 */
+	public mixed $elements_manager = null;
 }
 
 /**
@@ -556,6 +789,35 @@ final class ApiFakeWidgets {
 }
 
 /**
+ * Stands in for `Elements_Manager`, in its single-element form.
+ *
+ * The registry that holds `container`, `section` and `column`. Its absence from
+ * the test doubles is why a blanket refusal of every layout element looked
+ * correct here while container padding was unwritable on real sites.
+ */
+final class ApiFakeElements {
+
+	/**
+	 * Constructs the double.
+	 *
+	 * @param array<string, object> $elements The registry.
+	 */
+	public function __construct( private array $elements ) {
+	}
+
+	/**
+	 * One registered element type, or null.
+	 *
+	 * @param string $name The element type name.
+	 *
+	 * @return object|null The element.
+	 */
+	public function get_element_types( string $name ): ?object {
+		return $this->elements[ $name ] ?? null;
+	}
+}
+
+/**
  * Stands in for `Atomic_Widget_Base`, whose prop schema is the oracle for
  * coercion. Declared as an instance method here rather than static; see the
  * test class docblock.
@@ -577,6 +839,33 @@ final class ApiFakeAtomicWidget {
 	 */
 	public function get_props_schema(): mixed {
 		return $this->schema;
+	}
+}
+
+/**
+ * Stands in for `Widget_Base`, the pre-atomic widget every classic widget is.
+ *
+ * IT DELIBERATELY DOES NOT DECLARE `get_props_schema()`. `widgetSchema()`
+ * classifies a widget by which of the two methods it implements, so a double
+ * carrying both would make the classic branch unreachable.
+ */
+final class ApiFakeClassicWidget {
+
+	/**
+	 * Constructs the double.
+	 *
+	 * @param mixed $controls What get_controls() answers.
+	 */
+	public function __construct( private mixed $controls ) {
+	}
+
+	/**
+	 * The widget's declared controls, keyed by control name.
+	 *
+	 * @return mixed The controls.
+	 */
+	public function get_controls(): mixed {
+		return $this->controls;
 	}
 }
 

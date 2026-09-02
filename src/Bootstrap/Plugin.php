@@ -84,6 +84,11 @@ final class Plugin {
 		$module_health = ( new ModuleLoader() )->load( ( new IntegrationDirectory( Extensions::module_classes() ) )->modules(), $registry );
 		Extensions::register_operations( $registry );
 
+		// Operations that used to ship in the add-on claim their identifiers
+		// last, so an add-on too old to know they moved keeps its own copy and
+		// its remaining operations still register. See AbsorbedOperations.
+		AbsorbedOperations::claim( $registry );
+
 		// The operator's switches are read by the catalogue, the dispatcher and
 		// the console from one instance, so the three can never disagree about
 		// what is on.

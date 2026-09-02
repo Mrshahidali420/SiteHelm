@@ -22,6 +22,7 @@ use SiteHelm\Contracts\SnapshotPolicy;
 use SiteHelm\Modules\Elementor\ElementorDocument;
 use SiteHelm\Modules\Elementor\ElementorDocumentCreate;
 use SiteHelm\Modules\Elementor\ElementorDocumentCreateTarget;
+use SiteHelm\Modules\Elementor\ElementorIdMint;
 use SiteHelm\Modules\Elementor\ElementorPageSettings;
 use SiteHelm\Modules\Elementor\ElementorPageSettingsTarget;
 use SiteHelm\Modules\Elementor\ElementorPresence;
@@ -279,6 +280,69 @@ final class ElementorDocumentCreateTest extends TestCase {
 	}
 
 	/**
+	 * A STARTING LAYOUT SENT WITHOUT IDS IS NAMED. Elementor keys its per-element
+	 * CSS on the id, so a draft created with unnamed nodes generates every rule
+	 * under `.elementor-element-` and therefore applies all of them to all of its
+	 * elements at once — a page that reads back correctly and renders as one
+	 * collapsed block.
+	 */
+	public function test_a_starting_layout_sent_with_no_ids_is_named(): void {
+		$this->withElementor();
+
+		$planned = $this->plan( $this->request( [ ElementorDocumentCreate::INPUT_CONTENT => $this->unnamedTree() ] ) );
+
+		$tree = $planned->payload[ ElementorDocumentCreate::PAYLOAD_TREE ];
+
+		$this->assertMatchesRegularExpression( '/^[0-9a-f]{7}$/', (string) $tree[0]['id'] );
+		$this->assertMatchesRegularExpression( '/^[0-9a-f]{7}$/', (string) $tree[0]['elements'][0]['id'] );
+		$this->assertNotSame( $tree[0]['id'], $tree[0]['elements'][0]['id'] );
+	}
+
+	/**
+	 * THE SAME DEFECT ONE LEVEL DOWN. Elementor generates each REPEATER ROW's CSS
+	 * under `.elementor-repeater-item-<_id>`, so a draft created with rows that
+	 * carry no `_id` holds content that renders but can never be styled per row,
+	 * and gives the editor no stable handle on which row is which.
+	 */
+	public function test_a_starting_layout_s_repeater_rows_are_named(): void {
+		$this->withElementor();
+
+		$planned = $this->plan( $this->request( [ ElementorDocumentCreate::INPUT_CONTENT => $this->iconListTree() ] ) );
+
+		$rows = $planned->payload[ ElementorDocumentCreate::PAYLOAD_TREE ][0]['elements'][0]['settings']['icon_list'];
+
+		$this->assertCount( 2, $rows );
+		$this->assertMatchesRegularExpression( '/^[0-9a-f]{7}$/', (string) $rows[0]['_id'] );
+		$this->assertMatchesRegularExpression( '/^[0-9a-f]{7}$/', (string) $rows[1]['_id'] );
+		$this->assertNotSame( $rows[0]['_id'], $rows[1]['_id'] );
+	}
+
+	/**
+	 * An id the caller did send is stored exactly as it was sent.
+	 */
+	public function test_a_starting_layout_keeps_the_ids_the_caller_sent(): void {
+		$this->withElementor();
+
+		$planned = $this->plan( $this->request( [ ElementorDocumentCreate::INPUT_CONTENT => $this->startingTree() ] ) );
+
+		$tree = $planned->payload[ ElementorDocumentCreate::PAYLOAD_TREE ];
+
+		$this->assertSame( 'c999999', $tree[0]['id'] );
+		$this->assertSame( 'w991111', $tree[0]['elements'][0]['id'] );
+	}
+
+	/**
+	 * Naming does not cost the determinism the plan token depends on.
+	 */
+	public function test_planning_an_unnamed_layout_twice_produces_the_same_payload(): void {
+		$this->withElementor();
+
+		$input = $this->request( [ ElementorDocumentCreate::INPUT_CONTENT => $this->unnamedTree() ] );
+
+		$this->assertSame( $this->plan( $input )->payload, $this->plan( $input )->payload );
+	}
+
+	/**
 	 * PLANNING TWICE PRODUCES THE SAME PAYLOAD. The engine fingerprints the plan
 	 * at preview and compares the fingerprint at apply, so a payload that minted
 	 * an id or read a clock would refuse every creation it ever planned.
@@ -475,19 +539,69 @@ final class ElementorDocumentCreateTest extends TestCase {
 			new ElementorTreeInput( $tree, $coercion, $presence ),
 			$coercion,
 			new ElementorPageSettingsTarget( $document, $presence ),
-			$this->documentWriter()
+			$this->documentWriter(),
+			new ElementorIdMint()
 		);
 	}
 
 	/**
-	 * The arguments a caller sends, with the fixture title filled in.
+	 * A layout whose one widget points its image at a URL with no attachment id.
 	 *
-	 * @param array<string, mixed> $overrides The members this case cares about.
+	 * @return array[] The layout.
+	 */
+	private function bareMediaTree(): array {
+		return [
+			[
+				'elType'   => 'container',
+				'settings' => [],
+				'elements' => [
+					[
+						'elType'     => 'widget',
+						'widgetType' => 'icon-list',
+						'settings'   => [ 'image' => [ 'url' => 'https://elsewhere.example/hero.jpg' ] ],
+						'elements'   => [],
+					],
+				],
+			],
+		];
+	}
+
+	/**
+	 * One request.
+	 *
+	 * @param array<string, mixed> $overrides Argument members to add or replace.
 	 *
 	 * @return array<string, mixed> The arguments.
 	 */
 	private function request( array $overrides = [] ): array {
 		return array_merge( [ ElementorDocumentCreate::INPUT_TITLE => 'Spring services' ], $overrides );
+	}
+
+	// ------------------------------------------------------- media advisory
+
+	/**
+	 * A DOCUMENT CREATED FROM A SUPPLIED LAYOUT is the same bulk path a build
+	 * takes, and it carries the same defect: a media value holding a `url` and
+	 * no attachment id stores cleanly, reads back verbatim, and puts an
+	 * unresponsive full-size image on a brand-new page.
+	 */
+	public function test_a_created_layout_with_a_bare_media_url_warns_on_the_plan(): void {
+		$this->withElementor();
+
+		$planned = $this->plan( $this->request( [ ElementorDocumentCreate::INPUT_CONTENT => $this->bareMediaTree() ] ) );
+
+		$this->assertCount( 1, $planned->warnings, 'One bare media value earns one advisory.' );
+		$this->assertStringContainsString( '"image"', $planned->warnings[0], 'The operator has to learn which setting to fix.' );
+	}
+
+	/**
+	 * A document created with no layout at all cannot warn about one, and the
+	 * empty-content branch is the one that skips the gates entirely.
+	 */
+	public function test_a_created_document_with_no_layout_warns_about_nothing(): void {
+		$this->withElementor();
+
+		$this->assertSame( [], $this->plan( $this->request() )->warnings, 'There is nothing to judge and nothing to say.' );
 	}
 
 	/**
@@ -518,6 +632,49 @@ final class ElementorDocumentCreateTest extends TestCase {
 		$this->assertNull( $operation->captureSnapshot( $target, $this->context() ) );
 
 		return $operation->applyChange( $target, $planned, $this->context() );
+	}
+
+	/**
+	 * The same starting layout with every id left out, which is what a caller who
+	 * composed a page from scratch sends.
+	 *
+	 * @return array[] The layout.
+	 */
+	private function unnamedTree(): array {
+		$tree = $this->startingTree();
+
+		unset( $tree[0]['id'], $tree[0]['elements'][0]['id'] );
+
+		return $tree;
+	}
+
+	/**
+	 * A starting layout holding one REPEATER-BACKED widget, with no `_id` on any
+	 * row, which is what a caller composing an icon list from scratch sends.
+	 *
+	 * @return array[] The layout.
+	 */
+	private function iconListTree(): array {
+		return [
+			[
+				'id'       => 'c999999',
+				'elType'   => 'container',
+				'elements' => [
+					[
+						'id'         => 'w993333',
+						'elType'     => 'widget',
+						'widgetType' => 'icon-list',
+						'settings'   => [
+							'icon_list' => [
+								[ 'text' => 'Fast setup' ],
+								[ 'text' => 'No lock-in' ],
+							],
+						],
+						'elements'   => [],
+					],
+				],
+			],
+		];
 	}
 
 	/**

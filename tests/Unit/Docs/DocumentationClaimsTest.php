@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace SiteHelm\Tests\Unit\Docs;
 
 use PHPUnit\Framework\TestCase;
+use SiteHelm\Bootstrap\AbsorbedOperations;
 use SiteHelm\Bootstrap\Plugin;
 use SiteHelm\Registry\CapabilityRegistry;
 
@@ -160,6 +161,11 @@ final class DocumentationClaimsTest extends TestCase {
 		foreach ( Plugin::MODULE_CLASSES as $class ) {
 			( new $class() )->register( $registry );
 		}
+
+		// The absorbed operations claim their identifiers after the add-on
+		// hook rather than from a module, so a count taken from the module
+		// classes alone is short by two. See AbsorbedOperations.
+		AbsorbedOperations::claim( $registry );
 
 		$operations = 0;
 		$elementor  = 0;

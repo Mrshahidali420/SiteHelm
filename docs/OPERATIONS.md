@@ -1,6 +1,6 @@
 # Operations reference
 
-SiteHelm exposes **101 operations** through **11 MCP tools**, called dispatchers. Every operation is
+SiteHelm exposes **103 operations** through **11 MCP tools**, called dispatchers. Every operation is
 declared once, in code, with a strict input schema (`additionalProperties: false`), a required
 capability, a risk level, and preview, snapshot, and rollback policies. That declaration is the
 contract the gateway enforces and the catalogue an agent discovers.
@@ -125,7 +125,7 @@ path), or to nothing, which is the `broken` count worth acting on. A link a redi
 catches is still worth rewriting: the redirect is a safety net, not a fix. At most 200
 links are listed per item, and `truncated` says when a page held more.
 
-### `content-write` — 17 operations
+### `content-write` — 19 operations
 
 | Operation | Does | Capability | Risk | Rollback |
 |---|---|---|---|---|
@@ -143,10 +143,15 @@ links are listed per item, and `truncated` says when a page held more.
 | `comment-status-set` | Approves, holds, spams, or trashes one comment | `moderate_comments` | medium | supported |
 | `comment-reply` | Posts an approved reply beneath one comment, authored by the acting user | `moderate_comments` | medium | supported |
 | `content-seo-set` | Writes one item's search-engine metadata into whichever SEO plugin the site runs | `edit_post` | medium | supported |
+| `content-seo-bulk-set` | Sets the per-post fields of `content-seo-set` on up to fifty posts as one previewed, reversible change; one post the caller may not edit, or one that does not exist, refuses the whole set | `edit_post` on every post | medium | supported |
+| `content-seo-audit-fix` | Takes the same page `content-seo-audit` would (type, status, limit ≤ 50, offset, minScore) and fixes the chosen findings on every post that carries one as one previewed, reversible change — `missing-description` from the post's excerpt or text (a post whose text yields fewer than 70 characters is reported under `unfixable`), `description-too-long` and `title-too-long` trimmed at a word boundary, `noindex` set to false | `edit_post` on every post | medium | supported |
 | `content-term-seo-set` | Writes one category's or tag's search-engine metadata into whichever SEO plugin the site runs | `edit_posts` + the taxonomy's edit capability | medium | supported |
 | `user-role-set` | Replaces one user's roles with a single registered role | `promote_users` | high | supported |
 | `site-settings-set` | Changes site settings from a strict thirteen-field allowlist — title, tagline, timezone, date and time formats, posts per page, front page geometry, permalink structure, default comment and ping status, search-engine visibility | `manage_options` | medium | supported |
 
+> **`content-seo-audit-fix` offers only the four findings with a mechanical fix.**
+> A missing focus keyword, a low score and a too-short description need a person, and
+> are reported under `unfixable` rather than guessed at.
 > **`user-role-set` is a system operation wearing a content dispatcher.** It is here, not
 > beside `user-list`, only because the dispatcher set is frozen and holds no
 > `system-write`. Read the roster with `user-list` first: the write accepts one role slug
@@ -458,18 +463,16 @@ operation checks the licence itself before it looks at anything else — an unli
 is refused with `IntegrationUnavailable` and the Health-tab remediation — and only then
 asks the capability, the SEO plugin and the target.
 
-### SEO (Pro) — eight Pro operations
+### SEO (Pro) — six Pro operations
 
 | Operation | Dispatcher | Does | Capability | Rollback |
 |---|---|---|---|---|
 | `seo-settings-get` | `system-read` | Reads the SEO plugin's settings at site scope (separator, knowledge-graph name and logo, default social image, breadcrumbs) or for one public post type (`postType`: title and description templates, noindex, sitemap inclusion) | `manage_options` | — |
 | `seo-settings-set` | `content-write` | Writes the same allowlisted settings, one scope per change — site scope or `postType`, never both | `manage_options` | supported |
-| `content-seo-bulk-set` | `content-write` | Sets the per-post fields of `content-seo-set` on up to fifty posts as one previewed, reversible change; one post the caller may not edit, or one that does not exist, refuses the whole set | `edit_post` on every post | supported |
 | `seo-404-log-list` | `system-read` | Pages Rank Math's 404 monitor newest first (URI, hits, last seen, referer), at most 200 per page | `manage_options` | — |
 | `seo-redirection-list` | `system-read` | Pages Rank Math's redirections newest first (sources, destination, status code, hits, status) | `manage_options` | — |
 | `content-seo-schema-get` | `content-read` | Reads one post's primary schema type (Schema.org spelling, `null` when the plugin's default applies), the plugin's stored fields for it, and the type names the plugin accepts on write | `edit_post` | — |
 | `content-seo-schema-set` | `content-write` | Sets one post's schema `type` and optional `fields` as a previewed, reversible change; `null` clears it back to the plugin's default and drops the stored fields; an unknown type is refused naming `content-seo-schema-get` for the list | `edit_post` | supported |
-| `content-seo-audit-fix` | `content-write` | Takes the same page `content-seo-audit` would (type, status, limit ≤ 50, offset, minScore) and fixes the chosen findings on every post that carries one as one previewed, reversible change — `missing-description` from the post's excerpt or text (a post whose text yields fewer than 70 characters is reported under `unfixable`), `description-too-long` and `title-too-long` trimmed at a word boundary, `noindex` set to false | `edit_post` on every post | supported |
 
 > **Rank Math keeps the 404 log and redirections; Yoast does not.** Both reads say
 > *Only Rank Math keeps these* on a Yoast site, and that the module is switched off when
@@ -480,8 +483,7 @@ asks the capability, the SEO plugin and the target.
 > and an article type — so `fields` there is `{pageType, articleType}` and nothing else is
 > accepted; Rank Math keeps one serialised entry per schema, so `type` is the primary
 > entry's `@type` and `fields` are its own properties (up to forty, scalars or one level of
-> nesting). `content-seo-audit-fix` offers only the four findings with a mechanical fix;
-> a missing focus keyword, a low score and a too-short description need a person.
+> nesting).
 >
 > **Settings are an allowlist, not the whole option.** Only the keys behind the fields
 > named above are read or written; the rest of each option is carried through a write

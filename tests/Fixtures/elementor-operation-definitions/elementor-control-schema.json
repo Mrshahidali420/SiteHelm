@@ -47,7 +47,7 @@
             },
             "controls": {
                 "type": "object",
-                "description": "Control name => descriptor. Every descriptor carries `name`, `type` and `tab`, which Elementor guarantees on every stored control. `label`, `default`, `options`, `section` and `description` appear only when the control declares them, and a key the control does not declare is ABSENT rather than null. Rendering members — selectors, conditions, dynamic and responsive wiring — are deliberately not projected."
+                "description": "Control name => descriptor. Every descriptor carries `name`, `type` and `tab`, which Elementor guarantees on every stored control. `label`, `default`, `options`, `section` and `description` appear only when the control declares them, and a key the control does not declare is ABSENT rather than null. Rendering members — selectors, conditions, dynamic and responsive wiring — are not projected. A write whose gating condition is unsatisfied is refused at write time with the companion control named, so a client never needs to evaluate conditions itself."
             }
         },
         "required": [

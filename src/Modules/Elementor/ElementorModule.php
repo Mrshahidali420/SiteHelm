@@ -305,7 +305,7 @@ final class ElementorModule implements IntegrationModule {
 		$writer   = new ElementorDocumentWriter( $api, $document, $cache );
 		$targets  = new ElementorWriteTarget( $document, $tree, $this->presence, $coercion, $writer );
 		$inputs   = new ElementorElementAddInput( $coercion, $edit );
-		$merge    = new ElementorSettingsMerge( $edit, $coercion );
+		$merge    = new ElementorSettingsMerge( $edit, $coercion, new ElementorIdMint() );
 		$diff     = new ElementorTreeDiff( $tree );
 
 		$registry->registerWrite(
@@ -389,13 +389,20 @@ final class ElementorModule implements IntegrationModule {
 		// be three chances for one of them to lose a check.
 		$gates = new ElementorTreeInput( $tree, $coercion, $this->presence );
 
+		// The deterministic id derivation, shared by the three operations that
+		// STORE a tree the caller composed. Each of them names the nodes that
+		// arrived without an id, because Elementor keys its per-element CSS on the
+		// id and an unnamed node makes every rule on the page apply to every
+		// element at once. One instance because the class holds no state at all.
+		$mint = new ElementorIdMint();
+
 		// The two whole-document writes. Both replace a page's entire content in one
 		// change rather than editing a branch of it, so both are destructive and both
 		// refuse their own no-op: an unchanged save reaches the writer as bytes that
 		// did not move, which it cannot tell apart from a save Elementor dropped.
 		$registry->registerWrite(
 			ElementorDocumentBuild::definition(),
-			new ElementorDocumentBuild( $targets, $document, $merge, $gates, $coercion, $writer, $diff )
+			new ElementorDocumentBuild( $targets, $document, $merge, $gates, $coercion, $writer, $diff, $mint )
 		);
 
 		$registry->registerWrite(
@@ -432,7 +439,7 @@ final class ElementorModule implements IntegrationModule {
 
 		$registry->registerWrite(
 			ElementorTemplateImport::definition(),
-			new ElementorTemplateImport( $library, $gates, $coercion, $writer )
+			new ElementorTemplateImport( $library, $gates, $coercion, $writer, $mint )
 		);
 
 		$registry->registerWrite(
@@ -450,7 +457,8 @@ final class ElementorModule implements IntegrationModule {
 				$gates,
 				$coercion,
 				$page_settings,
-				$writer
+				$writer,
+				$mint
 			)
 		);
 
