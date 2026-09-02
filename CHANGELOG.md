@@ -9,7 +9,7 @@ Every entry names the user-visible outcome. Internal refactors, test additions, 
 documentation-only changes are not listed unless they change what an agent can do or how
 an operation behaves.
 
-## [Unreleased]
+## [0.10.0] — 2026-09-01
 
 ### Added
 - **SiteHelm now tells the agent driving it how to build a page.** Connecting returns a short
@@ -50,6 +50,22 @@ an operation behaves.
   rule covers any future operation that moves out of the add-on.
 
 ### Fixed
+- **A page whose elements were written without ids lost every style on it.** Elementor
+  generates its CSS one element at a time, keyed on each element's own id, and an element
+  that arrived without one produced a selector with nothing after the prefix. CSS discards
+  a whole rule group when any selector in it is malformed, so a single unnamed element took
+  the entire page's stylesheet with it — the page still held its content, its settings read
+  back exactly as written, and it rendered unstyled. Every element now gets an id as it is
+  written, and a page an earlier version left in that state repairs itself the next time
+  anything on it is written.
+- **Repeater rows are named, so a row can be styled on its own.** Elementor gives each row
+  of a repeater control — an icon in a social-icons list, a tab, a slide, a form field —
+  an id of its own, and generates that row's styles against it. The three operations that
+  merge settings into an existing element wrote rows with no id at all, which cost the
+  ability to style or address any single row, plus the row identity Elementor's editor
+  tracks for the open tab, the current slide and the active accordion panel. The rows
+  rendered, so nothing reported a problem. They are now named on the same terms as
+  elements: deterministically, and a row that arrives with an id of its own keeps it.
 - **A style setting Elementor would store but never render is now refused.** Elementor hides a
   control whose group switcher is unset, and drops its value at CSS-generation time: writing
   `background_color` without `background_background`, or `border_color` without

@@ -4,7 +4,7 @@ Tags: mcp, ai agent, automation, elementor, rest api
 Requires at least: 6.6
 Tested up to: 7.1
 Requires PHP: 8.1
-Stable tag: 0.9.0
+Stable tag: 0.10.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -88,6 +88,13 @@ The refusal names which error code applies and what to do about it, and says how
 
 The full changelog for every release is maintained at
 https://github.com/Mrshahidali420/SiteHelm/blob/main/CHANGELOG.md
+
+= 0.10.0 =
+* Bulk SEO metadata and audit fixes are free: content-seo-bulk-set and content-seo-audit-fix move out of Pro, because the free plugin already has the single write and a batch of it is not a reason to pay.
+* Connecting now returns short instructions on how a write is previewed and applied, and the four Elementor mistakes that produce a page which reports success and still looks wrong.
+* Elementor pages written without element ids lost every style on them; every element now gets an id as it is written, and a page left in that state repairs itself on the next write. Repeater rows get ids on the same terms, so a single row can be styled.
+* Elementor style settings that would be stored but never rendered are refused, naming the companion switch they need; an image set by URL alone is flagged, because it is served without srcset.
+* Setting an Elementor page layout actually changes the page now, and elementor-document-get returns the page's own settings.
 
 = 0.9.0 =
 * Two new reads: system-plugin-list and system-theme-list report every installed plugin and theme, versions, which are active, and which have an update waiting — read from WordPress's own last check, never triggering a new one.
