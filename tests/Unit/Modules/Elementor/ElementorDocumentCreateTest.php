@@ -61,6 +61,11 @@ final class ElementorDocumentCreateTest extends TestCase {
 	private const CREATED_ID = 41;
 
 	/**
+	 * The local style class the styled-layout cases define.
+	 */
+	private const STYLE_ID = 'e-w991111-abc1234';
+
+	/**
 	 * The faked post meta table, keyed `<post id>|<meta key>`.
 	 *
 	 * @var array<string, mixed>
@@ -246,6 +251,51 @@ final class ElementorDocumentCreateTest extends TestCase {
 		}
 
 		$this->assertSame( [], $this->inserts );
+	}
+
+	/**
+	 * A LOCAL STYLE CLASS NOTHING WEARS RENDERS NOTHING — issue #97 from the
+	 * writing side. Elementor stores a `styles` entry happily and generates its
+	 * CSS under a selector no element carries, so the write reports success, the
+	 * read verifies green, and the page looks exactly as it did before. The
+	 * refusal names the style id so an operator can see which half is missing.
+	 */
+	public function test_a_style_class_no_element_wears_is_refused_by_name(): void {
+		$this->withElementor();
+
+		try {
+			$this->plan( $this->request( [ ElementorDocumentCreate::INPUT_CONTENT => $this->styledTree( false ) ] ) );
+			$this->fail( 'Expected the unreferenced local style class to be refused.' );
+		} catch ( OperationException $exception ) {
+			$this->assertSame( ErrorCode::InvalidInput, $exception->errorCode );
+			$this->assertStringContainsString( self::STYLE_ID, $exception->getMessage() );
+		}
+
+		$this->assertSame( [], $this->inserts );
+	}
+
+	/**
+	 * BOTH HALVES PRESENT IS THE SHAPE THE GATE EXISTS TO PROTECT, and it has to
+	 * pass untouched: a refusal here would make local styling unwritable.
+	 */
+	public function test_a_style_class_the_element_wears_is_accepted(): void {
+		$this->withElementor();
+
+		$planned = $this->plan( $this->request( [ ElementorDocumentCreate::INPUT_CONTENT => $this->styledTree( true ) ] ) );
+
+		$this->assertInstanceOf( PlannedChange::class, $planned );
+	}
+
+	/**
+	 * A TREE WITH NO LOCAL STYLES AT ALL HAS NOTHING TO JUDGE. Most layouts are
+	 * this one, and the gate must not cost them a refusal.
+	 */
+	public function test_a_layout_carrying_no_local_styles_passes_the_gate(): void {
+		$this->withElementor();
+
+		$planned = $this->plan( $this->request( [ ElementorDocumentCreate::INPUT_CONTENT => $this->startingTree() ] ) );
+
+		$this->assertInstanceOf( PlannedChange::class, $planned );
 	}
 
 	// ------------------------------------------------------- planning
@@ -668,6 +718,44 @@ final class ElementorDocumentCreateTest extends TestCase {
 							'icon_list' => [
 								[ 'text' => 'Fast setup' ],
 								[ 'text' => 'No lock-in' ],
+							],
+						],
+						'elements'   => [],
+					],
+				],
+			],
+		];
+	}
+
+	/**
+	 * One heading defining a local style class, wearing it or not.
+	 *
+	 * @param bool $referenced Whether the element's settings wear the class.
+	 *
+	 * @return array[] The layout.
+	 */
+	private function styledTree( bool $referenced ): array {
+		$settings = [ 'title' => 'A new heading' ];
+
+		if ( $referenced ) {
+			$settings['classes'] = [ 'value' => [ self::STYLE_ID ] ];
+		}
+
+		return [
+			[
+				'id'       => 'c999999',
+				'elType'   => 'container',
+				'elements' => [
+					[
+						'id'         => 'w991111',
+						'elType'     => 'widget',
+						'widgetType' => 'e-heading',
+						'settings'   => $settings,
+						'styles'     => [
+							self::STYLE_ID => [
+								'id'       => self::STYLE_ID,
+								'type'     => 'class',
+								'variants' => [],
 							],
 						],
 						'elements'   => [],

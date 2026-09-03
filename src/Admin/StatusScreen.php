@@ -9,6 +9,8 @@ declare(strict_types=1);
 
 namespace SiteHelm\Admin;
 
+use SiteHelm\Auth\AuthSettings;
+use SiteHelm\Auth\DiscoverySelfTest;
 use SiteHelm\Bootstrap\Extensions;
 use SiteHelm\Contracts\ModuleHealth;
 use SiteHelm\Contracts\ModuleId;
@@ -217,12 +219,62 @@ final class StatusScreen {
 					'value' => self::probe_label( $probe ),
 					'ok'    => ConnectionProbe::OK === $probe,
 				],
+				[
+					'label' => __( 'Sign-in discovery', 'sitehelm' ),
+					'value' => self::discovery_label(),
+					'ok'    => self::discovery_ok(),
+				],
 			]
 		);
 
 		$this->render_probe_advice( $probe );
 
 		Ui::section_close();
+	}
+
+	/**
+	 * The rows the last discovery test left behind, if any.
+	 *
+	 * The test is never run from here. Four network fetches on every load of a
+	 * page an operator opens to read is a cost the page cannot justify, and a
+	 * result that is minutes old still answers the question this card asks.
+	 *
+	 * @return array<int, array<string, mixed>> The stored rows.
+	 */
+	private static function discovery_rows(): array {
+		$last = DiscoverySelfTest::last();
+
+		return $last['rows'] ?? [];
+	}
+
+	/**
+	 * Whether the card should read as a fault.
+	 *
+	 * Untested is not a fault. The card reports what is known to be broken, and
+	 * a site nobody has tested yet is not yet known to be anything.
+	 */
+	private static function discovery_ok(): bool {
+		return ! in_array(
+			DiscoverySelfTest::worst( self::discovery_rows() ),
+			[ DiscoverySelfTest::WRONG_OWNER, DiscoverySelfTest::UNREACHABLE ],
+			true
+		);
+	}
+
+	/**
+	 * The state of discovery, as the card states it.
+	 */
+	private static function discovery_label(): string {
+		if ( ! ( new AuthSettings() )->enabled() ) {
+			return __( 'Not in use', 'sitehelm' );
+		}
+
+		return match ( DiscoverySelfTest::worst( self::discovery_rows() ) ) {
+			DiscoverySelfTest::PASS        => __( 'Answers correctly', 'sitehelm' ),
+			DiscoverySelfTest::WRONG_OWNER => __( 'Something else answers', 'sitehelm' ),
+			DiscoverySelfTest::UNREACHABLE => __( 'Cannot be reached', 'sitehelm' ),
+			default                        => __( 'Not tested', 'sitehelm' ),
+		};
 	}
 
 	/**

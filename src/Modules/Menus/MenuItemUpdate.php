@@ -183,8 +183,8 @@ final class MenuItemUpdate implements WriteOperation {
 					],
 					'target'      => [
 						'type'        => 'string',
-						'enum'        => [ '', '_blank' ],
-						'description' => 'Send "_blank" to open the item in a new browser tab, or an empty string to open it in the same tab.',
+						'enum'        => [ MenuFields::TARGET_SAME_TAB, MenuFields::TARGET_NEW_TAB ],
+						'description' => 'Send "_blank" to open the item in a new browser tab, or "_self" to open it in the same tab. An empty string is still accepted and means "_self", but it is deprecated and will stop being listed.',
 					],
 					'classes'     => [
 						'type'        => 'array',
@@ -383,7 +383,9 @@ final class MenuItemUpdate implements WriteOperation {
 				continue;
 			}
 
-			$value = $payload[ $field ];
+			$value = 'target' === $field
+				? MenuFields::storedTarget( $payload[ $field ] )
+				: $payload[ $field ];
 
 			$data[ self::CORE_KEY_FOR_FIELD[ $field ] ] = is_array( $value )
 				? implode( ' ', array_map( 'strval', $value ) )
@@ -672,10 +674,13 @@ final class MenuItemUpdate implements WriteOperation {
 		}
 
 		if ( array_key_exists( 'target', $input ) ) {
-			// Anything other than the one window value WordPress understands is
-			// normalized to "same tab" rather than refused, because core stores
-			// the value verbatim into the rendered `target` attribute.
-			$fields['target'] = '_blank' === $input['target'] ? '_blank' : '';
+			// The PUBLISHED token is recorded, not the value core will store, so
+			// the promise reads the way the verification read of the same item
+			// will. Anything other than the one window value WordPress understands
+			// — a deprecated '', a stray 'popup' — is normalized to "same tab"
+			// rather than refused, because core stores the value verbatim into the
+			// rendered `target` attribute.
+			$fields['target'] = MenuFields::targetToken( $input['target'] );
 		}
 
 		if ( array_key_exists( 'classes', $input ) && is_array( $input['classes'] ) ) {

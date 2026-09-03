@@ -341,6 +341,38 @@ final class MenuFieldsTest extends TestCase {
 	}
 
 	/**
+	 * WordPress stores "same tab" as emptiness, which cannot be published: an
+	 * enum member of `""` is refused by strict schema validators, so a client
+	 * running one cannot set the field at all. The read names it.
+	 */
+	public function test_a_stored_empty_target_reads_back_as_the_same_tab_token(): void {
+		$this->assertSame( '_self', $this->fields->normalizeItem( $this->makeItem( 10, 0, 1 ) )['target'] );
+	}
+
+	/**
+	 * The one value that means the same thing on the wire and in storage.
+	 */
+	public function test_a_stored_new_tab_target_reads_back_unchanged(): void {
+		$item         = $this->makeItem( 10, 0, 1 );
+		$item->target = '_blank';
+
+		$this->assertSame( '_blank', $this->fields->normalizeItem( $item )['target'] );
+	}
+
+	/**
+	 * An item edited by hand or dragged in by an importer can carry anything at
+	 * all in its target, and core renders it verbatim — every one of those
+	 * renderings behaves as "same tab". Reporting the junk back would publish a
+	 * value the write schema does not accept.
+	 */
+	public function test_an_unrecognized_stored_target_reads_back_as_the_same_tab_token(): void {
+		$item         = $this->makeItem( 10, 0, 1 );
+		$item->target = 'popup';
+
+		$this->assertSame( '_self', $this->fields->normalizeItem( $item )['target'] );
+	}
+
+	/**
 	 * Core stores an empty string in the class list for every item that has no
 	 * classes at all, so passing the array through unfiltered would ship a
 	 * meaningless '' to every client.

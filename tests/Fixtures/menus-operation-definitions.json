@@ -158,7 +158,11 @@
                                 "type": "integer"
                             },
                             "target": {
-                                "type": "string"
+                                "type": "string",
+                                "enum": [
+                                    "_self",
+                                    "_blank"
+                                ]
                             },
                             "classes": {
                                 "type": "array",
@@ -247,10 +251,10 @@
                     "target": {
                         "type": "string",
                         "enum": [
-                            "",
+                            "_self",
                             "_blank"
                         ],
-                        "description": "Send \"_blank\" to open the item in a new browser tab, or an empty string, the default, to open it in the same tab."
+                        "description": "Send \"_blank\" to open the item in a new browser tab, or \"_self\", the default, to open it in the same tab. An empty string is still accepted and means \"_self\", but it is deprecated and will stop being listed."
                     },
                     "classes": {
                         "type": "array",
@@ -356,10 +360,10 @@
                     "target": {
                         "type": "string",
                         "enum": [
-                            "",
+                            "_self",
                             "_blank"
                         ],
-                        "description": "Send \"_blank\" to open the item in a new browser tab, or an empty string to open it in the same tab."
+                        "description": "Send \"_blank\" to open the item in a new browser tab, or \"_self\" to open it in the same tab. An empty string is still accepted and means \"_self\", but it is deprecated and will stop being listed."
                     },
                     "classes": {
                         "type": "array",

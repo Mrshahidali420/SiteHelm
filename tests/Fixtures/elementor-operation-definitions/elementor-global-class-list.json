@@ -22,7 +22,7 @@
             },
             "classes": {
                 "type": "array",
-                "description": "The classes, in the order the editor shows them. Each entry carries `id` (the handle a write addresses it by, and the CSS class name the markup wears), `label`, and `definition` — the whole stored definition including its `variants`, as stored."
+                "description": "The classes, in the order the editor shows them. Each entry carries `id` (the handle a write addresses it by, and the CSS class name the markup wears), `label`, and `definition` — the whole stored definition including its `variants`, as stored. An entry this site holds in a shape SiteHelm cannot resolve carries `id` and `error` instead, keeping its place in the order; the rest of the list is still reported. Treat an entry carrying `error` as unknown rather than as an empty class."
             }
         },
         "required": [

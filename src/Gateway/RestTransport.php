@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace SiteHelm\Gateway;
 
+use SiteHelm\Auth\BearerAuthenticator;
 use WP_REST_Request;
 use WP_REST_Response;
 
@@ -54,6 +55,14 @@ final class RestTransport {
 	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 	/**
 	 * Register the MCP REST route on rest_api_init hook.
+	 *
+	 * The permission check is deliberately still "somebody is signed in". A
+	 * bearer token resolves to the administrator who approved it before this
+	 * runs, and an invalid, expired or foreign one resolves to nobody at all —
+	 * so a bad token arrives here as user 0 and is refused, while a request
+	 * carrying no bearer header is judged exactly as it was before OAuth
+	 * existed. Adding a second, OAuth-aware test here would be a second place
+	 * for the two answers to disagree.
 	 */
 	public function registerRoute(): void {
 		register_rest_route(
@@ -76,10 +85,22 @@ final class RestTransport {
 	 * @return WP_REST_Response The REST response.
 	 */
 	public function handleRequest( WP_REST_Request $request ): WP_REST_Response {
-		$user_id          = get_current_user_id();
-		$header_client_id = $request->get_header( 'mcp-client-name' );
-		$declared         = is_string( $header_client_id ) ? $this->normalizeClientId( $header_client_id ) : '';
-		$client_id        = '' !== $declared ? $declared : self::UNKNOWN_CLIENT;
+		$user_id = get_current_user_id();
+
+		// A registered OAuth app names itself once, at registration, and the
+		// activity log should say that name rather than a header the same
+		// request could have set to anything. The header stays authoritative for
+		// Application Password clients, which have no registration to consult.
+		$registered = class_exists( BearerAuthenticator::class ) ? BearerAuthenticator::clientName() : '';
+
+		if ( '' !== $registered ) {
+			$declared = $this->normalizeClientId( $registered );
+		} else {
+			$header_client_id = $request->get_header( 'mcp-client-name' );
+			$declared         = is_string( $header_client_id ) ? $this->normalizeClientId( $header_client_id ) : '';
+		}
+
+		$client_id = '' !== $declared ? $declared : self::UNKNOWN_CLIENT;
 
 		if ( ! $this->withinRateLimit( $user_id ) ) {
 			return new WP_REST_Response(

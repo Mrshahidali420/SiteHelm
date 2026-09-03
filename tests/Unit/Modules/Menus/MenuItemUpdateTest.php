@@ -450,6 +450,42 @@ final class MenuItemUpdateTest extends MenuItemUpdateTestCase {
 		$this->assertSame( '', $this->written[0]['menu-item-target'] );
 	}
 
+	/**
+	 * The published token is the schema's own, and WordPress stores it as the
+	 * emptiness it has always stored. The promised after-state is checked as
+	 * well: it is compared against the read-back projection, so a promise
+	 * carrying the stored value while the read reports the token would make every
+	 * target change report an adjustment nobody made.
+	 */
+	public function test_the_same_tab_token_is_stored_as_wordpress_stores_it(): void {
+		$result = $this->planThenApply(
+			[
+				'item'   => 400,
+				'target' => '_self',
+			]
+		);
+
+		$this->assertSame( '', $this->written[0]['menu-item-target'] );
+		$this->assertSame( '_self', $result['after']['target'] );
+		$this->assertSame( '_self', $result['planned']->afterFields['target'] );
+	}
+
+	/**
+	 * The empty string left the schema and did not leave the accepted inputs: a
+	 * client written against the old enum keeps working.
+	 */
+	public function test_the_deprecated_empty_target_still_means_the_same_tab(): void {
+		$result = $this->planThenApply(
+			[
+				'item'   => 400,
+				'target' => '',
+			]
+		);
+
+		$this->assertSame( '', $this->written[0]['menu-item-target'] );
+		$this->assertSame( '_self', $result['after']['target'] );
+	}
+
 	public function test_it_reports_execution_failed_when_wordpress_refuses_the_write(): void {
 		Functions\when( 'wp_update_nav_menu_item' )->alias(
 			function ( $menu_id, $item_id, $data = [] ) {

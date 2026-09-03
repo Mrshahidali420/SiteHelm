@@ -4,7 +4,7 @@ Tags: mcp, ai agent, automation, elementor, rest api
 Requires at least: 6.6
 Tested up to: 7.1
 Requires PHP: 8.1
-Stable tag: 0.10.0
+Stable tag: 0.11.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -88,6 +88,14 @@ The refusal names which error code applies and what to do about it, and says how
 
 The full changelog for every release is maintained at
 https://github.com/Mrshahidali420/SiteHelm/blob/main/CHANGELOG.md
+
+= 0.11.0 =
+* Apps can sign in to the site themselves instead of being handed a password: an app registers, sends you to a page in your own dashboard that names it and asks whether to allow it, and holds its own credential. Application passwords keep working; this is a second way in.
+* Connect asks how your app signs in before it shows you anything to paste, then lists every app that has signed in, when it last connected, how many live tokens it holds, and a Sign out or Remove button that names the app before it acts.
+* A Test discovery button asks this site for its own sign-in documents over the network and reports, per address, whether the answer came from this site or from something sitting in front of it.
+* Home opens with five steps that tick themselves off - connect a client, choose what it may touch, make a test call, make a first change, undo it - each read back off the site rather than remembered.
+* A client that asks for an older MCP protocol revision now gets the one it asked for; some clients read the disagreement as the end of the conversation and never asked for the tool list.
+* Two schema shapes strict clients refused to load are fixed, two sites no longer collide in one client's config, and one unreadable Elementor global class no longer hides all the others.
 
 = 0.10.0 =
 * Bulk SEO metadata and audit fixes are free: content-seo-bulk-set and content-seo-audit-fix move out of Pro, because the free plugin already has the single write and a batch of it is not a reason to pay.

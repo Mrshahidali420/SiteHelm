@@ -111,7 +111,10 @@ final class MenuGet {
 				'objectId'    => [ 'type' => 'integer' ],
 				'parent'      => [ 'type' => 'integer' ],
 				'position'    => [ 'type' => 'integer' ],
-				'target'      => [ 'type' => 'string' ],
+				'target'      => [
+					'type' => 'string',
+					'enum' => [ MenuFields::TARGET_SAME_TAB, MenuFields::TARGET_NEW_TAB ],
+				],
 				'classes'     => [
 					'type'  => 'array',
 					'items' => [ 'type' => 'string' ],

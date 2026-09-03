@@ -39,9 +39,14 @@ use SiteHelm\Contracts\OperationException;
  *      produces the widget counts the next gate reads.
  *   4. AVAILABILITY, fourth: a widget this site does not register has no prop
  *      schema, so the key gate below it would have nothing to check against.
- *   5. DECLARED KEYS, last, and the reason the other four exist.
+ *   5. DECLARED KEYS, fifth, and the reason the other four exist.
+ *   6. REFERENCED STYLES, last, and only reachable once the shape gate above has
+ *      proved every node is walkable. It refuses a local style definition no
+ *      element wears, which is the same "stored but never rendered" failure the
+ *      key gate catches one vocabulary over.
  *
- * NO REFUSAL QUOTES THE CALLER'S TREE. It is arbitrary text of arbitrary length
+ * NO REFUSAL QUOTES THE CALLER'S TREE, beyond a style id short and ordinary
+ * enough to be an Elementor class name. It is arbitrary text of arbitrary length
  * that will be read by whoever opens the activity log, and the depth and the
  * member name are enough to find the offending node in a payload the caller
  * sent and still has.
@@ -65,6 +70,42 @@ final class ElementorTreeInput {
 	private const NODE_EL_TYPE = 'elType';
 
 	/**
+	 * The member holding a node's own local style definitions.
+	 */
+	private const NODE_STYLES = 'styles';
+
+	/**
+	 * The setting holding the node's class binding.
+	 */
+	private const SETTING_CLASSES = 'classes';
+
+	/**
+	 * The class binding's member holding the referenced class names.
+	 */
+	private const CLASSES_VALUE = 'value';
+
+	/**
+	 * A style definition's own copy of its name.
+	 */
+	private const STYLE_ID = 'id';
+
+	/**
+	 * Separates class names where they are stored as one string.
+	 */
+	private const CLASS_SEPARATOR = ' ';
+
+	/**
+	 * The only style-id shape a refusal repeats back verbatim.
+	 *
+	 * Elementor's own local class name is `e-<elementId>-<hash>`, which this
+	 * matches with room to spare. Anything else is described rather than quoted,
+	 * because a caller's tree is arbitrary text that ends up in the activity log.
+	 *
+	 * @var string
+	 */
+	private const STYLE_ID_PATTERN = '/^[A-Za-z0-9_-]{1,64}$/';
+
+	/**
 	 * Constructs the shared gate.
 	 *
 	 * @param ElementorTree         $tree     The tree normalizer and its bounds.
@@ -80,7 +121,7 @@ final class ElementorTreeInput {
 
 	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- The module vocabulary is camelCase across every class.
 	/**
-	 * Runs all five gates over one caller-supplied tree.
+	 * Runs all six gates over one caller-supplied tree.
 	 *
 	 * @param array  $content The caller's tree.
 	 * @param string $subject What the tree is, in words, for the refusals.
@@ -100,6 +141,7 @@ final class ElementorTreeInput {
 
 		$this->assert_renderable( $totals['widgetTypeCounts'], $subject );
 		$this->assert_declared_keys( $content );
+		$this->assert_referenced_styles( $content );
 
 		return $totals;
 	}
@@ -361,5 +403,134 @@ final class ElementorTreeInput {
 				$this->assert_declared_keys( $children );
 			}
 		}
+	}
+
+	// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The message is a literal plus a style id that describe_style_id() has already bounded to a short, safe token; nothing else from the caller's tree reaches it.
+	/**
+	 * Refuses a local style definition no element in the tree wears.
+	 *
+	 * THE SAME JUDGEMENT `ElementorConditionGate` MAKES, one vocabulary over:
+	 * refuse the write that stores something and renders nothing. A local style
+	 * class lives under the owning node's `styles` AND is referenced from that
+	 * node's `settings.classes.value`, and `ElementorStyleRemap` says in as many
+	 * words that either half alone is a defect. A definition with no reference
+	 * is stored, read back verbatim, survives every existing check, and paints
+	 * nothing at all — the silent no-render this module refuses on principle.
+	 *
+	 * ONLY THE CALLER'S OWN TREE IS JUDGED, because this gate runs nowhere else.
+	 * A page that already holds an orphaned definition is the site's own history
+	 * and stays saveable, which is the split `ElementorPropCoercion` draws
+	 * between sweeping a stored tree and judging a caller's input.
+	 *
+	 * THE REFERENCE IS LOOKED FOR ON THE OWNING NODE ONLY. Elementor resolves a
+	 * local class from the element that defines it, so a reference on a sibling
+	 * does not make the definition render.
+	 *
+	 * @param array $nodes One level of the caller's tree.
+	 *
+	 * @throws OperationException With ErrorCode::InvalidInput.
+	 */
+	private function assert_referenced_styles( array $nodes ): void {
+		foreach ( $nodes as $node ) {
+			if ( ! is_array( $node ) ) {
+				continue;
+			}
+
+			$styles = $node[ self::NODE_STYLES ] ?? null;
+
+			if ( is_array( $styles ) && [] !== $styles ) {
+				$this->assert_every_style_is_worn( $styles, self::referenced_classes( $node ) );
+			}
+
+			$children = $node[ ElementorPropCoercion::NODE_CHILDREN ] ?? null;
+
+			if ( is_array( $children ) ) {
+				$this->assert_referenced_styles( $children );
+			}
+		}
+	}
+
+	/**
+	 * Refuses the first of one node's style definitions its settings never name.
+	 *
+	 * @param array              $styles     The node's style definitions.
+	 * @param array<int, string> $referenced The class names the node's settings wear.
+	 *
+	 * @throws OperationException With ErrorCode::InvalidInput.
+	 */
+	private function assert_every_style_is_worn( array $styles, array $referenced ): void {
+		foreach ( $styles as $key => $definition ) {
+			$declared = is_array( $definition ) ? ( $definition[ self::STYLE_ID ] ?? null ) : null;
+			$id       = is_string( $declared ) && '' !== $declared ? $declared : (string) $key;
+
+			if ( '' === $id || in_array( $id, $referenced, true ) ) {
+				continue;
+			}
+
+			throw new OperationException(
+				ErrorCode::InvalidInput,
+				sprintf(
+					'This layout defines the local style class %s on an element whose settings never wear it, so Elementor would store the definition and render nothing from it.',
+					self::describe_style_id( $id )
+				),
+				sprintf(
+					'Add %s to that element\'s settings.classes.value, or drop the styles entry that defines it.',
+					self::describe_style_id( $id )
+				)
+			);
+		}
+	}
+	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+
+	/**
+	 * The class names one node's settings wear.
+	 *
+	 * Both spellings are read, because Elementor stores the binding as a list on
+	 * an atomic element and as a space-separated string on a classic one, and a
+	 * gate that understood only one would refuse every legitimate write in the
+	 * other vocabulary.
+	 *
+	 * @param array<string, mixed> $node One raw element.
+	 *
+	 * @return array<int, string> The referenced class names.
+	 */
+	private static function referenced_classes( array $node ): array {
+		$value = $node[ ElementorPropCoercion::NODE_SETTINGS ][ self::SETTING_CLASSES ][ self::CLASSES_VALUE ] ?? null;
+
+		if ( is_string( $value ) ) {
+			$value = explode( self::CLASS_SEPARATOR, $value );
+		}
+
+		if ( ! is_array( $value ) ) {
+			return [];
+		}
+
+		$names = [];
+
+		foreach ( $value as $name ) {
+			if ( is_string( $name ) && '' !== $name ) {
+				$names[] = $name;
+			}
+		}
+
+		return $names;
+	}
+
+	/**
+	 * How a style id is named in a refusal.
+	 *
+	 * Quoted verbatim only while it is a short, ordinary token — which every
+	 * name Elementor mints is. Anything else is described instead, because the
+	 * refusal is read in the activity log and the caller's tree is arbitrary
+	 * text of arbitrary length.
+	 *
+	 * @param string $id The style definition's id.
+	 *
+	 * @return string The phrase naming it.
+	 */
+	private static function describe_style_id( string $id ): string {
+		return 1 === preg_match( self::STYLE_ID_PATTERN, $id )
+			? sprintf( '"%s"', $id )
+			: 'under a name this refusal will not repeat back';
 	}
 }

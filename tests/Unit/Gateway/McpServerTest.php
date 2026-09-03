@@ -647,4 +647,127 @@ final class McpServerTest extends TestCase {
 			$this->assertFalse( $tool['inputSchema']['additionalProperties'] );
 		}
 	}
+
+	/**
+	 * Test that every dispatcher tool declares a required list.
+	 *
+	 * The list being EMPTY is the assertion, not an absence of one. A closed
+	 * schema with no `required` member at all is refused by the strict validators
+	 * some hosts run before they will call a tool, and naming `operation` there
+	 * would be false: a call with no operation is the catalog request.
+	 */
+	public function test_every_dispatcher_tool_declares_an_empty_required_list(): void {
+		$response = $this->server->handle(
+			[
+				'jsonrpc' => '2.0',
+				'id'      => 10,
+				'method'  => 'tools/list',
+			]
+		);
+
+		foreach ( $response['result']['tools'] as $tool ) {
+			$this->assertArrayHasKey( 'required', $tool['inputSchema'] );
+			$this->assertSame( [], $tool['inputSchema']['required'] );
+		}
+	}
+
+	/**
+	 * Test that a supported protocol version is echoed back to the client.
+	 *
+	 * @dataProvider supportedProtocolVersions
+	 *
+	 * @param string $version One revision this server claims to support.
+	 */
+	public function test_a_supported_protocol_version_is_echoed( string $version ): void {
+		$this->assertSame( $version, $this->initializeWith( [ 'protocolVersion' => $version ] ) );
+	}
+
+	/**
+	 * Every revision the server claims, one per case.
+	 *
+	 * Read off the constant rather than listed again here, so a revision added to
+	 * the claim without the behaviour to back it cannot be added without this
+	 * test exercising it.
+	 *
+	 * @return array<string, array{string}> The supported revisions.
+	 */
+	public static function supportedProtocolVersions(): array {
+		$cases = [];
+
+		foreach ( McpServer::SUPPORTED_PROTOCOL_VERSIONS as $version ) {
+			$cases[ $version ] = [ $version ];
+		}
+
+		return $cases;
+	}
+
+	/**
+	 * Test that a revision this server does not speak gets the newest one.
+	 */
+	public function test_an_unsupported_protocol_version_gets_the_servers_latest(): void {
+		$this->assertSame(
+			McpServer::PROTOCOL_VERSION,
+			$this->initializeWith( [ 'protocolVersion' => '2023-01-01' ] )
+		);
+	}
+
+	/**
+	 * Test that a client naming no revision gets the newest one.
+	 */
+	public function test_an_absent_protocol_version_gets_the_servers_latest(): void {
+		$this->assertSame( McpServer::PROTOCOL_VERSION, $this->initializeWith( [] ) );
+	}
+
+	/**
+	 * Test that a non-string revision is treated as an absent one.
+	 *
+	 * The value arrives from the wire, so it is not necessarily a string at all,
+	 * and a loose comparison against the supported list would let `0` match.
+	 */
+	public function test_a_non_string_protocol_version_gets_the_servers_latest(): void {
+		$this->assertSame(
+			McpServer::PROTOCOL_VERSION,
+			$this->initializeWith( [ 'protocolVersion' => [ '2025-03-26' ] ] )
+		);
+		$this->assertSame(
+			McpServer::PROTOCOL_VERSION,
+			$this->initializeWith( [ 'protocolVersion' => 0 ] )
+		);
+	}
+
+	/**
+	 * Test that params which are not an object at all are answered, not fataled.
+	 */
+	public function test_initialize_params_that_are_not_an_object_get_the_servers_latest(): void {
+		$response = $this->server->handle(
+			[
+				'jsonrpc' => '2.0',
+				'id'      => 11,
+				'method'  => 'initialize',
+				'params'  => 'nonsense',
+			]
+		);
+
+		$this->assertSame( McpServer::PROTOCOL_VERSION, $response['result']['protocolVersion'] );
+	}
+
+	/**
+	 * The revision an initialize carrying these params is answered with.
+	 *
+	 * @param array<string, mixed> $params The client's initialize parameters.
+	 *
+	 * @return string The reported revision.
+	 */
+	private function initializeWith( array $params ): string {
+		$response = $this->server->handle(
+			[
+				'jsonrpc' => '2.0',
+				'id'      => 12,
+				'method'  => 'initialize',
+				'params'  => $params,
+			]
+		);
+
+		return $response['result']['protocolVersion'];
+	}
 }

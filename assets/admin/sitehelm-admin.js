@@ -78,6 +78,86 @@
 	}
 
 	/**
+	 * Read a remembered console choice, or an empty string.
+	 *
+	 * Storage is wrapped because a browser in private mode, or one told to
+	 * block site data, throws on the accessor itself rather than returning
+	 * nothing. A console that cannot remember a tab is fine; one that stops
+	 * wiring its buttons because of it is not.
+	 *
+	 * @param {string} key The name to read.
+	 *
+	 * @return {string} The stored value, or ''.
+	 */
+	function remembered( key ) {
+		try {
+			return window.localStorage.getItem( 'sitehelm.' + key ) || '';
+		} catch ( error ) {
+			return '';
+		}
+	}
+
+	/**
+	 * Remember a console choice for the next visit.
+	 *
+	 * @param {string} key   The name to write.
+	 * @param {string} value The value to keep.
+	 */
+	function remember( key, value ) {
+		try {
+			window.localStorage.setItem( 'sitehelm.' + key, value );
+		} catch ( error ) {
+			// A choice that cannot be remembered is still a choice that works now.
+		}
+	}
+
+	/**
+	 * Select the radio carrying a value, if it is still on the page.
+	 *
+	 * @param {HTMLElement} group The fieldset holding the radios.
+	 * @param {string}      value The value to select.
+	 *
+	 * @return {boolean} Whether a radio was selected.
+	 */
+	function selectRadio( group, value ) {
+		if ( ! value ) {
+			return false;
+		}
+
+		var wanted = group.querySelector( 'input[type="radio"][value="' + value + '"]' );
+
+		if ( ! wanted || wanted.disabled ) {
+			return false;
+		}
+
+		wanted.checked = true;
+
+		return true;
+	}
+
+	/**
+	 * Put the selected class on the label wrapping the checked radio.
+	 *
+	 * The stylesheet has always had a selected state for these cards; nothing
+	 * was applying it, so a picked card looked the same as an unpicked one
+	 * except for the radio dot. This is the two lines that were missing.
+	 *
+	 * @param {HTMLElement} group The fieldset holding the radios.
+	 */
+	function markSelected( group ) {
+		Array.prototype.forEach.call(
+			group.querySelectorAll( 'label' ),
+			function ( label ) {
+				var radio = label.querySelector( 'input[type="radio"]' );
+
+				if ( radio ) {
+					label.classList.toggle( 'is-selected', radio.checked );
+				}
+			}
+		);
+	}
+
+	/**
 	 * Show only the client-config block matching the selected client.
 	 *
 	 * @param {HTMLElement} group The fieldset holding the client radios.
@@ -94,6 +174,78 @@
 			function ( block ) {
 				var matches = block.getAttribute( 'data-sitehelm-client' ) === chosen.value;
 				block.hidden = ! matches;
+			}
+		);
+
+		markSelected( group );
+		remember( 'connect.client', chosen.value );
+	}
+
+	/**
+	 * Show only the connection method the operator chose.
+	 *
+	 * Every shape group declares which method it belongs to, so hiding by
+	 * method is what keeps an application-password header block off the screen
+	 * of somebody who has decided to sign in instead. Both are on the page
+	 * with scripting off, which is readable rather than wrong.
+	 *
+	 * @param {HTMLElement} group The fieldset holding the method radios.
+	 */
+	function applyMethodChoice( group ) {
+		var chosen = group.querySelector( 'input[type="radio"]:checked' );
+
+		if ( ! chosen ) {
+			return;
+		}
+
+		Array.prototype.forEach.call(
+			document.querySelectorAll( '[data-sitehelm-auth]' ),
+			function ( block ) {
+				block.hidden = block.getAttribute( 'data-sitehelm-auth' ) !== chosen.value;
+			}
+		);
+
+		markSelected( group );
+		remember( 'connect.method', chosen.value );
+	}
+
+	/**
+	 * Show only the shape whose tab is selected, within one group.
+	 *
+	 * @param {HTMLElement} group The element holding one client's shapes.
+	 */
+	function applyShapeChoice( group ) {
+		var tabs = group.querySelector( '[data-sitehelm-shapetabs]' );
+
+		if ( ! tabs ) {
+			return;
+		}
+
+		var chosen = tabs.querySelector( 'input[type="radio"]:checked' );
+
+		if ( ! chosen ) {
+			return;
+		}
+
+		Array.prototype.forEach.call(
+			group.querySelectorAll( '[data-sitehelm-shape]' ),
+			function ( panel ) {
+				panel.hidden = panel.getAttribute( 'data-sitehelm-shape' ) !== chosen.value;
+			}
+		);
+	}
+
+	/**
+	 * Wire every shape tab strip on the screen.
+	 */
+	function initShapes() {
+		Array.prototype.forEach.call(
+			document.querySelectorAll( '[data-sitehelm-shapes]' ),
+			function ( group ) {
+				applyShapeChoice( group );
+				group.addEventListener( 'change', function () {
+					applyShapeChoice( group );
+				} );
 			}
 		);
 	}
@@ -387,6 +539,83 @@
 	}
 
 	/**
+	 * The Home walkthrough's chevron, which reopens the finished steps.
+	 *
+	 * The button is rendered hidden and revealed here, so a console without
+	 * scripting shows the one summary line and no control that cannot work.
+	 * The list it controls is rendered closed for the same reason: everything
+	 * it holds is already done.
+	 */
+	function initWalkthrough() {
+		var toggle = document.querySelector( '[data-sitehelm-walkthrough-toggle]' );
+
+		if ( ! toggle ) {
+			return;
+		}
+
+		var steps = document.getElementById( toggle.getAttribute( 'aria-controls' ) );
+
+		if ( ! steps ) {
+			return;
+		}
+
+		toggle.hidden = false;
+
+		toggle.addEventListener( 'click', function () {
+			var open = 'true' === toggle.getAttribute( 'aria-expanded' );
+
+			toggle.setAttribute( 'aria-expanded', open ? 'false' : 'true' );
+			steps.hidden = open;
+		} );
+	}
+
+	/**
+	 * Turn one destructive button into a two-step one.
+	 *
+	 * The first press does not submit: it changes the button into a question
+	 * naming the app, and a second press answers it. A browser dialog cannot
+	 * say which row it is about, and somebody who dismisses those by reflex
+	 * has no way of telling what they just agreed to.
+	 *
+	 * The button reverts on blur and after a pause, so a half-pressed control
+	 * left on screen does not become a live one the next time the mouse lands
+	 * near it. With scripting off the single press submits, which is the same
+	 * bargain the rest of the console makes.
+	 *
+	 * @param {HTMLButtonElement} button The submit button carrying the wording.
+	 */
+	function armConfirm( button ) {
+		var resting = button.textContent;
+		var asked   = false;
+		var timer   = null;
+
+		function rest() {
+			asked = false;
+			button.textContent = resting;
+			button.classList.remove( 'is-asking' );
+
+			if ( timer ) {
+				window.clearTimeout( timer );
+				timer = null;
+			}
+		}
+
+		button.addEventListener( 'click', function ( event ) {
+			if ( asked ) {
+				return;
+			}
+
+			event.preventDefault();
+			asked = true;
+			button.textContent = button.getAttribute( 'data-sitehelm-confirm' );
+			button.classList.add( 'is-asking' );
+			timer = window.setTimeout( rest, 5000 );
+		} );
+
+		button.addEventListener( 'blur', rest );
+	}
+
+	/**
 	 * Wire the console once the markup is present.
 	 */
 	function init() {
@@ -400,9 +629,27 @@
 			}
 		);
 
+		Array.prototype.forEach.call(
+			document.querySelectorAll( '[data-sitehelm-confirm]' ),
+			armConfirm
+		);
+
+		var methods = document.querySelector( '[data-sitehelm-methods]' );
+
+		if ( methods ) {
+			selectRadio( methods, remembered( 'connect.method' ) );
+			applyMethodChoice( methods );
+			methods.addEventListener( 'change', function () {
+				applyMethodChoice( methods );
+			} );
+		}
+
+		initShapes();
+
 		var group = document.querySelector( '[data-sitehelm-clients]' );
 
 		if ( group ) {
+			selectRadio( group, remembered( 'connect.client' ) );
 			applyClientChoice( group );
 			group.addEventListener( 'change', function () {
 				applyClientChoice( group );
@@ -438,6 +685,8 @@
 				} );
 			}
 		);
+
+		initWalkthrough();
 
 		var nav = document.querySelector( '[data-sitehelm-appnav]' );
 

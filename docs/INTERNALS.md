@@ -1299,14 +1299,16 @@ screen had no answer to "which clients can still reach this site?". Three classe
   user or `current_user_can('edit_user', $id)`. Redirects to Connect with
   `sitehelm_revoked=done|failed`.
 - `CredentialsPanel::render(array $users)` — section "Issued credentials" (not
-  "Connected …": `ConnectScreenTest` asserts the word *Connected* is absent until
-  a client has called), fed `ConnectScreen::selectable_users()`, rendered after
+  "Connected …": that heading belongs to the OAuth table in §52, and
+  `ConnectScreenTest` pins the verdict badge as `<span>Connected</span>` so the
+  two cannot be confused), fed `ConnectScreen::selectable_users()`, rendered after
   the create-password card. Table `.sitehelm-table.sitehelm-credentials`
   (Acts as / Created `wp_date('Y-m-d H:i')` / Last used `human_time_diff` or
   "Never" / Revoke inline form with `.sitehelm-btn--danger`); `Ui::empty_state`
   when nothing is listed.
-- `ConnectScreen::__construct(?AuditStore, ?Credentials)` — tests must pass a
-  `Credentials` with closures, or rendering hits the undefined WP class.
+- `ConnectScreen::__construct(?AuditStore, ?Credentials, ?ConnectedAppsPanel)` —
+  tests must pass a `Credentials` with closures, or rendering hits the undefined
+  WP class.
 
 ---
 
@@ -1548,16 +1550,36 @@ selling to someone who already paid reads as not knowing they paid). `admin_head
 prints the orange style, `admin_footer` a two-line script adding
 `target="_blank" rel="noopener noreferrer"` to both.
 
-- **Home** (`HomeScreen($store = new AuditStore(), $pro = new ProCatalogue())`, `RECENT` = 5,
-  `WINDOW` = 7 days) runs
-  six `AuditStore` queries in a fixed order — this-week count, failures this week, restores
-  this week, … then the recent sample and the "lately" list — and says it in one sentence:
+- **Home** (`HomeScreen($store = new AuditStore(), $pro = new ProCatalogue(), $credentials = null)`,
+  `RECENT` = 5, `WINDOW` = 7 days) runs
+  eight `AuditStore` queries in a fixed order — this-week count, three failure counts, the
+  walkthrough's all-time `applied` and `restored` counts, then the recent sample and the
+  "lately" list — and says it in one sentence:
   "All good" / "N changes this week, nothing failed." or "N things could not be done this
   week", three `.sitehelm-statcard` tiles, a `.sitehelm-feed` of the last five sentences,
   and a "Connect an app" call to action when the log is empty. While the injected
   `ProCatalogue` does not probe `STATE_ACTIVE`, a last card sells Pro by operation count
   ("See what Pro adds" → `ProCatalogue::PRICING_URL`); a licensed site never sees it. Tests drive it with
   `FakeWpdb` queues in exactly that order (`varQueue` then `resultQueue`).
+- **`Admin\Walkthrough`** is the "Get started" block Home renders **above** the verdict:
+  five steps — connect a client, choose what it may touch, make a test call, make a first
+  change, undo it — each with a decorative inline SVG, one line of help and one button to the
+  right tab. `Walkthrough::steps( $connected, $scoped, $called, $changed, $undone )` is pure
+  PHP (no WordPress) and returns `key`/`done`/`current` triples, so every transition is unit
+  tested in `WalkthroughTest`; the current step is the **first** open one, so a gap early on is
+  pointed at even when later steps are done. `render()` prints the markup, `is_complete()` and
+  `done_count()` drive the collapsed "All set — 5 of 5" line, which is all a settled site sees:
+  the `<ol>` ships with `hidden` and the chevron that reopens it ships with `hidden` too, revealed
+  by `initWalkthrough()` in `sitehelm-admin.js`. **Nothing is remembered** — no dismissed flag and
+  no option write — so the five states come from what they describe:
+  `connected` = a `SiteHelm MCP` application password exists (via `Credentials::for_users(
+  ConnectScreen::selectable_users() )`; the store is opened lazily and skipped entirely when
+  `WP_Application_Passwords` is absent) **or** any audit row exists **or**
+  `SiteHelm\Auth\OAuthStore::has_authenticated()` says so — asked through `is_callable()` because
+  that class need not exist; `scoped` = `get_option( ContextFactory::MODE_OPTION )` is not `false`;
+  `called` = a credential carries a non-zero `last_used`, **because the audit log records changes
+  and not reads** — a client that has only ever fetched something leaves no row; `changed` =
+  `count( [ 'outcome' => applied ] ) > 0`; `undone` = the same for `restored`.
 - **`Admin\Phrasebook`** turns an audit row into a sentence: `sentence(row)` =
   client + verb (past tense; "could not …" on failure, "started to …" on pending,
   "restored …" on `OUTCOME_RESTORED` and "could not restore …" on
@@ -1839,6 +1861,12 @@ design decision below follows from that.
   operator meeting the refusal has exactly one useful next question and a read that
   also refused would leave them no way to answer it. A site whose `set_preview()`
   yields no repository has no second store to diverge from and reads as in sync.
+- **One malformed class does not abort the list.** `elementor-global-class-list`
+  resolves each entry in the stored order inside its own `try`; an entry it cannot
+  resolve is reported as `{ id, error }` in its place, without `definition`, and the
+  rest of the list still answers. A caller reading `error` must treat the entry as
+  unknown rather than as an empty class it could safely overwrite. The all-or-nothing
+  unwrapping in `ElementorApi` is unchanged and still upstream of this.
 - **`order` is a full permutation, always.** A reorder names every class; a partial or
   unknown-id order is a stale request and a `Conflict`. The refusal **counts** the
   mismatches rather than echoing the identifiers the caller sent.
@@ -2057,12 +2085,21 @@ Three operations that treat a page's content as one value: `elementor-document-b
 replaces it, `elementor-document-clear` empties it, and `elementor-document-create`
 makes a new page to hold it.
 
-- **`ElementorTreeInput` is the one gate every caller-supplied tree passes.** Five
+- **`ElementorTreeInput` is the one gate every caller-supplied tree passes.** Six
   checks in a fixed order: shape, encoded size, `ElementorTree::normalize`, every
-  widget type registered on this site, and every setting key declared by the widget
-  carrying it. `ElementorTemplateImport` was the only caller before; build and create
+  widget type registered on this site, every setting key declared by the widget
+  carrying it, and every local style class the tree defines being worn by the
+  element that defines it. `ElementorTemplateImport` was the only caller before; build and create
   now share the same instance, wired once in `ElementorModule`. Three copies of the
   formula would be three chances for one of them to lose a check.
+- **A local style class nothing wears is refused.** A `styles` entry and the
+  element's `settings.classes.value` are two halves of one thing (issue #97):
+  Elementor stores the definition, generates CSS under a selector no element
+  carries, and the write reports success while the page is unchanged. The gate
+  refuses naming the style id, in the same spirit as `ElementorConditionGate` —
+  refuse because nothing renders. It judges only the tree the CALLER sent, never
+  the tree the site already holds, and it quotes the id only when it is short and
+  ordinary enough to be an Elementor class name.
 - **The renderable gate is mandatory, not advisory.** The key gate below it reads a
   live prop schema per widget, and a widget this site does not register has none, so
   a tree using one is refused with `IntegrationUnavailable` rather than stored
@@ -2814,3 +2851,210 @@ from somewhere else.
 caller's own arrays in their given order — so `planChange()` produces byte-identical warnings
 at preview and again at apply. The advisories ride `PlannedChange::$warnings` into
 `WriteSettlement` like any other.
+
+## 50. Protocol negotiation, and the schema shapes strict clients refuse
+
+Two defects with one shape: the server was correct on its own terms and unusable to a
+client that checked.
+
+**`McpServer::SUPPORTED_PROTOCOL_VERSIONS`** is the list of revisions this server's wire
+behaviour is honest under — `2024-11-05`, `2025-03-26`, `2025-06-18` — and
+`PROTOCOL_VERSION` is the newest of them, the one `initialize` answers with when the client
+names nothing this server can honour. `negotiatedProtocolVersion()` echoes a supported
+request and falls back to the newest otherwise, which is the spec's rule in both directions;
+a revision from the future is not an error, and the client decides whether it can live with
+the answer. **A revision belongs on that list only when the shapes this server emits are
+what a client of that revision expects** — nothing about `initialize`, `tools/list` or
+`tools/call` differs across the three, which is what makes all three honest. Echoing
+matters because a client handed a newer revision than it asked for cannot tell a
+disagreement from a server it should stop reading: several take the mismatch as the end of
+the handshake and never call `tools/list`, so every operation the site publishes silently
+disappears.
+
+`RestTransport` does **not** read the `MCP-Protocol-Version` request header the streamable
+HTTP binding defines for post-initialize requests. That is deliberate for now: the header is
+absent from clients that predate it and from clients that simply do not send it, and a
+server that validated it would refuse traffic that works today. If it is ever added, the
+spec's own fallback — treat an absent header as `2025-03-26` — is the only safe reading.
+
+**`toolList()` declares `'required' => []`.** Empty is not the same as absent: a closed
+schema that never names its mandatory members is rejected outright by the strict validators
+some hosts run over a tool definition before they will call it, so the member has to be
+there. It has to be *empty* because none of the three members IS mandatory — a call naming
+no operation is the catalog request `Dispatcher` answers with the operation list, which is
+how a client discovers the dispatcher at all. Naming `operation` there would be a lie that
+takes discovery with it.
+
+**`MenuFields::TARGET_SAME_TAB`** is the same problem one layer down. WordPress stores "open
+in this window" as the empty string, and an enum whose members are `""` and `"_blank"` is
+refused by the same validators, so the field could not be set at all by a client running
+one. The two halves are now kept apart: `_self` on the wire, empty in the database.
+`targetToken()` projects storage to the wire — anything that is not `_blank`, including the
+junk an importer can leave behind, reads as `_self` — and `storedTarget()` is its inverse and
+the only place the empty string is written. **The planned payload records the published
+token, not the stored value**, because `WriteVerifier` compares each promised field against
+the read-back projection: a promise carrying `''` against a read reporting `_self` would make
+every target change report an adjustment nobody made. `MenuTarget::snapshotItem()` is
+untouched and still records the raw `menu-item-target`, on the standing rule that a snapshot
+holds what core holds and never a projected value. `''` is still accepted on input and still
+means `_self`; the schema documents it as deprecated rather than listing it.
+
+## 51. Auth — OAuth 2.1 for MCP clients
+
+The gateway has always accepted an application password over HTTP Basic, and it still does.
+This section is the second way in: a client registers itself, an administrator approves it in
+the browser, and the client holds a bearer token afterwards. Everything lives under
+`SiteHelm\Auth` (`src/Auth/`), and every class in it is off unless
+`AuthServer::available()` is true.
+
+**Availability is two conditions, not one.** `AuthSettings::enabled()` reads
+`sitehelm_oauth_enabled`; unset — which is the normal state — it defers to
+`PublicUrl::isSecure()`, so a site on HTTPS is on and a site on plain HTTP is off. The second
+condition is `Installer::isAvailable()`. A site whose tables failed to create must not
+advertise endpoints it cannot serve, because discovery would publish an authorization server
+that errors on every request, which is worse than publishing none. When either is false
+`AuthServer::register()` returns before hooking anything: the routes 404 because they were
+never registered, and `BearerAuthenticator` is not listening, so nothing about Basic auth
+changes.
+
+### The classes
+
+| Class | What it owns |
+| --- | --- |
+| `AuthServer` | The boot point. Registers the REST routes, the two consent actions, and hands `Discovery`, `HostGuard` and `BearerAuthenticator` their hooks. |
+| `AuthSettings` | The `sitehelm_oauth_enabled` flag and its HTTPS-shaped default. |
+| `PublicUrl` | The single authority on this site's public address, and the only place the override is read. |
+| `MetadataDocument` | Both discovery documents, and `sameIdentifier()` — the slash- and case-tolerant comparison every resource check uses. |
+| `Discovery` | Serves both documents at their `/.well-known/` paths via `parse_request`, and registers a REST alias for each. |
+| `ClientRegistry` | RFC 7591 dynamic registration: mints `shc_…` identifiers, refuses dangerous redirect URIs, returns an existing row for an identical re-registration. |
+| `RedirectUriPolicy` | What a redirect URI may be, and whether a presented one matches a registered one. |
+| `AuthorizeEndpoint` | The consent leg. Refuses on the page until the client and redirect URI are verified, and only then bounces protocol errors back to the app. |
+| `ConsentView` | The standalone consent and refusal pages, styled inline. |
+| `AuthorizationCodes` | Five-minute, single-use codes held in transients under the sha256 of the code. |
+| `Pkce` | S256 only. Verifier length rules, challenge shape, and the constant-time comparison. |
+| `TokenEndpoint` | Both grants: redeeming a code, and rotating a refresh token. |
+| `TokenFactory` | The randomness. `mint()` for secrets, `identifier()` for public ids, `fingerprint()` for what goes in the table. |
+| `OAuthStore` | Every query against the two tables. Prepared statements only. |
+| `BearerAuthenticator` | `determine_current_user` on the MCP route, and the RFC 9728 challenge on a refused response. |
+| `HostGuard` | A 421 when OAuth traffic arrives on a hostname the site does not publish. |
+| `RevokeEndpoint` | RFC 7009. Always 200. |
+| `DiscoverySelfTest` | Fetches both `/.well-known/` documents and both REST aliases the way a client would, and compares the **identifier** in each, not the status code. `runAndRemember()` keeps the rows in `sitehelm_discovery_last` so the Health screen can report them without fetching anything. |
+| `OAuthGarbageCollector` | Prunes expired tokens and abandoned registrations, on the retention cron and opportunistically. |
+| `Installer` (Storage) | Creates the two tables; `DB_VERSION` is 3. |
+
+### Tables, options, transients, routes and hooks
+
+Two tables, both prefixed: `{$wpdb->prefix}sitehelm_oauth_clients` (`client_id`,
+`client_name`, `redirect_uris`, `created_by`, `created_at`, `authorized_at`) and
+`{$wpdb->prefix}sitehelm_oauth_tokens` (`token_hash`, `token_type`, `client_id`, `user_id`,
+`scopes`, `resource`, `refresh_of`, `created_at`, `expires_at`). Options:
+`sitehelm_oauth_enabled`, `PublicUrl::OPTION` and `sitehelm_discovery_last` (the last
+self-test, `{at, rows}`, not autoloaded). Transients:
+`sitehelm_oauth_code_<fingerprint>` (a code), `sitehelm_oauth_lock_<hash prefix>` (a refresh
+in flight), `sitehelm_oauth_gc` (the throttle).
+
+Routes, all in `sitehelm/v1` and all `permission_callback => __return_true`, because a client
+reaching them has no credential yet by definition: `GET /oauth/protected-resource`,
+`GET /oauth/authorization-server`, `POST /oauth/register`, `POST /oauth/token`,
+`POST /oauth/revoke`. Hooks: `parse_request` (discovery), `rest_api_init` (routes),
+`determine_current_user` (bearer), `rest_pre_dispatch` (host guard), `rest_post_dispatch`
+(challenge), `admin_post_sitehelm_authorize` and `admin_post_nopriv_sitehelm_authorize`
+(consent), and the existing `Retention::CRON_HOOK` for pruning — deliberately not a second
+cron event.
+
+### The invariants
+
+**Nothing that can be replayed is stored.** Tokens and codes exist in the response and
+nowhere else; the table holds `sha256` of the token and the transient key is `sha256` of the
+code. Every comparison of a secret is `hash_equals`.
+
+**A refusal never travels to an unverified redirect URI.** `AuthorizeEndpoint` renders a page
+for a disabled site, a site without HTTPS, a non-administrator, an unknown client and an
+unregistered redirect URI. Only once both the client and its redirect target are known good
+does a protocol error bounce back to the app.
+
+**Rotation expires; it never deletes.** `rotate()` takes a short transient lock so two
+windows of the same app cannot rotate at once — the loser gets a 409 telling it to retry —
+and the presented refresh token is brought forward to a 120-second grace expiry rather than
+removed, so a client whose response was lost can retry. The access token bound to it is never
+cascade-deleted.
+
+**The bearer path fails closed and stays out of the way.** A bearer token that is unknown,
+expired, or minted for another resource resolves to user 0 rather than falling back to
+whatever else the request carries. A request with *no* bearer header is returned untouched,
+which is what keeps application passwords, cookies and everything else working. A resolved
+token acts as the administrator who approved it and no more: every operation still runs its
+own capability check.
+
+**A registration that ever completed a consent is never pruned.** The `authorized_at = 0`
+clause in `pruneNeverAuthorizedClients()` is the whole point of that column. A client whose
+refresh token lapsed after a month of disuse looks exactly like an abandoned registration,
+and deleting it turns a saved connection into "invalid client" with nothing to point at.
+
+**The challenge names our own alias.** `WWW-Authenticate` on a refused MCP response points
+`resource_metadata` at `…/wp-json/sitehelm/v1/oauth/protected-resource`, never at
+`/.well-known/…`: that path is shared ground a CDN can cache and another plugin can own, and
+a challenge pointing there can send a client to somebody else's authorization server.
+
+**`PublicUrl` outranks `home_url()` everywhere.** Behind a proxy, a tunnel or a rename,
+WordPress's own answer is not the address a client can reach, and a token bound to the wrong
+identifier works once and then stops. On a subdirectory install the install path survives
+into every published URL and is stripped off an incoming request path before a well-known
+path is matched.
+
+---
+
+## 52. The Connect screen's sign-in half
+
+Connect used to describe one way in. It now describes two, and the order of the screen is the
+order of the decision: `render_method_chooser()` runs before anything is shown to paste, so
+nobody copies a snippet for a path they have not chosen. `ConnectScreenTest` pins that order.
+
+**The chooser.** Two radio cards, `data-sitehelm-methods`. The OAuth card is offered only when
+`AuthSettings::enabled()` **and** `PublicUrl::isSecure()`; otherwise it is `disabled` and
+`render_oauth_unavailable()` says which of the two is missing and what to do instead —
+switched off (turn it on in Settings, further down the same screen) or plain HTTP (a token in
+clear text is a password in clear text). The choice is remembered in `localStorage` and the JS
+hides every `[data-sitehelm-auth]` panel that does not match. Every snippet and every field on
+the screen resolves through `PublicUrl::mcpEndpoint()`, including `ConnectScreen::endpoint()`,
+so the override governs the whole page.
+
+**Connected apps.** `ConnectedAppsPanel` lists `OAuthStore::listClients()` — extended with two
+correlated subselects, `live_tokens` and `last_token_at`. There is no per-request timestamp
+anywhere in the schema, so "Last let in" is the newest token ever issued to that client and the
+column is labelled to say exactly that rather than implying a last-seen. A registration holding
+no tokens is still listed: it can still ask.
+
+`ConnectedAppsAction` answers both buttons — one class, because the capability check, the
+nonce, the lookup and the redirect are identical, and a guard that exists twice is a guard that
+gets fixed once. `handle_sign_out()` deletes the tokens; `handle_remove()` deletes the
+registration as well. `accept()` returns `?string` and both handlers return on null: in
+production `go_back()` exits, but under test the injected redirect returns, and a handler that
+carried on would act on an empty id.
+
+**Confirmation is the button's own second state**, never `window.confirm`: the label becomes
+"Remove Claude Desktop?" for five seconds. A dialog cannot name the app, and with scripting off
+the single press still works — the same bargain every other control here makes.
+
+**Settings.** `AuthSettingsPanel` renders the switch, the Server URL override, the three
+addresses derived from it, and two submits into one form (`sitehelm_intent` = `save` | `test`).
+`AuthSettingsAction` refuses an address rather than clamping it: `PublicUrl::normalize()`
+rejects nonsense, and anything that is not `https://` is refused unless
+`PublicUrl::isLocalHost()` says the host could not hold a certificate anyway. The address is
+saved before the switch, because the switch's fallback is read from the address.
+
+**The self-test.** `INTENT_TEST` calls `DiscoverySelfTest::runAndRemember()` and saves nothing
+else — it does not commit what is in the fields. The check compares identifiers, because
+`/.well-known/` is shared ground: a site with another OAuth plugin can serve a perfectly valid
+document there that belongs to somebody else, and a status-only check reports that as a pass.
+The Health screen shows the same result as a `Sign-in discovery` card, read from the stored
+rows and **never re-run there** — four network fetches on every load of a page an operator
+opens to read is a cost that page cannot justify. Untested is not a fault: the card reads as a
+failure only for `WRONG_OWNER` or `UNREACHABLE`.
+
+**Troubleshooting.** `ConnectTroubleshooting` is a folded `<details>` under the OAuth card
+listing the five failures an app cannot tell apart — all of them surface to the user as "could
+not connect": something else answering discovery, an address the app cannot reach, no HTTPS, a
+site that cannot reach itself, and a client asking for a protocol version outside
+`McpServer::SUPPORTED_PROTOCOL_VERSIONS`. The versions are printed from that constant, so the
+page cannot drift from what the negotiator accepts.

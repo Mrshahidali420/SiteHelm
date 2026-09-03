@@ -384,7 +384,7 @@ final class ElementorModule implements IntegrationModule {
 			new ElementorPageSettingsSet( $page_settings )
 		);
 
-		// The five gates every caller-supplied tree passes, shared by the three
+		// The six gates every caller-supplied tree passes, shared by the three
 		// operations that accept one. One instance, one formula: three copies would
 		// be three chances for one of them to lose a check.
 		$gates = new ElementorTreeInput( $tree, $coercion, $this->presence );

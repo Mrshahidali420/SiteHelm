@@ -142,7 +142,7 @@ Elementor is the deepest module, at 37 operations. SiteHelm edits the stored Ele
 
 1. Download the latest `sitehelm-*.zip` from [Releases](https://github.com/Mrshahidali420/SiteHelm/releases).
 2. In WordPress: **Plugins → Add New → Upload Plugin**, choose the zip, **Install Now**, then **Activate**.
-3. Open **SiteHelm → Connect** and press **Create an application password**. The endpoint, the credential and a ready-to-paste config for your client are all on that screen.
+3. Open **SiteHelm → Connect** and choose how your app signs in. On an HTTPS site the recommended path is one address pasted into the app, which then brings you here to approve it; otherwise press **Create an application password**. The endpoint, the credential and a ready-to-paste config for your client are all on that screen.
 
 That is the whole install. SiteHelm registers one REST route and one admin menu — no options screen, no dashboard widget, no cron jobs.
 
@@ -151,7 +151,7 @@ That is the whole install. SiteHelm registers one REST route and one admin menu 
 Six tabs, plus a Dashboard widget that states write access, issued credentials and the last five operations at a glance. Seven controls, each a form that goes through the same checks as a client would: mint a credential, revoke one, pause every write, set the retention window, roll one change back, switch any operation off, switch a whole module off.
 
 - **Home** — one sentence on how the week went, three tiles (changes, could not be done, undone), and the last five things an app did, each as a plain sentence.
-- **Connect an app** — the endpoint, an application password created in place and shown once, a config snippet for Claude Code, Cursor, or any other MCP client, and the list of every credential SiteHelm has issued — which account it acts as, when it was last used — each with a **Revoke** button.
+- **Connect an app** — a choice of how the app signs in, the endpoint, an application password created in place and shown once, a config snippet for Claude Code, Cursor, or any other MCP client, the list of every credential SiteHelm has issued — which account it acts as, when it was last used — each with a **Revoke** button, and the list of apps that have signed in, each with **Sign out** and **Remove**. Below that: whether apps may sign in at all, the server address they are given, and a **Test discovery** button that fetches this site's own sign-in documents over the network and reports what came back.
 - **History** — every operation a client has performed, newest first, with its target, outcome, actor, client and rollback reference. Filterable by operation, correlation id, outcome, client or period, and every named client links to its own history, and **Export CSV** downloads every row the filters match. Each applied row has a **Roll back** button: a preview of what would change first, then a confirm, and the restoration runs through the same engine and is itself recorded.
 - **Health** — which modules are active, which are version-blocked, which are absent, whether the storage tables exist, whether the Authorization header actually reaches WordPress on this server (with the .htaccess fix when it does not — the same verdict also appears under Tools → Site Health), the **Write access** switch that pauses every write from every client at the gate, and the **Record retention** window that decides how long the log and its rollback snapshots are kept.
 - **Permissions** — one card per integration, naming what a blocked one is waiting on, with four buttons — Off, Read, Edit, Full — that set what a connected app may do with that module; a module whose per-operation switches match no level reads Custom.
@@ -177,13 +177,19 @@ SiteHelm speaks JSON-RPC 2.0 over one authenticated REST route:
 POST https://your-site.com/wp-json/sitehelm/v1/mcp
 ```
 
-Authenticate with **WordPress Application Passwords** over HTTP Basic. The route requires a logged-in user, and every operation additionally re-checks that user's real capabilities — an agent can only do what that user could do by hand in wp-admin.
+There are two ways to authenticate, and the Connect screen offers both.
+
+**Signing in (recommended, HTTPS only).** Paste the endpoint above into a client that supports it and nothing else: the app registers itself, sends you to this site to approve it, and holds a token afterwards. No password is written into a config file, and any app can be signed out or removed from the Connect screen. Turn it off, or set the address apps are given, in the settings at the bottom of that screen.
+
+**An application password over HTTP Basic.** Works with every client, including the ones that cannot sign in. The snippets below use this path.
+
+Either way the route requires a logged-in user, and every operation additionally re-checks that user's real capabilities — an agent can only do what that user could do by hand in wp-admin.
 
 <details>
 <summary><strong>Claude Code</strong></summary>
 
 ```bash
-claude mcp add --transport http sitehelm https://your-site.com/wp-json/sitehelm/v1/mcp \
+claude mcp add --transport http sitehelm-your-site-com https://your-site.com/wp-json/sitehelm/v1/mcp \
   --header "Authorization: Basic $(printf '%s' 'admin:xxxx xxxx xxxx xxxx xxxx xxxx' | base64)"
 ```
 </details>
@@ -194,7 +200,7 @@ claude mcp add --transport http sitehelm https://your-site.com/wp-json/sitehelm/
 ```jsonc
 {
   "mcpServers": {
-    "sitehelm": {
+    "sitehelm-your-site-com": {
       "url": "https://your-site.com/wp-json/sitehelm/v1/mcp",
       "headers": {
         "Authorization": "Basic BASE64_OF_username:application_password"
