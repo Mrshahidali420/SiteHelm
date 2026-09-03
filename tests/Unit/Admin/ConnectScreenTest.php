@@ -126,6 +126,14 @@ final class ConnectScreenTest extends TestCase {
 		$this->assertStringContainsString( 'so SiteHelm cannot create one', $html );
 	}
 
+	public function testTheChoiceCardStopsOfferingTheCredentialWhenTheSiteCannotIssueOne(): void {
+		AdminWordPressStubs::$applicationPasswords = false;
+
+		$html = $this->render();
+
+		$this->assertStringContainsString( 'the second half of this path cannot be issued here', $html );
+	}
+
 	public function testWithNoPasswordYetTheScreenOffersToCreateOne(): void {
 		$html = $this->render();
 

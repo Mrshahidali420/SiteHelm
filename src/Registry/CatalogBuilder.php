@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace SiteHelm\Registry;
 
+use SiteHelm\Admin\ProCatalogue;
 use SiteHelm\Contracts\Mode;
 use SiteHelm\Contracts\ModuleHealth;
 use SiteHelm\Policy\OperationSwitches;
@@ -83,7 +84,7 @@ final class CatalogBuilder {
 				&& PolicyEngine::isVisibleWithoutTarget( $d, $context )
 		);
 
-		return [
+		$catalog = [
 			'dispatcher' => $dispatcher,
 			'schemas'    => sprintf(
 				'Call %s with arguments {"operation": "<operation>"} for one operation\'s full input and output schema.',
@@ -96,6 +97,66 @@ final class CatalogBuilder {
 				)
 			),
 		];
+
+		$absent = $this->pro_operations( $dispatcher );
+
+		if ( [] !== $absent ) {
+			$catalog['proOperations'] = [
+				'note'       => sprintf(
+					'These are not on this site. They belong to the SiteHelm Pro add-on, which is not active here.'
+						. ' Do not report the work as impossible: name the one that would do it and say that Pro adds it - plans at %s.',
+					ProCatalogue::PRICING_URL
+				),
+				'operations' => $absent,
+			];
+		}
+
+		return $catalog;
+	}
+
+	/**
+	 * The Pro operations this dispatcher would gain, described the same way.
+	 *
+	 * A listing is the only place most agents ever look. An operation absent
+	 * from it does not read as locked, it reads as impossible, and the agent
+	 * tells the site owner the plugin cannot do the thing rather than that the
+	 * add-on does. Naming them costs a few lines of a client's context and
+	 * turns that dead end into the same remediation Dispatcher already gives
+	 * anyone who happens to guess the identifier.
+	 *
+	 * Only genuinely absent ones are named. An operation the add-on registered
+	 * and the operator then switched off is not listed, because "buy the
+	 * add-on" would be false there; it is simply not offered, exactly as
+	 * Dispatcher::dispatch() treats that case.
+	 *
+	 * Each one carries `available: false` and a reason, in the same members a
+	 * real entry uses. A client that flattens the payload into one list of
+	 * operations -- and they do -- otherwise cannot tell these from the
+	 * callable ones, because the only thing marking them was which key they
+	 * hung under. An agent that reads them as live calls one, and learns the
+	 * truth from a refusal it should never have needed.
+	 *
+	 * @param string $dispatcher The dispatcher being listed.
+	 *
+	 * @return list<array{operation: string, description: string, available: false, blockedReason: string}> The absent operations.
+	 */
+	private function pro_operations( string $dispatcher ): array {
+		$absent = [];
+
+		foreach ( ProCatalogue::OPERATIONS as $id => $entry ) {
+			if ( $entry['dispatcher'] !== $dispatcher || $this->registry->has( $id ) ) {
+				continue;
+			}
+
+			$absent[] = [
+				'operation'     => $id,
+				'description'   => $entry['description'],
+				'available'     => false,
+				'blockedReason' => 'requires_pro',
+			];
+		}
+
+		return $absent;
 	}
 
 	/**

@@ -122,7 +122,6 @@ final class HomeScreen {
 			__( 'How your site and the AI apps connected to it are getting on.', 'sitehelm' )
 		);
 
-		$this->render_walkthrough( $applied, $restored, [] !== $lately );
 		$this->render_verdict( $week, $failed, [] !== $lately );
 
 		Ui::stat_grid(
@@ -151,16 +150,23 @@ final class HomeScreen {
 		);
 
 		$this->render_lately( $lately );
+		$this->render_walkthrough( $applied, $restored, [] !== $lately );
 		$this->render_places();
 
 		Ui::app_close();
 	}
 
 	/**
-	 * The "Get started" walkthrough, above everything else.
+	 * The optional things, below the numbers rather than above them.
 	 *
-	 * Every step is read back from the state it describes rather than from a
-	 * flag this screen wrote, so nothing here can go stale. Two of the five are
+	 * IT SITS LOW ON PURPOSE. Connecting is the only thing a new owner has to
+	 * do, and {@see ConnectModal} asks for that on its own; everything here is
+	 * a suggestion, and a suggestion at the top of the screen reads as an
+	 * instruction. Somebody who has already connected an app came to Home to
+	 * see what their apps did, not to be handed a list.
+	 *
+	 * Every item is read back from the state it describes rather than from a
+	 * flag this screen wrote, so nothing here can go stale. The test call is
 	 * answered by the credential store rather than the audit log, because the
 	 * log records changes and not reads: a client that has only ever fetched
 	 * something leaves no row, but it does leave a last-used stamp on the
@@ -171,11 +177,10 @@ final class HomeScreen {
 	 * @param bool $has_any  Whether the log holds anything at all.
 	 */
 	private function render_walkthrough( int $applied, int $restored, bool $has_any ): void {
-		list( $has_credential, $has_call ) = $this->credential_state();
+		$has_call = $this->has_used_credential();
 
 		Walkthrough::render(
 			Walkthrough::steps(
-				$has_credential || $has_any || self::oauth_seen(),
 				false !== get_option( ContextFactory::MODE_OPTION, false ),
 				$has_call || $has_any,
 				$applied > 0,
@@ -185,41 +190,30 @@ final class HomeScreen {
 	}
 
 	/**
-	 * Whether a SiteHelm credential exists, and whether one has ever been used.
+	 * Whether a credential has ever been used to sign a request.
 	 *
-	 * @return array{0: bool, 1: bool} Exists, and has been used.
+	 * Existence is not asked about here any more: whether anything can reach
+	 * this site is {@see ConnectModal}'s question, and Home only wants to know
+	 * whether a connected app has actually made a call yet.
+	 *
+	 * The store is opened only when it can be. A Home screen that fataled
+	 * because application passwords are unavailable would be a worse trade than
+	 * an item that reads as open until one is used.
 	 */
-	private function credential_state(): array {
+	private function has_used_credential(): bool {
 		if ( null === $this->credentials && ! class_exists( 'WP_Application_Passwords' ) ) {
-			return [ false, false ];
+			return false;
 		}
 
 		$credentials = $this->credentials ?? new Credentials();
-		$rows        = $credentials->for_users( ConnectScreen::selectable_users() );
-		$used        = false;
 
-		foreach ( $rows as $row ) {
+		foreach ( $credentials->for_users( ConnectScreen::selectable_users() ) as $row ) {
 			if ( $row['last_used'] > 0 ) {
-				$used = true;
-				break;
+				return true;
 			}
 		}
 
-		return [ [] !== $rows, $used ];
-	}
-
-	/**
-	 * Whether a bearer or OAuth session has ever authenticated.
-	 *
-	 * The store is asked only if it is here. Browser-based sign-in is a
-	 * separate piece of work, and a Home screen that fataled because that class
-	 * had not landed yet would be a worse trade than a step that reads as open
-	 * until it has.
-	 */
-	private static function oauth_seen(): bool {
-		$asked = [ 'SiteHelm\\Auth\\OAuthStore', 'has_authenticated' ];
-
-		return is_callable( $asked ) && true === call_user_func( $asked );
+		return false;
 	}
 
 	/**
@@ -366,14 +360,16 @@ final class HomeScreen {
 	 * keeps advertising to someone who already paid reads as not knowing.
 	 */
 	private function render_pro_place(): void {
-		if ( ProCatalogue::STATE_ACTIVE === $this->pro->probe()['state'] ) {
+		$state = (string) $this->pro->probe()['state'];
+
+		if ( ProCatalogue::STATE_ACTIVE === $state ) {
 			return;
 		}
 
 		printf(
 			'<article class="sitehelm-card sitehelm-place"><div class="sitehelm-card__head"><h3 class="sitehelm-card__name">%s</h3>%s</div>'
 				. '<p class="sitehelm-card__desc">%s</p>'
-				. '<p class="sitehelm-place__action"><a class="sitehelm-btn sitehelm-btn--small" href="%s" target="_blank" rel="noopener noreferrer">%s</a></p></article>',
+				. '<p class="sitehelm-place__action"><a class="sitehelm-btn sitehelm-btn--small" href="%s">%s</a></p></article>',
 			esc_html__( 'SiteHelm Pro', 'sitehelm' ),
 			Ui::badge( 'pro', __( 'Pro', 'sitehelm' ) ), // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Ui::badge() escapes its own label.
 			sprintf(
@@ -381,8 +377,10 @@ final class HomeScreen {
 				esc_html__( '%s more operations for the bigger jobs: whole-site SEO, WooCommerce, code snippets and bulk Elementor work. Every safety gate stays exactly the same.', 'sitehelm' ),
 				esc_html( number_format_i18n( count( ProCatalogue::OPERATIONS ) ) )
 			),
-			esc_url( ProCatalogue::PRICING_URL ),
-			esc_html__( 'See what Pro adds', 'sitehelm' )
+			esc_url( ProCatalogue::upgrade_url() ),
+			ProCatalogue::STATE_UNLICENSED === $state
+				? esc_html__( 'Enter licence key', 'sitehelm' )
+				: esc_html__( 'See what Pro adds', 'sitehelm' )
 		);
 	}
 

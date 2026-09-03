@@ -105,6 +105,24 @@ final class AdminWordPressStubs {
 	public static array $editableUsers = [];
 
 	/**
+	 * User meta the doubled store holds, as account id to name to value.
+	 *
+	 * Written through as well as read, because the connect dialog's whole
+	 * dismissal contract is that the flag survives the redirect: a double that
+	 * only answered reads would let a handler that stored nothing pass.
+	 *
+	 * @var array<int, array<string, mixed>>
+	 */
+	public static array $userMeta = [];
+
+	/**
+	 * What the doubled `wp_get_referer()` answers, or false for none.
+	 *
+	 * @var string|false
+	 */
+	public static $referer = false;
+
+	/**
 	 * Nonce actions passed to the doubled `check_admin_referer()`, in order.
 	 *
 	 * Recorded rather than merely allowed, because a handler that never verified
@@ -133,6 +151,8 @@ final class AdminWordPressStubs {
 		self::$applicationPasswords = true;
 		self::$users                = [];
 		self::$editableUsers        = [];
+		self::$userMeta             = [];
+		self::$referer              = false;
 
 		Functions\stubTranslationFunctions();
 		Functions\stubEscapeFunctions();
@@ -262,6 +282,21 @@ final class AdminWordPressStubs {
 		Functions\when( 'wp_is_application_passwords_available' )->alias(
 			static fn(): bool => self::$applicationPasswords
 		);
+		Functions\when( 'get_user_meta' )->alias(
+			static function ( int $user_id, string $key = '', bool $single = false ) {
+				$value = self::$userMeta[ $user_id ][ $key ] ?? '';
+
+				return $single ? $value : ( '' === $value ? [] : [ $value ] );
+			}
+		);
+		Functions\when( 'update_user_meta' )->alias(
+			static function ( int $user_id, string $key, $value ): bool {
+				self::$userMeta[ $user_id ][ $key ] = $value;
+
+				return true;
+			}
+		);
+		Functions\when( 'wp_get_referer' )->alias( static fn() => self::$referer );
 		Functions\when( 'get_current_user_id' )->alias( static fn(): int => self::$currentUserId );
 		Functions\when( 'wp_get_current_user' )->alias(
 			static fn(): object => self::user( self::$currentUserId )

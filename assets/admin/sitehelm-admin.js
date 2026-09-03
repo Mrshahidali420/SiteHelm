@@ -539,34 +539,26 @@
 	}
 
 	/**
-	 * The Home walkthrough's chevron, which reopens the finished steps.
+	 * Open the first-run connect dialog.
 	 *
-	 * The button is rendered hidden and revealed here, so a console without
-	 * scripting shows the one summary line and no control that cannot work.
-	 * The list it controls is rendered closed for the same reason: everything
-	 * it holds is already done.
+	 * The dialog is printed closed and opened here rather than carrying an
+	 * `open` attribute, because only showModal() gives it a backdrop, a focus
+	 * trap and Escape. A browser with scripting off therefore sees nothing,
+	 * which is the right way round: an untrapped panel nailed over the console
+	 * with no way to dismiss it would be worse than no dialog at all.
+	 *
+	 * Escape is left to cancel without dismissing for good. Closing it that way
+	 * is not an answer, so the dialog is offered again on the next screen; the
+	 * two controls that ARE answers both post.
+	 *
+	 * @param {HTMLElement} modal The dialog element.
 	 */
-	function initWalkthrough() {
-		var toggle = document.querySelector( '[data-sitehelm-walkthrough-toggle]' );
-
-		if ( ! toggle ) {
+	function initConnectModal( modal ) {
+		if ( 'function' !== typeof modal.showModal ) {
 			return;
 		}
 
-		var steps = document.getElementById( toggle.getAttribute( 'aria-controls' ) );
-
-		if ( ! steps ) {
-			return;
-		}
-
-		toggle.hidden = false;
-
-		toggle.addEventListener( 'click', function () {
-			var open = 'true' === toggle.getAttribute( 'aria-expanded' );
-
-			toggle.setAttribute( 'aria-expanded', open ? 'false' : 'true' );
-			steps.hidden = open;
-		} );
+		modal.showModal();
 	}
 
 	/**
@@ -686,7 +678,11 @@
 			}
 		);
 
-		initWalkthrough();
+		var modal = document.querySelector( '[data-sitehelm-connect-modal]' );
+
+		if ( modal ) {
+			initConnectModal( modal );
+		}
 
 		var nav = document.querySelector( '[data-sitehelm-appnav]' );
 

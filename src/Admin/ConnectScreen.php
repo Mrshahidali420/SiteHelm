@@ -45,6 +45,11 @@ use WP_Error;
 final class ConnectScreen {
 
 	/**
+	 * The id of the credential section, so the chooser can point at it.
+	 */
+	private const CREDENTIAL_ANCHOR = 'sitehelm-credential';
+
+	/**
 	 * The admin-post action that creates an application password.
 	 */
 	public const ACTION_CREATE_PASSWORD = 'sitehelm_create_password';
@@ -139,10 +144,10 @@ final class ConnectScreen {
 		$this->render_failure();
 		$this->render_readiness( [] !== $last );
 		$this->render_method_chooser( $endpoint );
-		$this->render_endpoint( $endpoint );
 		$this->render_credential( $handoff );
 		( new CredentialsPanel( $this->credentials ) )->render( self::selectable_users() );
 		$this->render_clients( $endpoint, $handoff );
+		$this->render_endpoint( $endpoint );
 		$this->apps->render();
 		( new AuthSettingsPanel() )->render();
 
@@ -374,6 +379,8 @@ final class ConnectScreen {
 			$this->render_oauth_unavailable();
 		}
 
+		$this->render_password_card();
+
 		Ui::section_close();
 	}
 
@@ -427,12 +434,58 @@ final class ConnectScreen {
 		printf(
 			'<p class="sitehelm-field__hint">%s</p>',
 			esc_html__(
-				'That is the whole configuration. Your app finds the sign-in page from this address by itself, and brings you here to approve it the first time it calls.',
+				'An app that can sign in needs nothing else: it finds the sign-in page from this address by itself and brings you here to approve it the first time it calls. If pasting the address alone does nothing, and no request has reached this site, your app is not one of them -- choose Application password instead.',
 				'sitehelm'
 			)
 		);
 
 		echo '</div></div></div>';
+	}
+
+	/**
+	 * What the other path actually asks of you, said where the choice is made.
+	 *
+	 * The address on its own is a whole configuration under OAuth and half of
+	 * one here, and the two sit a radio button apart. Without this card the
+	 * password path answers a choice with nothing on screen, and the next thing
+	 * under the cursor is a copy button for an address that will not connect by
+	 * itself -- so the failure arrives later, at the app, phrased as a refusal.
+	 *
+	 * On a site where application passwords are switched off the card says so
+	 * instead of offering the jump: a button that scrolls to an explanation of
+	 * why the button cannot work is worse than no button.
+	 */
+	private function render_password_card(): void {
+		printf(
+			'<div class="sitehelm-panel" data-sitehelm-auth="%s"><div class="sitehelm-panel__body">',
+			esc_attr( ClientConfig::AUTH_PASSWORD )
+		);
+
+		printf(
+			'<p class="sitehelm-field__hint">%s</p>',
+			esc_html__(
+				'This path needs two things, not one: the address, and a password to send with it. Create the password first -- the snippets further down then carry both, ready to paste.',
+				'sitehelm'
+			)
+		);
+
+		if ( wp_is_application_passwords_available() ) {
+			printf(
+				'<p><a class="sitehelm-btn sitehelm-btn--primary" href="#%s">%s</a></p>',
+				esc_attr( self::CREDENTIAL_ANCHOR ),
+				esc_html__( 'Create an application password', 'sitehelm' )
+			);
+		} else {
+			printf(
+				'<div class="sitehelm-note"><p>%s</p></div>',
+				esc_html__(
+					'Application passwords are disabled on this site, so the second half of this path cannot be issued here. Enable them, or choose a method your client supports without one.',
+					'sitehelm'
+				)
+			);
+		}
+
+		echo '</div></div>';
 	}
 
 	/**
@@ -473,7 +526,7 @@ final class ConnectScreen {
 	private function render_endpoint( string $endpoint ): void {
 		Ui::section_open(
 			__( 'Endpoint', 'sitehelm' ),
-			__( 'The address your AI client talks to. One route; SiteHelm adds nothing else to this site.', 'sitehelm' )
+			__( 'The same address again, on its own, for a client the snippets above do not cover. One route; SiteHelm adds nothing else to this site.', 'sitehelm' )
 		);
 
 		echo '<div class="sitehelm-panel"><div class="sitehelm-panel__body"><div class="sitehelm-field">';
@@ -516,7 +569,8 @@ final class ConnectScreen {
 			__(
 				'SiteHelm authenticates as a WordPress user, so an agent can never do more than that user could. Give it an account with only the capabilities it needs.',
 				'sitehelm'
-			)
+			),
+			self::CREDENTIAL_ANCHOR
 		);
 
 		echo '<div class="sitehelm-panel"><div class="sitehelm-panel__body">';

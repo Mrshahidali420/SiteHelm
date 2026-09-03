@@ -1,6 +1,6 @@
 <?php
 /**
- * The five things a new owner does first, and how far along they are.
+ * The things worth doing after an app is connected, none of them required.
  *
  * @package SiteHelm
  */
@@ -10,16 +10,26 @@ declare(strict_types=1);
 namespace SiteHelm\Admin;
 
 /**
- * The "Get started" walkthrough shown at the top of Home.
+ * The "When you're ready" list further down Home.
+ *
+ * NOT A CHECKLIST, deliberately, and this is the whole design. It carries no
+ * numbers, no "step 3 of 5" and no current-step marker, because a numbered list
+ * of five reads as five obligations and none of these are: a site with one
+ * connected app already works. Connecting is the one thing that must happen,
+ * and it is not in here at all -- {@see ConnectModal} asks for that on its own,
+ * once, and this list is what is left over.
  *
  * NOTHING HERE IS REMEMBERED. There is no dismissed flag and no option write:
- * every step is answered from the state it describes, so the walkthrough is
- * right on a site restored from a backup, right on a second administrator's
- * first visit, and cannot get stuck showing a step that was finished months
- * ago. The price is that a step can reopen — revoke every credential and step
- * one is open again — which is the correct reading rather than a bug.
+ * every item is answered from the state it describes, so the list is right on a
+ * site restored from a backup, right on a second administrator's first visit,
+ * and cannot get stuck showing something finished months ago. The price is that
+ * an item can reopen, which is the correct reading rather than a bug.
  *
- * {@see self::steps()} is pure: it takes five booleans and returns the ordered
+ * It removes itself once all four are done. A list of finished things is
+ * furniture, and Home has better uses for the space than a record of what an
+ * owner already knows they did.
+ *
+ * {@see self::steps()} is pure: it takes four booleans and returns the ordered
  * list, so every transition is testable without WordPress. The copy, the
  * illustrations and the markup live in the rendering half below.
  *
@@ -28,12 +38,7 @@ namespace SiteHelm\Admin;
 final class Walkthrough {
 
 	/**
-	 * Connect a client.
-	 */
-	public const STEP_CONNECT = 'connect';
-
-	/**
-	 * Choose what it may touch.
+	 * Choose what a connected app may touch.
 	 */
 	public const STEP_SCOPE = 'scope';
 
@@ -53,12 +58,15 @@ final class Walkthrough {
 	public const STEP_UNDO = 'undo';
 
 	/**
-	 * The steps, in the order they are done.
+	 * The items, in the order they are offered.
+	 *
+	 * An order, not a sequence: any of them can be done first, and doing one
+	 * does not unlock another. They are listed roughly by how soon a new owner
+	 * tends to want them.
 	 *
 	 * @var list<string>
 	 */
 	public const ORDER = [
-		self::STEP_CONNECT,
 		self::STEP_SCOPE,
 		self::STEP_CALL,
 		self::STEP_CHANGE,
@@ -66,49 +74,33 @@ final class Walkthrough {
 	];
 
 	/**
-	 * The id of the list the summary line's toggle controls.
+	 * Which of the optional things have been done.
+	 *
+	 * No item is ever marked "current". Nothing here is gated on anything else
+	 * here, so singling one out would invent an order the console does not
+	 * actually impose.
+	 *
+	 * @param bool $scoped  Whether the permission mode has ever been saved.
+	 * @param bool $called  Whether a client has ever authenticated a request.
+	 * @param bool $changed Whether any change was applied.
+	 * @param bool $undone  Whether any change was put back.
+	 *
+	 * @return list<array{key: string, done: bool}> The items, in order.
 	 */
-	private const LIST_ID = 'sitehelm-walkthrough-steps';
-
-	/**
-	 * Work out where the owner has got to.
-	 *
-	 * The current step is the FIRST open one, not the last done one: a site
-	 * that has undone a change but never saved a permission mode is still
-	 * missing step two, and pointing at step five would hide that.
-	 *
-	 * @param bool $connected Whether any client can reach this site.
-	 * @param bool $scoped    Whether the permission mode has ever been saved.
-	 * @param bool $called    Whether a client has ever authenticated a request.
-	 * @param bool $changed   Whether any change was applied.
-	 * @param bool $undone    Whether any change was put back.
-	 *
-	 * @return list<array{key: string, done: bool, current: bool}> The steps, in order.
-	 */
-	public static function steps( bool $connected, bool $scoped, bool $called, bool $changed, bool $undone ): array {
+	public static function steps( bool $scoped, bool $called, bool $changed, bool $undone ): array {
 		$done = [
-			self::STEP_CONNECT => $connected,
-			self::STEP_SCOPE   => $scoped,
-			self::STEP_CALL    => $called,
-			self::STEP_CHANGE  => $changed,
-			self::STEP_UNDO    => $undone,
+			self::STEP_SCOPE  => $scoped,
+			self::STEP_CALL   => $called,
+			self::STEP_CHANGE => $changed,
+			self::STEP_UNDO   => $undone,
 		];
 
-		$steps   = [];
-		$claimed = false;
+		$steps = [];
 
 		foreach ( self::ORDER as $key ) {
-			$is_done = $done[ $key ];
-			$current = ! $is_done && ! $claimed;
-
-			if ( $current ) {
-				$claimed = true;
-			}
-
 			$steps[] = [
-				'key'     => $key,
-				'done'    => $is_done,
-				'current' => $current,
+				'key'  => $key,
+				'done' => $done[ $key ],
 			];
 		}
 
@@ -116,9 +108,12 @@ final class Walkthrough {
 	}
 
 	/**
-	 * How many of the steps are done.
+	 * How many of the items are done.
 	 *
-	 * @param list<array{key: string, done: bool, current: bool}> $steps The steps.
+	 * Used to decide whether the list has anything left to offer. It is never
+	 * printed: a tally is what turns a list of suggestions into a score.
+	 *
+	 * @param list<array{key: string, done: bool}> $steps The items.
 	 */
 	public static function done_count( array $steps ): int {
 		$count = 0;
@@ -133,128 +128,61 @@ final class Walkthrough {
 	}
 
 	/**
-	 * Whether every step is done.
+	 * Whether every item is done.
 	 *
-	 * @param list<array{key: string, done: bool, current: bool}> $steps The steps.
+	 * @param list<array{key: string, done: bool}> $steps The items.
 	 */
 	public static function is_complete( array $steps ): bool {
-		return count( $steps ) === self::done_count( $steps );
+		return [] !== $steps && count( $steps ) === self::done_count( $steps );
 	}
 
 	/**
-	 * Render the walkthrough.
+	 * Render the list, unless there is nothing left to suggest.
 	 *
-	 * While anything is outstanding the list is open, with the first open step
-	 * marked. Once everything is done the list is rendered closed and only the
-	 * summary line shows; the chevron that reopens it is hidden until script
-	 * reveals it, so a console without JavaScript shows one honest line rather
-	 * than a control that cannot work.
-	 *
-	 * @param list<array{key: string, done: bool, current: bool}> $steps The steps.
+	 * @param list<array{key: string, done: bool}> $steps The items.
 	 */
 	public static function render( array $steps ): void {
-		if ( [] === $steps ) {
+		if ( [] === $steps || self::is_complete( $steps ) ) {
 			return;
 		}
 
-		$complete = self::is_complete( $steps );
-		$copy     = self::copy();
+		$copy = self::copy();
 
 		printf(
-			'<section class="sitehelm-walkthrough%s" aria-labelledby="sitehelm-walkthrough-head" data-sitehelm-walkthrough>',
-			$complete ? ' is-complete' : ''
+			'<section class="sitehelm-walkthrough" aria-labelledby="sitehelm-walkthrough-head" data-sitehelm-walkthrough>'
+				. '<h2 id="sitehelm-walkthrough-head" class="sitehelm-walkthrough__head">%1$s</h2>'
+				. '<p class="sitehelm-walkthrough__note">%2$s</p>'
+				. '<ul class="sitehelm-walkthrough__steps">',
+			esc_html__( 'When you\'re ready', 'sitehelm' ),
+			esc_html__( 'None of this is required — a connected app already works. These are the things owners tend to want next, in whatever order suits you.', 'sitehelm' )
 		);
-
-		self::render_head( $steps, $complete );
-
-		printf(
-			'<ol id="%s" class="sitehelm-walkthrough__steps"%s>',
-			esc_attr( self::LIST_ID ),
-			$complete ? ' hidden' : ''
-		);
-
-		$number = 0;
 
 		foreach ( $steps as $step ) {
-			++$number;
-			self::render_step( $step, $copy[ $step['key'] ], $number );
+			self::render_step( $step, $copy[ $step['key'] ] );
 		}
 
-		echo '</ol></section>';
+		echo '</ul></section>';
 	}
 
 	/**
-	 * The heading, or the collapsed summary line once everything is done.
+	 * One item.
 	 *
-	 * @param list<array{key: string, done: bool, current: bool}> $steps    The steps.
-	 * @param bool                                                $complete Whether all are done.
-	 */
-	private static function render_head( array $steps, bool $complete ): void {
-		if ( ! $complete ) {
-			printf(
-				'<h2 id="sitehelm-walkthrough-head" class="sitehelm-walkthrough__head">%s</h2>'
-					. '<p class="sitehelm-walkthrough__note">%s</p>',
-				esc_html__( 'Get started', 'sitehelm' ),
-				esc_html(
-					sprintf(
-						/* translators: 1: steps finished, 2: total steps. */
-						__( 'Step %1$s of %2$s. Each one takes a minute.', 'sitehelm' ),
-						number_format_i18n( self::done_count( $steps ) + 1 ),
-						number_format_i18n( count( $steps ) )
-					)
-				)
-			);
-			return;
-		}
-
-		printf(
-			'<p class="sitehelm-walkthrough__summary"><span class="sitehelm-walkthrough__tick" aria-hidden="true">%s</span>'
-				. '<span id="sitehelm-walkthrough-head">%s</span>'
-				. '<button type="button" class="sitehelm-walkthrough__toggle" hidden aria-expanded="false"'
-				. ' aria-controls="%s" data-sitehelm-walkthrough-toggle>'
-				. '<span class="dashicons dashicons-arrow-down-alt2" aria-hidden="true"></span>'
-				. '<span class="sitehelm-srt">%s</span></button></p>',
-			self::tick(), // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- A literal defined below.
-			esc_html(
-				sprintf(
-					/* translators: 1: steps finished, 2: total steps. */
-					__( 'All set — %1$s of %2$s', 'sitehelm' ),
-					number_format_i18n( self::done_count( $steps ) ),
-					number_format_i18n( count( $steps ) )
-				)
-			),
-			esc_attr( self::LIST_ID ),
-			esc_html__( 'Show the getting-started steps', 'sitehelm' )
-		);
-	}
-
-	/**
-	 * One step.
+	 * A done item keeps its place and its tick rather than disappearing, so the
+	 * list does not reshuffle itself under someone who is reading it.
 	 *
-	 * @param array{key: string, done: bool, current: bool}                    $step   The step's state.
-	 * @param array{title: string, help: string, page: string, action: string} $copy   Its words and destination.
-	 * @param int                                                              $number Its position, from one.
+	 * @param array{key: string, done: bool}                                   $step The item's state.
+	 * @param array{title: string, help: string, page: string, action: string} $copy Its words and destination.
 	 */
-	private static function render_step( array $step, array $copy, int $number ): void {
-		$state = '';
-
-		if ( $step['done'] ) {
-			$state = ' is-done';
-		} elseif ( $step['current'] ) {
-			$state = ' is-current';
-		}
-
+	private static function render_step( array $step, array $copy ): void {
 		printf(
-			'<li class="sitehelm-walkthrough__step%s"%s>'
-				. '<span class="sitehelm-walkthrough__art" aria-hidden="true">%s</span>'
+			'<li class="sitehelm-walkthrough__step%1$s">'
+				. '<span class="sitehelm-walkthrough__art" aria-hidden="true">%2$s</span>'
 				. '<span class="sitehelm-walkthrough__body">'
-				. '<span class="sitehelm-walkthrough__title"><span class="sitehelm-walkthrough__num">%s</span>%s</span>'
-				. '<span class="sitehelm-walkthrough__help">%s</span>'
-				. '<span class="sitehelm-walkthrough__action">%s</span></span></li>',
-			esc_attr( $state ),
-			$step['current'] ? ' aria-current="step"' : '',
+				. '<span class="sitehelm-walkthrough__title">%3$s</span>'
+				. '<span class="sitehelm-walkthrough__help">%4$s</span>'
+				. '<span class="sitehelm-walkthrough__action">%5$s</span></span></li>',
+			$step['done'] ? ' is-done' : '',
 			self::art( $step['key'] ), // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Literals defined below.
-			esc_html( number_format_i18n( $number ) ),
 			esc_html( $copy['title'] ),
 			esc_html( $copy['help'] ),
 			$step['done']
@@ -264,8 +192,7 @@ final class Walkthrough {
 					esc_html__( 'Done', 'sitehelm' )
 				)
 				: sprintf(
-					'<a class="sitehelm-btn sitehelm-btn--small%s" href="%s">%s</a>',
-					$step['current'] ? ' sitehelm-btn--primary' : '',
+					'<a class="sitehelm-btn sitehelm-btn--small" href="%s">%s</a>',
 					esc_url( admin_url( 'admin.php?page=' . $copy['page'] ) ),
 					esc_html( $copy['action'] )
 				)
@@ -273,37 +200,31 @@ final class Walkthrough {
 	}
 
 	/**
-	 * What each step says and where its button goes.
+	 * What each item says and where its button goes.
 	 *
 	 * @return array<string, array{title: string, help: string, page: string, action: string}>
 	 */
 	private static function copy(): array {
 		return [
-			self::STEP_CONNECT => [
-				'title'  => __( 'Connect a client', 'sitehelm' ),
-				'help'   => __( 'Give Claude, ChatGPT or another AI app one address and one password so it can reach this site.', 'sitehelm' ),
-				'page'   => AdminMenu::PAGE_CONNECT,
-				'action' => __( 'Open Connect', 'sitehelm' ),
-			],
-			self::STEP_SCOPE   => [
-				'title'  => __( 'Choose what it may touch', 'sitehelm' ),
-				'help'   => __( 'Say whether an app may only look, may make changes, or may do everything. You can narrow this later.', 'sitehelm' ),
+			self::STEP_SCOPE  => [
+				'title'  => __( 'Choose what an app may touch', 'sitehelm' ),
+				'help'   => __( 'Say whether an app may only look, may make changes, or may do everything. You can narrow this at any time.', 'sitehelm' ),
 				'page'   => AdminMenu::PAGE_MODULES,
 				'action' => __( 'Set permissions', 'sitehelm' ),
 			],
-			self::STEP_CALL    => [
+			self::STEP_CALL   => [
 				'title'  => __( 'Make a test call', 'sitehelm' ),
 				'help'   => __( 'Ask the app to read something from this site, so you know the connection works before it writes anything.', 'sitehelm' ),
 				'page'   => AdminMenu::PAGE_CONNECT,
 				'action' => __( 'Test the connection', 'sitehelm' ),
 			],
-			self::STEP_CHANGE  => [
+			self::STEP_CHANGE => [
 				'title'  => __( 'Make a first change', 'sitehelm' ),
 				'help'   => __( 'Have the app edit one post. Nothing is written until the change has been planned and checked.', 'sitehelm' ),
 				'page'   => AdminMenu::PAGE_OPERATIONS,
 				'action' => __( 'See what it can do', 'sitehelm' ),
 			],
-			self::STEP_UNDO    => [
+			self::STEP_UNDO   => [
 				'title'  => __( 'Undo it', 'sitehelm' ),
 				'help'   => __( 'Every change keeps a copy of what was there before. Put that change back from History in one click.', 'sitehelm' ),
 				'page'   => AdminMenu::PAGE_ACTIVITY,
@@ -313,13 +234,13 @@ final class Walkthrough {
 	}
 
 	/**
-	 * The small illustration for one step.
+	 * The small illustration for one item.
 	 *
 	 * Drawn rather than fetched, so the console needs no image requests and the
-	 * marks inherit the text colour of whatever state their step is in. Each is
-	 * decorative: the step already says in words what it is.
+	 * marks inherit the text colour of whatever state their item is in. Each is
+	 * decorative: the item already says in words what it is.
 	 *
-	 * @param string $key The step's key.
+	 * @param string $key The item's key.
 	 */
 	private static function art( string $key ): string {
 		$open = '<svg class="sitehelm-walkthrough__svg" viewBox="0 0 48 48" fill="none" stroke="currentColor"'
@@ -333,16 +254,10 @@ final class Walkthrough {
 	/**
 	 * The paths of one illustration.
 	 *
-	 * @param string $key The step's key.
+	 * @param string $key The item's key.
 	 */
 	private static function art_body( string $key ): string {
 		switch ( $key ) {
-			case self::STEP_CONNECT:
-				return '<rect x="4.8" y="12" width="16" height="24" rx="3" fill="var(--sh-primary-light)"></rect>'
-					. '<rect x="27.2" y="12" width="16" height="24" rx="3" fill="var(--sh-primary-light)"></rect>'
-					. '<path d="M20.8 24h6.4"></path>'
-					. '<path stroke="var(--sh-primary)" d="M17.6 20.8h-6.4M17.6 27.2h-6.4M36.8 20.8h-6.4M36.8 27.2h-6.4"></path>';
-
 			case self::STEP_SCOPE:
 				return '<path fill="var(--sh-primary-light)" d="M24 5.6 39.2 9.6v13.6c0 6.4-6 12.4-15.2 19.2'
 					. '-9.2-6.8-15.2-12.8-15.2-19.2V9.6Z"></path>'
@@ -374,7 +289,7 @@ final class Walkthrough {
 	}
 
 	/**
-	 * The check mark a finished step carries.
+	 * The check mark a finished item carries.
 	 */
 	private static function tick(): string {
 		return '<svg class="sitehelm-walkthrough__tickmark" viewBox="0 0 20 20" fill="none" stroke="currentColor"'

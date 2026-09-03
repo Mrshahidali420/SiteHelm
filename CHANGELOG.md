@@ -9,6 +9,63 @@ Every entry names the user-visible outcome. Internal refactors, test additions, 
 documentation-only changes are not listed unless they change what an agent can do or how
 an operation behaves.
 
+## [Unreleased]
+
+### Added
+- **A free site now says what Pro would add, instead of reading as impossible.** Ask an
+  agent to do something only the add-on does and it used to answer that SiteHelm cannot do
+  it at all — because a listing is the only place most agents look, and an operation absent
+  from one does not read as locked, it reads as unavailable anywhere. Every listing now ends
+  with the operations that dispatcher would gain, each one named and described, and where to
+  read about them. An operation the add-on registered and the site then switched off is not
+  listed: it is not for sale, it is turned off.
+
+- **Upgrading and activating now happen inside wp-admin, on a screen SiteHelm owns.**
+  "Upgrade to Pro" opens a page in the console that shows every plan with its price —
+  annual and lifetime, the recommended one flagged — and takes you to the same Freemius
+  checkout the website does. Prices come from wpsitehelm.com and are cached for half a day,
+  with the plugin's own copy standing in whenever the site cannot be reached, so the page
+  never shows a price it is not sure of. A site that already has the add-on installed sees
+  the licence field first instead of the plans, and a site with an active licence is not
+  sold to at all.
+- **A site running Pro without a licence says so on every admin screen**, not only on the
+  ones you happen to open in SiteHelm, and the notice leads to the field where the key
+  goes. The key itself is entered in Freemius's own dialog: SiteHelm never reads, stores or
+  forwards it.
+
+### Changed
+- **Getting started asks for one thing, in a dialog, instead of handing you a list of five.**
+  Home used to open with a numbered "Get started" block whose first step was connecting an
+  app and whose other four — permissions, a test call, a first change, undoing it — read as
+  four more things you had to finish before the plugin counted as set up. None of them were
+  required. Connecting now gets a dialog of its own that opens on any SiteHelm screen while
+  nothing can reach the site, says what an app needs and how long it takes, and goes to the
+  Connect tab; "Not now" or the × closes it for that administrator for good, and a connected
+  site never sees it again. The other four moved below the numbers as "When you're ready" —
+  no numbering, no tally, no order — and the list removes itself once they are all done.
+- **Connect leads with the credential, not the address.** The application-password path needs
+  two things and the screen only ever showed one, with the working path — create a password,
+  then copy a snippet that already carries it — sitting below the fold. Choosing that path
+  now shows a card that says so in a sentence and a button straight to the credential form,
+  which sits above the snippets that carry it, with the bare address demoted to the bottom
+  for a client the snippets do not cover. The sign-in card no longer claims the address is
+  the whole configuration without qualification: it says which apps that is true for, and
+  what to do when nothing happens.
+
+### Fixed
+- **"Activate a licence" led to a page that refused to open.** The button on Health, and the
+  sentence an agent was given when a Pro operation refused, both pointed at an account page
+  the licensing SDK never registers for an add-on, so following either was answered with
+  "Sorry, you are not allowed to access this page" — and the Add-Ons screen, the other route
+  offered, could not load at all on a host that cannot reach the licensing service. Every
+  link about Pro now goes to SiteHelm's own Upgrade screen, which this plugin registers and
+  which works whether or not anything outbound succeeds, and the Add-Ons screen is gone.
+- **Buttons in the console were drawn in their own background colour, label and all.** A link
+  colour meant for bare links in prose outweighed every button, tab and menu item built from
+  an anchor, so a primary button rendered as a solid block of colour with the text
+  invisible inside it. The rule now applies only to links that carry no class of
+  their own.
+
 ## [0.11.0] — 2026-09-03
 
 ### Added

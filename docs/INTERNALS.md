@@ -1190,8 +1190,12 @@ console cannot disagree with the gateway.
   plugin carries a static catalogue of the Pro operation ids (`ProCatalogue::OPERATIONS`
   — dispatcher, module, read/write, description). `probe()` answers
   `{state: absent|unlicensed|active, url}` from `function_exists('sitehelm_pro_fs')` and
-  `can_use_premium_code()`, every lookup guarded; the url is `sitehelm_fs()->addon_url('sitehelm-pro')`
-  when absent, the add-on's Account page when unlicensed, `''` when active. A registered
+  `can_use_premium_code()`, every lookup guarded; the url is `ProCatalogue::upgrade_url()`
+  (`?page=sitehelm-upgrade`) when absent **or** unlicensed, `''` when active. Both SDK
+  addresses this used to hand out were dead on real sites: `addon_url()` lands on an
+  Add-Ons list that fails to load when a host cannot reach Freemius, and `get_account_url()`
+  on an add-on builds `sitehelm-pro-account`, a slug the SDK never registers for an add-on,
+  so the click is answered with "you are not allowed to access this page". A registered
   operation whose id is in the catalogue gets `sitehelm-tool--pro` and a leading
   `Ui::badge('pro', 'Pro')` (tone `pro` is in `Ui::TONES`), whatever the state. While the
   state is not active, catalogue ids the registry lacks render as `.sitehelm-tool--locked`
@@ -1411,8 +1415,11 @@ bounds it.
 `PluginLinks::add()` prepends `sitehelm-connect` ("Connect" → `?page=sitehelm`) and
 `sitehelm-status` ("Status" → `?page=sitehelm-status`) to the row, only when the viewer
 holds `AdminMenu::CAPABILITY`; otherwise the row is returned untouched. While the site is
-not Pro-licensed it also appends an amber "Get Pro" link (`ProCatalogue::PRICING_URL`,
-new tab) after the row's own links. Pure function, tested directly.
+not Pro-licensed it also appends an amber link after the row's own links, pointing at
+`ProCatalogue::upgrade_url()` in the same tab: "Activate Pro" while the add-on is installed
+without a licence, "Get Pro" while it is absent. `add()` takes an optional second
+`ProCatalogue` argument purely as a test seam — WordPress passes this filter one argument,
+so a live site always probes. Pure function, tested directly.
 
 ---
 
@@ -1465,7 +1472,14 @@ edit the same option.
   plugin's own published constants, so nothing untrusted is echoed; a **registered** Pro
   operation the operator switched off still gets the generic answer, because the add-on is
   already there and "install it" would be false. `CatalogBuilder($registry, $switches)`
-  omits switched-off operations from the catalogue. `Diagnostics\OperationSchema` refuses a
+  omits switched-off operations from the catalogue, and appends a **`proOperations`** member
+  — `{note, operations: [{operation, description}]}` — naming the `ProCatalogue::OPERATIONS`
+  entries for that dispatcher the registry does not hold, with `PRICING_URL` in the note. The
+  remediation above only fires for a caller who guessed an id; a listing is where an agent
+  actually looks, and an operation absent from one reads as impossible rather than locked.
+  The same registered-but-switched-off rule applies: `$registry->has($id)` excludes it, so
+  the member never offers to sell something the site already has. The member is omitted
+  entirely, not emitted empty, when the dispatcher has no absent Pro operations. `Diagnostics\OperationSchema` refuses a
   switched-off id with its unknown-name answer too (second ctor arg, defaults to reading the
   option itself because modules are built with no arguments by `IntegrationDirectory`).
 - **Wiring** — `Plugin::register()` creates one `OperationSwitches` and shares it with the
@@ -1544,41 +1558,69 @@ change; labels, slugs and one new screen did.
 After the tab loop, `add_pages()` calls `add_outward_links()`: two `add_submenu_page`
 entries whose slug is a full URL and whose callback is omitted, which WordPress renders
 as plain links — "Community" (`AdminMenu::COMMUNITY_URL`, the Facebook group, always)
-and an orange "Upgrade to Pro" (`ProCatalogue::PRICING_URL`, only while
-`(new ProCatalogue())->probe()['state']` is not `STATE_ACTIVE` — a menu that keeps
-selling to someone who already paid reads as not knowing they paid). `admin_head`
+— plus one ordinary submenu entry, the Upgrade screen (`PAGE_UPGRADE` =
+`sitehelm-upgrade`, `UpgradeScreen`), labelled "Upgrade to Pro" while the add-on is absent
+and "Activate Pro" while it is installed without a licence, and added only while the
+injected `ProCatalogue`'s state is not `STATE_ACTIVE` — a menu that keeps selling to
+someone who already paid reads as not knowing they paid. The catalogue is
+`AdminMenu`'s fifth constructor argument so the menu's states are testable. `admin_head`
 prints the orange style, `admin_footer` a two-line script adding
-`target="_blank" rel="noopener noreferrer"` to both.
+`target="_blank" rel="noopener noreferrer"` to the outward link.
+
+`AdminMenuTest` pins the defect this arrangement was built for: an entry whose slug names
+a page nobody registered is accepted at registration time, drawn in the menu, and answered
+on click with "Sorry, you are not allowed to access this page". Every entry whose slug is
+not a full URL must therefore arrive with a callback.
 
 - **Home** (`HomeScreen($store = new AuditStore(), $pro = new ProCatalogue(), $credentials = null)`,
   `RECENT` = 5, `WINDOW` = 7 days) runs
   eight `AuditStore` queries in a fixed order — this-week count, three failure counts, the
-  walkthrough's all-time `applied` and `restored` counts, then the recent sample and the
+  optional list's all-time `applied` and `restored` counts, then the recent sample and the
   "lately" list — and says it in one sentence:
   "All good" / "N changes this week, nothing failed." or "N things could not be done this
   week", three `.sitehelm-statcard` tiles, a `.sitehelm-feed` of the last five sentences,
   and a "Connect an app" call to action when the log is empty. While the injected
   `ProCatalogue` does not probe `STATE_ACTIVE`, a last card sells Pro by operation count
-  ("See what Pro adds" → `ProCatalogue::PRICING_URL`); a licensed site never sees it. Tests drive it with
+  ("See what Pro adds" → `ProCatalogue::upgrade_url()`); a licensed site never sees it. Tests drive it with
   `FakeWpdb` queues in exactly that order (`varQueue` then `resultQueue`).
-- **`Admin\Walkthrough`** is the "Get started" block Home renders **above** the verdict:
-  five steps — connect a client, choose what it may touch, make a test call, make a first
-  change, undo it — each with a decorative inline SVG, one line of help and one button to the
-  right tab. `Walkthrough::steps( $connected, $scoped, $called, $changed, $undone )` is pure
-  PHP (no WordPress) and returns `key`/`done`/`current` triples, so every transition is unit
-  tested in `WalkthroughTest`; the current step is the **first** open one, so a gap early on is
-  pointed at even when later steps are done. `render()` prints the markup, `is_complete()` and
-  `done_count()` drive the collapsed "All set — 5 of 5" line, which is all a settled site sees:
-  the `<ol>` ships with `hidden` and the chevron that reopens it ships with `hidden` too, revealed
-  by `initWalkthrough()` in `sitehelm-admin.js`. **Nothing is remembered** — no dismissed flag and
-  no option write — so the five states come from what they describe:
-  `connected` = a `SiteHelm MCP` application password exists (via `Credentials::for_users(
-  ConnectScreen::selectable_users() )`; the store is opened lazily and skipped entirely when
-  `WP_Application_Passwords` is absent) **or** any audit row exists **or**
-  `SiteHelm\Auth\OAuthStore::has_authenticated()` says so — asked through `is_callable()` because
-  that class need not exist; `scoped` = `get_option( ContextFactory::MODE_OPTION )` is not `false`;
-  `called` = a credential carries a non-zero `last_used`, **because the audit log records changes
-  and not reads** — a client that has only ever fetched something leaves no row; `changed` =
+- **`Admin\ConnectModal`** is the first-run dialog, and it asks for **one** thing: connect an
+  app. It is printed by `AdminMenu::print_connect_modal()` on `admin_footer`, gated on
+  `get_current_screen()->id` through `AdminMenu::is_console_screen()` (the hook passes an empty
+  suffix, so the screen object is the only source), so it can open on **any** console screen —
+  "nothing can reach this site" is just as true on Permissions as on Home. `render_if_needed()`
+  checks `AdminMenu::CAPABILITY` first, then `should_open( $connected, $dismissed )`:
+  `connected` = `OAuthStore::has_authenticated()` (through `is_callable()`, the class need not
+  exist) **or** a `SiteHelm MCP` application password exists (`Credentials::for_users(
+  ConnectScreen::selectable_users() )`, store opened lazily and skipped when
+  `WP_Application_Passwords` is absent); `dismissed` = the per-user `sitehelm_connect_modal_dismissed`
+  meta. **This is the one remembered thing on Home** — a panel over the screen has to be
+  dismissible for good — and it is stored **per user**, so a second administrator arriving later
+  still gets the one instruction they need. The connected half stays live rather than an
+  "onboarded" flag: revoke every credential and the dialog is offered again, unless that
+  administrator already said no. Both ways out (the × and "Not now") POST the same
+  `ConnectModalAction` form, because a close that only hid it would reopen on the next page
+  load; `ConnectModalAction::handle()` checks the capability, then `check_admin_referer()`, writes
+  the meta and redirects to `wp_get_referer()` (Home when there is none) through
+  `wp_safe_redirect()`. The `<dialog>` is printed **closed**; `initConnectModal()` in
+  `sitehelm-admin.js` calls `showModal()`, which is what supplies the backdrop, focus trap and
+  Escape. `--sh-*` tokens are defined on `.sitehelm-app, .sitehelm-widget, .sitehelm-modal` —
+  the dialog renders outside `.sitehelm-app`, and an unresolvable `var()` deletes the whole
+  declaration.
+- **`Admin\Walkthrough`** is the "When you're ready" list Home renders **below** the verdict,
+  the numbers and "What changed lately", by `render_walkthrough()`: four **optional** things —
+  choose what an app may touch, make a test call, make a first change, undo it — each with a
+  decorative inline SVG, one line of help and one button to the right tab. **Not a checklist:**
+  no numbering, no "step N of M", no current-step marker, because a numbered list reads as
+  obligations and none of these are — connecting is the only thing that must happen and it is
+  not in this list at all. `Walkthrough::steps( $scoped, $called, $changed, $undone )` is pure
+  PHP (no WordPress) and returns `key`/`done` pairs only — a `current` member would invent an
+  order the console does not impose — so every transition is unit tested in `WalkthroughTest`.
+  `render()` prints nothing once `is_complete()`: a list of finished things is furniture.
+  **Nothing here is remembered** — no dismissed flag and no option write — so the four states
+  come from what they describe: `scoped` = `get_option( ContextFactory::MODE_OPTION )` is not
+  `false`; `called` = a credential carries a non-zero `last_used` **or** any audit row exists,
+  **because the audit log records changes and not reads** — a client that has only ever fetched
+  something leaves no row but does leave a last-used stamp; `changed` =
   `count( [ 'outcome' => applied ] ) > 0`; `undone` = the same for `restored`.
 - **`Admin\Phrasebook`** turns an audit row into a sentence: `sentence(row)` =
   client + verb (past tense; "could not …" on failure, "started to …" on pending,
@@ -1592,6 +1634,43 @@ prints the orange style, `admin_footer` a two-line script adding
   state says "Connect an app on the Connect tab".
 - **Tools** opens with a `.sitehelm-advanced` callout ("most owners only need Permissions")
   and keeps the per-operation switches of §27.
+- **Upgrade** (`UpgradeScreen($pricing = new Pricing(), $pro = new ProCatalogue())`,
+  `PAGE_UPGRADE` = `sitehelm-upgrade`) is the one page every Pro link in the console points
+  at, and it decides what to show from `ProCatalogue::probe()`:
+  - **absent** — the plans, priced, with the featured one flagged
+    (`.sitehelm-plan--featured` + `.sitehelm-plan__flag`, exactly one of each);
+  - **unlicensed** — the licence field first ("Activate SiteHelm Pro", "installed but not
+    licensed"), the plans below it;
+  - **active** — "Pro is active", no prices and no checkout at all.
+  Buying is always a real `<a href>` to the hosted checkout
+  (`Pricing::checkout_url($pricing_id, $cycle)` →
+  `https://checkout.freemius.com/plugin/37704/plan/62673/?pricing_id=…&billing_cycle=annual|lifetime`,
+  never a coupon parameter), progressively upgraded by `UpgradeScreen::CHECKOUT_JS` (the
+  Freemius-hosted overlay) through `[data-sitehelm-checkout]`. A blocked script therefore
+  still sells; a test asserts every checkout anchor carries the hosted `href`.
+- **`Admin\Pricing`** is the price source: `FEED_URL` = `https://wpsitehelm.com/pricing.json`
+  published from the marketing site's own pricing data, read with `wp_remote_get` (5s), cached
+  in the `sitehelm_pricing` transient for `CACHE_SECONDS` (12h) and — as the empty string, so
+  a cached failure is never mistaken for a list of no plans — for `FAILURE_SECONDS` (1h) after
+  a bad read. Validation is **all or nothing**: a feed that fails any check is rejected whole
+  and `FALLBACK_PLANS`/`FALLBACK_INCLUDES`/`FALLBACK_NOTE`, compiled into the plugin, answer
+  instead (`is_live()` says which was used). `pricingId` is digit-only, and every string the
+  feed carries is escaped on the way out — a test proves feed text cannot reach the page as
+  markup. The constructor takes an optional fetcher closure as the test seam; `forget()`
+  drops the transient.
+- **`Admin\LicenceDialog`** wraps the SDK's own licence modal, and nothing in this plugin
+  reads, stores or forwards a key. `print_dialog()` calls
+  `$fs->_add_license_activation_dialog_box()` once per request into the footer, skipped on
+  the Plugins list where the SDK already prints its own; `trigger($label, $classes)` renders
+  the button the SDK's script binds (`TRIGGER_CLASS` = `activate-license-trigger` suffixed
+  with `affix()`, the add-on's unique affix). `is_available()` is false with no add-on and
+  false against an SDK too old to carry the method, in which case callers print
+  `fallback_sentence()` — where the Plugins-row link is — rather than a button that would do
+  nothing.
+- **`Admin\UnlicensedNotice`** is the non-dismissible `notice notice-warning` shown on every
+  admin screen while the add-on is installed without a licence: it names the problem and
+  links to the Upgrade screen. Silent when the state is absent or active, silent on the
+  Upgrade screen itself, and silent for a viewer without `AdminMenu::CAPABILITY`.
 - **The tab row does not stretch** (`.sitehelm-appnav__item { flex: 0 0 auto }`) — more
   tabs are planned and the row scrolls instead of squeezing.
 
