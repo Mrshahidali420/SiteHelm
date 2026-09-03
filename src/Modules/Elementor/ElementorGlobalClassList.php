@@ -87,7 +87,7 @@ final class ElementorGlobalClassList {
 					],
 					'classes'          => [
 						'type'        => 'array',
-						'description' => 'The classes, in the order the editor shows them. Each entry carries `id` (the handle a write addresses it by, and the CSS class name the markup wears), `label`, and `definition` — the whole stored definition including its `variants`, as stored.',
+						'description' => 'The classes, in the order the editor shows them. Each entry carries `id` (the handle a write addresses it by, and the CSS class name the markup wears), `label`, and `definition` — the whole stored definition including its `variants`, as stored. An entry this site holds in a shape SiteHelm cannot resolve carries `id` and `error` instead, keeping its place in the order; the rest of the list is still reported. Treat an entry carrying `error` as unknown rather than as an empty class.',
 					],
 				],
 				'required'             => [ 'elementorVersion', 'classCount', 'inEditorSync', 'classes' ],
@@ -162,11 +162,7 @@ final class ElementorGlobalClassList {
 		$classes = [];
 
 		foreach ( $order as $id ) {
-			$classes[] = [
-				'id'         => (string) $id,
-				'label'      => $this->writes->labelOf( $items[ $id ] ?? null ),
-				'definition' => $items[ $id ] ?? [],
-			];
+			$classes[] = $this->describe( $items, $id );
 		}
 
 		return [
@@ -177,6 +173,57 @@ final class ElementorGlobalClassList {
 		];
 	}
 	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+
+	/**
+	 * One class as this read reports it, or a marker saying why it could not be
+	 * read.
+	 *
+	 * ONE MALFORMED CLASS MUST NOT ABORT THE LIST. A class repository is a shared
+	 * store an operator did not necessarily write every entry of; one entry a
+	 * newer Elementor, a half-finished import or another plugin left in a shape
+	 * this reader cannot resolve used to take the whole answer with it, so an
+	 * operator asking "what classes does this site have" got nothing at all and
+	 * no way to find out which entry was at fault. Containing per item is the
+	 * same judgement `ElementorElementsUpdate` makes when it re-reports one
+	 * entry's refusal against that entry rather than the batch.
+	 *
+	 * THE MARKER CARRIES THE ID AND A SHORT REASON, and nothing else. The entry
+	 * keeps its place in the order so the list still describes the cascade, and a
+	 * caller reading `error` knows not to treat the absent `definition` as an
+	 * empty class it could safely overwrite.
+	 *
+	 * @param array<string, mixed> $items The stored definitions, keyed by id.
+	 * @param mixed                $id    The identifier from the stored order.
+	 *
+	 * @return array<string, mixed> The class entry, or the error marker.
+	 *
+	 * @throws OperationException Caught here, never propagated: the marker is the
+	 *                           whole point of the containment.
+	 */
+	private function describe( array $items, mixed $id ): array {
+		$key = is_scalar( $id ) ? (string) $id : '';
+
+		try {
+			if ( '' === $key ) {
+				throw new OperationException(
+					ErrorCode::ExecutionFailed,
+					'This site\'s class order holds an entry with no usable identifier.',
+					'Open the Elementor editor and re-save the global classes.'
+				);
+			}
+
+			return [
+				'id'         => $key,
+				'label'      => $this->writes->labelOf( $items[ $key ] ?? null ),
+				'definition' => $items[ $key ] ?? [],
+			];
+		} catch ( \Throwable $failure ) {
+			return [
+				'id'    => $key,
+				'error' => $failure->getMessage(),
+			];
+		}
+	}
 
 	/**
 	 * Whether the editor's mirror agrees with the set the site renders from.

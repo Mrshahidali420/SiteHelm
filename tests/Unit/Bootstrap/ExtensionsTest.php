@@ -124,6 +124,7 @@ final class ExtensionsTest extends TestCase {
 
 	public function test_the_plugin_boot_loads_the_add_on_module_and_fires_the_register_action(): void {
 		Functions\when( 'is_admin' )->justReturn( false );
+		Functions\when( 'get_option' )->justReturn( false );
 		Filters\expectApplied( Extensions::FILTER_MODULES )->once()->andReturn( [ FakeAddOnModule::class ] );
 		Actions\expectDone( Extensions::ACTION_REGISTER_OPERATIONS )->once();
 		FakeAddOnModule::$registered = 0;

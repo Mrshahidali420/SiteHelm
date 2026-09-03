@@ -9,7 +9,8 @@ declare(strict_types=1);
 
 namespace SiteHelm\Admin;
 
-use SiteHelm\Gateway\RestTransport;
+use SiteHelm\Auth\AuthSettings;
+use SiteHelm\Auth\PublicUrl;
 use SiteHelm\Storage\AuditStore;
 use WP_Application_Passwords;
 use WP_Error;
@@ -22,6 +23,12 @@ use WP_Error;
  * the pair as a Basic credential, and assemble their client's configuration by
  * hand. Every one of those steps is a place to get it wrong silently, and the
  * failure looks identical to the plugin not working.
+ *
+ * There are two ways in, and the screen asks which before it shows anything
+ * else. A client that can sign in needs the endpoint and nothing more; one that
+ * cannot needs an application password carried in a header. The choice decides
+ * every snippet below it, so it is the first thing on the page rather than a
+ * distinction the reader is left to draw from two similar-looking blocks.
  *
  * The password is shown exactly once and never stored by SiteHelm: it is handed
  * over in a short-lived transient that the render deletes as it reads. A secret
@@ -87,14 +94,23 @@ final class ConnectScreen {
 	private Credentials $credentials;
 
 	/**
+	 * The table of apps that signed in, with its own two controls.
+	 *
+	 * @var ConnectedAppsPanel
+	 */
+	private ConnectedAppsPanel $apps;
+
+	/**
 	 * Constructs the screen.
 	 *
-	 * @param AuditStore|null  $store       The audit log, or null to use the real one.
-	 * @param Credentials|null $credentials The credential store, or null for the WordPress-backed one.
+	 * @param AuditStore|null         $store       The audit log, or null to use the real one.
+	 * @param Credentials|null        $credentials The credential store, or null for the WordPress-backed one.
+	 * @param ConnectedAppsPanel|null $apps        The connected-apps table, or null for a fresh one.
 	 */
-	public function __construct( ?AuditStore $store = null, ?Credentials $credentials = null ) {
+	public function __construct( ?AuditStore $store = null, ?Credentials $credentials = null, ?ConnectedAppsPanel $apps = null ) {
 		$this->store       = $store ?? new AuditStore();
 		$this->credentials = $credentials ?? new Credentials();
+		$this->apps        = $apps ?? new ConnectedAppsPanel();
 	}
 
 	/**
@@ -122,10 +138,13 @@ final class ConnectScreen {
 		$this->render_verdict( $last );
 		$this->render_failure();
 		$this->render_readiness( [] !== $last );
+		$this->render_method_chooser( $endpoint );
 		$this->render_endpoint( $endpoint );
 		$this->render_credential( $handoff );
 		( new CredentialsPanel( $this->credentials ) )->render( self::selectable_users() );
 		$this->render_clients( $endpoint, $handoff );
+		$this->apps->render();
+		( new AuthSettingsPanel() )->render();
 
 		( new ConnectHelp() )->render();
 
@@ -187,12 +206,16 @@ final class ConnectScreen {
 	/**
 	 * The site's MCP endpoint.
 	 *
-	 * Built from `rest_url()` rather than assembled from the home URL, so an
-	 * install with a filtered REST prefix, a site in a subdirectory, or plain
-	 * permalinks still yields the URL that actually answers.
+	 * Asked of {@see PublicUrl} rather than assembled here, so the Server URL
+	 * override is authoritative for every address on this screen. A screen that
+	 * built its own endpoint would print one URL in the snippets while the
+	 * discovery documents published another, and the two would disagree
+	 * silently: the client would fetch metadata naming a resource it was never
+	 * given, and the token it was issued would be refused with nothing on the
+	 * screen to explain it.
 	 */
 	public static function endpoint(): string {
-		return rest_url( ltrim( RestTransport::ROUTE_NAMESPACE . RestTransport::ROUTE, '/' ) );
+		return ( new PublicUrl() )->mcpEndpoint();
 	}
 
 	/**
@@ -281,6 +304,163 @@ final class ConnectScreen {
 			esc_html__(
 				'You can create one by hand under Users, then Profile, and paste it into the snippets below.',
 				'sitehelm'
+			)
+		);
+	}
+
+	/**
+	 * Whether a client can sign in to this site rather than carrying a password.
+	 *
+	 * Two conditions, both of them the site's own: OAuth has to be switched on,
+	 * and the public address has to be one a bearer token may travel over. A
+	 * token sent over plain HTTP is a password sent over plain HTTP, so on an
+	 * HTTP site the sign-in path is not offered at all rather than offered and
+	 * refused halfway through by a component the operator never sees.
+	 */
+	private function oauth_available(): bool {
+		$urls = new PublicUrl();
+
+		return ( new AuthSettings( $urls ) )->enabled() && $urls->isSecure();
+	}
+
+	/**
+	 * The choice that decides everything below it: sign in, or paste a password.
+	 *
+	 * Put first because it is the fork. Every snippet on the screen belongs to
+	 * one path or the other, and a person who reads the header block before
+	 * discovering the sign-in path has already done work they did not need to.
+	 *
+	 * @param string $endpoint The site's MCP endpoint.
+	 */
+	private function render_method_chooser( string $endpoint ): void {
+		$available = $this->oauth_available();
+
+		Ui::section_open(
+			__( 'How your app signs in', 'sitehelm' ),
+			__( 'Two ways in. Pick one and the snippets below follow it.', 'sitehelm' )
+		);
+
+		echo '<fieldset class="sitehelm-methods" data-sitehelm-methods>';
+
+		printf(
+			'<legend class="sitehelm-srt">%s</legend>',
+			esc_html__( 'Choose how your app signs in', 'sitehelm' )
+		);
+
+		$this->render_method_card(
+			ClientConfig::AUTH_OAUTH,
+			__( 'Sign in with OAuth (recommended)', 'sitehelm' ),
+			$available
+				? __( 'Your app sends you here to approve it, the way any other app you sign in to does. No password is written into a config file, and you can sign it out again from this screen.', 'sitehelm' )
+				: __( 'Not available on this site yet. See below.', 'sitehelm' ),
+			$available,
+			$available
+		);
+
+		$this->render_method_card(
+			ClientConfig::AUTH_PASSWORD,
+			__( 'Application password', 'sitehelm' ),
+			__( 'You create a password here and paste it into your app. Works with every client, including ones that cannot sign in.', 'sitehelm' ),
+			true,
+			! $available
+		);
+
+		echo '</fieldset>';
+
+		if ( $available ) {
+			$this->render_oauth_card( $endpoint );
+			( new ConnectTroubleshooting() )->render();
+		} else {
+			$this->render_oauth_unavailable();
+		}
+
+		Ui::section_close();
+	}
+
+	/**
+	 * One card in the connection-method chooser.
+	 *
+	 * @param string $value    The method this card selects.
+	 * @param string $headline What the method is called.
+	 * @param string $detail   What choosing it means.
+	 * @param bool   $enabled  Whether it can be chosen at all.
+	 * @param bool   $checked  Whether it starts selected.
+	 */
+	private function render_method_card( string $value, string $headline, string $detail, bool $enabled, bool $checked ): void {
+		printf(
+			'<label class="sitehelm-method%1$s"><input type="radio" name="sitehelm-method" value="%2$s"%3$s%4$s>'
+				. '<span class="sitehelm-method__body"><span class="sitehelm-method__head">%5$s</span>'
+				. '<span class="sitehelm-method__detail">%6$s</span></span></label>',
+			$enabled ? '' : ' sitehelm-method--off',
+			esc_attr( $value ),
+			$checked ? ' checked' : '',
+			$enabled ? '' : ' disabled',
+			esc_html( $headline ),
+			esc_html( $detail )
+		);
+	}
+
+	/**
+	 * The one value an app that signs in needs, and nothing beside it.
+	 *
+	 * @param string $endpoint The site's MCP endpoint.
+	 */
+	private function render_oauth_card( string $endpoint ): void {
+		printf(
+			'<div class="sitehelm-panel" data-sitehelm-auth="%s"><div class="sitehelm-panel__body"><div class="sitehelm-field">',
+			esc_attr( ClientConfig::AUTH_OAUTH )
+		);
+
+		printf(
+			'<label class="sitehelm-field__label" for="sitehelm-oauth-url">%s</label>',
+			esc_html__( 'Paste this into your app', 'sitehelm' )
+		);
+
+		printf(
+			'<input class="sitehelm-field__input" type="text" id="sitehelm-oauth-url" value="%s" readonly'
+				. ' spellcheck="false" onfocus="this.select()">',
+			esc_attr( $endpoint )
+		);
+
+		Ui::copy_button( 'sitehelm-oauth-url', __( 'Copy the sign-in URL', 'sitehelm' ) );
+
+		printf(
+			'<p class="sitehelm-field__hint">%s</p>',
+			esc_html__(
+				'That is the whole configuration. Your app finds the sign-in page from this address by itself, and brings you here to approve it the first time it calls.',
+				'sitehelm'
+			)
+		);
+
+		echo '</div></div></div>';
+	}
+
+	/**
+	 * Why the sign-in path is not on offer, in the site's own terms.
+	 *
+	 * Two different reasons with two different fixes, said apart rather than
+	 * together: "turn it on" and "get a certificate" are not the same errand,
+	 * and an operator told both at once will try the wrong one first.
+	 */
+	private function render_oauth_unavailable(): void {
+		$urls   = new PublicUrl();
+		$secure = $urls->isSecure();
+
+		printf(
+			'<div class="sitehelm-note sitehelm-note--waiting"><p>%s</p><p>%s</p></div>',
+			esc_html(
+				$secure
+					? __( 'Signing in is switched off on this site.', 'sitehelm' )
+					: sprintf(
+						/* translators: %s: the site's public address. */
+						__( 'This site answers on %s, which is not HTTPS.', 'sitehelm' ),
+						$urls->base()
+					)
+			),
+			esc_html(
+				$secure
+					? __( 'Turn it on in Settings, further down this screen, and the sign-in option here becomes available. Until then, use an application password.', 'sitehelm' )
+					: __( 'An app that signs in is given a token, and a token sent over plain HTTP can be read and reused by anyone on the network between your app and this site. Put the site behind a certificate, then turn signing in on. Until then, use an application password below.', 'sitehelm' )
 			)
 		);
 	}
@@ -590,27 +770,123 @@ final class ConnectScreen {
 	}
 
 	/**
-	 * One client's configuration blocks.
+	 * One client's configuration blocks, grouped by connection method.
 	 *
-	 * @param array{id: string, name: string, hint: string, blocks: array<int, array{id: string, caption: string, body: string}>} $client The client.
+	 * A client rarely accepts one shape. The same server is a bare URL to a
+	 * client that signs in, an HTTP object carrying a header to one using an
+	 * application password, a launched command to one that speaks only stdio,
+	 * and a terminal one-liner to one with a CLI. They are offered as a tab
+	 * strip so all of them stay one click away without four blocks of JSON
+	 * stacked on top of each other.
+	 *
+	 * The strip is skipped where a group holds one shape: a choice of one is
+	 * not a choice, and the file line above the block already says what it is.
+	 *
+	 * @param array{id: string, name: string, hint: string, blocks: array<int, array{id: string, label: string, file: string, auth: string, body: string}>} $client The client.
 	 */
 	private function render_client_blocks( array $client ): void {
-		printf( '<div data-sitehelm-client="%s">', esc_attr( $client['id'] ) );
+		printf( '<div class="sitehelm-clientpanel" data-sitehelm-client="%s">', esc_attr( $client['id'] ) );
 
 		printf( '<p class="sitehelm-section__note">%s</p>', esc_html( $client['hint'] ) );
 
-		foreach ( $client['blocks'] as $block ) {
-			Ui::code_block(
-				'sitehelm-snippet-' . $block['id'],
-				$block['caption'],
-				$block['body'],
-				sprintf(
-					/* translators: %s: client name, such as Claude Code. */
-					__( 'Copy the %s config', 'sitehelm' ),
-					$client['name']
-				)
+		foreach ( [ ClientConfig::AUTH_OAUTH, ClientConfig::AUTH_PASSWORD ] as $method ) {
+			$this->render_shape_group( $client, $method );
+		}
+
+		echo '</div>';
+	}
+
+	/**
+	 * The shapes one client accepts under one connection method.
+	 *
+	 * @param array{id: string, name: string, blocks: array<int, array{id: string, label: string, file: string, auth: string, body: string}>} $client The client.
+	 * @param string                                                                                                                          $method Which connection method these belong to.
+	 */
+	private function render_shape_group( array $client, string $method ): void {
+		$shapes = array_values(
+			array_filter(
+				$client['blocks'],
+				static fn( array $block ): bool => $method === $block['auth']
+			)
+		);
+
+		if ( [] === $shapes ) {
+			return;
+		}
+
+		printf(
+			'<div class="sitehelm-shapes" data-sitehelm-shapes data-sitehelm-auth="%s">',
+			esc_attr( $method )
+		);
+
+		if ( count( $shapes ) > 1 ) {
+			$this->render_shape_tabs( $client['id'], $method, $shapes );
+		}
+
+		foreach ( $shapes as $shape ) {
+			$this->render_shape_panel( $client, $shape );
+		}
+
+		echo '</div>';
+	}
+
+	/**
+	 * The tab strip naming the shapes in one group.
+	 *
+	 * Radio inputs rather than buttons, so the strip is a working choice with
+	 * scripting off: every panel is on the page and the strip is the label for
+	 * what is already visible.
+	 *
+	 * @param string                                       $client_id The client the strip belongs to.
+	 * @param string                                       $method    The connection method.
+	 * @param array<int, array{id: string, label: string}> $shapes    The shapes offered.
+	 */
+	private function render_shape_tabs( string $client_id, string $method, array $shapes ): void {
+		printf(
+			'<fieldset class="sitehelm-shapes__tabs" data-sitehelm-shapetabs><legend class="sitehelm-srt">%s</legend>',
+			esc_html__( 'Choose a format', 'sitehelm' )
+		);
+
+		foreach ( $shapes as $index => $shape ) {
+			printf(
+				'<label class="sitehelm-shape"><input type="radio" name="sitehelm-shape-%1$s-%2$s" value="%3$s"%4$s>'
+					. '<span class="sitehelm-shape__label">%5$s</span></label>',
+				esc_attr( $client_id ),
+				esc_attr( $method ),
+				esc_attr( $shape['id'] ),
+				0 === $index ? ' checked' : '',
+				esc_html( $shape['label'] )
 			);
 		}
+
+		echo '</fieldset>';
+	}
+
+	/**
+	 * One shape: the line saying where it goes, then the snippet itself.
+	 *
+	 * @param array{name: string}                                          $client The client this belongs to.
+	 * @param array{id: string, label: string, file: string, body: string} $shape  The shape.
+	 */
+	private function render_shape_panel( array $client, array $shape ): void {
+		printf(
+			'<div class="sitehelm-shapes__panel" data-sitehelm-shape="%s">',
+			esc_attr( $shape['id'] )
+		);
+
+		printf( '<p class="sitehelm-shape__file">%s</p>', esc_html( $shape['file'] ) );
+
+		Ui::code_block(
+			'sitehelm-snippet-' . $shape['id'],
+			$shape['label'],
+			$shape['body'],
+			sprintf(
+				/* translators: 1: client name, such as Claude Code, 2: the format, such as Config file. */
+				__( 'Copy the %1$s %2$s snippet', 'sitehelm' ),
+				$client['name'],
+				$shape['label']
+			)
+		);
 
 		echo '</div>';
 	}

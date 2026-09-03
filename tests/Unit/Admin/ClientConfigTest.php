@@ -12,6 +12,8 @@ final class ClientConfigTest extends TestCase {
 
 	private const ENDPOINT = 'https://example.test/wp-json/sitehelm/v1/mcp';
 
+	private const SERVER = 'sitehelm-example-test';
+
 	protected function setUp(): void {
 		parent::setUp();
 		AdminWordPressStubs::install();
@@ -24,7 +26,7 @@ final class ClientConfigTest extends TestCase {
 	 * @param string $password The application password, if there is one yet.
 	 *
 	 * @return array{id: string, name: string, icon: string, hint: string,
-	 *     blocks: array<int, array{id: string, caption: string, body: string}>}
+	 *     blocks: array<int, array{id: string, label: string, file: string, auth: string, body: string}>}
 	 */
 	private function client( string $id, string $password = '' ): array {
 		foreach ( ( new ClientConfig( self::ENDPOINT, 'agency', $password ) )->clients() as $client ) {
@@ -63,6 +65,7 @@ final class ClientConfigTest extends TestCase {
 				'claude-code',
 				'claude-desktop',
 				'claude-ai',
+				'chatgpt',
 				'cursor',
 				'vscode',
 				'codex',
@@ -96,13 +99,122 @@ final class ClientConfigTest extends TestCase {
 		$this->assertSame( $ids, array_values( array_unique( $ids ) ) );
 	}
 
-	public function testEveryBlockCarriesTheSiteEndpointAndACaption(): void {
+	/**
+	 * Every shape has to say three things or it is not usable: what the format
+	 * is called, which file it goes in, and which connection method it belongs
+	 * to. A shape missing the file line is a snippet a person has to guess the
+	 * destination of, which is the guess this screen exists to remove.
+	 */
+	public function testEveryShapeNamesItselfItsFileAndItsConnectionMethod(): void {
 		foreach ( ( new ClientConfig( self::ENDPOINT, 'agency' ) )->clients() as $client ) {
 			foreach ( $client['blocks'] as $block ) {
 				$this->assertStringContainsString( self::ENDPOINT, $block['body'], $block['id'] );
-				$this->assertNotSame( '', $block['caption'], $block['id'] );
+				$this->assertNotSame( '', $block['label'], $block['id'] );
+				$this->assertNotSame( '', $block['file'], $block['id'] );
+				$this->assertContains(
+					$block['auth'],
+					[ ClientConfig::AUTH_OAUTH, ClientConfig::AUTH_PASSWORD ],
+					$block['id']
+				);
 			}
 		}
+	}
+
+	/**
+	 * The OAuth shapes exist to carry no credential. One that encoded a password
+	 * anyway would authenticate as that password and never start the sign-in, so
+	 * the operator would see the site working and the switch doing nothing.
+	 */
+	public function testNoOauthShapeCarriesACredential(): void {
+		$credential = base64_encode( 'agency:abcd efgh' );
+
+		foreach ( ( new ClientConfig( self::ENDPOINT, 'agency', 'abcd efgh' ) )->clients() as $client ) {
+			foreach ( $client['blocks'] as $block ) {
+				if ( ClientConfig::AUTH_OAUTH !== $block['auth'] ) {
+					continue;
+				}
+
+				$this->assertStringNotContainsString( $credential, $block['body'], $block['id'] );
+				$this->assertStringNotContainsString( 'Authorization', $block['body'], $block['id'] );
+			}
+		}
+	}
+
+	/**
+	 * Every client that can be handed a URL is offered the OAuth shape, including
+	 * the ones whose support cannot be confirmed from here — labelled as a
+	 * conditional rather than left out. A client that does support sign-in and is
+	 * only ever shown a header block gets a password in a config file for no
+	 * reason at all.
+	 */
+	public function testEveryClientThatCanBeHandedAUrlIsOfferedTheOauthShape(): void {
+		foreach ( ( new ClientConfig( self::ENDPOINT, 'agency' ) )->clients() as $client ) {
+			$methods = array_column( $client['blocks'], 'auth' );
+
+			$this->assertContains( ClientConfig::AUTH_OAUTH, $methods, $client['id'] );
+		}
+	}
+
+	/**
+	 * A shape's file line is the whole reason the tab strip is safe to offer: it
+	 * is what stops somebody pasting the mcpServers object into a file whose
+	 * parser reads servers and drops the rest without a word.
+	 */
+	public function testEachFileFormatSaysWhichFileItGoesIn(): void {
+		$this->assertStringContainsString( '.mcp.json', $this->file( 'claude-code', 'claude-code-json' ) );
+		$this->assertStringContainsString( '~/.claude.json', $this->file( 'claude-code', 'claude-code-json' ) );
+		$this->assertStringContainsString( 'claude_desktop_config.json', $this->file( 'claude-desktop', 'claude-desktop-json' ) );
+		$this->assertStringContainsString( '~/.cursor/mcp.json', $this->file( 'cursor', 'cursor-json' ) );
+		$this->assertStringContainsString( '.vscode/mcp.json', $this->file( 'vscode', 'vscode-json' ) );
+		$this->assertStringContainsString( 'settings.json', $this->file( 'vscode', 'vscode-settings' ) );
+		$this->assertStringContainsString( '~/.codex/config.toml', $this->file( 'codex', 'codex-toml' ) );
+	}
+
+	/**
+	 * The four shapes, each proved by the string that distinguishes it: a bare
+	 * URL entry, an explicit headers block, a launched command, and a CLI line.
+	 */
+	public function testTheUrlOnlyShapeCarriesTheAddressAndNoCredentialAtAll(): void {
+		$body = $this->body( 'other', 'other-oauth', 'abcd efgh' );
+
+		$this->assertStringContainsString( 'URL:', $body );
+		$this->assertStringContainsString( self::ENDPOINT, $body );
+		$this->assertStringNotContainsString( 'Basic', $body );
+	}
+
+	public function testTheHttpShapeCarriesAnExplicitAuthorizationHeaderBlock(): void {
+		$decoded = json_decode( $this->body( 'cursor', 'cursor-json', 'abcd efgh' ), true );
+		$entry   = $decoded['mcpServers'][ self::SERVER ];
+
+		$this->assertSame( 'http', $entry['type'] );
+		$this->assertSame( self::ENDPOINT, $entry['url'] );
+		$this->assertSame(
+			'Basic ' . base64_encode( 'agency:abcd efgh' ),
+			$entry['headers']['Authorization']
+		);
+	}
+
+	public function testTheCliShapeIsTheClaudeCodeAddCommandNamingThisSitesServer(): void {
+		$body = $this->body( 'claude-code', 'claude-code-oauth-cli' );
+
+		$this->assertStringContainsString( 'claude mcp add --transport http ' . self::SERVER, $body );
+		$this->assertStringContainsString( self::ENDPOINT, $body );
+	}
+
+	/**
+	 * One block's file line, by identifier.
+	 *
+	 * @param string $client The client identifier.
+	 * @param string $block  The block identifier.
+	 */
+	private function file( string $client, string $block ): string {
+		foreach ( $this->client( $client )['blocks'] as $candidate ) {
+			if ( $block === $candidate['id'] ) {
+				return $candidate['file'];
+			}
+		}
+
+		$this->fail( sprintf( 'The client "%s" offers no block "%s".', $client, $block ) );
 	}
 
 	/**
@@ -143,8 +255,8 @@ final class ClientConfigTest extends TestCase {
 		$decoded = json_decode( $this->body( 'cursor', 'cursor-json' ), true );
 
 		$this->assertIsArray( $decoded );
-		$this->assertArrayHasKey( ClientConfig::SERVER_NAME, $decoded['mcpServers'] );
-		$this->assertSame( self::ENDPOINT, $decoded['mcpServers'][ ClientConfig::SERVER_NAME ]['url'] );
+		$this->assertArrayHasKey( self::SERVER, $decoded['mcpServers'] );
+		$this->assertSame( self::ENDPOINT, $decoded['mcpServers'][ self::SERVER ]['url'] );
 	}
 
 	/**
@@ -212,7 +324,7 @@ final class ClientConfigTest extends TestCase {
 		$decoded = json_decode( $this->body( 'openclaw', 'openclaw-json' ), true );
 
 		$this->assertIsArray( $decoded );
-		$this->assertArrayHasKey( ClientConfig::SERVER_NAME, $decoded['mcp']['servers'] );
+		$this->assertArrayHasKey( self::SERVER, $decoded['mcp']['servers'] );
 	}
 
 	/**
@@ -227,7 +339,7 @@ final class ClientConfigTest extends TestCase {
 			'Authorization: "Basic ' . base64_encode( 'agency:abcd efgh' ) . '"',
 			$body
 		);
-		$this->assertStringContainsString( '  ' . ClientConfig::SERVER_NAME . ':', $body );
+		$this->assertStringContainsString( '  ' . self::SERVER . ':', $body );
 	}
 
 	/**
@@ -235,10 +347,11 @@ final class ClientConfigTest extends TestCase {
 	 * button. Saying the site has no OAuth flow costs a line; leaving it out costs
 	 * a failed attempt with nothing on screen to explain it.
 	 */
-	public function testTheBrowserConnectorSaysThereIsNoOauthFlowToSignInWith(): void {
+	public function testTheBrowserConnectorSaysAnApplicationPasswordHasNowhereToGo(): void {
 		$body = $this->body( 'claude-ai', 'claude-ai-connector', 'abcd efgh' );
 
-		$this->assertStringContainsString( 'rather than OAuth', $body );
+		$this->assertStringContainsString( 'nowhere to put an application', $body );
+		$this->assertStringContainsString( 'OAuth sign-in', $body );
 		$this->assertStringNotContainsString( base64_encode( 'agency:abcd efgh' ), $body );
 	}
 
@@ -249,7 +362,7 @@ final class ClientConfigTest extends TestCase {
 	 */
 	public function testTheStdioConfigLaunchesTheBridgeShippedWithThePlugin(): void {
 		$decoded = json_decode( $this->body( 'bridge', 'bridge-json', 'abcd efgh' ), true );
-		$entry   = $decoded['mcpServers'][ ClientConfig::SERVER_NAME ];
+		$entry   = $decoded['mcpServers'][ self::SERVER ];
 
 		$this->assertSame( 'node', $entry['command'] );
 		$this->assertCount( 1, $entry['args'] );
@@ -277,7 +390,7 @@ final class ClientConfigTest extends TestCase {
 	public function testTheStdioConfigKeepsTheCredentialOutOfTheCommandLine(): void {
 		$credential = base64_encode( 'agency:abcd efgh' );
 		$decoded    = json_decode( $this->body( 'bridge', 'bridge-json', 'abcd efgh' ), true );
-		$entry      = $decoded['mcpServers'][ ClientConfig::SERVER_NAME ];
+		$entry      = $decoded['mcpServers'][ self::SERVER ];
 
 		$this->assertStringNotContainsString( $credential, $entry['command'] );
 
@@ -322,7 +435,7 @@ final class ClientConfigTest extends TestCase {
 	 */
 	public function testBothByHandChecksRunTheSameBridgeAsTheStdioConfig(): void {
 		$decoded = json_decode( $this->body( 'bridge', 'bridge-json', 'abcd efgh' ), true );
-		$expected = $decoded['mcpServers'][ ClientConfig::SERVER_NAME ]['args'][0];
+		$expected = $decoded['mcpServers'][ self::SERVER ]['args'][0];
 
 		foreach ( [ 'bridge-cli', 'bridge-cli-powershell' ] as $block ) {
 			$body = $this->body( 'bridge', $block, 'abcd efgh' );
@@ -339,7 +452,7 @@ final class ClientConfigTest extends TestCase {
 	 */
 	public function testThePublicBridgeIsStillOfferedForAMachineWithoutTheseFiles(): void {
 		$decoded = json_decode( $this->body( 'bridge', 'bridge-remote', 'abcd efgh' ), true );
-		$entry   = $decoded['mcpServers'][ ClientConfig::SERVER_NAME ];
+		$entry   = $decoded['mcpServers'][ self::SERVER ];
 
 		$this->assertSame( 'npx', $entry['command'] );
 		$this->assertContains( 'mcp-remote', $entry['args'] );
@@ -357,7 +470,7 @@ final class ClientConfigTest extends TestCase {
 
 			$this->assertSame(
 				'node',
-				$decoded['mcpServers'][ ClientConfig::SERVER_NAME ]['command'],
+				$decoded['mcpServers'][ self::SERVER ]['command'],
 				$block[1]
 			);
 		}
@@ -365,13 +478,98 @@ final class ClientConfigTest extends TestCase {
 
 	/**
 	 * A connector dialog has no field for a header, so that block states the facts
-	 * it can actually accept and points at the bridge for the rest. Encoding a
-	 * credential into it would be telling someone to paste it where it cannot go.
+	 * it can actually accept, and says where to go when the dialog has no field
+	 * for the header rather than leaving a person to find that out by failing.
 	 */
-	public function testTheConnectorBlockStatesWhatADialogCanAcceptRatherThanAHeader(): void {
+	public function testTheConnectorBlockStatesTheFieldsADialogAsksForAndWhereToGoWhenItCannot(): void {
 		$body = $this->body( 'claude-desktop', 'claude-desktop-connector', 'abcd efgh' );
 
-		$this->assertStringNotContainsString( base64_encode( 'agency:abcd efgh' ), $body );
-		$this->assertStringContainsString( 'Basic header rather than OAuth', $body );
+		$this->assertStringContainsString( 'Name:', $body );
+		$this->assertStringContainsString( 'URL:', $body );
+		$this->assertStringContainsString( 'Basic ' . base64_encode( 'agency:abcd efgh' ), $body );
+		$this->assertStringContainsString( 'no place for a header', $body );
+	}
+
+	/**
+	 * The same client's OAuth connector block carries the address and nothing to
+	 * paste beside it, which is the difference the chooser above it promises.
+	 */
+	public function testTheOauthConnectorBlockAsksForNothingButTheAddress(): void {
+		$body = $this->body( 'claude-desktop', 'claude-desktop-oauth-connector', 'abcd efgh' );
+
+		$this->assertStringContainsString( 'Name:          ' . self::SERVER, $body );
+		$this->assertStringContainsString( 'URL:           ' . self::ENDPOINT, $body );
+		$this->assertStringNotContainsString( 'Basic', $body );
+	}
+
+	/**
+	 * A client's configuration is one object keyed by server name, so two sites
+	 * sharing a name means the second one pasted silently replaces the first and
+	 * every call goes to the wrong site with nothing on screen to say so.
+	 */
+	public function testTwoSitesAreKeyedUnderDifferentServerNames(): void {
+		$first  = new ClientConfig( 'https://one.example.com/wp-json/sitehelm/v1/mcp', 'agency' );
+		$second = new ClientConfig( 'https://two.example.com/wp-json/sitehelm/v1/mcp', 'agency' );
+
+		$this->assertSame( 'sitehelm-one-example-com', $first->server_name() );
+		$this->assertSame( 'sitehelm-two-example-com', $second->server_name() );
+		$this->assertNotSame( $first->server_name(), $second->server_name() );
+	}
+
+	/**
+	 * The name is a label, not an address: the port belongs to the endpoint beside
+	 * it, and two entries differing only in case would collide in some clients.
+	 */
+	public function testTheServerNameDropsThePortAndLowercasesTheHost(): void {
+		$config = new ClientConfig( 'http://Staging.Example.TEST:8080/wp-json/sitehelm/v1/mcp', 'agency' );
+
+		$this->assertSame( 'sitehelm-staging-example-test', $config->server_name() );
+	}
+
+	/**
+	 * A very long host must still yield a name a person can read in a terminal
+	 * command, and one that never ends on the separator.
+	 */
+	public function testALongHostIsTrimmedWithoutLeavingATrailingSeparator(): void {
+		$config = new ClientConfig( 'https://a-very-long-subdomain-indeed.example.com/mcp', 'agency' );
+
+		$this->assertLessThanOrEqual( 40, strlen( $config->server_name() ) );
+		$this->assertSame( rtrim( $config->server_name(), '-' ), $config->server_name() );
+		$this->assertStringStartsWith( ClientConfig::SERVER_NAME_PREFIX . '-', $config->server_name() );
+	}
+
+	/**
+	 * An endpoint with no readable host still has to produce a working config
+	 * rather than a name that is a bare separator.
+	 */
+	public function testAnEndpointWithNoHostFallsBackToThePrefix(): void {
+		$config = new ClientConfig( '/wp-json/sitehelm/v1/mcp', 'agency' );
+
+		$this->assertSame( ClientConfig::SERVER_NAME_PREFIX, $config->server_name() );
+	}
+
+	/**
+	 * Every snippet has to key the site under the same name. One block left on a
+	 * different name is the collision this derivation exists to remove, moved one
+	 * client along.
+	 */
+	public function testEverySnippetNamingAServerUsesTheSameDerivedName(): void {
+		$blocks = [
+			[ 'claude-code', 'claude-code-cli' ],
+			[ 'claude-code', 'claude-code-json' ],
+			[ 'claude-desktop', 'claude-desktop-connector' ],
+			[ 'claude-desktop', 'claude-desktop-json' ],
+			[ 'claude-ai', 'claude-ai-connector' ],
+			[ 'vscode', 'vscode-json' ],
+			[ 'codex', 'codex-cli' ],
+			[ 'openclaw', 'openclaw-cli' ],
+			[ 'openclaw', 'openclaw-json' ],
+			[ 'hermes', 'hermes-yaml' ],
+			[ 'bridge', 'bridge-remote' ],
+		];
+
+		foreach ( $blocks as $block ) {
+			$this->assertStringContainsString( self::SERVER, $this->body( $block[0], $block[1] ), $block[1] );
+		}
 	}
 }

@@ -47,7 +47,7 @@ use SiteHelm\Contracts\SnapshotPolicy;
  * never something a caller can arrive at by accident here — this one refuses an
  * empty list.
  *
- * THE FIVE GATES RUN BEFORE THE PREVIEW, in `ElementorTreeInput`, which is the
+ * THE SIX GATES RUN BEFORE THE PREVIEW, in `ElementorTreeInput`, which is the
  * same gate `elementor-template-import` passes its tree through. The last of
  * them is the one that matters: Elementor's parser DROPS a setting key the
  * widget does not declare, silently, so a page built with `content` where the

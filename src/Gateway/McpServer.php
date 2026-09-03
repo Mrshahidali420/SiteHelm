@@ -25,9 +25,34 @@ use Throwable;
 final class McpServer {
 
 	/**
-	 * MCP protocol version.
+	 * The newest MCP protocol revision this server speaks, and the one it answers
+	 * with when the client asks for nothing it can honour.
 	 */
 	public const PROTOCOL_VERSION = '2025-06-18';
+
+	/**
+	 * Every protocol revision this server's behaviour is actually correct under,
+	 * oldest first.
+	 *
+	 * A LIST OF PROMISES, NOT A LIST OF DATES. A revision belongs here only when
+	 * the wire shapes this server emits — the initialize result, the tool
+	 * definitions, and the tool-call content blocks — are what a client of that
+	 * revision expects. Nothing about `initialize`, `tools/list` or `tools/call`
+	 * changed in the three named here, which is why all three are honest.
+	 *
+	 * The version is echoed rather than merely accepted because a client that
+	 * asked for an older revision and is handed a newer one has no way to tell a
+	 * disagreement from a server it should stop reading: several take the
+	 * mismatch as the end of the handshake and never call `tools/list`, so every
+	 * operation this site publishes silently disappears.
+	 *
+	 * @var string[]
+	 */
+	public const SUPPORTED_PROTOCOL_VERSIONS = [
+		'2024-11-05',
+		'2025-03-26',
+		'2025-06-18',
+	];
 
 	/**
 	 * The correlation identifier reported when a request failed before it had
@@ -87,7 +112,7 @@ final class McpServer {
 			}
 
 			return match ( $method ) {
-				'initialize'                => $this->result( $id, $this->initializeResult() ),
+				'initialize'                => $this->result( $id, $this->initializeResult( $message['params'] ?? null ) ),
 				'notifications/initialized' => null,
 				'ping'                      => $this->result( $id, [] ),
 				'tools/list'                => $this->result( $id, [ 'tools' => $this->toolList() ] ),
@@ -104,13 +129,15 @@ final class McpServer {
 	/**
 	 * Builds the initialize response envelope.
 	 *
+	 * @param mixed $params The client's initialize parameters, whatever arrived.
+	 *
 	 * @return array<string, mixed> Initialize response.
 	 *
 	 * phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 	 */
-	private function initializeResult(): array {
+	private function initializeResult( mixed $params ): array {
 		return [
-			'protocolVersion' => self::PROTOCOL_VERSION,
+			'protocolVersion' => $this->negotiatedProtocolVersion( $params ),
 			'capabilities'    => [ 'tools' => [ 'listChanged' => false ] ],
 			'serverInfo'      => [
 				'name'    => 'SiteHelm',
@@ -118,6 +145,38 @@ final class McpServer {
 			],
 			'instructions'    => ServerInstructions::text(),
 		];
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+
+	/**
+	 * Settles which protocol revision the connection speaks.
+	 *
+	 * The spec's own rule, in both directions: echo the client's revision when
+	 * this server supports it, and answer with this server's newest when it does
+	 * not. The second half covers a client naming a revision from the future as
+	 * well as one naming nothing at all, and neither is an error — the client
+	 * decides whether it can live with the answer.
+	 *
+	 * `$params` is typed `mixed` rather than an array because it arrives from the
+	 * wire: `initialize` carrying a string, a list, or no params at all is a
+	 * malformed request this server answers rather than fatals on, and a
+	 * `protocolVersion` that is not a string is treated exactly like an absent
+	 * one.
+	 *
+	 * @param mixed $params The client's initialize parameters.
+	 *
+	 * @return string The revision to report.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+	 */
+	private function negotiatedProtocolVersion( mixed $params ): string {
+		$requested = is_array( $params ) ? ( $params['protocolVersion'] ?? null ) : null;
+
+		if ( is_string( $requested ) && in_array( $requested, self::SUPPORTED_PROTOCOL_VERSIONS, true ) ) {
+			return $requested;
+		}
+
+		return self::PROTOCOL_VERSION;
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 
@@ -152,6 +211,15 @@ final class McpServer {
 							'description' => 'Arguments matching the operation input schema.',
 						],
 					],
+					// EMPTY ON PURPOSE, AND NOT THE SAME THING AS ABSENT. A closed
+					// schema that never says which of its members are mandatory is
+					// rejected outright by the strict validators some hosts run
+					// over a tool definition before they will call it, so the
+					// member has to be present. It is empty because none of the
+					// three IS mandatory: a call naming no operation is the catalog
+					// request the dispatcher answers with its list of operations,
+					// which is how a client discovers this dispatcher at all.
+					'required'             => [],
 					'additionalProperties' => false,
 				],
 			],

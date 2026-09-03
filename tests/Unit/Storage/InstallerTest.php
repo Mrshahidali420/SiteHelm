@@ -66,6 +66,8 @@ final class InstallerTest extends TestCase {
 			Installer::tableName( Installer::TABLE_PLANS ),
 			Installer::tableName( Installer::TABLE_AUDIT ),
 			Installer::tableName( Installer::TABLE_SNAPSHOTS ),
+			Installer::tableName( Installer::TABLE_OAUTH_CLIENTS ),
+			Installer::tableName( Installer::TABLE_OAUTH_TOKENS ),
 		];
 	}
 
@@ -77,11 +79,11 @@ final class InstallerTest extends TestCase {
 		$this->assertSame( 'clientsite_sitehelm_snapshots', Installer::tableName( Installer::TABLE_SNAPSHOTS ) );
 	}
 
-	public function test_install_creates_three_tables_and_records_version_and_status(): void {
+	public function test_install_creates_every_table_and_records_version_and_status(): void {
 		$this->allTablesPresent();
 
 		$this->assertTrue( ( new Installer() )->install() );
-		$this->assertCount( 3, $this->delta );
+		$this->assertCount( 5, $this->delta );
 		$this->assertSame( (string) Installer::DB_VERSION, $this->options[ Installer::DB_VERSION_OPTION ] );
 		$this->assertSame( Installer::STATUS_READY, $this->options[ Installer::STATUS_OPTION ] );
 	}
@@ -96,6 +98,42 @@ final class InstallerTest extends TestCase {
 			$this->assertStringContainsString( 'wp_sitehelm_', $statement );
 			$this->assertStringContainsString( 'utf8mb4', $statement );
 		}
+	}
+
+	/**
+	 * The OAuth tables carry the columns every query in the Auth namespace names.
+	 * A statement that creates the table but omits a column fails at runtime, on
+	 * a live connection attempt, with nothing in the test suite to say so.
+	 */
+	public function test_the_oauth_tables_declare_the_columns_the_auth_queries_use(): void {
+		$this->allTablesPresent();
+
+		( new Installer() )->install();
+
+		$clients = '';
+		$tokens  = '';
+
+		foreach ( $this->delta as $statement ) {
+			if ( str_contains( $statement, 'wp_sitehelm_oauth_clients' ) ) {
+				$clients = $statement;
+			}
+			if ( str_contains( $statement, 'wp_sitehelm_oauth_tokens' ) ) {
+				$tokens = $statement;
+			}
+		}
+
+		foreach ( [ 'client_id', 'client_name', 'redirect_uris', 'created_by', 'created_at', 'authorized_at' ] as $column ) {
+			$this->assertStringContainsString( "\t{$column} ", $clients );
+		}
+
+		foreach ( [ 'token_hash', 'token_type', 'client_id', 'user_id', 'scopes', 'resource', 'refresh_of', 'created_at', 'expires_at' ] as $column ) {
+			$this->assertStringContainsString( "\t{$column} ", $tokens );
+		}
+
+		// One registration per identifier, and one row per token fingerprint:
+		// without these a replayed insert becomes a second, equally valid token.
+		$this->assertStringContainsString( 'UNIQUE KEY client_id (client_id)', $clients );
+		$this->assertStringContainsString( 'UNIQUE KEY token_hash (token_hash)', $tokens );
 	}
 
 	public function test_missing_table_degrades_to_unavailable_without_throwing(): void {
@@ -127,7 +165,7 @@ final class InstallerTest extends TestCase {
 		$this->allTablesPresent();
 
 		$this->assertTrue( ( new Installer() )->maybeUpgrade() );
-		$this->assertCount( 3, $this->delta );
+		$this->assertCount( 5, $this->delta );
 	}
 
 	/**
@@ -147,7 +185,7 @@ final class InstallerTest extends TestCase {
 
 		$installer = new Installer();
 		$this->assertTrue( $installer->maybeUpgrade(), 'A broken install must be retried, not skipped.' );
-		$this->assertCount( 3, $this->delta );
+		$this->assertCount( 5, $this->delta );
 		$this->assertSame( Installer::STATUS_READY, $this->options[ Installer::STATUS_OPTION ] );
 		$this->assertTrue( $installer->isAvailable() );
 	}

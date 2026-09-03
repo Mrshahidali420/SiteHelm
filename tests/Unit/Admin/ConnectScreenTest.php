@@ -4,9 +4,13 @@ declare(strict_types=1);
 
 namespace SiteHelm\Tests\Unit\Admin;
 
+use SiteHelm\Admin\AuthSettingsAction;
 use SiteHelm\Admin\ClientConfig;
 use SiteHelm\Admin\ConnectScreen;
 use SiteHelm\Admin\Credentials;
+use SiteHelm\Auth\AuthSettings;
+use SiteHelm\Auth\PublicUrl;
+use SiteHelm\Gateway\McpServer;
 use SiteHelm\Gateway\RestTransport;
 use SiteHelm\Storage\AuditStore;
 use SiteHelm\Tests\Doubles\AdminDied;
@@ -94,13 +98,13 @@ final class ConnectScreenTest extends TestCase {
 
 		$this->assertStringContainsString( 'Ready to connect', $html );
 		$this->assertStringContainsString( 'No client has called this site yet', $html );
-		$this->assertStringNotContainsString( 'Connected', $html );
+		$this->assertStringNotContainsString( '<span>Connected</span>', $html );
 	}
 
 	public function testARecordedRequestIsWhatMakesTheScreenSayConnected(): void {
 		$html = $this->render( [ [ 'recorded_at' => 1755300000 ] ] );
 
-		$this->assertStringContainsString( 'Connected', $html );
+		$this->assertStringContainsString( '<span>Connected</span>', $html );
 		$this->assertStringContainsString( 'Last request 5 minutes ago', $html );
 	}
 
@@ -209,6 +213,63 @@ final class ConnectScreenTest extends TestCase {
 		foreach ( [ 'claude-code', 'cursor', 'other' ] as $client ) {
 			$this->assertStringContainsString( 'data-sitehelm-client="' . $client . '"', $html );
 		}
+	}
+
+	/**
+	 * Every shape a client accepts reaches the page, each in its own panel with
+	 * its own copy target. Rendering only the first one would leave a person
+	 * whose client wants the other format with a snippet that quietly does
+	 * nothing in the file they paste it into.
+	 */
+	public function testEveryShapeIsRenderedAsItsOwnPanelWithItsOwnCopyTarget(): void {
+		$html = $this->render();
+
+		foreach ( [ 'claude-code-oauth-cli', 'claude-code-json', 'vscode-settings', 'codex-toml' ] as $shape ) {
+			$this->assertStringContainsString( 'data-sitehelm-shape="' . $shape . '"', $html );
+			$this->assertStringContainsString( 'id="sitehelm-snippet-' . $shape . '"', $html );
+		}
+	}
+
+	/**
+	 * The shapes are grouped by connection method, which is what lets the chooser
+	 * above them hide a header block from somebody who has chosen to sign in.
+	 */
+	public function testTheShapesAreGroupedByConnectionMethod(): void {
+		$html = $this->render();
+
+		$this->assertStringContainsString( 'data-sitehelm-auth="' . ClientConfig::AUTH_OAUTH . '"', $html );
+		$this->assertStringContainsString( 'data-sitehelm-auth="' . ClientConfig::AUTH_PASSWORD . '"', $html );
+	}
+
+	/**
+	 * A group holding more than one shape gets a tab strip naming them. A tab
+	 * strip over a single shape is a choice that isn't one, so it is not drawn.
+	 */
+	public function testAGroupOfSeveralShapesIsGivenATabStripNamingEachOne(): void {
+		$html = $this->render();
+
+		$this->assertStringContainsString(
+			'name="sitehelm-shape-vscode-' . ClientConfig::AUTH_PASSWORD . '"',
+			$html
+		);
+		$this->assertStringContainsString( 'value="vscode-settings"', $html );
+		$this->assertStringNotContainsString(
+			'name="sitehelm-shape-antigravity-' . ClientConfig::AUTH_PASSWORD . '"',
+			$html
+		);
+	}
+
+	/**
+	 * Each shape states the file it goes in, above the snippet rather than in the
+	 * copy target. Pasting an mcpServers object into a file that reads servers is
+	 * ignored without a word, and this line is what prevents it.
+	 */
+	public function testEachShapeSaysWhichFileItGoesIn(): void {
+		$html = $this->render();
+
+		$this->assertStringContainsString( '.vscode/mcp.json in the workspace', $html );
+		$this->assertStringContainsString( '~/.cursor/mcp.json', $html );
+		$this->assertStringContainsString( '~/.codex/config.toml', $html );
 	}
 
 	public function testTheSnippetsCarryThePlaceholderUntilAPasswordExists(): void {
@@ -372,5 +433,106 @@ final class ConnectScreenTest extends TestCase {
 		}
 
 		$this->assertSame( [ ConnectScreen::NONCE_CREATE_PASSWORD ], AdminWordPressStubs::$refererChecks );
+	}
+
+	public function testTheScreenAsksHowTheAppSignsInBeforeItShowsAnythingToPaste(): void {
+		$html = $this->render();
+
+		$this->assertStringContainsString( 'data-sitehelm-methods', $html );
+		$this->assertStringContainsString( 'Sign in with OAuth', $html );
+		$this->assertStringContainsString( 'Application password', $html );
+		$this->assertLessThan(
+			strpos( $html, 'id="sitehelm-endpoint"' ),
+			strpos( $html, 'data-sitehelm-methods' ),
+			'The choice has to come before the snippets it governs.'
+		);
+	}
+
+	public function testOnAnHttpsSiteWithOauthOnTheSignInPathIsOfferedAndPreselected(): void {
+		$html = $this->render();
+
+		$this->assertStringContainsString(
+			'value="' . ClientConfig::AUTH_OAUTH . '" checked',
+			$html
+		);
+		$this->assertStringNotContainsString(
+			'value="' . ClientConfig::AUTH_OAUTH . '" checked disabled',
+			$html
+		);
+		$this->assertStringContainsString( 'sitehelm-oauth-url', $html );
+		$this->assertStringContainsString( 'https://example.test/wp-json/sitehelm/v1/mcp', $html );
+	}
+
+	public function testWithOauthSwitchedOffTheSignInCardIsDisabledAndSaysSo(): void {
+		AdminWordPressStubs::$options[ AuthSettings::OPTION ] = '0';
+
+		$html = $this->render();
+
+		$this->assertStringContainsString(
+			'value="' . ClientConfig::AUTH_OAUTH . '" disabled',
+			$html
+		);
+		$this->assertStringContainsString(
+			'value="' . ClientConfig::AUTH_PASSWORD . '" checked',
+			$html
+		);
+		$this->assertStringContainsString( 'Signing in is switched off on this site', $html );
+		$this->assertStringNotContainsString( 'sitehelm-oauth-url', $html );
+	}
+
+	public function testOnAPlainHttpSiteTheScreenNamesTheAddressAndSendsThePersonToThePasswordPath(): void {
+		AdminWordPressStubs::$options[ PublicUrl::OPTION ] = 'http://example.com';
+
+		$html = $this->render();
+
+		$this->assertStringContainsString( 'http://example.com', $html );
+		$this->assertStringContainsString( 'which is not HTTPS', $html );
+		$this->assertStringContainsString( 'use an application password below', $html );
+		$this->assertStringContainsString(
+			'value="' . ClientConfig::AUTH_PASSWORD . '" checked',
+			$html
+		);
+	}
+
+	public function testTheServerUrlOverrideRulesEveryAddressOnTheScreen(): void {
+		AdminWordPressStubs::$options[ PublicUrl::OPTION ] = 'https://public.example';
+
+		$html = $this->render();
+
+		$this->assertStringContainsString( 'https://public.example/wp-json/sitehelm/v1/mcp', $html );
+		$this->assertStringNotContainsString( 'https://example.test/wp-json/sitehelm/v1/mcp', $html );
+	}
+	public function testTheTroubleshootingBlockSitsUnderTheSignInCardAndIsFoldedAway(): void {
+		$html = $this->render();
+
+		$this->assertStringContainsString( '<details class="sitehelm-details sitehelm-troubleshooting">', $html );
+		$this->assertGreaterThan(
+			strpos( $html, 'id="sitehelm-oauth-url"' ),
+			strpos( $html, 'sitehelm-troubleshooting' )
+		);
+	}
+
+	public function testTheTroubleshootingBlockNamesEveryProtocolVersionTheServerSpeaks(): void {
+		$html = $this->render();
+
+		foreach ( McpServer::SUPPORTED_PROTOCOL_VERSIONS as $version ) {
+			$this->assertStringContainsString( $version, $html );
+		}
+	}
+
+	public function testTheTroubleshootingBlockCoversTheFourWaysDiscoveryFails(): void {
+		$html = $this->render();
+
+		$this->assertStringContainsString( 'Something else answers the sign-in addresses', $html );
+		$this->assertStringContainsString( 'is not the one it can reach', $html );
+		$this->assertStringContainsString( 'not served over HTTPS', $html );
+		$this->assertStringContainsString( 'cannot reach itself', $html );
+	}
+
+	public function testTheSettingsPanelIsOnThisScreenBecauseTheSignInCardPromisesIt(): void {
+		$html = $this->render();
+
+		$this->assertStringContainsString( 'name="' . AuthSettingsAction::FIELD_URL . '"', $html );
+		$this->assertStringContainsString( 'Test discovery', $html );
 	}
 }

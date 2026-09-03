@@ -1,6 +1,6 @@
 <?php
 /**
- * Schema installer for the three SiteHelm-owned tables.
+ * Schema installer for the SiteHelm-owned tables.
  *
  * @package SiteHelm
  */
@@ -10,9 +10,10 @@ declare(strict_types=1);
 namespace SiteHelm\Storage;
 
 /**
- * Creates and upgrades the three local tables the change engine needs: pending
- * plans, audit events, and rollback snapshots. Ordinary settings live in the
- * options API and are not managed here.
+ * Creates and upgrades the local tables SiteHelm needs: pending plans, audit
+ * events, rollback snapshots, and the two OAuth tables holding registered apps
+ * and their tokens. Ordinary settings live in the options API and are not
+ * managed here.
  *
  * Failure is contained: when the tables cannot be created the installer records
  * an unavailable status and returns false. The gateway, registry, policy engine,
@@ -26,7 +27,7 @@ final class Installer {
 	 * Current schema version. Bump when a statement below changes; dbDelta then
 	 * migrates additively in place on the next request.
 	 */
-	public const DB_VERSION = 2;
+	public const DB_VERSION = 3;
 
 	public const DB_VERSION_OPTION  = 'sitehelm_db_version';
 	public const STATUS_OPTION      = 'sitehelm_db_status';
@@ -37,6 +38,9 @@ final class Installer {
 	public const TABLE_AUDIT     = 'audit';
 	public const TABLE_SNAPSHOTS = 'snapshots';
 
+	public const TABLE_OAUTH_CLIENTS = 'oauth_clients';
+	public const TABLE_OAUTH_TOKENS  = 'oauth_tokens';
+
 	/**
 	 * The plugin's table-name segment, appended to $wpdb->prefix.
 	 */
@@ -45,7 +49,13 @@ final class Installer {
 	/**
 	 * Every table this installer owns.
 	 */
-	private const TABLES = [ self::TABLE_PLANS, self::TABLE_AUDIT, self::TABLE_SNAPSHOTS ];
+	private const TABLES = [
+		self::TABLE_PLANS,
+		self::TABLE_AUDIT,
+		self::TABLE_SNAPSHOTS,
+		self::TABLE_OAUTH_CLIENTS,
+		self::TABLE_OAUTH_TOKENS,
+	];
 
 	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 	/**
@@ -65,7 +75,7 @@ final class Installer {
 	/**
 	 * Creates or migrates every owned table.
 	 *
-	 * @return bool True when all three tables are present afterwards.
+	 * @return bool True when every owned table is present afterwards.
 	 */
 	public function install(): bool {
 		global $wpdb;
@@ -196,9 +206,11 @@ final class Installer {
 	 * @return string[] One statement per owned table.
 	 */
 	private function statements( string $charset_collate ): array {
-		$plans     = self::tableName( self::TABLE_PLANS );
-		$audit     = self::tableName( self::TABLE_AUDIT );
-		$snapshots = self::tableName( self::TABLE_SNAPSHOTS );
+		$plans         = self::tableName( self::TABLE_PLANS );
+		$audit         = self::tableName( self::TABLE_AUDIT );
+		$snapshots     = self::tableName( self::TABLE_SNAPSHOTS );
+		$oauth_clients = self::tableName( self::TABLE_OAUTH_CLIENTS );
+		$oauth_tokens  = self::tableName( self::TABLE_OAUTH_TOKENS );
 
 		return [
 			"CREATE TABLE {$plans} (
@@ -257,6 +269,36 @@ final class Installer {
 	UNIQUE KEY rollback_ref (rollback_ref),
 	KEY created_at (created_at),
 	KEY target_key (target_key)
+) {$charset_collate};",
+			"CREATE TABLE {$oauth_clients} (
+	id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+	client_id varchar(191) NOT NULL,
+	client_name varchar(191) NOT NULL,
+	redirect_uris text NOT NULL,
+	created_by bigint(20) unsigned NOT NULL DEFAULT 0,
+	created_at bigint(20) unsigned NOT NULL,
+	authorized_at bigint(20) unsigned NOT NULL DEFAULT 0,
+	PRIMARY KEY  (id),
+	UNIQUE KEY client_id (client_id),
+	KEY created_at (created_at),
+	KEY authorized_at (authorized_at)
+) {$charset_collate};",
+			"CREATE TABLE {$oauth_tokens} (
+	id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+	token_hash char(64) NOT NULL,
+	token_type varchar(16) NOT NULL,
+	client_id varchar(191) NOT NULL,
+	user_id bigint(20) unsigned NOT NULL,
+	scopes varchar(191) NOT NULL,
+	resource varchar(191) NOT NULL,
+	refresh_of char(64) NOT NULL DEFAULT '',
+	created_at bigint(20) unsigned NOT NULL,
+	expires_at bigint(20) unsigned NOT NULL,
+	PRIMARY KEY  (id),
+	UNIQUE KEY token_hash (token_hash),
+	KEY expires_at (expires_at),
+	KEY client_id (client_id),
+	KEY refresh_of (refresh_of)
 ) {$charset_collate};",
 		];
 	}

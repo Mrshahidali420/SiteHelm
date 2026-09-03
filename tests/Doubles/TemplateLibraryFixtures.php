@@ -69,8 +69,14 @@ trait TemplateLibraryFixtures {
 			[
 				'e-heading' => new WriteTargetFakeWidget(
 					[
-						'title' => new WriteTargetFakePropType( 'string' ),
-						'image' => new WriteTargetFakePropType( 'image' ),
+						'title'   => new WriteTargetFakePropType( 'string' ),
+						'image'   => new WriteTargetFakePropType( 'image' ),
+
+						// THE PROP THAT WEARS A LOCAL STYLE CLASS. Every atomic
+						// widget declares it, and without it here no case could
+						// send a tree whose element actually references the
+						// local style it also defines.
+						'classes' => new WriteTargetFakePropType( 'classes' ),
 					]
 				),
 				// A REPEATER-BACKED CLASSIC WIDGET, whose one writable control

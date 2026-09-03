@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace SiteHelm\Admin;
 
 use SiteHelm\Audit\AuditRecorder;
+use SiteHelm\Gateway\ContextFactory;
 use SiteHelm\Storage\AuditStore;
 
 /**
@@ -65,14 +66,26 @@ final class HomeScreen {
 	private ProCatalogue $pro;
 
 	/**
+	 * The application passwords SiteHelm has minted, or null to open the site's
+	 * own store lazily. Left null rather than constructed eagerly because
+	 * `WP_Application_Passwords` is a WordPress class, absent under unit test
+	 * and on a site where the feature is switched off.
+	 *
+	 * @var Credentials|null
+	 */
+	private ?Credentials $credentials;
+
+	/**
 	 * Constructs the screen.
 	 *
-	 * @param AuditStore|null   $store The audit log; null opens the site's.
-	 * @param ProCatalogue|null $pro   The Pro catalogue; null asks the add-on itself.
+	 * @param AuditStore|null   $store       The audit log; null opens the site's.
+	 * @param ProCatalogue|null $pro         The Pro catalogue; null asks the add-on itself.
+	 * @param Credentials|null  $credentials The credential store; null opens the site's.
 	 */
-	public function __construct( ?AuditStore $store = null, ?ProCatalogue $pro = null ) {
-		$this->store = $store ?? new AuditStore();
-		$this->pro   = $pro ?? new ProCatalogue();
+	public function __construct( ?AuditStore $store = null, ?ProCatalogue $pro = null, ?Credentials $credentials = null ) {
+		$this->store       = $store ?? new AuditStore();
+		$this->pro         = $pro ?? new ProCatalogue();
+		$this->credentials = $credentials;
 	}
 
 	/**
@@ -96,6 +109,9 @@ final class HomeScreen {
 			);
 		}
 
+		$applied  = $this->store->count( [ 'outcome' => AuditRecorder::OUTCOME_APPLIED ] );
+		$restored = $this->store->count( [ 'outcome' => AuditRecorder::OUTCOME_RESTORED ] );
+
 		$sample = $this->store->query( [ 'since' => $since ], self::SAMPLE, 0 );
 		$lately = $this->store->query( [], self::RECENT, 0 );
 
@@ -106,6 +122,7 @@ final class HomeScreen {
 			__( 'How your site and the AI apps connected to it are getting on.', 'sitehelm' )
 		);
 
+		$this->render_walkthrough( $applied, $restored, [] !== $lately );
 		$this->render_verdict( $week, $failed, [] !== $lately );
 
 		Ui::stat_grid(
@@ -137,6 +154,72 @@ final class HomeScreen {
 		$this->render_places();
 
 		Ui::app_close();
+	}
+
+	/**
+	 * The "Get started" walkthrough, above everything else.
+	 *
+	 * Every step is read back from the state it describes rather than from a
+	 * flag this screen wrote, so nothing here can go stale. Two of the five are
+	 * answered by the credential store rather than the audit log, because the
+	 * log records changes and not reads: a client that has only ever fetched
+	 * something leaves no row, but it does leave a last-used stamp on the
+	 * application password it signed in with.
+	 *
+	 * @param int  $applied  Changes applied, ever.
+	 * @param int  $restored Changes put back, ever.
+	 * @param bool $has_any  Whether the log holds anything at all.
+	 */
+	private function render_walkthrough( int $applied, int $restored, bool $has_any ): void {
+		list( $has_credential, $has_call ) = $this->credential_state();
+
+		Walkthrough::render(
+			Walkthrough::steps(
+				$has_credential || $has_any || self::oauth_seen(),
+				false !== get_option( ContextFactory::MODE_OPTION, false ),
+				$has_call || $has_any,
+				$applied > 0,
+				$restored > 0
+			)
+		);
+	}
+
+	/**
+	 * Whether a SiteHelm credential exists, and whether one has ever been used.
+	 *
+	 * @return array{0: bool, 1: bool} Exists, and has been used.
+	 */
+	private function credential_state(): array {
+		if ( null === $this->credentials && ! class_exists( 'WP_Application_Passwords' ) ) {
+			return [ false, false ];
+		}
+
+		$credentials = $this->credentials ?? new Credentials();
+		$rows        = $credentials->for_users( ConnectScreen::selectable_users() );
+		$used        = false;
+
+		foreach ( $rows as $row ) {
+			if ( $row['last_used'] > 0 ) {
+				$used = true;
+				break;
+			}
+		}
+
+		return [ [] !== $rows, $used ];
+	}
+
+	/**
+	 * Whether a bearer or OAuth session has ever authenticated.
+	 *
+	 * The store is asked only if it is here. Browser-based sign-in is a
+	 * separate piece of work, and a Home screen that fataled because that class
+	 * had not landed yet would be a worse trade than a step that reads as open
+	 * until it has.
+	 */
+	private static function oauth_seen(): bool {
+		$asked = [ 'SiteHelm\\Auth\\OAuthStore', 'has_authenticated' ];
+
+		return is_callable( $asked ) && true === call_user_func( $asked );
 	}
 
 	/**

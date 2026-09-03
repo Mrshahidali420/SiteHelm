@@ -121,7 +121,7 @@ next is drawn from **Considering**, and a concrete workflow is what moves an ite
 
 ## Considering
 
-Surveyed 2026-08-23. Kept only what makes WordPress more convenient to run with an AI
+Surveyed 2026-08-23, extended 2026-09-03 from what other WordPress MCP servers' users report breaking. Kept only what makes WordPress more convenient to run with an AI
 client or connects a plugin most sites actually have; see **Permanently excluded** for what
 the survey also found and SiteHelm will not do.
 
@@ -138,6 +138,15 @@ the survey also found and SiteHelm will not do.
 | REQ-0097 | Core | Export and import a page or a set of posts as a portable bundle between two SiteHelm sites | could |
 | REQ-0064 | Core | Multisite | could |
 | REQ-0058 | Integrations | CRM connections (the form half moved to REQ-0084) | could |
+| REQ-0108 | Core | Rendered page fetch — return a page's front-end HTML so a client can check what visitors actually see, for SEO and QA | should |
+| REQ-0109 | Elementor | Elementor 4 atomic layout elements (`e-flexbox`, `e-div-block`) addable through the element write vocabulary when Elementor 4 is present | should |
+| REQ-0110 | Elementor | Breakpoint-aware writes — tablet and mobile values on global typography and class variants in the same call | should |
+| REQ-0111 | Elementor | Global Variables (design tokens): list, create, update and retire them alongside global colors and classes | could |
+| REQ-0112 | Elementor | Response size ceiling on document reads, with an explicit "narrowed, ask by element id" marker instead of a client-side failure | should |
+| REQ-0113 | Elementor | Rich-text writes that preserve the editor's `children` tree, so a text update never leaves a widget uneditable | should |
+| REQ-0114 | Elementor | Full-bleed container preset that zeroes the kit padding, and a template-type term set on theme-template create so Elementor renders it | could |
+| REQ-0115 | Elementor | Global-class writes verified by reading the class back through Elementor, reporting any property it discarded | could |
+| REQ-0116 | Gateway | Strict-schema mode — an opt-in schema rewrite for validators that require `required` lists and non-empty enum members | could |
 
 Have a use case for one of these? Open an issue and describe the outcome you need — a
 concrete workflow moves an item up far more reliably than a feature name does.

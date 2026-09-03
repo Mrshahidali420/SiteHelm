@@ -108,6 +108,64 @@ final class MenuFields {
 	 */
 	public const ITEM_PREFIX = 'menu-item:';
 
+	/**
+	 * The token naming "open this item in the window it was clicked from".
+	 *
+	 * A NAME FOR THE VALUE CORE STORES AS EMPTINESS. WordPress writes the item's
+	 * `target` straight into the rendered attribute, so "same tab" is the absence
+	 * of a value rather than a value of its own. That is fine as storage and
+	 * unusable as a published vocabulary: an enum whose members are `""` and
+	 * `"_blank"` is refused by strict schema validators, and a client that cannot
+	 * read the schema cannot set the field at all. The token is the two halves
+	 * kept apart — `_self` on the wire, empty in the database — and it is the
+	 * same word HTML has always used for it.
+	 */
+	public const TARGET_SAME_TAB = '_self';
+
+	/**
+	 * The token naming "open this item in a new browser tab".
+	 *
+	 * The one value that means the same thing on the wire and in storage.
+	 */
+	public const TARGET_NEW_TAB = '_blank';
+
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+	/**
+	 * The token a stored target reads back as.
+	 *
+	 * Everything that is not the new-tab value reads as `_self`, including the
+	 * junk an item can carry from a hand edit or an importer, because that junk
+	 * is what core renders and every one of those renderings behaves as "same
+	 * tab" would. Reporting it verbatim would publish a value the write schema
+	 * does not accept back.
+	 *
+	 * @param mixed $stored The item's stored target.
+	 *
+	 * @return string The published token.
+	 */
+	public static function targetToken( mixed $stored ): string {
+		return self::TARGET_NEW_TAB === $stored ? self::TARGET_NEW_TAB : self::TARGET_SAME_TAB;
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+	/**
+	 * The value core stores for one published token.
+	 *
+	 * The inverse of targetToken(), and the only place the empty string is
+	 * written. Anything other than the new-tab token normalizes to "same tab"
+	 * rather than being refused, which is what both writes did before the token
+	 * existed and what keeps a client still sending `''` working.
+	 *
+	 * @param mixed $token The token a request supplied.
+	 *
+	 * @return string The value to store.
+	 */
+	public static function storedTarget( mixed $token ): string {
+		return self::TARGET_NEW_TAB === $token ? self::TARGET_NEW_TAB : '';
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+
 	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 	/**
 	 * The menu one caller-supplied key names, or null when it names none.
@@ -303,7 +361,7 @@ final class MenuFields {
 			'objectId'    => (int) ( $item->object_id ?? 0 ),
 			'parent'      => (int) ( $item->menu_item_parent ?? 0 ),
 			'position'    => (int) ( $item->menu_order ?? 0 ),
-			'target'      => (string) ( $item->target ?? '' ),
+			'target'      => self::targetToken( $item->target ?? '' ),
 			'classes'     => is_array( $classes )
 				? array_values( array_filter( array_map( 'strval', $classes ), static fn( string $c ): bool => '' !== $c ) )
 				: [],

@@ -22,6 +22,9 @@ final class PluginTest extends TestCase {
 
 	public function test_register_boots_the_gateway_and_registers_the_route(): void {
 		Functions\when( 'is_admin' )->justReturn( false );
+		// OAuth is switched off for these three, so the boot under test is the
+		// gateway's alone. Its own wiring is covered in AuthServerTest.
+		Functions\when( 'get_option' )->justReturn( false );
 		Actions\expectAdded( 'rest_api_init' )->once();
 
 		Plugin::instance()->register();
@@ -38,6 +41,9 @@ final class PluginTest extends TestCase {
 	 */
 	public function test_a_front_end_request_does_not_register_the_console(): void {
 		Functions\when( 'is_admin' )->justReturn( false );
+		// OAuth is switched off for these three, so the boot under test is the
+		// gateway's alone. Its own wiring is covered in AuthServerTest.
+		Functions\when( 'get_option' )->justReturn( false );
 		Actions\expectAdded( 'admin_menu' )->never();
 
 		Plugin::instance()->register();
@@ -47,12 +53,35 @@ final class PluginTest extends TestCase {
 
 	public function test_an_admin_request_registers_the_console(): void {
 		Functions\when( 'is_admin' )->justReturn( true );
+		// OAuth is switched off for these three, so the boot under test is the
+		// gateway's alone. Its own wiring is covered in AuthServerTest.
+		Functions\when( 'get_option' )->justReturn( false );
 		Functions\when( 'plugin_basename' )->returnArg();
 		Actions\expectAdded( 'admin_menu' )->once();
 
 		Plugin::instance()->register();
 
 		$this->assertTrue( true, 'Boot registered the console menu.' );
+	}
+
+	/**
+	 * The other half of the same wiring: with the flag on and the tables in
+	 * place, booting the plugin puts the OAuth surfaces on the site. A boot that
+	 * quietly skipped them would leave discovery advertising endpoints nothing
+	 * answers.
+	 */
+	public function test_the_boot_registers_the_oauth_server_when_it_is_available(): void {
+		Functions\when( 'is_admin' )->justReturn( false );
+		Functions\when( 'get_option' )->alias(
+			static fn( string $key, mixed $fallback = false ): mixed => Installer::STATUS_OPTION === $key
+				? Installer::STATUS_READY
+				: '1'
+		);
+
+		Plugin::instance()->register();
+
+		$this->assertNotFalse( has_filter( 'determine_current_user' ) );
+		$this->assertNotFalse( has_action( 'parse_request' ) );
 	}
 
 	/**
@@ -71,6 +100,8 @@ final class PluginTest extends TestCase {
 			Installer::tableName( Installer::TABLE_PLANS ),
 			Installer::tableName( Installer::TABLE_AUDIT ),
 			Installer::tableName( Installer::TABLE_SNAPSHOTS ),
+			Installer::tableName( Installer::TABLE_OAUTH_CLIENTS ),
+			Installer::tableName( Installer::TABLE_OAUTH_TOKENS ),
 		];
 
 		$options   = [];

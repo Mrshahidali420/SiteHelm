@@ -6,9 +6,12 @@ namespace SiteHelm\Tests\Unit\Admin;
 
 use Brain\Monkey\Functions;
 use SiteHelm\Admin\AdminMenu;
+use SiteHelm\Admin\ConnectScreen;
+use SiteHelm\Admin\Credentials;
 use SiteHelm\Admin\HomeScreen;
 use SiteHelm\Admin\ProCatalogue;
 use SiteHelm\Audit\AuditRecorder;
+use SiteHelm\Gateway\ContextFactory;
 use SiteHelm\Storage\AuditStore;
 use SiteHelm\Tests\Doubles\AdminDied;
 use SiteHelm\Tests\Doubles\AdminWordPressStubs;
@@ -34,17 +37,19 @@ final class HomeScreenTest extends TestCase {
 	}
 
 	/**
-	 * Renders Home over a store answering the six readings in the order the
+	 * Renders Home over a store answering the eight readings in the order the
 	 * screen asks for them: the week's count, three failure counts, the
-	 * week's sample, then the latest rows.
+	 * walkthrough's two all-time counts, the week's sample, then the latest rows.
 	 *
 	 * @param int                              $week     Rows this week.
 	 * @param list<int>                        $failures Execution, verification and restore failures this week.
 	 * @param array<int, array<string, mixed>> $sample   The week's rows.
 	 * @param array<int, array<string, mixed>> $lately   The newest rows of all time.
+	 * @param int                              $applied  Changes applied, ever.
+	 * @param int                              $restored Changes put back, ever.
 	 */
-	private function render( int $week, array $failures, array $sample, array $lately ): string {
-		$this->wpdb->varQueue    = array_merge( [ $week ], $failures );
+	private function render( int $week, array $failures, array $sample, array $lately, int $applied = 0, int $restored = 0 ): string {
+		$this->wpdb->varQueue    = array_merge( [ $week ], $failures, [ $applied, $restored ] );
 		$this->wpdb->resultQueue = [ $sample, $lately ];
 
 		ob_start();
@@ -115,10 +120,10 @@ final class HomeScreenTest extends TestCase {
 		$this->assertStringNotContainsString( 'All good', $html );
 	}
 
-	public function testTheStoreIsAskedSixQuestionsAndNoMore(): void {
+	public function testTheStoreIsAskedNineQuestionsAndNoMore(): void {
 		$this->render( 0, [ 0, 0, 0 ], [], [] );
 
-		$this->assertCount( 6, $this->wpdb->queries );
+		$this->assertCount( 9, $this->wpdb->queries );
 		$this->assertStringContainsString( 'recorded_at', $this->wpdb->queries[0] );
 	}
 
@@ -138,7 +143,7 @@ final class HomeScreenTest extends TestCase {
 	 * A licensed site is not advertised to: the card disappears entirely.
 	 */
 	public function testALicensedSiteSeesNoProCard(): void {
-		$this->wpdb->varQueue    = [ 0, 0, 0, 0 ];
+		$this->wpdb->varQueue    = [ 0, 0, 0, 0, 0, 0 ];
 		$this->wpdb->resultQueue = [ [], [] ];
 
 		ob_start();
@@ -155,5 +160,86 @@ final class HomeScreenTest extends TestCase {
 
 		$this->assertStringNotContainsString( ProCatalogue::PRICING_URL, $html );
 		$this->assertStringNotContainsString( 'See what Pro adds', $html );
+	}
+
+	/**
+	 * A site with nothing done opens with the walkthrough, above the verdict,
+	 * with the first step marked for anyone reading by structure rather than
+	 * by tint.
+	 */
+	public function testAFreshSiteSeesTheWalkthroughWithStepOneCurrent(): void {
+		$html = $this->render( 0, [ 0, 0, 0 ], [], [] );
+
+		$this->assertStringContainsString( 'Get started', $html );
+		$this->assertStringContainsString( 'Connect a client', $html );
+		$this->assertStringContainsString( 'Choose what it may touch', $html );
+		$this->assertStringContainsString( 'Undo it', $html );
+		$this->assertStringContainsString( 'aria-current="step"', $html );
+		$this->assertSame( 1, substr_count( $html, 'aria-current="step"' ) );
+
+		// The current step is the first one, and it sits above the verdict.
+		$this->assertLessThan( strpos( $html, 'No app is connected yet' ), strpos( $html, 'Get started' ) );
+		$this->assertLessThan(
+			strpos( $html, 'Choose what it may touch' ),
+			strpos( $html, 'aria-current="step"' )
+		);
+	}
+
+	/**
+	 * A used credential answers "connected" and "a call was made" on its own,
+	 * because reads leave no audit row: the log records changes only.
+	 */
+	public function testAUsedCredentialClosesTheFirstAndThirdStepsWithAnEmptyLog(): void {
+		$this->wpdb->varQueue    = [ 0, 0, 0, 0, 0, 0 ];
+		$this->wpdb->resultQueue = [ [], [] ];
+
+		ob_start();
+		( new HomeScreen( new AuditStore(), null, self::credentials( 1755300000 ) ) )->render();
+		$html = (string) ob_get_clean();
+
+		// Steps one and three are done; step two is the open one.
+		$this->assertSame( 2, substr_count( $html, 'sitehelm-walkthrough__done' ) );
+		$this->assertStringContainsString( 'Step 3 of 5', $html );
+		$this->assertLessThan(
+			strpos( $html, 'Make a test call' ),
+			strpos( $html, 'aria-current="step"' )
+		);
+	}
+
+	/**
+	 * Once every step is done the block is one line and the steps are rendered
+	 * closed, so a console someone has been using for months does not keep
+	 * teaching them what they already did.
+	 */
+	public function testASettledSiteSeesOnlyTheCollapsedLine(): void {
+		AdminWordPressStubs::$options[ ContextFactory::MODE_OPTION ] = 'safe-write';
+
+		$rows = [ self::row( 'content-post-update', AuditRecorder::OUTCOME_APPLIED, 'Claude Code', 'snap-1' ) ];
+		$html = $this->render( 1, [ 0, 0, 0 ], $rows, $rows, 1, 1 );
+
+		$this->assertStringContainsString( 'All set — 5 of 5', $html );
+		$this->assertStringContainsString( 'sitehelm-walkthrough is-complete', $html );
+		$this->assertStringContainsString( 'sitehelm-walkthrough__steps" hidden', $html );
+		$this->assertStringNotContainsString( 'Get started', $html );
+		$this->assertStringNotContainsString( 'aria-current="step"', $html );
+	}
+
+	/**
+	 * One SiteHelm application password on the signed-in account.
+	 *
+	 * @param int $last_used When it was last used, or zero for never.
+	 */
+	private static function credentials( int $last_used ): Credentials {
+		return new Credentials(
+			static fn( int $user_id ): array => [
+				[
+					'name'      => ConnectScreen::PASSWORD_NAME,
+					'uuid'      => 'aaaaaaaa-0000-4000-8000-000000000000',
+					'created'   => 1755200000,
+					'last_used' => $last_used,
+					'last_ip'   => '203.0.113.9',
+				],
+			]
+		);
 	}
 }

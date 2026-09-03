@@ -674,6 +674,43 @@ final class MenuItemCreateTest extends MenuItemCreateTestCase {
 		$this->assertSame( '', $this->written[0]['menu-item-target'] );
 	}
 
+	/**
+	 * The published token is the schema's own, and WordPress stores it as the
+	 * emptiness it has always stored: the value core writes into the rendered
+	 * attribute must not become the literal string "_self".
+	 */
+	public function test_the_same_tab_token_is_stored_as_wordpress_stores_it(): void {
+		$result = $this->planThenApply(
+			[
+				'menu'   => 'primary',
+				'title'  => 'Contact',
+				'url'    => 'https://example.com/contact',
+				'target' => '_self',
+			]
+		);
+
+		$this->assertSame( '', $this->written[0]['menu-item-target'] );
+		$this->assertSame( '_self', $result['after']['target'] );
+	}
+
+	/**
+	 * The empty string left the schema and did not leave the accepted inputs: a
+	 * client written against the old enum keeps working, and gets the same item.
+	 */
+	public function test_the_deprecated_empty_target_still_means_the_same_tab(): void {
+		$result = $this->planThenApply(
+			[
+				'menu'   => 'primary',
+				'title'  => 'Contact',
+				'url'    => 'https://example.com/contact',
+				'target' => '',
+			]
+		);
+
+		$this->assertSame( '', $this->written[0]['menu-item-target'] );
+		$this->assertSame( '_self', $result['after']['target'] );
+	}
+
 	public function test_the_read_back_refuses_a_target_key_that_names_no_item(): void {
 		try {
 			$this->operation->readBack( MenuFields::ITEM_PREFIX . '9999', $this->makeContext() );

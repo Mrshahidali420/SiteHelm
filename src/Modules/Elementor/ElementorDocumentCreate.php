@@ -45,7 +45,7 @@ use SiteHelm\Contracts\SnapshotPolicy;
  * avoids the same way.
  *
  * A LAYOUT IS OPTIONAL, AND IT IS GATED WHEN IT IS THERE. `ElementorTreeInput`
- * runs the same five gates `elementor-template-import` and
+ * runs the same six gates `elementor-template-import` and
  * `elementor-document-build` pass their trees through, and the last of them is
  * the one that matters: Elementor's parser DROPS a setting key the widget does
  * not declare, silently, so a page created with `content` where the widget

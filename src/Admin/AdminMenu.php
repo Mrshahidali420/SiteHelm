@@ -177,6 +177,9 @@ final class AdminMenu {
 		add_action( 'admin_post_' . WriteModeAction::ACTION, [ new WriteModeAction(), 'handle' ] );
 		add_action( 'admin_post_' . RevokeAction::ACTION, [ new RevokeAction(), 'handle' ] );
 		add_action( 'admin_post_' . RetentionAction::ACTION, [ new RetentionAction(), 'handle' ] );
+		add_action( 'admin_post_' . ConnectedAppsAction::ACTION_SIGN_OUT, [ new ConnectedAppsAction(), 'handle_sign_out' ] );
+		add_action( 'admin_post_' . ConnectedAppsAction::ACTION_REMOVE, [ new ConnectedAppsAction(), 'handle_remove' ] );
+		add_action( 'admin_post_' . AuthSettingsAction::ACTION, [ new AuthSettingsAction(), 'handle' ] );
 		add_action( 'admin_post_' . ExportAction::ACTION, [ new ExportAction(), 'handle' ] );
 		add_action( 'admin_post_' . OperationsAction::ACTION, [ new OperationsAction( $this->registry ), 'handle' ] );
 		add_action( 'admin_post_' . ModuleSwitchAction::ACTION, [ new ModuleSwitchAction( $this->registry, $this->switches ), 'handle' ] );

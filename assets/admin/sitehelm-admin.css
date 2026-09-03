@@ -977,6 +977,73 @@
 }
 
 /* =========================================================================
+ * Connection method chooser
+ * ========================================================================= */
+
+.sitehelm-methods {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+	gap: 12px;
+	margin: 0 0 18px;
+	padding: 0;
+	border: 0;
+}
+
+.sitehelm-method {
+	display: flex;
+	align-items: flex-start;
+	gap: 10px;
+	padding: 14px 16px;
+	background: var(--sh-white);
+	border: 1px solid var(--sh-gray-300);
+	border-radius: var(--sh-radius);
+	cursor: pointer;
+	transition: border-color var(--sh-ease), box-shadow var(--sh-ease);
+}
+
+.sitehelm-method:hover {
+	border-color: var(--sh-primary);
+}
+
+.sitehelm-method.is-selected {
+	border-color: var(--sh-primary);
+	background: var(--sh-primary-light);
+	box-shadow: 0 0 0 1px var(--sh-primary) inset;
+}
+
+.sitehelm-method--off {
+	background: var(--sh-gray-50);
+	color: var(--sh-gray-500);
+	cursor: not-allowed;
+}
+
+.sitehelm-method--off:hover {
+	border-color: var(--sh-gray-300);
+}
+
+.sitehelm-method__body {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+}
+
+.sitehelm-method__head {
+	font-size: 13px;
+	font-weight: 600;
+	color: var(--sh-ink);
+}
+
+.sitehelm-method--off .sitehelm-method__head {
+	color: var(--sh-gray-500);
+}
+
+.sitehelm-method__detail {
+	font-size: 12px;
+	line-height: 1.5;
+	color: var(--sh-gray-600);
+}
+
+/* =========================================================================
  * Client picker
  * ========================================================================= */
 
@@ -1032,6 +1099,61 @@
 
 /* Without scripting every client's blocks stay on the page and readable. */
 [data-sitehelm-client][hidden] {
+	display: none;
+}
+
+/* =========================================================================
+ * Shape tabs
+ *
+ * One client accepts several formats of the same server entry. The strip
+ * names them; the panel below it holds the one chosen. The radios stay
+ * visible rather than being clipped, so the choice reads the same way the
+ * client picker above it does and survives a browser without :has().
+ * ========================================================================= */
+
+.sitehelm-shapes {
+	margin: 0 0 20px;
+}
+
+.sitehelm-shapes__tabs {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin: 0 0 12px;
+	padding: 0;
+	border: 0;
+}
+
+.sitehelm-shape {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	padding: 6px 12px;
+	background: var(--sh-gray-50);
+	border: 1px solid var(--sh-gray-300);
+	border-radius: 999px;
+	cursor: pointer;
+}
+
+.sitehelm-shape:hover {
+	border-color: var(--sh-primary);
+}
+
+.sitehelm-shape__label {
+	font-size: 12px;
+	font-weight: 600;
+	color: var(--sh-gray-700);
+}
+
+.sitehelm-shape__file {
+	margin: 0 0 8px;
+	font-size: 12px;
+	line-height: 1.5;
+	color: var(--sh-gray-600);
+}
+
+[data-sitehelm-shape][hidden],
+[data-sitehelm-auth][hidden] {
 	display: none;
 }
 
@@ -1387,6 +1509,75 @@
 .sitehelm-btn--danger {
 	border-color: var(--sh-danger);
 	color: var(--sh-danger);
+}
+
+/* =========================================================================
+ * Connected apps
+ * ========================================================================= */
+
+.sitehelm-apps td:last-child {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+}
+
+.sitehelm-btn.is-asking {
+	border-color: var(--sh-warn);
+	background: var(--sh-warn-light);
+	color: var(--sh-warn-ink);
+}
+
+.sitehelm-btn--danger.is-asking {
+	border-color: var(--sh-danger);
+	background: var(--sh-danger-light);
+	color: var(--sh-danger-ink);
+}
+
+/* =========================================================================
+ * Troubleshooting
+ * ========================================================================= */
+
+.sitehelm-troubleshooting__list {
+	display: grid;
+	gap: 14px;
+	margin: 0;
+}
+
+.sitehelm-troubleshooting__list dt {
+	font-weight: 600;
+	color: var(--sh-ink);
+}
+
+.sitehelm-troubleshooting__list dd {
+	margin: 4px 0 0;
+	color: var(--sh-gray-600);
+}
+
+/* =========================================================================
+ * Settings panel
+ * ========================================================================= */
+
+.sitehelm-check {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	font-weight: 600;
+	color: var(--sh-ink);
+}
+
+.sitehelm-settings-form__actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin: 16px 0 4px;
+}
+
+.sitehelm-discovery td {
+	vertical-align: top;
+}
+
+.sitehelm-discovery code {
+	word-break: break-all;
 }
 
 .sitehelm-btn--danger:hover,
@@ -2104,4 +2295,178 @@
 
 .sitehelm-table__what .sitehelm-table__sub code {
 	font-size: 11px;
+}
+
+/* -------------------------------------------------------------------------
+ * Home: the "Get started" walkthrough.
+ *
+ * State-driven, so it needs no dismissed flag: the block reduces itself to a
+ * single line once every step is done. The current step is marked with a word
+ * and a border as well as a tint, never colour alone.
+ * ---------------------------------------------------------------------- */
+.sitehelm-walkthrough {
+	margin: 0 0 24px;
+	padding: 20px;
+	background: var(--sh-gray-50);
+	border: 1px solid var(--sh-gray-200);
+	border-radius: var(--sh-radius);
+}
+
+.sitehelm-walkthrough.is-complete {
+	padding: 12px 16px;
+}
+
+.sitehelm-walkthrough__head {
+	margin: 0;
+	font-family: var(--sh-font-heading);
+	font-size: 15px;
+	font-weight: 600;
+	color: var(--sh-gray-900);
+}
+
+.sitehelm-walkthrough__note {
+	margin: 4px 0 16px;
+	font-size: 13px;
+	color: var(--sh-gray-500);
+}
+
+.sitehelm-walkthrough__summary {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin: 0;
+	font-size: 13px;
+	font-weight: 600;
+	color: var(--sh-ok-ink);
+}
+
+.sitehelm-walkthrough__tick {
+	display: inline-flex;
+	color: var(--sh-ok);
+}
+
+.sitehelm-walkthrough__tickmark {
+	width: 16px;
+	height: 16px;
+}
+
+.sitehelm-walkthrough__toggle {
+	display: inline-flex;
+	align-items: center;
+	padding: 2px;
+	background: none;
+	border: 0;
+	border-radius: var(--sh-radius-sm);
+	color: var(--sh-gray-500);
+	cursor: pointer;
+}
+
+.sitehelm-walkthrough__toggle:hover {
+	color: var(--sh-gray-800);
+}
+
+.sitehelm-walkthrough__toggle[aria-expanded="true"] .dashicons {
+	transform: rotate(180deg);
+}
+
+.sitehelm-walkthrough__toggle .dashicons {
+	transition: transform var(--sh-ease);
+}
+
+.sitehelm-walkthrough__steps {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+	gap: 12px;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.sitehelm-walkthrough.is-complete .sitehelm-walkthrough__steps {
+	margin-top: 16px;
+}
+
+.sitehelm-walkthrough__step {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	margin: 0;
+	padding: 14px;
+	background: var(--sh-white);
+	border: 1px solid var(--sh-gray-200);
+	border-radius: var(--sh-radius-sm);
+	color: var(--sh-gray-500);
+}
+
+.sitehelm-walkthrough__step.is-current {
+	border-color: var(--sh-primary);
+	box-shadow: var(--sh-shadow-sm);
+	color: var(--sh-primary);
+}
+
+.sitehelm-walkthrough__step.is-done {
+	color: var(--sh-gray-400);
+}
+
+.sitehelm-walkthrough__art {
+	display: block;
+}
+
+.sitehelm-walkthrough__svg {
+	width: 40px;
+	height: 40px;
+}
+
+.sitehelm-walkthrough__body {
+	display: flex;
+	flex: 1;
+	flex-direction: column;
+	gap: 4px;
+}
+
+.sitehelm-walkthrough__title {
+	display: flex;
+	align-items: baseline;
+	gap: 6px;
+	font-family: var(--sh-font-heading);
+	font-size: 13px;
+	font-weight: 600;
+	color: var(--sh-gray-900);
+}
+
+.sitehelm-walkthrough__num {
+	font-variant-numeric: tabular-nums;
+	color: var(--sh-gray-400);
+}
+
+.sitehelm-walkthrough__help {
+	font-size: 12px;
+	line-height: 1.5;
+	color: var(--sh-gray-500);
+}
+
+.sitehelm-walkthrough__action {
+	margin-top: auto;
+	padding-top: 8px;
+}
+
+.sitehelm-walkthrough__done {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	font-size: 11px;
+	font-weight: 600;
+	color: var(--sh-ok-ink);
+}
+
+.sitehelm-walkthrough__done .sitehelm-walkthrough__tickmark {
+	width: 13px;
+	height: 13px;
+	color: var(--sh-ok);
+}
+
+@media screen and (max-width: 782px) {
+	.sitehelm-walkthrough__steps {
+		grid-template-columns: 1fr;
+	}
 }

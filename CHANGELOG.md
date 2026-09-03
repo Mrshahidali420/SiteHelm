@@ -9,6 +9,62 @@ Every entry names the user-visible outcome. Internal refactors, test additions, 
 documentation-only changes are not listed unless they change what an agent can do or how
 an operation behaves.
 
+## [0.11.0] — 2026-09-03
+
+### Added
+- **Home opens with five steps that tick themselves off.** Connect a client, choose what it
+  may touch, make a test call, make a first change, undo it — each with a line of plain help
+  and a button to the right tab. Nothing is remembered and nothing is dismissed: every step
+  reads its own answer back off the site, and once all five are done the block shrinks to one
+  line you can fold open again.
+- **Clients can sign in to the site themselves, instead of being handed a password.** An app
+  can now register with the site, send you to a page in your own dashboard that names it and
+  asks whether to allow it, and hold its own credential afterwards — nothing to copy, nothing
+  to paste, and a connection you can see and cut off from the site rather than from the app.
+  It is on wherever the site is served over HTTPS and can be switched off entirely.
+  Application passwords keep working exactly as they did; this is a second way in, not a
+  replacement, and a connection made this way still acts as the account that approved it and
+  can do nothing that account could not.
+- **Connect now asks how your app signs in before it shows you anything to paste**, and
+  answers for the connection afterwards. Pick signing in or an application password and the
+  snippets follow the choice; on a site that cannot offer signing in, the screen says which
+  of the two reasons it is and points at the path that does work. Below that: every app that
+  has signed in, with when it registered, when it was last let in, how many live tokens it
+  holds, and a **Sign out** or **Remove** button that names the app before it acts. Below
+  that again: whether apps may sign in at all, the address they are given when they do — for
+  hosts that answer on a different domain to the one WordPress has recorded — and a **Test
+  discovery** button that asks this site for its own sign-in documents over the network and
+  reports, per address, whether the answer came from this site or from something else sitting
+  in front of it. The same verdict appears on Health, and the folded "Your app cannot sign
+  in" note under the sign-in card explains the five failures every client reports identically
+  as "could not connect".
+
+### Fixed
+- **A client that asks for an older MCP protocol revision now gets the one it asked for.**
+  The handshake answered with this server's newest revision whatever the client named, and
+  several clients read that disagreement as the end of the conversation and never asked for
+  the tool list — so the whole site looked like it had no operations at all. The three
+  revisions SiteHelm actually speaks are echoed back; anything else, or nothing, still gets
+  the newest.
+- **Two schema shapes that strict clients refused to load.** A menu item's `target` offered
+  an empty string as one of its two choices, and the dispatcher tools never said which of
+  their inputs were required. Validators that check a tool definition before calling it
+  rejected both, and a client running one could not use the tool at all. "Same tab" is now
+  the plain `_self` you would write in HTML, on the way in and on the way back out; an empty
+  string is still accepted and still means the same thing, but it is deprecated and no
+  longer listed.
+- **Two sites no longer collide in one client's config.** Every generated snippet named the
+  server `sitehelm`, so adding a second site to the same client overwrote the first. The
+  name now carries the site's host — `sitehelm-example-com` — everywhere Connect shows it.
+- **One unreadable global class no longer hides all the others.** `elementor-global-class-list`
+  gave up on the whole set when a single stored entry was in a shape it could not resolve,
+  leaving nobody able to see which entry was at fault. The bad entry is now reported in its
+  place with a short reason, and the rest of the list answers as usual.
+- **A style class nothing wears is refused instead of silently rendering nothing.** A layout
+  could define a local style on an element whose settings never referenced it: Elementor
+  stored the definition, the write reported success, and the page looked untouched. The
+  refusal names the style class and what to add.
+
 ## [0.10.0] — 2026-09-01
 
 ### Added
@@ -905,6 +961,8 @@ out of scope by design and will not be added. Code ships only through the Pro Co
 guard, and nothing SiteHelm stores ever executes during its own request. See
 [ROADMAP.md](ROADMAP.md).
 
+[0.11.0]: https://github.com/Mrshahidali420/SiteHelm/releases/tag/v0.11.0
+[0.10.0]: https://github.com/Mrshahidali420/SiteHelm/releases/tag/v0.10.0
 [0.9.0]: https://github.com/Mrshahidali420/SiteHelm/releases/tag/v0.9.0
 [0.8.0]: https://github.com/Mrshahidali420/SiteHelm/releases/tag/v0.8.0
 [0.7.0]: https://github.com/Mrshahidali420/SiteHelm/releases/tag/v0.7.0

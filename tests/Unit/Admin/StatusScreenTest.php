@@ -8,6 +8,8 @@ use SiteHelm\Admin\AdminMenu;
 use SiteHelm\Admin\ConnectionProbe;
 use SiteHelm\Admin\RetentionAction;
 use SiteHelm\Admin\StatusScreen;
+use SiteHelm\Auth\AuthSettings;
+use SiteHelm\Auth\DiscoverySelfTest;
 use SiteHelm\Contracts\ModuleHealth;
 use SiteHelm\Contracts\ModuleId;
 use SiteHelm\Contracts\PermissionMode;
@@ -59,6 +61,56 @@ final class StatusScreenTest extends TestCase {
 		}
 
 		return $health;
+	}
+
+	/**
+	 * Stores a discovery result as if the Connect screen's button had been pressed.
+	 *
+	 * @param string $outcome The outcome the one row carries.
+	 */
+	private function discoveryFound( string $outcome ): void {
+		AdminWordPressStubs::$options[ DiscoverySelfTest::OPTION_LAST ] = [
+			'at'   => 1_700_000_000,
+			'rows' => [
+				[
+					'url'     => 'https://example.test/.well-known/oauth-protected-resource',
+					'status'  => 200,
+					'outcome' => $outcome,
+					'detail'  => '',
+				],
+			],
+		];
+	}
+
+	public function testDiscoveryIsReportedAsNotTestedUntilSomebodyHasTestedIt(): void {
+		AdminWordPressStubs::$options[ AuthSettings::OPTION ] = '1';
+
+		$html = $this->render( $this->allActive() );
+
+		$this->assertStringContainsString( 'Sign-in discovery', $html );
+		$this->assertStringContainsString( 'Not tested', $html );
+	}
+
+	public function testDiscoveryIsReportedAsNotInUseWhenSigningInIsSwitchedOff(): void {
+		AdminWordPressStubs::$options[ AuthSettings::OPTION ] = '0';
+
+		$this->assertStringContainsString( 'Not in use', $this->render( $this->allActive() ) );
+	}
+
+	public function testAnAddressAnsweredBySomethingElseIsReportedOnTheHealthScreenToo(): void {
+		AdminWordPressStubs::$options[ AuthSettings::OPTION ] = '1';
+
+		$this->discoveryFound( DiscoverySelfTest::WRONG_OWNER );
+
+		$this->assertStringContainsString( 'Something else answers', $this->render( $this->allActive() ) );
+	}
+
+	public function testAPassingDiscoveryTestIsReportedAsAnsweringCorrectly(): void {
+		AdminWordPressStubs::$options[ AuthSettings::OPTION ] = '1';
+
+		$this->discoveryFound( DiscoverySelfTest::PASS );
+
+		$this->assertStringContainsString( 'Answers correctly', $this->render( $this->allActive() ) );
 	}
 
 	public function testAVisitorWithoutTheCapabilityIsStoppedRatherThanShownTheScreen(): void {

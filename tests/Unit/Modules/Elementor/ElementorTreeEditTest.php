@@ -412,6 +412,71 @@ final class ElementorTreeEditTest extends TestCase {
 		}
 	}
 
+	/**
+	 * A DESCENDANT IS NOT ONLY A CHILD. The containment test walks the whole
+	 * subtree, and a grandchild is where a test that only looked one level down
+	 * would let the document be detached from itself.
+	 */
+	public function test_move_into_a_grandchild_of_the_element_refuses(): void {
+		$tree   = [ $this->node( 'top1111', [ $this->node( 'mid1111', [ $this->node( 'low1111' ) ] ) ] ) ];
+		$before = serialize( $tree );
+
+		try {
+			$this->edit->move( $tree, 'top1111', 'low1111', 0 );
+			$this->fail( 'Moving an element into its own grandchild must refuse.' );
+		} catch ( OperationException $exception ) {
+			$this->assertSame( ErrorCode::InvalidInput, $exception->errorCode );
+		}
+
+		$this->assertSame( $before, serialize( $tree ) );
+	}
+
+	/**
+	 * THE INDEX COUNTS THE DESTINATION AFTER THE ELEMENT HAS LEFT. Moving up a
+	 * level and along is where the two readings differ visibly: counted before
+	 * the removal this lands one place short of where the caller asked.
+	 */
+	public function test_move_out_to_the_root_lands_at_the_index_the_caller_named(): void {
+		$result = $this->edit->move( $this->tree(), 'kidaaaa', null, 1 );
+
+		$this->assertSame( [ 'root111', 'kidbbbb', 'kidcccc', 'kidaaaa', 'root222' ], $this->ids( $result ) );
+		$this->assertSame( '/1', $this->edit->path( $result, 'kidaaaa' ) );
+	}
+
+	/**
+	 * The same journey backwards: a root element down into a container that is
+	 * already holding children, between two of them.
+	 */
+	public function test_move_from_the_root_down_between_two_existing_children(): void {
+		$result = $this->edit->move( $this->tree(), 'root222', 'root111', 1 );
+
+		$this->assertSame( [ 'root111', 'kidaaaa', 'root222', 'kidbbbb', 'kidcccc' ], $this->ids( $result ) );
+		$this->assertSame( 'root111/1', $this->edit->path( $result, 'root222' ) );
+	}
+
+	/**
+	 * AN INDEX PAST THE END APPENDS RATHER THAN REFUSING. A caller working from
+	 * a read taken a moment ago should not have a move fail because a sibling
+	 * was deleted in between; the last position is what it meant.
+	 */
+	public function test_move_past_the_last_child_appends(): void {
+		$result = $this->edit->move( $this->tree(), 'kidaaaa', 'root222', 99 );
+
+		$this->assertSame( 'root222/0', $this->edit->path( $result, 'kidaaaa' ) );
+		$this->assertSame( [ 'root111', 'kidbbbb', 'kidcccc', 'root222', 'kidaaaa' ], $this->ids( $result ) );
+	}
+
+	/**
+	 * Within one parent, moving to a later index: the position is read in the
+	 * list the element is no longer in, so the last index is the last place.
+	 */
+	public function test_move_within_the_same_parent_to_a_later_index(): void {
+		$result = $this->edit->move( $this->tree(), 'kidaaaa', 'root111', 2 );
+
+		$this->assertSame( [ 'root111', 'kidbbbb', 'kidcccc', 'kidaaaa', 'root222' ], $this->ids( $result ) );
+		$this->assertSame( 'root111/2', $this->edit->path( $result, 'kidaaaa' ) );
+	}
+
 	public function test_a_duplicate_carries_every_unknown_key_of_its_source(): void {
 		$mint  = new ElementorIdMint();
 		$remap = new ElementorStyleRemap();

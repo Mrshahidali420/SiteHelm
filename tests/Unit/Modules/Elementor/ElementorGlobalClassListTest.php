@@ -168,4 +168,37 @@ final class ElementorGlobalClassListTest extends TestCase {
 		$this->assertSame( '', $result['classes'][1]['label'] );
 		$this->assertSame( [], $result['classes'][1]['definition'] );
 	}
+
+	/**
+	 * A class repository is a shared store, and one entry another plugin or a
+	 * half-finished import left in an unreadable shape used to take the whole
+	 * answer with it — leaving an operator asking "what classes does this site
+	 * have" with nothing at all, and no way to find the entry at fault.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_one_unreadable_record_is_marked_and_the_rest_of_the_list_still_answers(): void {
+		$this->installGlobalClassRepository();
+		$this->seedGlobalClasses(
+			[
+				'g-card'   => $this->globalClassDefinition( 'g-card', 'Card' ),
+				'g-button' => $this->globalClassDefinition( 'g-button', 'Button' ),
+			],
+			[ 'g-card', '', 'g-button' ]
+		);
+
+		$result = $this->operation()->handle( [], $this->globalClassContext() );
+
+		$this->assertCount( 3, $result['classes'] );
+		$this->assertSame( 'Card', $result['classes'][0]['label'] );
+		$this->assertSame( 'Button', $result['classes'][2]['label'] );
+
+		$this->assertArrayNotHasKey( 'error', $result['classes'][0] );
+		$this->assertArrayNotHasKey( 'error', $result['classes'][2] );
+
+		$this->assertArrayHasKey( 'error', $result['classes'][1] );
+		$this->assertNotSame( '', $result['classes'][1]['error'] );
+		$this->assertArrayNotHasKey( 'definition', $result['classes'][1], 'An unreadable entry must not read as an empty class a caller could safely overwrite.' );
+	}
 }

@@ -11,6 +11,9 @@ namespace SiteHelm\Bootstrap;
 
 use SiteHelm\Admin\AdminMenu;
 use SiteHelm\Admin\GithubUpdates;
+use SiteHelm\Auth\AuthServer;
+use SiteHelm\Auth\OAuthGarbageCollector;
+use SiteHelm\Auth\OAuthStore;
 use SiteHelm\Change\ChangeEngine;
 use SiteHelm\Contracts\IntegrationModule;
 use SiteHelm\Gateway\ContextFactory;
@@ -129,6 +132,12 @@ final class Plugin {
 		// the same autoloaded option the router already reads.
 		add_action( 'template_redirect', [ new RedirectRouter( new RedirectStore() ), 'handle' ], 1 );
 
+		// Also outside is_admin(): the token endpoint, the discovery documents
+		// and the bearer resolver are all reached by an app, never by a browser
+		// on an admin screen. AuthServer registers nothing at all when OAuth is
+		// switched off or the tables are missing.
+		( new AuthServer() )->register();
+
 		$this->registerMaintenance();
 	}
 
@@ -137,10 +146,10 @@ final class Plugin {
 	 *
 	 * The upgrade check runs on `admin_init` rather than on every request. It is
 	 * a cheap option read on a healthy site, but `maybeUpgrade()` has no backoff:
-	 * while storage is unavailable every call re-runs three `dbDelta` statements
-	 * and three `SHOW TABLES` queries. Binding it to anonymous front-end traffic
-	 * would turn a broken install into a load problem, and an administrator visit
-	 * is guaranteed after an update anyway.
+	 * while storage is unavailable every call re-runs every `dbDelta` statement
+	 * and one `SHOW TABLES` query per owned table. Binding it to anonymous
+	 * front-end traffic would turn a broken install into a load problem, and an
+	 * administrator visit is guaranteed after an update anyway.
 	 *
 	 * phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 	 */
@@ -149,7 +158,13 @@ final class Plugin {
 		add_action(
 			Retention::CRON_HOOK,
 			static function (): void {
-				( new Retention( new PlanStore(), new AuditStore(), new SnapshotStore() ) )->prune( time() );
+				$now = time();
+				( new Retention( new PlanStore(), new AuditStore(), new SnapshotStore() ) )->prune( $now );
+
+				// OAuth pruning rides the same daily event rather than adding a
+				// second one. Two cron hooks doing housekeeping is two things to
+				// go wrong on a site whose cron is already unreliable.
+				( new OAuthGarbageCollector( new OAuthStore() ) )->collect( $now );
 			}
 		);
 	}

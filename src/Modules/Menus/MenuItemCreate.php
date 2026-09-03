@@ -207,8 +207,8 @@ final class MenuItemCreate implements WriteOperation {
 					],
 					'target'      => [
 						'type'        => 'string',
-						'enum'        => [ '', '_blank' ],
-						'description' => 'Send "_blank" to open the item in a new browser tab, or an empty string, the default, to open it in the same tab.',
+						'enum'        => [ MenuFields::TARGET_SAME_TAB, MenuFields::TARGET_NEW_TAB ],
+						'description' => 'Send "_blank" to open the item in a new browser tab, or "_self", the default, to open it in the same tab. An empty string is still accepted and means "_self", but it is deprecated and will stop being listed.',
 					],
 					'classes'     => [
 						'type'        => 'array',
@@ -413,7 +413,9 @@ final class MenuItemCreate implements WriteOperation {
 				continue;
 			}
 
-			$value = $payload[ $field ];
+			$value = 'target' === $field
+				? MenuFields::storedTarget( $payload[ $field ] )
+				: $payload[ $field ];
 
 			$data[ self::CORE_KEY_FOR_FIELD[ $field ] ] = is_array( $value )
 				? implode( ' ', array_map( 'strval', $value ) )
@@ -631,8 +633,8 @@ final class MenuItemCreate implements WriteOperation {
 	 *
 	 * Gated on array_key_exists() rather than on truthiness, so an explicit empty
 	 * description is recorded as one and an absent description is left to core's
-	 * default. `position` 0 and `target` '' are both meaningful values that a
-	 * truthiness test would drop.
+	 * default. `position` 0 and a same-tab `target` are both meaningful values
+	 * that a truthiness test would drop.
 	 *
 	 * `position` KEEPS ITS `minimum: 0` HERE, unlike the sibling MenuItemUpdate,
 	 * and the two are not inconsistent. `wp_update_nav_menu_item()` reads a 0 as
@@ -655,10 +657,13 @@ final class MenuItemCreate implements WriteOperation {
 		}
 
 		if ( array_key_exists( 'target', $input ) ) {
-			// Anything other than the one window value WordPress understands is
-			// normalized to "same tab" rather than refused, because core stores the
-			// value verbatim into the rendered `target` attribute.
-			$fields['target'] = '_blank' === $input['target'] ? '_blank' : '';
+			// The PUBLISHED token is recorded, not the value core will store, so
+			// the promise reads the way the verification read of the same item
+			// will. Anything other than the one window value WordPress understands
+			// — a deprecated '', a stray 'popup' — is normalized to "same tab"
+			// rather than refused, because core stores the value verbatim into the
+			// rendered `target` attribute.
+			$fields['target'] = MenuFields::targetToken( $input['target'] );
 		}
 
 		if ( array_key_exists( 'classes', $input ) && is_array( $input['classes'] ) ) {
