@@ -149,8 +149,9 @@ final class Dispatcher {
 					ErrorCode::IntegrationUnavailable,
 					sprintf( "'%s' is part of SiteHelm Pro, which is not active on this site.", $operation_id ),
 					sprintf(
-						'A site administrator can add it by installing and licensing the SiteHelm Pro add-on — plans at %s. Until then, call the dispatcher without an operation to see what this site can do.',
-						ProCatalogue::PRICING_URL
+						'A site administrator can add it by installing and licensing the SiteHelm Pro add-on — plans at %s. It is served by the %s tool once it is there. Until then, call the dispatcher without an operation to see what this site can do.',
+						ProCatalogue::PRICING_URL,
+						ProCatalogue::OPERATIONS[ $operation_id ]['dispatcher']
 					)
 				);
 			}
@@ -168,12 +169,25 @@ final class Dispatcher {
 			);
 		}
 
+		// A REGISTERED OPERATION CALLED ON THE WRONG TOOL IS THE RECOVERABLE HALF
+		// of the discovery problem, and the only branch here that can say
+		// something useful. The operation exists, the operator has it switched
+		// on, and the caller is one tool away; naming the right one turns a dead
+		// end into a redirect. Nothing is revealed by doing so - the same client
+		// could read the identifier out of that dispatcher's catalog on its next
+		// call - and the name printed is this plugin's own constant, never the
+		// caller's text. The two branches above stay deliberately mute, because
+		// there the answer would be about an operation the caller was never
+		// entitled to hear about.
 		$definition = $this->registry->definition( $operation_id );
 		if ( $definition->dispatcherName() !== $dispatcherName ) {
 			throw new OperationException(
 				ErrorCode::InvalidInput,
 				'The requested operation is not available on this dispatcher.',
-				'Call the dispatcher without an operation to list its catalog.'
+				sprintf(
+					'It is served by the %s tool — call that one instead. Calling a dispatcher without an operation lists its catalog.',
+					$definition->dispatcherName()
+				)
 			);
 		}
 		$arguments = is_array( $args['arguments'] ?? null ) ? $args['arguments'] : [];

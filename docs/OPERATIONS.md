@@ -567,10 +567,10 @@ missing; brand kits need only Elementor.
 > required, and a post that is not a kit is refused. An `elementor_active_kit` option naming
 > a kit that has been deleted is reported as no active kit rather than repeated back.
 
-### Plugins & themes (Pro) — seven Pro operations
+### Plugins & themes (Pro) — nine Pro operations
 
-Shipped in SiteHelm Pro 0.7.0, registered into the **free** Plugins & Themes module: the
-inventory reads above are free, and these seven writes are the add-on's half. The reads ride
+Shipped in SiteHelm Pro 0.7.0 and extended in 0.10.0, registered into the **free** Plugins &
+Themes module: the inventory reads above are free, and these nine writes are the add-on's half. The reads ride
 `system-read` and the writes ride `content-write`; the eleven dispatchers are frozen and
 there is no `system-write`.
 
@@ -583,6 +583,8 @@ there is no `system-write`.
 | `theme-update` | `content-write` | Updates one theme to the version WordPress says is waiting | `update_themes` | not-applicable |
 | `plugin-install` | `content-write` | Installs a plugin from WordPress.org by its slug and stores it **switched off** | `install_plugins` | not-applicable |
 | `theme-install` | `content-write` | Installs a theme from WordPress.org by its slug and does **not** make it live | `install_themes` | not-applicable |
+| `plugin-delete` | `content-write` | Removes one deactivated plugin's files for good; a plugin that is switched on, one the network activated, and SiteHelm itself are all refused | `delete_plugins` | not-applicable |
+| `theme-delete` | `content-write` | Removes one theme's files for good; the live theme is refused, and so is a theme another installed theme is built on | `delete_themes` | not-applicable |
 
 > **Installing reaches WordPress.org and nowhere else.** The input schema is a slug and
 > nothing else — there is no `url`, `package`, `source`, `path` or `zip` property anywhere in
@@ -595,18 +597,26 @@ there is no `system-write`.
 > and a failed install removes exactly the folder it part-wrote in this call and nothing the
 > site already had.
 >
-> **The three option flips can be undone; the four file writes cannot.** Activate, deactivate
+> **The three option flips can be undone; the six file writes cannot.** Activate, deactivate
 > and switch snapshot the state they replace and restore it by re-running every guard they
 > applied forwards, so a restore refuses on the same grounds a forward call would. The two
-> updates and the two installs declare `not-applicable` for both snapshot and rollback and
-> refuse a rollback attempt with `RollbackUnavailable`: WordPress has no clean downgrade, and
-> a rollback that quietly did nothing would be worse than one that says so. An update
-> verifies the installed `version` on read-back and never the update transient — that
+> updates, the two installs and the two deletes declare `not-applicable` for both snapshot and
+> rollback and refuse a rollback attempt with `RollbackUnavailable`: WordPress has no clean
+> downgrade, and a rollback that quietly did nothing would be worse than one that says so. An
+> update verifies the installed `version` on read-back and never the update transient — that
 > transient is WordPress's cache of its last check, not a statement about what is on disk.
 >
-> **`DISALLOW_FILE_MODS` and `DISALLOW_FILE_EDIT` stop exactly the four file writes.** Both
-> updates and both installs are refused by name, with the constant named in the refusal
-> (`DISALLOW_FILE_MODS` when both are set), because a site that has locked its own file
+> **Deleting is the one thing here that is genuinely final.** Both deletes are previewed, and
+> the preview says in words that the files cannot be put back and that the plugin or theme's
+> own database rows stay behind. SiteHelm keeps no copy, so a rollback is refused rather than
+> faked. Both carry the `extreme` risk tier, which a client connected at the `edit` permission
+> level cannot call at all. Every reason for refusal is asked again after the plan is approved
+> and before a single file moves, because a plan is approved in a separate call from the one
+> that made it.
+>
+> **`DISALLOW_FILE_MODS` and `DISALLOW_FILE_EDIT` stop exactly the six file writes.** Both
+> updates, both installs and both deletes are refused by name, with the constant named in the
+> refusal (`DISALLOW_FILE_MODS` when both are set), because a site that has locked its own file
 > modifications has answered this question already. The three option flips write no files and
 > are left alone.
 

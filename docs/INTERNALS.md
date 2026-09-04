@@ -229,7 +229,7 @@ The checklist above still applies EXCEPT steps 3 and 4 — there is no class to 
   payload that passed through it can be conformed to directly.
 
 - **`ALLOWED_CAPABILITIES` (line ~41) is where three requirements are excluded, not
-  just where typos are caught.** The twenty-one entries are the whole vocabulary an
+  just where typos are caught.** The twenty-three entries are the whole vocabulary an
   operation may ask for; anything else throws at construction. REQ-0053 (arbitrary
   PHP), REQ-0054 (unrestricted SQL) and REQ-0055 (filesystem access) are enforced by
   what the list omits — `unfiltered_php`, `edit_files`, `edit_plugins`, `edit_themes`,
@@ -2532,7 +2532,7 @@ filter instead of wordpress.org. `Admin\GithubUpdates` answers it:
 the **hybrid** shape SEO and Forms established: the free plugin ships the reads, the Pro
 add-on registers the writes into the same module through `sitehelm_register_operations`.
 It is therefore NOT in `ProCatalogue::ADDON_ONLY_MODULES` — it does something on a site
-with no add-on — and the console lists the seven writes as locked rather than hiding them.
+with no add-on — and the console lists the nine writes as locked rather than hiding them.
 
 - **The free half is two reads, and neither of them asks wordpress.org anything.**
   `system-plugin-list` and `system-theme-list` (both `system-read`, both
@@ -2548,12 +2548,13 @@ with no add-on — and the console lists the seven writes as locked rather than 
   which core's inventory functions are not loaded is a fact about the request, not about
   the site, so each operation refuses it in its own guard (`ExtensionsPresence`) rather
   than the module reporting the whole surface inactive.
-- **The Pro half is seven `content-write` operations** — `plugin-activate` (High),
+- **The Pro half is nine `content-write` operations** — `plugin-activate` (High),
   `plugin-deactivate` (Medium), `plugin-update` (High), `theme-switch` (High),
-  `theme-update` (High), `plugin-install` (High), `theme-install` (High) — taking the
-  free registry to 101 and the Pro tally to 47, 148 between them. They ride
-  `content-write` for the same frozen-dispatcher reason `code-snippet-write` does: the
-  eleven dispatchers are a contract and there is no `system-write`.
+  `theme-update` (High), `plugin-install` (High), `theme-install` (High), and the two
+  deletes below (`plugin-delete`, `theme-delete`, both Extreme). REQ-0085 shipped the
+  first seven, taking the free registry to 101 and the Pro tally to 47, 148 between them.
+  They ride `content-write` for the same frozen-dispatcher reason `code-snippet-write`
+  does: the eleven dispatchers are a contract and there is no `system-write`.
 - **The reversibility split is the honest one, not the flattering one.** The three
   option flips (activate, deactivate, switch) preview, snapshot the state they replace,
   and restore it by re-running every guard they applied forwards, so a restore refuses
@@ -2564,8 +2565,8 @@ with no add-on — and the console lists the seven writes as locked rather than 
   rollback that silently did nothing is worse than one that says so. An update verifies
   the installed `version` on read-back and **never** the update transient — verifying
   against core's own cache would pass on a site where nothing had been written.
-- **The file-modification locks stop exactly four of the seven.** `DISALLOW_FILE_MODS`
-  and `DISALLOW_FILE_EDIT` refuse both updates and both installs, naming the constant in
+- **The file-modification locks stop exactly six of the nine.** `DISALLOW_FILE_MODS`
+  and `DISALLOW_FILE_EDIT` refuse both updates, both installs and both deletes, naming the constant in
   the refusal (`DISALLOW_FILE_MODS` when both are set) so an operator knows which line
   to look for. The three option flips write no files and are left alone; a site that
   locked its file modifications did not ask to stop activating plugins.
@@ -2588,11 +2589,37 @@ with no add-on — and the console lists the seven writes as locked rather than 
   throws `OperationException` so the change engine's compensate path runs and the audit
   row closes `EXECUTION_FAILED` — an unreachable wordpress.org or an unknown slug is a
   clean typed refusal, never a partial state.
+- **Deleting is final, and `isDestructive` could not say so.** `plugin-delete` and
+  `theme-delete` (`delete_plugins` / `delete_themes`, both `Risk::Extreme`) share
+  `DeleteWrite`, an abstract base carrying everything except which noun is being removed.
+  They declare `isDestructive: false` — not because a delete is gentle, but because the
+  flag is a contract word meaning *destructive and reversible*: setting it true forces
+  preview, snapshot AND rollback to `Required`, and a delete cannot honour the last two.
+  The honesty lives where a caller actually reads it — `Risk::Extreme` (which the `edit`
+  permission level refuses outright, so only a full-permission client can call either),
+  the description, and two plan warnings saying the files cannot be put back and that the
+  plugin or theme's own database rows stay behind. `captureSnapshot()` returns `null` and
+  `restore()` always throws `RollbackUnavailable` rather than pretending.
+- **Every refusal is asked twice, once for the plan and once for the files.** A plan is
+  approved in a separate call from the one that made it, so `require_removable()` runs
+  again inside `applyChange()` before anything is removed: a plugin switched on between
+  the two calls is refused with the files still there. The reasons differ per noun —
+  a plugin must be installed, not network-activated, not active, and not SiteHelm itself;
+  a theme must be installed, not the live one, and not the parent of an installed child,
+  which is named in the refusal.
+- **SiteHelm will not delete SiteHelm.** The self-check compares `plugin_basename()` of
+  `SITEHELM_PLUGIN_FILE` and `SITEHELM_PRO_PLUGIN_FILE` against the target, not a folder
+  name: the add-on is served as `sitehelm-pro-premium/` by the licensing service and
+  `sitehelm-pro/` by a hand-built zip, so a name comparison would protect it on some sites
+  and not others. Deleting either half would cut the connection the request is being
+  answered on, with no operation left to put it back.
 - **Capability policy moved with it.** `ALLOWED_CAPABILITIES` gained the module's six
   grants and now holds twenty-one; `install_plugins` and `install_themes` left
   `ExcludedCapabilityTest::EXECUTION_CAPABILITIES` under the argument recorded in
   section 5, with the six remaining execution capabilities pinned by survivor tests and
-  the free side pinned by `ReservedCapabilityTest`.
+  the free side pinned by `ReservedCapabilityTest`. `delete_plugins` and `delete_themes`
+  joined the allowlist later, on the same terms — reserved for the add-on, never declared by
+  a free operation.
 
 ## 45. Absorbed operations — the two batched SEO writes, and how a migration lands
 
@@ -3014,6 +3041,20 @@ there. It has to be *empty* because none of the three members IS mandatory — a
 no operation is the catalog request `Dispatcher` answers with the operation list, which is
 how a client discovers the dispatcher at all. Naming `operation` there would be a lie that
 takes discovery with it.
+
+**The eleven tool descriptions name their subjects, and say the list is complete.** A
+client caches `tools/list` from the session it connected in, and MCP's `listChanged`
+notification cannot reach one that is not currently connected — so an agent that connected
+before a release had no way to know a newer operation existed, and would tell an operator
+the site could not do something it could do. The fix is that there is nothing to refresh:
+`DISPATCHER_SUBJECTS` gives each dispatcher a sentence naming what it covers, followed by
+an invitation to call it with no operation to list what this site publishes on it. The
+catalogue behind each tool is rebuilt on every `tools/call`, so a newly registered operation
+is answerable the moment it is installed, with no reconnect. What must never change is the
+**set of dispatchers**: adding a twelfth would be invisible to every open session, which is
+why `CapabilityRegistry`'s list carries a frozen docblock and a test that fails if it moves,
+and why `ServerInstructions` states in words that the tool list is complete and only the
+operations behind it grow.
 
 **`MenuFields::TARGET_SAME_TAB`** is the same problem one layer down. WordPress stores "open
 in this window" as the empty string, and an enum whose members are `""` and `"_blank"` is

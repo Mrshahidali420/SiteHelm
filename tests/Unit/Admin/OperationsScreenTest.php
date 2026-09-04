@@ -512,8 +512,8 @@ final class OperationsScreenTest extends TestCase {
 		$html = $this->render( $registry, null, [], $this->pro( ProCatalogue::STATE_ABSENT, 'https://example.test/wp-admin/admin.php?page=sitehelm-addons' ) );
 
 		$this->assertStringContainsString( '1 operation registered', $html );
-		$this->assertStringContainsString( '45 more with SiteHelm Pro', $html );
-		$this->assertStringContainsString( '45 operations come with SiteHelm Pro.', $html );
+		$this->assertStringContainsString( '47 more with SiteHelm Pro', $html );
+		$this->assertStringContainsString( '47 operations come with SiteHelm Pro.', $html );
 		$this->assertStringContainsString( 'href="https://example.test/wp-admin/admin.php?page=sitehelm-addons">Get SiteHelm Pro', $html );
 		$this->assertSame( 1, substr_count( $html, 'sitehelm-note--pro' ) );
 
@@ -522,7 +522,7 @@ final class OperationsScreenTest extends TestCase {
 		$this->assertStringContainsString( '<code>elementor-read</code>', $html );
 		$this->assertStringContainsString( '<code>elementor-write</code>', $html );
 		$this->assertSame( 5, substr_count( $html, 'data-sitehelm-group' ) );
-		$this->assertSame( 45, substr_count( $html, 'sitehelm-tool--locked' ) );
+		$this->assertSame( 47, substr_count( $html, 'sitehelm-tool--locked' ) );
 		$this->assertStringContainsString( '<code>seo-settings-set</code> <span class="sitehelm-badge sitehelm-badge--pro">Pro</span>', $html );
 		$this->assertStringContainsString( 'Available with SiteHelm Pro', $html );
 		$this->assertStringContainsString( 'data-sitehelm-haystack="seo-404-log-list list the urls', $html );
@@ -561,8 +561,8 @@ final class OperationsScreenTest extends TestCase {
 		$this->assertStringContainsString( 'SiteHelm Pro is installed but not activated.', $html );
 		$this->assertStringContainsString( 'href="https://example.test/wp-admin/admin.php?page=sitehelm-account">Enter licence', $html );
 		$this->assertStringContainsString( 'value="seo-settings-get" checked', $html );
-		$this->assertStringContainsString( '44 more with SiteHelm Pro', $html );
-		$this->assertSame( 44, substr_count( $html, 'sitehelm-tool--locked' ) );
+		$this->assertStringContainsString( '46 more with SiteHelm Pro', $html );
+		$this->assertSame( 46, substr_count( $html, 'sitehelm-tool--locked' ) );
 	}
 
 	public function testAnActiveAddOnWithNothingRegisteredLeavesTheScreenFreeOfProMentions(): void {

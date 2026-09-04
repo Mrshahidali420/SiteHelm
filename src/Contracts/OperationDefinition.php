@@ -81,6 +81,17 @@ final class OperationDefinition {
 	 * `unfiltered_php`, `edit_files`, `edit_plugins`, `edit_themes`,
 	 * `update_core` and `unfiltered_upload` stay permanently excluded, and
 	 * ExcludedCapabilityTest keeps them out of this list.
+	 *
+	 * `delete_plugins` and `delete_themes` are the pair that finishes the set,
+	 * and they are here for the same reason the rest of it is: a site whose agent
+	 * can install a plugin but cannot remove one leaves the operator to finish
+	 * every job by hand on the Plugins screen. They take nothing off the disk
+	 * that WordPress's own delete button would not, they name no file and no
+	 * path — the argument is the entry file the inventory read already reported —
+	 * and neither of them can reach code that is running: the add-on refuses an
+	 * active plugin, the live theme, a theme another theme is built on, and
+	 * SiteHelm itself. Both are site-wide primitives, both belong to the add-on,
+	 * and a narrowing test asserts no free operation declares either.
 	 */
 	private const ALLOWED_CAPABILITIES = [
 		'read',
@@ -104,6 +115,8 @@ final class OperationDefinition {
 		'switch_themes',
 		'install_plugins',
 		'install_themes',
+		'delete_plugins',
+		'delete_themes',
 	];
 
 	/**

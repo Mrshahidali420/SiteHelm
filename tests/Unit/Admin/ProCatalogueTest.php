@@ -114,7 +114,7 @@ final class ProCatalogueTest extends TestCase {
 		$this->assertSame(
 			[
 				'content-read'  => [ 'product-list', 'product-get', 'product-category-list', 'order-list', 'order-get', 'customer-list', 'content-seo-schema-get' ],
-				'content-write' => [ 'product-create', 'product-update', 'seo-settings-set', 'content-seo-schema-set', 'code-snippet-write', 'code-snippet-activate', 'code-snippet-confirm', 'code-snippet-deactivate', 'code-snippet-delete', 'code-css-write', 'code-js-write', 'code-safe-mode-set', 'code-quarantine-clear', 'plugin-activate', 'plugin-deactivate', 'plugin-update', 'theme-switch', 'theme-update', 'plugin-install', 'theme-install' ],
+				'content-write' => [ 'product-create', 'product-update', 'seo-settings-set', 'content-seo-schema-set', 'code-snippet-write', 'code-snippet-activate', 'code-snippet-confirm', 'code-snippet-deactivate', 'code-snippet-delete', 'code-css-write', 'code-js-write', 'code-safe-mode-set', 'code-quarantine-clear', 'plugin-activate', 'plugin-deactivate', 'plugin-update', 'theme-switch', 'theme-update', 'plugin-install', 'theme-install', 'plugin-delete', 'theme-delete' ],
 				'system-read'   => [ 'seo-404-log-list', 'seo-redirection-list', 'code-host-list', 'code-snippet-list', 'code-snippet-get', 'code-safe-mode-token', 'code-quarantine-list', 'code-health-check', 'code-scaffold-widget', 'code-scaffold-block', 'code-scaffold-theme-template' ],
 				'elementor-read'  => [ 'elementor-dynamic-tag-list', 'elementor-brand-kit-list' ],
 				'elementor-write' => [ 'elementor-popup-create', 'elementor-popup-settings-set', 'elementor-dynamic-tag-set', 'elementor-brand-kit-apply' ],
@@ -131,7 +131,7 @@ final class ProCatalogueTest extends TestCase {
 		}
 
 		$this->assertSame( [], ( new ProCatalogue() )->missing( $registry ) );
-		$this->assertSame( 45, ( new ProCatalogue() )->registered_count( $registry ) );
+		$this->assertSame( 47, ( new ProCatalogue() )->registered_count( $registry ) );
 	}
 
 	/**
@@ -275,7 +275,7 @@ final class ProCatalogueTest extends TestCase {
 	}
 
 	/**
-	 * REQ-0085's seven writes, described in the free console before any of them
+	 * REQ-0085's nine writes, described in the free console before any of them
 	 * exists.
 	 *
 	 * Same reason as the commerce and code lists above, with one that belongs to
@@ -293,6 +293,8 @@ final class ProCatalogueTest extends TestCase {
 			'theme-update'      => 'content-write',
 			'plugin-install'    => 'content-write',
 			'theme-install'     => 'content-write',
+			'plugin-delete'     => 'content-write',
+			'theme-delete'      => 'content-write',
 		];
 
 		foreach ( $expected as $id => $dispatcher ) {
@@ -312,7 +314,7 @@ final class ProCatalogueTest extends TestCase {
 		$this->assertSame(
 			array_keys( $expected ),
 			$extensions,
-			'The add-on ships exactly these seven plugin and theme writes. The module\'s two reads are free and must not appear here.'
+			'The add-on ships exactly these nine plugin and theme writes. The module\'s two reads are free and must not appear here.'
 		);
 	}
 

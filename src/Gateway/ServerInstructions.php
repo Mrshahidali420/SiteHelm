@@ -42,6 +42,37 @@ final class ServerInstructions {
 	public const PREAMBLE = "SiteHelm exposes this WordPress site's content, media, menus, fields and Elementor documents as typed operations. Every write is preview-then-apply: send the arguments once to get a plan, read the change it reports, then re-send byte-identical arguments together with the returned planToken as a TOP-LEVEL parameter, never inside arguments.";
 
 	/**
+	 * That the tool list is the whole surface, so a missing ability is never a
+	 * missing tool.
+	 *
+	 * A CLIENT THAT CANNOT FIND AN OPERATION INVENTS A DISPATCHER TO PUT IT ON.
+	 * Observed 2026-09-04: an agent asked to install a theme looked for a
+	 * `system-write` tool, did not find one, and reported that the site could
+	 * not install themes at all - while `theme-install` sat in the `content-write`
+	 * catalog it already held. It then explained the absence as a stale
+	 * handshake and told the operator to reconnect, which would have changed
+	 * nothing, because this server's dispatcher list is a fixed constant and
+	 * `listChanged` is false. The client cannot know that unless it is told, and
+	 * the mistake costs a whole session.
+	 */
+	public const DISPATCHERS_ARE_FIXED = 'This tool list is complete and never changes. An operation you cannot find is in a catalog you have not asked for, not in a tool you have not got; reconnecting adds nothing.';
+
+	/**
+	 * Which subjects live on `content-write`, and the tool that does not exist.
+	 *
+	 * NAMING THE TOOL THAT IS NOT THERE IS WORTH MORE THAN NAMING THE ONES THAT
+	 * ARE. The failure this clause exists for was not a client that ran out of
+	 * places to look; it was a client that categorised plugins as a system
+	 * concern, inferred `system-write` from `system-read`, and stopped. The
+	 * inference is reasonable - more than half of what `content-write` carries is
+	 * not content under any ordinary reading of the word - so the guess has to be
+	 * intercepted by name rather than argued out of existence. Everything here is
+	 * a fact about this server's own constants, so it can never go stale in a way
+	 * a client could act on.
+	 */
+	public const CONTENT_WRITE_CARRIES = '`content-write` is not only posts and pages: plugins, themes, users, site settings, redirects, comments and code snippets are all on it. There is no `system-write`. Plugins and themes install from WordPress.org by slug only - never a zip or a URL - and WordPress core itself is never updated.';
+
+	/**
 	 * Introduces the Elementor points as failure modes, not style advice.
 	 */
 	public const ELEMENTOR_HEADING = 'Elementor authoring - the mistakes that produce a page which reports success but looks wrong:';
@@ -76,6 +107,8 @@ final class ServerInstructions {
 			"\n",
 			[
 				self::PREAMBLE,
+				self::DISPATCHERS_ARE_FIXED,
+				self::CONTENT_WRITE_CARRIES,
 				'',
 				self::ELEMENTOR_HEADING,
 				self::POINT_LAYOUT,

@@ -349,6 +349,19 @@ final class ProCatalogue {
 			'read'        => false,
 			'description' => 'Install a theme from WordPress.org by its slug, on the same terms as a plugin install: slug only, never a web address or a zip, and the theme is not made live.',
 		],
+
+		'plugin-delete'                => [
+			'dispatcher'  => 'content-write',
+			'module'      => ModuleId::Extensions,
+			'read'        => false,
+			'description' => 'Remove one deactivated plugin from this site for good. Previewed, and there is no way back: SiteHelm keeps no copy of what it deleted. An active plugin, a network-activated one, and SiteHelm itself are all refused.',
+		],
+		'theme-delete'                 => [
+			'dispatcher'  => 'content-write',
+			'module'      => ModuleId::Extensions,
+			'read'        => false,
+			'description' => 'Remove one theme from this site for good, on the same terms as a plugin delete. The live theme is refused, and so is a theme another installed theme is built on.',
+		],
 	];
 
 	/**

@@ -225,6 +225,65 @@ final class McpServerTest extends TestCase {
 	}
 
 	/**
+	 * Test that every dispatcher description names what that dispatcher covers.
+	 *
+	 * THE TOOL LIST IS WHERE A CLIENT DECIDES WHAT THIS SITE CAN DO. It reads
+	 * the eleven names and descriptions once, at connect, and never asks again;
+	 * if the ability it was told to use is not visible there, it reports that
+	 * the site cannot do it rather than opening a catalog to check. That is not
+	 * hypothetical - on 2026-09-04 an agent asked to install a theme looked for
+	 * a `system-write` tool, did not find one, and told its operator the site
+	 * could not install themes, while `theme-install` sat in the `content-write`
+	 * catalog it already held.
+	 *
+	 * A generic description brings that failure back, so this asserts the two
+	 * things that prevent it: every dispatcher has a description of its own, and
+	 * the description says which subjects live there.
+	 */
+	public function test_every_dispatcher_description_names_its_subjects(): void {
+		$response = $this->server->handle(
+			[
+				'jsonrpc' => '2.0',
+				'id'      => 2,
+				'method'  => 'tools/list',
+			]
+		);
+
+		$descriptions = array_column( $response['result']['tools'], 'description', 'name' );
+
+		$this->assertSame( CapabilityRegistry::DISPATCHERS, array_keys( $descriptions ), 'Every dispatcher must carry a description.' );
+		$this->assertSame( count( $descriptions ), count( array_unique( $descriptions ) ), 'A description repeated across dispatchers describes neither of them.' );
+
+		foreach ( $descriptions as $name => $description ) {
+			$this->assertStringContainsString( 'Call without an operation', $description, "The {$name} description must send the client to the catalog for what this site actually serves." );
+			$this->assertGreaterThan( 100, strlen( $description ), "The {$name} description must name its subjects, not just its own name." );
+		}
+	}
+
+	/**
+	 * Test that the description of content-write names plugins and themes.
+	 *
+	 * The one subject a client has already guessed wrong. Plugin and theme
+	 * writes are the only operations on this server whose name shares no word
+	 * with the dispatcher carrying them, so a client scanning the list for them
+	 * has nothing to match on unless the description says so in as many words.
+	 */
+	public function test_the_content_write_description_names_plugins_and_themes(): void {
+		$response = $this->server->handle(
+			[
+				'jsonrpc' => '2.0',
+				'id'      => 2,
+				'method'  => 'tools/list',
+			]
+		);
+
+		$descriptions = array_column( $response['result']['tools'], 'description', 'name' );
+
+		$this->assertStringContainsString( 'plugins', $descriptions['content-write'] );
+		$this->assertStringContainsString( 'themes', $descriptions['content-write'] );
+	}
+
+	/**
 	 * Test that tools/call without operation returns catalog content.
 	 */
 	public function test_tools_call_without_operation_returns_catalog_content(): void {

@@ -26,8 +26,23 @@ final class ServerInstructionsTest extends TestCase {
 	 * A new point that pushes past this ceiling is not to be waved through by
 	 * raising the number: the choice is to earn the tokens deliberately or to
 	 * spend them out of a point already there.
+	 *
+	 * Raised 1400 -> 1560 on 2026-09-04, deliberately, to buy the one sentence
+	 * saying the tool list is complete. An agent that could not find
+	 * `theme-install` decided the site could not install themes, blamed a stale
+	 * handshake, and told the operator to reconnect — while the operation sat in
+	 * a catalog it already held. A wasted session costs more than 160
+	 * characters.
+	 *
+	 * Raised again, 1560 -> 1860 the same day, once the same incident was read
+	 * properly: the agent did not run out of catalogs to search, it inferred a
+	 * `system-write` tool from `system-read` and stopped at not finding one.
+	 * Telling a client the list is complete only stops it inventing an excuse;
+	 * it does not tell it that plugins live on `content-write`. The map and the
+	 * named absence are what actually intercept the guess, and they are worth
+	 * the 300 characters.
 	 */
-	private const MAX_LENGTH = 1400;
+	private const MAX_LENGTH = 1860;
 
 	/**
 	 * Test that the instructions text is not empty.
@@ -52,6 +67,41 @@ final class ServerInstructionsTest extends TestCase {
 	 */
 	public function test_text_carries_the_preview_then_apply_preamble(): void {
 		$this->assertStringContainsString( ServerInstructions::PREAMBLE, ServerInstructions::text() );
+	}
+
+	/**
+	 * Test that the text tells the client its tool list is the whole surface.
+	 */
+	public function test_text_says_the_tool_list_is_complete(): void {
+		$this->assertStringContainsString( ServerInstructions::DISPATCHERS_ARE_FIXED, ServerInstructions::text() );
+	}
+
+	/**
+	 * Test that the text names what `content-write` carries beyond content.
+	 */
+	public function test_text_maps_the_subjects_content_write_carries(): void {
+		$this->assertStringContainsString( ServerInstructions::CONTENT_WRITE_CARRIES, ServerInstructions::text() );
+	}
+
+	/**
+	 * Test that the text names the tool a client is most likely to invent.
+	 *
+	 * The one guess actually observed in the field. A client that reads this
+	 * cannot conclude the tool is missing from its own list, because it is told
+	 * the tool is missing from every list.
+	 */
+	public function test_text_says_there_is_no_system_write(): void {
+		$this->assertStringContainsString( 'There is no `system-write`', ServerInstructions::text() );
+	}
+
+	/**
+	 * Test that the text states the boundaries an agent would otherwise hunt for.
+	 */
+	public function test_text_states_what_the_site_will_not_do(): void {
+		$text = ServerInstructions::text();
+
+		$this->assertStringContainsString( 'WordPress.org by slug only', $text );
+		$this->assertStringContainsString( 'core itself is never updated', $text );
 	}
 
 	/**

@@ -11,6 +11,23 @@ an operation behaves.
 
 ## [Unreleased]
 
+### Added
+- **Plugins and themes can now be deleted, in Pro.** SiteHelm could install, switch on, switch
+  off, update and swap; it could not remove anything, so a site tidied up by an agent kept
+  every plugin it had ever tried. `plugin-delete` and `theme-delete` remove the files for
+  good. A plugin that is switched on is refused, so is one the network activated, and so is
+  SiteHelm itself; a theme is refused while it is the live one or while another installed
+  theme is built on it. Both are previewed before anything happens, and the preview says
+  plainly that there is no way back and that the plugin or theme's own database rows stay
+  behind. Only a client connected with full permission can call them.
+
+### Changed
+- **Every tool now says what it is for, and says its list is complete.** An agent that
+  connected some time ago was working from the tool list it saw then, and had no way to tell
+  whether newer operations existed. The eleven tools never change; only the operations behind
+  them do, and those are read fresh on every call. Each tool's description now names its
+  subjects and invites a call with no operation to list what this site publishes on it.
+
 ### Fixed
 - **"View details" answered "Plugin not found".** Both routes into the plugin details panel
   — the link beside the version on the Plugins screen, and "View version X details" in the
