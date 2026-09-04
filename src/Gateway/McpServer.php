@@ -55,6 +55,42 @@ final class McpServer {
 	];
 
 	/**
+	 * What each dispatcher covers, in the words an operator would use.
+	 *
+	 * THE TOOL LIST IS THE ONLY PART OF THIS SERVER A CLIENT READS BEFORE IT
+	 * DECIDES WHAT THE SITE CAN DO. A client scans eleven names, and if it
+	 * cannot see the ability it was asked for it concludes the site does not
+	 * have it - it does not go asking each dispatcher for its catalog first.
+	 * Observed 2026-09-04: an agent asked to install a theme looked for a
+	 * `system-write` tool, found none, and reported that the site could not
+	 * install themes, while `theme-install` sat in the `content-write` catalog
+	 * it already held. Naming the subjects here is what makes that scan land on
+	 * the right tool.
+	 *
+	 * These are a map, not the inventory. What a site can actually do depends on
+	 * which integrations are present, whether the add-on is licensed, and which
+	 * operations the operator has switched off, so every description sends the
+	 * client to the catalog for the answer. A subject named here that this site
+	 * cannot serve is a catalog that will not list it, which is the honest
+	 * outcome; a subject NOT named here is an ability the client never looks for.
+	 *
+	 * @var array<string, string>
+	 */
+	private const DISPATCHER_SUBJECTS = [
+		'content-read'    => 'Reads posts, pages and any post type, taxonomies and terms, comments, redirects, SEO metadata and audits, forms and their entries, and shop products, orders and customers.',
+		'content-write'   => 'Writes posts, pages and any post type, taxonomies and terms, comments, redirects, SEO metadata, user roles, site settings, shop products, code snippets, and plugins and themes - installing, updating, activating and switching them.',
+		'media-read'      => 'Reads the media library and the image sizes this site generates.',
+		'media-write'     => 'Uploads, imports, resizes and re-describes media, and attaches it to content.',
+		'menu-read'       => 'Reads navigation menus, their items and their theme locations.',
+		'menu-write'      => 'Creates and edits navigation menu items, reorders them, and assigns menus to theme locations.',
+		'elementor-read'  => 'Reads Elementor documents, their element trees, widget availability, control schemas, global tokens and classes, templates and page settings.',
+		'elementor-write' => 'Builds and edits Elementor documents: adding, updating, moving and removing elements, page settings, global colours, typography and classes, templates, popups and theme templates.',
+		'fields-read'     => 'Reads Advanced Custom Fields and Meta Box field groups, definitions and values.',
+		'fields-write'    => 'Writes Advanced Custom Fields and Meta Box field values.',
+		'system-read'     => 'Reads this connection, the site environment, integration health, users, site settings, the audit log, installed plugins and themes, operation schemas, SEO settings and logs, and code snippets.',
+	];
+
+	/**
 	 * The correlation identifier reported when a request failed before it had
 	 * one. Not a placeholder for a value that exists somewhere else: a request
 	 * that never built a context never generated an identifier at all.
@@ -192,8 +228,8 @@ final class McpServer {
 			static fn( string $dispatcher ): array => [
 				'name'        => $dispatcher,
 				'description' => sprintf(
-					'SiteHelm %s dispatcher. Call without an operation to list its catalog of operations.',
-					$dispatcher
+					'%s Call without an operation to list the operations this site publishes on it.',
+					self::DISPATCHER_SUBJECTS[ $dispatcher ]
 				),
 				'inputSchema' => [
 					'type'                 => 'object',

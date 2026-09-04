@@ -229,7 +229,7 @@ The checklist above still applies EXCEPT steps 3 and 4 — there is no class to 
   payload that passed through it can be conformed to directly.
 
 - **`ALLOWED_CAPABILITIES` (line ~41) is where three requirements are excluded, not
-  just where typos are caught.** The twenty-one entries are the whole vocabulary an
+  just where typos are caught.** The twenty-three entries are the whole vocabulary an
   operation may ask for; anything else throws at construction. REQ-0053 (arbitrary
   PHP), REQ-0054 (unrestricted SQL) and REQ-0055 (filesystem access) are enforced by
   what the list omits — `unfiltered_php`, `edit_files`, `edit_plugins`, `edit_themes`,
@@ -1076,11 +1076,23 @@ not cleaned at the transport reaches the column uncleaned. Precedence, in
 Nothing is audited on `initialize` — `McpServer::handle()` consumes `$clientId`
 in the `tools/call` branch alone — so the message that carries the declaration
 and the messages that produce audit rows are disjoint, and each POST is
-stateless. The name is therefore stored as `sitehelm_client_<userId>` for
-`CLIENT_MEMORY_SECONDS` (3600) and read back on later messages. Before this
-existed, every standards-compliant MCP client — which is all of them, since the
-header is ours alone — was recorded as `unknown-client` forever, and it read as
-working because the header path was correct.
+stateless. The name is therefore stored in user meta under
+`CLIENT_MEMORY_KEY` (`sitehelm_client_name`) and read back on later messages.
+Before this existed, every standards-compliant MCP client — which is all of
+them, since the header is ours alone — was recorded as `unknown-client`
+forever, and it read as working because the header path was correct.
+
+**The memory has no expiry, and that is the second half of the same bug.** It
+was a one-hour transient until 2026-09-04. A client declares its name once, when
+the session opens, and then works for as long as the editor stays open — a whole
+day, with quiet hours in the middle of it — so an expiring memory lapses
+mid-session and every change after that is filed against nobody: the Activity
+screen reads *An unnamed app changed a plugin* for a connection that named
+itself perfectly well that morning. What is stored is not a session but a fact
+about the account, the last client to open a session as this user, and facts
+about a user belong in user meta. Every declaration overwrites it, so the name
+can only be wrong while two different apps work as one WordPress user at the
+same moment — which no expiry would have got right either.
 
 Both sources go through `normalizeClientId()`: control characters stripped
 (the value is rendered in the console), then `mb_substr()` to 191 characters,
@@ -1626,7 +1638,12 @@ not a full URL must therefore arrive with a callback.
   client + verb (past tense; "could not …" on failure, "started to …" on pending,
   "restored …" on `OUTCOME_RESTORED` and "could not restore …" on
   `OUTCOME_RESTORE_FAILED`) + target title (`get_post` title when the target is a post,
-  otherwise the kind word from a small map, raw kind when unknown). `verb(operation)` maps
+  otherwise the kind word from a small map, raw kind when unknown). A `plugin:` or
+  `theme:` target is named first from its own header — `get_plugins()` keyed by entry file,
+  or by directory when the key is the WordPress.org slug an install was asked for, and
+  `wp_get_theme()->exists()` for a stylesheet — so a row says "changed the Elementor plugin"
+  rather than reading a file path back at the owner; the kind word is the fallback for an
+  extension WordPress can no longer find. `verb(operation)` maps
   the operation-id suffix (`create/update/delete/publish/…`, `predelete` counts as change);
   `client('')` reads "An app". History uses it for the "What happened" column and keeps the
   raw operation id in a `.sitehelm-table__sub code` underneath.
@@ -1708,7 +1725,8 @@ notice if `sitehelm_boot()` is absent); *src/* is PSR-4 `SiteHelm\Pro\` with
 option `sitehelm_pro_licence`, is gone). The free plugin requires `freemius/wordpress-sdk`
 through Composer and `sitehelm.php` initialises it at file load — `sitehelm_fs()`,
 product id `37703`, `has_addons => true`, `has_paid_plans => false`,
-`is_org_compliant => true`, menu under the `sitehelm` page with contact/support off — then
+`is_org_compliant => true`, menu under the `sitehelm` page with contact, support, add-ons
+and account all off — then
 fires `sitehelm_fs_loaded`. The init sits inside the `defined( 'ABSPATH' )` guard because
 the test bootstrap includes the file. `tools/build-plugin-zip.php` packs the SDK directory
 (vendor/freemius/wordpress-sdk) alongside `vendor/composer`. The Pro plugin is the Freemius
@@ -1716,8 +1734,18 @@ the test bootstrap includes the file. `tools/build-plugin-zip.php` packs the SDK
 `sitehelm_fs_loaded` (or finds the parent already active), and `Licence::gate()` is now
 `function_exists( 'sitehelm_pro_fs' ) && sitehelm_pro_fs()->can_use_premium_code()`, throwing
 the same `OperationException(IntegrationUnavailable, …)` when it is false. Licence entry,
-activation and renewals are Freemius screens (Account under the SiteHelm menu); the Health
-tab keeps a read-only Pro section that states the licence state and links there. The rule
+activation and renewals are Freemius screens; the Health tab keeps a read-only Pro section
+that states the licence state and links there. **The Account page is not in the menu**, and
+the Add-Ons page is not either. SiteHelm is installed on sites its buyer does not own, and
+that page prints the licence holder's real name, email address, billing address, payment
+history and API keys into the admin menu of every site the licence covers, where any
+administrator reads them on the way past. Hiding a Freemius submenu does not unregister its
+page — `add_submenu_item( …, $show_submenu = false )` still calls `add_subpage()` — so
+`admin.php?page=sitehelm-account` still answers, which is what `Licence::account_url()`
+links to and why syncing, moving or deactivating a licence is unaffected. `account => false`
+also closes the Add-Ons page, which kept appearing despite `addons => false` because
+`is_submenu_item_visible()` returns true whenever you are on the page and the Account tab
+was its only route. The rule
 stands: **every Pro unit calls the gate itself before it looks at anything else** — the
 bootstrap only wires.
 
@@ -2462,6 +2490,17 @@ speaks through.
   (`snippet_code`, `snippet_css`, `snippet_js`) are already in the free
   `SensitiveFields` list, asserted by a Pro test against the free constant — a payload is
   a byte count and twelve characters of sha256 everywhere a change is shown.
+- **A snippet can be stored in WPCode or Code Snippets instead**, named as `host` on the
+  three write operations, and the whole feature is one line of wiring: every operation in
+  the module takes a `SnippetRepository` and nothing else, so `CodeModule` puts a router in
+  front of the first-party store and no operation knows there is more than one library.
+  What is *not* routed matters more. The loader asks the store which snippets are live, and
+  a foreign library answers nothing at all — a snippet WPCode already runs would otherwise
+  run twice. Everything hanging off that answer stops at the boundary with it: SiteHelm
+  refuses to switch a foreign snippet on, safe mode does not reach it, a fatal error does
+  not quarantine it, and it has no hook and no page contexts. One key still means one
+  snippet, so a write naming a library for a key another library holds is refused by name
+  rather than duplicated.
 
 ## 42. Pro Elementor (Pro 0.6.0) — what the free repo needs to know
 
@@ -2532,7 +2571,7 @@ filter instead of wordpress.org. `Admin\GithubUpdates` answers it:
 the **hybrid** shape SEO and Forms established: the free plugin ships the reads, the Pro
 add-on registers the writes into the same module through `sitehelm_register_operations`.
 It is therefore NOT in `ProCatalogue::ADDON_ONLY_MODULES` — it does something on a site
-with no add-on — and the console lists the seven writes as locked rather than hiding them.
+with no add-on — and the console lists the nine writes as locked rather than hiding them.
 
 - **The free half is two reads, and neither of them asks wordpress.org anything.**
   `system-plugin-list` and `system-theme-list` (both `system-read`, both
@@ -2548,12 +2587,13 @@ with no add-on — and the console lists the seven writes as locked rather than 
   which core's inventory functions are not loaded is a fact about the request, not about
   the site, so each operation refuses it in its own guard (`ExtensionsPresence`) rather
   than the module reporting the whole surface inactive.
-- **The Pro half is seven `content-write` operations** — `plugin-activate` (High),
+- **The Pro half is nine `content-write` operations** — `plugin-activate` (High),
   `plugin-deactivate` (Medium), `plugin-update` (High), `theme-switch` (High),
-  `theme-update` (High), `plugin-install` (High), `theme-install` (High) — taking the
-  free registry to 101 and the Pro tally to 47, 148 between them. They ride
-  `content-write` for the same frozen-dispatcher reason `code-snippet-write` does: the
-  eleven dispatchers are a contract and there is no `system-write`.
+  `theme-update` (High), `plugin-install` (High), `theme-install` (High), and the two
+  deletes below (`plugin-delete`, `theme-delete`, both Extreme). REQ-0085 shipped the
+  first seven, taking the free registry to 101 and the Pro tally to 47, 148 between them.
+  They ride `content-write` for the same frozen-dispatcher reason `code-snippet-write`
+  does: the eleven dispatchers are a contract and there is no `system-write`.
 - **The reversibility split is the honest one, not the flattering one.** The three
   option flips (activate, deactivate, switch) preview, snapshot the state they replace,
   and restore it by re-running every guard they applied forwards, so a restore refuses
@@ -2564,8 +2604,8 @@ with no add-on — and the console lists the seven writes as locked rather than 
   rollback that silently did nothing is worse than one that says so. An update verifies
   the installed `version` on read-back and **never** the update transient — verifying
   against core's own cache would pass on a site where nothing had been written.
-- **The file-modification locks stop exactly four of the seven.** `DISALLOW_FILE_MODS`
-  and `DISALLOW_FILE_EDIT` refuse both updates and both installs, naming the constant in
+- **The file-modification locks stop exactly six of the nine.** `DISALLOW_FILE_MODS`
+  and `DISALLOW_FILE_EDIT` refuse both updates, both installs and both deletes, naming the constant in
   the refusal (`DISALLOW_FILE_MODS` when both are set) so an operator knows which line
   to look for. The three option flips write no files and are left alone; a site that
   locked its file modifications did not ask to stop activating plugins.
@@ -2588,11 +2628,37 @@ with no add-on — and the console lists the seven writes as locked rather than 
   throws `OperationException` so the change engine's compensate path runs and the audit
   row closes `EXECUTION_FAILED` — an unreachable wordpress.org or an unknown slug is a
   clean typed refusal, never a partial state.
+- **Deleting is final, and `isDestructive` could not say so.** `plugin-delete` and
+  `theme-delete` (`delete_plugins` / `delete_themes`, both `Risk::Extreme`) share
+  `DeleteWrite`, an abstract base carrying everything except which noun is being removed.
+  They declare `isDestructive: false` — not because a delete is gentle, but because the
+  flag is a contract word meaning *destructive and reversible*: setting it true forces
+  preview, snapshot AND rollback to `Required`, and a delete cannot honour the last two.
+  The honesty lives where a caller actually reads it — `Risk::Extreme` (which the `edit`
+  permission level refuses outright, so only a full-permission client can call either),
+  the description, and two plan warnings saying the files cannot be put back and that the
+  plugin or theme's own database rows stay behind. `captureSnapshot()` returns `null` and
+  `restore()` always throws `RollbackUnavailable` rather than pretending.
+- **Every refusal is asked twice, once for the plan and once for the files.** A plan is
+  approved in a separate call from the one that made it, so `require_removable()` runs
+  again inside `applyChange()` before anything is removed: a plugin switched on between
+  the two calls is refused with the files still there. The reasons differ per noun —
+  a plugin must be installed, not network-activated, not active, and not SiteHelm itself;
+  a theme must be installed, not the live one, and not the parent of an installed child,
+  which is named in the refusal.
+- **SiteHelm will not delete SiteHelm.** The self-check compares `plugin_basename()` of
+  `SITEHELM_PLUGIN_FILE` and `SITEHELM_PRO_PLUGIN_FILE` against the target, not a folder
+  name: the add-on is served as `sitehelm-pro-premium/` by the licensing service and
+  `sitehelm-pro/` by a hand-built zip, so a name comparison would protect it on some sites
+  and not others. Deleting either half would cut the connection the request is being
+  answered on, with no operation left to put it back.
 - **Capability policy moved with it.** `ALLOWED_CAPABILITIES` gained the module's six
   grants and now holds twenty-one; `install_plugins` and `install_themes` left
   `ExcludedCapabilityTest::EXECUTION_CAPABILITIES` under the argument recorded in
   section 5, with the six remaining execution capabilities pinned by survivor tests and
-  the free side pinned by `ReservedCapabilityTest`.
+  the free side pinned by `ReservedCapabilityTest`. `delete_plugins` and `delete_themes`
+  joined the allowlist later, on the same terms — reserved for the add-on, never declared by
+  a free operation.
 
 ## 45. Absorbed operations — the two batched SEO writes, and how a migration lands
 
@@ -3014,6 +3080,20 @@ there. It has to be *empty* because none of the three members IS mandatory — a
 no operation is the catalog request `Dispatcher` answers with the operation list, which is
 how a client discovers the dispatcher at all. Naming `operation` there would be a lie that
 takes discovery with it.
+
+**The eleven tool descriptions name their subjects, and say the list is complete.** A
+client caches `tools/list` from the session it connected in, and MCP's `listChanged`
+notification cannot reach one that is not currently connected — so an agent that connected
+before a release had no way to know a newer operation existed, and would tell an operator
+the site could not do something it could do. The fix is that there is nothing to refresh:
+`DISPATCHER_SUBJECTS` gives each dispatcher a sentence naming what it covers, followed by
+an invitation to call it with no operation to list what this site publishes on it. The
+catalogue behind each tool is rebuilt on every `tools/call`, so a newly registered operation
+is answerable the moment it is installed, with no reconnect. What must never change is the
+**set of dispatchers**: adding a twelfth would be invisible to every open session, which is
+why `CapabilityRegistry`'s list carries a frozen docblock and a test that fails if it moves,
+and why `ServerInstructions` states in words that the tool list is complete and only the
+operations behind it grow.
 
 **`MenuFields::TARGET_SAME_TAB`** is the same problem one layer down. WordPress stores "open
 in this window" as the empty string, and an enum whose members are `""` and `"_blank"` is

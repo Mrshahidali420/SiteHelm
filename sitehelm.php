@@ -124,12 +124,25 @@ if ( defined( 'ABSPATH' ) && ! function_exists( 'sitehelm_fs' ) ) {
 					// offered for buying Pro. SiteHelm's own Upgrade screen answers the
 					// same question from prices it already has. Add-on support itself is
 					// untouched; only the SDK's page is.
+					//
+					// The Account submenu is hidden for a different reason: SiteHelm is
+					// installed on sites its buyer does not own. That page prints the
+					// licence holder's real name, email address, billing address, payment
+					// history and API keys, and it sits in the menu of every site the
+					// licence covers — so an agency's client, or anyone else with an
+					// administrator login, reads the agency owner's personal details on
+					// their way past. The page itself still answers at its own address,
+					// which is what the licence screen links to, so syncing or moving a
+					// licence is unaffected; it is only no longer advertised in the menu
+					// of somebody else's site. It is also the only route to the Add-Ons
+					// page hidden above, which is how that page kept appearing.
 					'menu'             => [
 						'slug'       => 'sitehelm',
 						'first-path' => 'admin.php?page=sitehelm',
 						'contact'    => false,
 						'support'    => false,
 						'addons'     => false,
+						'account'    => false,
 					],
 				]
 			);

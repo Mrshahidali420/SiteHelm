@@ -36,14 +36,15 @@ use SiteHelm\Tests\TestCase;
  * the pair IS admitted by the allowlist (so the Pro operations can be built at
  * all), and NO operation the free plugin boots declares either one.
  *
- * REQ-0085 WIDENED IT BY SIX MORE, in the same position and for the same reason:
+ * REQ-0085 WIDENED IT BY EIGHT, in the same position and for the same reason:
  * `activate_plugins`, `update_plugins`, `update_themes`, `switch_themes`,
- * `install_plugins` and `install_themes` are declared by the add-on's seven
- * plugin and theme writes and by nothing the free plugin registers. The free
+ * `install_plugins`, `install_themes`, `delete_plugins` and `delete_themes`
+ * are declared by the add-on's plugin and theme writes and by nothing the free
+ * plugin registers. The free
  * half of that module ships two reads, and both gate on `manage_options`
  * deliberately — a read that named the capability its Pro sibling writes with
  * would refuse a caller who may see the site's configuration but not change it.
- * So the same pair of directions is asserted for those six below.
+ * So the same pair of directions is asserted for those eight below.
  */
 final class ReservedCapabilityTest extends TestCase {
 
@@ -55,7 +56,7 @@ final class ReservedCapabilityTest extends TestCase {
 	private const RESERVED_FOR_THE_ADDON = [ 'edit_products', 'manage_woocommerce' ];
 
 	/**
-	 * REQ-0085's six, admitted for the add-on's plugin and theme writes alone.
+	 * REQ-0085's eight, admitted for the add-on's plugin and theme writes alone.
 	 *
 	 * Kept as a list of its own rather than folded into the constant above,
 	 * because the two widenings are answerable to different requirements and a
@@ -70,6 +71,8 @@ final class ReservedCapabilityTest extends TestCase {
 		'switch_themes',
 		'install_plugins',
 		'install_themes',
+		'delete_plugins',
+		'delete_themes',
 	];
 
 	/**
@@ -160,14 +163,14 @@ final class ReservedCapabilityTest extends TestCase {
 	}
 
 	/**
-	 * The widening direction for REQ-0085: all six are admitted.
+	 * The widening direction for REQ-0085: all eight are admitted.
 	 *
 	 * The add-on's plugin and theme writes declare one each, and an add-on cannot
 	 * add an entry to this allowlist — so removing one here does not fail a Pro
 	 * test that this repository would run; it fails at construction on a
 	 * customer's site, on an operation the free plugin has no copy of.
 	 */
-	public function test_the_allowlist_admits_the_six_extension_capabilities(): void {
+	public function test_the_allowlist_admits_the_extension_capabilities(): void {
 		$allowed = ( new ReflectionClass( OperationDefinition::class ) )->getConstant( 'ALLOWED_CAPABILITIES' );
 
 		$this->assertIsArray( $allowed );
@@ -183,7 +186,7 @@ final class ReservedCapabilityTest extends TestCase {
 
 	/**
 	 * The narrowing direction for REQ-0085: no free operation declares any of the
-	 * six.
+	 * eight.
 	 *
 	 * `activate_plugins` is the one to watch, and it is worse than it sounds: on
 	 * a single-site install WordPress maps `activate_plugins` to the same grant as
@@ -203,7 +206,7 @@ final class ReservedCapabilityTest extends TestCase {
 		$this->assertSame(
 			[],
 			$offenders,
-			'These six exist in the allowlist for the SiteHelm Pro plugin and theme writes alone. A free operation reaching for one is gating a read on the right to change what runs on the site.'
+			'These eight exist in the allowlist for the SiteHelm Pro plugin and theme writes alone. A free operation reaching for one is gating a read on the right to change what runs on the site.'
 		);
 	}
 

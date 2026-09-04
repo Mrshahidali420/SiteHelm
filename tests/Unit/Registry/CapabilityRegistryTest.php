@@ -330,4 +330,39 @@ final class CapabilityRegistryTest extends TestCase {
 		$registry->writeOperation( 'content-nuke' );
 	}
 
+	/**
+	 * The eleven dispatcher names are frozen, spelled out here on purpose.
+	 *
+	 * A CLIENT FETCHES THE TOOL LIST ONCE, AT CONNECT, AND KEEPS IT FOR THE
+	 * WHOLE SESSION. Catalogs are read live on every call, so an operation
+	 * added by a plugin update — or by activating Pro mid-session — is
+	 * reachable immediately, with no reconnect. That property holds only while
+	 * this list never grows: a twelfth dispatcher would be invisible to every
+	 * session already running and to every client that cached the list, and the
+	 * server truthfully advertises `listChanged: false`, so nothing would tell
+	 * them to look again.
+	 *
+	 * The names are written out rather than counted because a count is bumped
+	 * without thinking. New operations belong in one of these eleven. Adding a
+	 * twelfth is a change to the tool surface itself and has to be decided as
+	 * one, not arrived at.
+	 */
+	public function test_the_dispatcher_list_is_frozen(): void {
+		$this->assertSame(
+			[
+				'content-read',
+				'content-write',
+				'media-read',
+				'media-write',
+				'menu-read',
+				'menu-write',
+				'elementor-read',
+				'elementor-write',
+				'fields-read',
+				'fields-write',
+				'system-read',
+			],
+			CapabilityRegistry::DISPATCHERS
+		);
+	}
 }

@@ -408,6 +408,33 @@ final class DispatcherTest extends TestCase {
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 
 	/**
+	 * Test that a call on the wrong dispatcher names the right one.
+	 *
+	 * THIS IS THE ONE REFUSAL HERE THAT CAN AFFORD TO BE HELPFUL. The operation
+	 * is registered and switched on, so the caller is entitled to know it exists
+	 * and could read the identifier out of the correct catalog on its next call;
+	 * the only thing it is short of is which tool to send it to. A client that
+	 * guesses wrong and is told nothing concludes the site cannot do the thing,
+	 * which is the failure this whole branch exists to stop. The name printed is
+	 * the definition's own, never the caller's text.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+	 */
+	public function test_the_wrong_dispatcher_refusal_names_the_dispatcher_that_serves_it(): void {
+		try {
+			$this->dispatcher->dispatch(
+				'content-read',
+				[ 'operation' => 'system-environment' ],
+				$this->makeContext()
+			);
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			$this->assertStringContainsString( 'system-read', (string) $e->remediation );
+		}
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+
+	/**
 	 * Test that inactive module throws IntegrationUnavailable exception.
 	 *
 	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase

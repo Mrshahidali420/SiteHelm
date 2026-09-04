@@ -11,6 +11,34 @@ an operation behaves.
 
 ## [Unreleased]
 
+### Added
+- **Snippets can be stored in WPCode or Code Snippets, in Pro.** If a site already runs one
+  of those plugins, that is where its code belongs, and SiteHelm now writes into it: name
+  `wpcode` or `code-snippets` as the host on `code-snippet-write`, `code-css-write` or
+  `code-js-write` and the snippet becomes a real snippet in that plugin's library, tagged so
+  the owner can see who put it there and editable in the screen they already use. It is
+  stored switched off and SiteHelm will not switch it on. Everything that makes SiteHelm's
+  own snippets survivable — the time limit that switches code back off, the site check, safe
+  mode, the quarantine after a fatal error — belongs to SiteHelm's loader and cannot reach
+  code another plugin runs, so the preview says so plainly and the activation operation
+  refuses by name. One key is still one snippet: a write naming a library for a key another
+  library already holds is refused rather than quietly duplicated.
+- **Plugins and themes can now be deleted, in Pro.** SiteHelm could install, switch on, switch
+  off, update and swap; it could not remove anything, so a site tidied up by an agent kept
+  every plugin it had ever tried. `plugin-delete` and `theme-delete` remove the files for
+  good. A plugin that is switched on is refused, so is one the network activated, and so is
+  SiteHelm itself; a theme is refused while it is the live one or while another installed
+  theme is built on it. Both are previewed before anything happens, and the preview says
+  plainly that there is no way back and that the plugin or theme's own database rows stay
+  behind. Only a client connected with full permission can call them.
+
+### Changed
+- **Every tool now says what it is for, and says its list is complete.** An agent that
+  connected some time ago was working from the tool list it saw then, and had no way to tell
+  whether newer operations existed. The eleven tools never change; only the operations behind
+  them do, and those are read fresh on every call. Each tool's description now names its
+  subjects and invites a call with no operation to list what this site publishes on it.
+
 ### Fixed
 - **"View details" answered "Plugin not found".** Both routes into the plugin details panel
   — the link beside the version on the Plugins screen, and "View version X details" in the
@@ -18,6 +46,20 @@ an operation behaves.
   SiteHelm now answers that request itself, showing the release notes for the version on
   offer, and still opens with what is installed when GitHub cannot be reached.
 - **"By SiteHelm" now links to the website** on the Plugins screen and in the details panel.
+- **The activity log stopped naming the app that made the change.** An app names itself once,
+  when it opens the connection, and then works for as long as it stays open — a whole day,
+  often with quiet hours in it. SiteHelm remembered that name for an hour, so everything done
+  after the first hour was filed against nobody and read as "An unnamed app changed a plugin".
+  The name is now kept with the account that connected and lasts until a different app
+  connects as that account.
+- **A plugin or theme in the log is named.** Rows recorded the entry file or the
+  WordPress.org slug and read as "changed a plugin"; they now say "changed the Elementor
+  plugin", falling back to the kind when the plugin or theme has since been deleted.
+- **The account page is no longer in the menu.** SiteHelm is installed on sites its buyer
+  does not own, and the licensing account page prints the licence holder's name, email
+  address, billing address, payment history and API keys into the admin menu of every site
+  the licence covers. It still answers at its own address, which is what the licence screen
+  links to, so syncing or moving a licence is unchanged.
 
 ## [0.12.0] — 2026-09-04
 

@@ -174,6 +174,7 @@ final class RestTransportTest extends TestCase {
 		Functions\when( 'get_current_user_id' )->justReturn( 7 );
 		Functions\when( 'get_transient' )->justReturn( 0 );
 		Functions\when( 'set_transient' )->justReturn( true );
+		Functions\when( 'get_user_meta' )->justReturn( '' );
 
 		$response = $this->transport->handleRequest(
 			new \WP_REST_Request( $this->encode( [ 'jsonrpc' => '2.0', 'id' => 1, 'method' => 'ping' ] ) )
@@ -190,9 +191,9 @@ final class RestTransportTest extends TestCase {
 	 */
 	public function test_a_declared_client_name_is_remembered_for_the_calls_that_follow(): void {
 		$stored = [];
-		Functions\when( 'set_transient' )->alias(
-			static function ( string $key, $value, int $ttl ) use ( &$stored ): bool {
-				$stored = [ $key, $value, $ttl ];
+		Functions\when( 'update_user_meta' )->alias(
+			static function ( int $user_id, string $key, $value ) use ( &$stored ): bool {
+				$stored = [ $user_id, $key, $value ];
 				return true;
 			}
 		);
@@ -208,14 +209,48 @@ final class RestTransportTest extends TestCase {
 		$response = $this->transport->processRawBody( $raw, 'unknown-client', 7 );
 
 		$this->assertSame( 200, $response['status'] );
-		$this->assertSame( [ 'sitehelm_client_7', 'claude-desktop', 3600 ], $stored );
+		$this->assertSame( [ 7, 'sitehelm_client_name', 'claude-desktop' ], $stored );
+	}
+
+	/**
+	 * THE MEMORY MUST OUTLIVE THE SESSION THAT WROTE IT. An MCP client names
+	 * itself once, when the editor opens, and then works for as long as the
+	 * editor stays open — a whole day, with quiet hours in it. While the name
+	 * expired after an hour, everything done after that hour was filed against
+	 * nobody, and the activity log read "An unnamed app changed a plugin" for
+	 * changes made by a connection that had identified itself perfectly well
+	 * that morning. Nothing here may be given a lifetime.
+	 */
+	public function test_a_remembered_name_is_not_given_a_lifetime_to_run_out(): void {
+		Functions\when( 'set_transient' )->alias(
+			static function ( string $key ): bool {
+				throw new \LogicException( 'A client name was stored with an expiry: ' . $key );
+			}
+		);
+		Functions\when( 'update_user_meta' )->justReturn( true );
+
+		$this->transport->resolveClientId(
+			[
+				'method' => 'initialize',
+				'params' => [ 'clientInfo' => [ 'name' => 'claude-code' ] ],
+			],
+			'unknown-client',
+			7
+		);
+
+		Functions\when( 'get_user_meta' )->justReturn( 'claude-code' );
+
+		$this->assertSame(
+			'claude-code',
+			$this->transport->resolveClientId( [ 'method' => 'tools/call' ], 'unknown-client', 7 )
+		);
 	}
 
 	/**
 	 * The remembered name is what a later message is attributed to.
 	 */
 	public function test_a_later_message_is_attributed_to_the_remembered_name(): void {
-		Functions\when( 'get_transient' )->justReturn( 'claude-desktop' );
+		Functions\when( 'get_user_meta' )->justReturn( 'claude-desktop' );
 
 		$this->assertSame(
 			'claude-desktop',
@@ -228,7 +263,7 @@ final class RestTransportTest extends TestCase {
 	 * on an earlier message.
 	 */
 	public function test_the_header_outranks_a_remembered_name(): void {
-		Functions\when( 'get_transient' )->justReturn( 'claude-desktop' );
+		Functions\when( 'get_user_meta' )->justReturn( 'claude-desktop' );
 
 		$this->assertSame(
 			'ci-runner',
@@ -240,7 +275,7 @@ final class RestTransportTest extends TestCase {
 	 * With nothing declared and nothing remembered, the fallback stands.
 	 */
 	public function test_an_unidentified_client_falls_back(): void {
-		Functions\when( 'get_transient' )->justReturn( false );
+		Functions\when( 'get_user_meta' )->justReturn( '' );
 
 		$this->assertSame(
 			RestTransport::UNKNOWN_CLIENT,
@@ -299,8 +334,8 @@ final class RestTransportTest extends TestCase {
 	 */
 	public function test_a_hostile_client_name_is_cut_to_the_column_width_on_a_character_boundary(): void {
 		$stored = '';
-		Functions\when( 'set_transient' )->alias(
-			static function ( string $key, $value ) use ( &$stored ): bool {
+		Functions\when( 'update_user_meta' )->alias(
+			static function ( int $user_id, string $key, $value ) use ( &$stored ): bool {
 				$stored = $value;
 				return true;
 			}
@@ -333,7 +368,7 @@ final class RestTransportTest extends TestCase {
 	 * @param int|null $user_id The unusable user id.
 	 */
 	public function test_an_unresolved_user_is_never_looked_up( ?int $user_id ): void {
-		Functions\when( 'get_transient' )->alias(
+		Functions\when( 'get_user_meta' )->alias(
 			static function (): void {
 				throw new \LogicException( 'An unresolved user was looked up.' );
 			}

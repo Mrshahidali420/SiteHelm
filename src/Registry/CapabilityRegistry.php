@@ -25,6 +25,15 @@ final class CapabilityRegistry {
 
 	/**
 	 * The eleven dispatchers the contract defines. No other top-level tools exist.
+	 *
+	 * THIS LIST IS FROZEN. A client reads the tool list once, when it connects,
+	 * and keeps it for the rest of the session; the server says so by
+	 * advertising `listChanged: false`. Catalogs, in contrast, are built on
+	 * every call, so an operation added by a plugin update or by activating Pro
+	 * is reachable at once without reconnecting. A twelfth dispatcher would
+	 * break that: it would be invisible to every session already open, with
+	 * nothing to tell them to look again. New operations go into one of these
+	 * eleven.
 	 */
 	public const DISPATCHERS = [
 		'content-read',

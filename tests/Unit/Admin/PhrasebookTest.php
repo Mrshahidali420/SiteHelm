@@ -123,4 +123,53 @@ final class PhrasebookTest extends TestCase {
 	public function testAKindNobodyNamedIsShownAsRecorded(): void {
 		$this->assertSame( 'widget:area-1', Phrasebook::target( 'widget:area-1' ) );
 	}
+
+	/**
+	 * A ROW THAT KNOWS WHICH PLUGIN MUST NOT SAY "A PLUGIN". The key holds an
+	 * entry file, or the WordPress.org slug an install was asked for, and
+	 * neither is a name anybody would recognise their own site by.
+	 */
+	public function testAPluginIsNamedByItsOwnHeaderFromEitherShapeOfKey(): void {
+		Functions\when( 'get_plugins' )->justReturn(
+			[
+				'elementor/elementor.php' => [ 'Name' => 'Elementor' ],
+				'hello.php'               => [ 'Name' => 'Hello Dolly' ],
+			]
+		);
+
+		$this->assertSame( 'the Elementor plugin', Phrasebook::target( 'plugin:elementor/elementor.php' ) );
+		$this->assertSame( 'the Elementor plugin', Phrasebook::target( 'plugin:elementor' ) );
+		$this->assertSame( 'the Hello Dolly plugin', Phrasebook::target( 'plugin:hello.php' ) );
+	}
+
+	public function testAThemeIsNamedByItsOwnHeader(): void {
+		Functions\when( 'wp_get_theme' )->alias(
+			static fn( string $stylesheet ): object => new class( $stylesheet ) {
+				public function __construct( private string $stylesheet ) {
+				}
+
+				public function exists(): bool {
+					return 'hello-elementor' === $this->stylesheet;
+				}
+
+				public function get( string $field ): string {
+					return 'Name' === $field ? 'Hello Elementor' : '';
+				}
+			}
+		);
+
+		$this->assertSame( 'the Hello Elementor theme', Phrasebook::target( 'theme:hello-elementor' ) );
+		$this->assertSame( 'a theme', Phrasebook::target( 'theme:gone-away' ) );
+	}
+
+	/**
+	 * Deleting is the one change that guarantees the thing cannot be named
+	 * afterwards, and it is also the change most worth reading later. The kind
+	 * still has to come through.
+	 */
+	public function testAnExtensionWordPressCanNoLongerFindFallsBackToItsKind(): void {
+		Functions\when( 'get_plugins' )->justReturn( [] );
+
+		$this->assertSame( 'a plugin', Phrasebook::target( 'plugin:gone/gone.php' ) );
+	}
 }

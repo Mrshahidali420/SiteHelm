@@ -221,7 +221,7 @@ final class ProCatalogue {
 			'dispatcher'  => 'content-write',
 			'module'      => ModuleId::Code,
 			'read'        => false,
-			'description' => 'Store one PHP snippet. It is always stored switched off — there is no argument that makes it live — and it is refused outright if it does not parse. Previewed and reversible.',
+			'description' => 'Store one PHP snippet. It is always stored switched off — there is no argument that makes it live — and it is refused outright if it does not parse. Previewed and reversible. If WPCode or Code Snippets is on the site, name it as the host and the snippet is stored there instead; if neither is, installing one is usually the better answer.',
 		],
 		'code-snippet-activate'        => [
 			'dispatcher'  => 'content-write',
@@ -251,13 +251,13 @@ final class ProCatalogue {
 			'dispatcher'  => 'content-write',
 			'module'      => ModuleId::Code,
 			'read'        => false,
-			'description' => 'Store custom CSS printed on the front end. It cannot run anything, but it can still make a site unusable to look at, so it is previewed and reversible like any other change.',
+			'description' => 'Store custom CSS printed on the front end. It cannot run anything, but it can still make a site unusable to look at, so it is previewed and reversible like any other change. If WPCode or Code Snippets is on the site, name it as the host and the CSS is stored there instead.',
 		],
 		'code-js-write'                => [
 			'dispatcher'  => 'content-write',
 			'module'      => ModuleId::Code,
 			'read'        => false,
-			'description' => "Store custom JavaScript printed on the front end. It runs in every visitor's browser rather than on the server, which is a wider reach than PHP, and it goes through the same guarded activation.",
+			'description' => "Store custom JavaScript printed on the front end. It runs in every visitor's browser rather than on the server, which is a wider reach than PHP, and it goes through the same guarded activation. If WPCode or Code Snippets is on the site, name it as the host and the JavaScript is stored there instead.",
 		],
 		'code-safe-mode-set'           => [
 			'dispatcher'  => 'content-write',
@@ -348,6 +348,19 @@ final class ProCatalogue {
 			'module'      => ModuleId::Extensions,
 			'read'        => false,
 			'description' => 'Install a theme from WordPress.org by its slug, on the same terms as a plugin install: slug only, never a web address or a zip, and the theme is not made live.',
+		],
+
+		'plugin-delete'                => [
+			'dispatcher'  => 'content-write',
+			'module'      => ModuleId::Extensions,
+			'read'        => false,
+			'description' => 'Remove one deactivated plugin from this site for good. Previewed, and there is no way back: SiteHelm keeps no copy of what it deleted. An active plugin, a network-activated one, and SiteHelm itself are all refused.',
+		],
+		'theme-delete'                 => [
+			'dispatcher'  => 'content-write',
+			'module'      => ModuleId::Extensions,
+			'read'        => false,
+			'description' => 'Remove one theme from this site for good, on the same terms as a plugin delete. The live theme is refused, and so is a theme another installed theme is built on.',
 		],
 	];
 
