@@ -2702,6 +2702,57 @@ about the double, not about Elementor. `tests/Doubles/WriteTargetFakeClassicWidg
 exists to hold the other shape, and the regression test sweeps a tree mixing `e-heading`
 with `html`.
 
+**The envelope is not always the whole shape — rich text nests.** Elementor's atomic
+rich-text props (`e-heading.title`, `e-paragraph.paragraph`, `e-button.text`, form and tab
+labels) are `Html_V3_Prop_Type`, and what they hold inside the envelope is an object rather
+than a string:
+
+```
+{"$$type":"html-v3","value":{"content":{"$$type":"string","value":"Call us today"},
+                             "children":[ … ]}}
+```
+
+`children` is the editor's inline-formatting tree — the links, the bold runs — stored as
+plain objects with no prop-type wrapping of their own. `html-v2`, the predecessor some
+unmigrated widgets still declare, validates the same shape more strictly: it requires the
+member to be present.
+
+Two things follow, and `ElementorRichText` exists for both. **Storing the words where the
+object belongs breaks the widget to edit, not to view.** The page renders, the write reports
+success, and Elementor's `parse_atomic_settings()` throws "Settings validation failed" the
+first time somebody opens that widget and presses update — so the failure surfaces to a
+person who is already halfway through fixing something else, with nothing to say when it was
+introduced. **And a merge that replaced the whole value per key deleted the formatting
+tree**, because the caller sent words and the words are only half of what was there.
+
+So the settings merge routes rich-text keys through `ElementorRichText::shape()`, which
+canonicalises every form a caller sends (a bare string, a string envelope, the inner object,
+a whole outer envelope) and carries the stored `children` across an update that only changes
+the words. A request naming its own `children` wins, including an explicitly empty one —
+that is how formatting is cleared on purpose. A request carrying nothing readable keeps the
+STORED words rather than emptying the heading; an empty string asked for deliberately is
+still honoured. The rich-text branch sits **before** the coercion's is-it-already-enveloped
+early return, because a value can carry the right envelope around a bare string — that is
+precisely what earlier versions of this plugin wrote — and returning early on the envelope
+alone would leave those documents as broken as it found them.
+
+Keeping the tree is a **warning, not a refusal** (`ElementorSettingsMerge::richTextWarnings()`,
+surfaced on the plan beside the media advisory). This is the `ElementorMediaAdvisory` side of
+the module's two precedents rather than the `ElementorConditionGate` side: nothing fails to
+render either way, and what is at stake is editor state the caller never asked to discard.
+The advisory fires only when stored formatting existed AND the wording changed — Elementor
+anchors each run to a position in the text it was written against, so a substantially
+rewritten passage can end up with its emphasis on the wrong words. A key with no stored
+formatting earns nothing, because an advisory that fires on the ordinary case is one nobody
+reads.
+
+Which keys are rich text is asked of the **live schema** (`ElementorPropCoercion::propType()`),
+never of a list kept here. Elementor renames prop types between releases, and a list that
+fell behind would silently stop shaping the values it exists to protect. The fixture registry
+carries an `html-v3` prop for the same reason it carries a classic widget and a repeater: a
+double that can only express one shape of an integration makes the suite's green evidence
+about the double.
+
 **A declared key is not necessarily a rendered key.** `assertKnownKeys()` answers "does this
 widget accept this setting"; a classic control can accept a value and still never render it,
 because a `condition` on it is unsatisfied. See §49.
@@ -3183,3 +3234,47 @@ beats none.
 because "is there exactly one H1" is the question that figure answers and a cap must not hide
 the second one. A transport failure is `IntegrationUnavailable` and never repeats the
 transport's own message, which carries host names and occasionally proxy credentials.
+
+## 54. The ceiling on an Elementor document read (REQ-0112)
+
+`ElementorTreeNarrowing` exists because a correct response nobody receives is a failed read.
+Elementor nests containers inside containers, and a landing page nobody would call large
+reaches several hundred nodes; encoded whole that tree is megabytes, and the client truncates
+it, spends its whole context on it, or drops it — three outcomes that all surface as "the read
+did not work" and none of which name the size as the cause.
+
+**The axis is depth, and the reason is what a reader loses.** Cutting breadth would drop whole
+sections of a page; cutting depth drops leaves. The top-level bands are what an operator is
+orienting themselves in, and the leaves are what they name once they know which band to ask
+about — so `narrow()` walks down from the deepest level present and returns the first pruned
+tree whose encoding fits `MAX_NODES_BYTES` (256 KiB). If even depth 0 overflows, it keeps the
+longest prefix of top-level nodes that fits rather than answering nothing.
+
+**Two rules make the shortened answer honest rather than merely shorter.**
+
+1. A node whose children were dropped keeps its **true `childCount`** beside an empty
+   `children` array. That difference is the *only* signal the client gets that there is more
+   below; a pruned node reporting `childCount` 0 would be a lie it could not detect. This is
+   why `ElementorFields::nodeSchema()`'s `childCount` description says the count is what the
+   document holds, not what the response carries — the old wording said the opposite and had
+   to change with this feature.
+2. `totals` and `hints` always describe the **whole document**, before anything was dropped,
+   and so does a `rootId` read. They answer "what is this page", which the excerpt is not.
+
+**The ceiling is a constant, never an input.** A caller who could raise it could ask for the
+response that kills it, which is the failure the class exists to prevent. The measure is taken
+with `wp_json_encode()` — the transport's own encoder — because a measure taken with a
+different one is a measure of a different string, and a ceiling wrong in the direction of "it
+fits" is no ceiling.
+
+**`rootId` is the way back to what was dropped.** It returns one element and everything inside
+it, searched on the *normalized* tree rather than the stored one, because the caller is naming
+an id it read out of a previous normalized response. An id no element carries is
+`TargetNotFound`, not an empty tree. The subtree is itself narrowed if it has to be, and its
+`narrowed` counts then describe the subtree — the document's own numbers travel in `totals`.
+
+**The report is always present**, `applied: false` and an empty `message` on a complete
+response, because a member that comes and goes is one a client cannot tell from a member it
+failed to parse. Adding it bumped `elementor-document-get` to `schemaVersion` 2 and its
+`OUTPUT_SCHEMA_ID` to `…:output:2`: a new required output member is a different resource, not
+a redefinition of the old one.

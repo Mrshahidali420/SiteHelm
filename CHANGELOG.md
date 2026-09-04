@@ -67,6 +67,29 @@ an operation behaves.
   what to do when nothing happens.
 
 ### Fixed
+- **Editing the words in an Elementor heading no longer breaks the widget, or quietly
+  deletes the links inside it.** Elementor's newer widgets do not store their text as a
+  string: they store it beside the editor's own record of the links, bold and italic runs
+  inside that text. A write that sent the words on their own put them where that record
+  belongs, which the page rendered perfectly — and then the first person to open the widget
+  and press update was told "Settings validation failed", with nothing to say when the
+  damage was done. Writes now store the words in the shape the editor reads, and carry the
+  existing formatting across an update that only changes the wording, so a link inside a
+  sentence survives a rewrite of that sentence. Because formatting is anchored to positions
+  in the text it was written against, a plan that keeps it now says so and suggests checking
+  the widget when the wording changed substantially. Asking for the formatting to be cleared
+  is still possible: send an empty set of it deliberately.
+- **Reading a large Elementor page no longer returns a response the client cannot receive.**
+  A real landing page nests containers inside containers and reaches several hundred elements
+  without anybody thinking of it as large; returned whole, that tree was megabytes of JSON,
+  and the app on the other end either truncated it, spent its whole context on it, or dropped
+  it — three failures that all read as "the read did not work" and none of which said the size
+  was why. `elementor-document-get` now answers a shorter true tree instead: it drops the
+  deepest levels until the response fits, and reports in a new `narrowed` member how deep it
+  went and how many elements it left out. An element whose children were dropped still says
+  how many it has, so there is no way to mistake the shortened answer for the whole page. To
+  see what was left out, name an element with the new `rootId` and get that band back at full
+  depth. The totals and the authoring hints keep describing the whole document either way.
 - **"Activate a licence" led to a page that refused to open.** The button on Health, and the
   sentence an agent was given when a Pro operation refused, both pointed at an account page
   the licensing SDK never registers for an add-on, so following either was answered with

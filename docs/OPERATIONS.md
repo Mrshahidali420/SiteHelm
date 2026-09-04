@@ -316,7 +316,7 @@ generated CSS afterwards, so changes appear on the front end without opening the
 | Operation | Does | Capability |
 |---|---|---|
 | `elementor-document-list` | Lists Elementor-built documents | `edit_posts` |
-| `elementor-document-get` | Reads a document's element tree | `edit_post` |
+| `elementor-document-get` | Reads a document's element tree; a tree too large to send whole comes back shortened by depth and says so, and `rootId` opens one band at full depth | `edit_post` |
 | `elementor-composition-get` | Summarizes what a document contains, at a size that does not grow with it | `edit_post` |
 | `elementor-element-get` | Reads one element by its id | `edit_post` |
 | `elementor-element-search` | Finds elements within a document by type, text, or setting | `edit_post` |
