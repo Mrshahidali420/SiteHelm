@@ -3278,3 +3278,58 @@ response, because a member that comes and goes is one a client cannot tell from 
 failed to parse. Adding it bumped `elementor-document-get` to `schemaVersion` 2 and its
 `OUTPUT_SCHEMA_ID` to `…:output:2`: a new required output member is a different resource, not
 a redefinition of the old one.
+
+## 55. Container presets, and the defaults a read-back cannot see (REQ-0114)
+
+`ElementorContainerPreset` exists because Elementor's kit supplies values the element does not
+store. A container carries 10px of padding on all four sides and boxes its content, both from
+the kit; neither appears on the element, so a section written to run edge to edge is stored
+exactly as sent, read back byte-identical, verified green, and rendered inset. Nothing in the
+response is wrong — the knowledge simply is not in it.
+
+The precedent this follows is deliberate. `ElementorConditionGate` **refuses** when nothing
+would render; `ElementorMediaAdvisory` **warns** when it renders badly. A preset does neither:
+it makes the knowledge **a value the caller can send**. `preset: "full-bleed"` on a container
+expands to the zeroed padding and the full-width content the look requires.
+
+**A preset is shorthand, never an override.** Sending `padding` or `content_width` beside one
+is refused rather than merged, because either resolution — the preset winning or the explicit
+value winning — silently discards half of what was asked for.
+
+## 56. Global classes are stored without being parsed (REQ-0115)
+
+`Global_Classes_Repository::put()` performs no validation. The parsing that decides which
+style properties are real lives one layer above it, in Elementor's REST controller, where
+`Global_Classes_Parser::make()->parse_items()` runs each definition through `Props_Parser`,
+which keeps only the keys the prop schema declares. SiteHelm writes through the repository, so
+a property outside that schema is stored intact, reads back identical, satisfies the digest,
+and renders nothing.
+
+**A read-back can never see this.** The repository returns what it was given, so the only way
+to learn what Elementor accepts is to ask the parser — and the moment to ask is **plan time**,
+before anything is stored, because the preview is where an agent can still fix it.
+
+`ElementorApi::parseGlobalClass()` is the wrapper, and it is guarded at every step: the class
+existing, `make` existing, the result being an object, `parse_items` and `unwrap` existing.
+Any shape it does not recognise returns `null`. **Null means the parser could not be asked**,
+and that is deliberately not a refusal — Elementor's internals move, and refusing every
+global-class write the day a class is renamed trades a non-rendering property for a broken
+operation. An `accepted` of `null` inside a returned parse is the stronger fact: the parser
+was asked and kept nothing.
+
+`ElementorGlobalClassWrite::plan()` takes the ids the operation authored and acts on three
+outcomes:
+
+| Outcome | Result |
+| --- | --- |
+| Parser keeps nothing of the class | `InvalidInput` refusal — it would render nothing |
+| Some properties dropped | Warning each, listed under `discarded` in the preview |
+| Parser unreachable | One warning, never a refusal |
+
+**What is stored is what the parser kept**, not what the caller sent — a warning alone would
+still leave non-rendering properties in the repository. Variants are matched by breakpoint and
+state, never by position: a positional match would compare a mobile variant against a desktop
+one and report every property in both as lost.
+
+Only operations that author a class pass ids — delete and reorder pass none, so a write that
+authors nothing asks the parser nothing.

@@ -25,6 +25,15 @@ an operation behaves.
   page are refused before anything is requested, because a fetch that carries no cookies
   would report them as broken.
 
+- **A section can now be asked for full bleed, instead of being told what padding to
+  cancel.** Elementor's kit puts 10px on all four sides of every container and boxes its
+  content by default, and neither of those is stored on the container itself — so a section
+  built to run edge to edge was written, read back exactly as sent, verified green, and
+  rendered inset, with nothing in the response to say why. `elementor-element-add` takes a
+  `preset` of `full-bleed` on a container, which stores the zeroed padding and the full-width
+  content the look actually needs. It is shorthand, never an override: sending your own
+  padding or content width beside it is refused rather than silently losing one of them.
+
 ### Added — earlier in this release
 - **A free site now says what Pro would add, instead of reading as impossible.** Ask an
   agent to do something only the add-on does and it used to answer that SiteHelm cannot do
@@ -90,6 +99,21 @@ an operation behaves.
   how many it has, so there is no way to mistake the shortened answer for the whole page. To
   see what was left out, name an element with the new `rootId` and get that band back at full
   depth. The totals and the authoring hints keep describing the whole document either way.
+- **A template SiteHelm created no longer goes missing from the screen you would look at
+  next.** Elementor records what a template is in two places: a value on the template itself,
+  which is what this plugin's reads and its own verification ask for, and a term in the
+  library's taxonomy, which is what the Templates list and the Theme Builder actually query
+  by. Creating, saving and importing all wrote the first and not the second, so a header came
+  back correct from every check and was absent from the only list an operator would open.
+  All three now record both.
+- **A global style class no longer stores properties Elementor will never render.** The
+  repository these classes live in keeps whatever it is handed; the parsing that decides
+  which style properties are real happens a layer above it, on the route the editor uses. A
+  property outside that schema was therefore stored intact, read back identical, and applied
+  to nothing. Creates and updates now ask Elementor what it accepts before anything is
+  written, store its answer rather than the request, and name every discarded property in a
+  warning and in the preview. A class Elementor keeps nothing of is refused, because it would
+  render nothing at all. An Elementor that cannot be asked is a warning and not a refusal.
 - **"Activate a licence" led to a page that refused to open.** The button on Health, and the
   sentence an agent was given when a Pro operation refused, both pointed at an account page
   the licensing SDK never registers for an add-on, so following either was answered with
