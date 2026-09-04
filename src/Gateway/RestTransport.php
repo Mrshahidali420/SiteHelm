@@ -35,14 +35,23 @@ final class RestTransport {
 	private const MAX_CLIENT_ID_LENGTH = 191;
 
 	/**
-	 * How long a name declared during `initialize` is remembered for the user
-	 * who declared it. MCP clients open a session once and then issue many
-	 * `tools/call` messages over it; an hour outlives a working session
-	 * without pinning a stale name to the account indefinitely.
+	 * Where a name declared during `initialize` is kept for the user who
+	 * declared it.
+	 *
+	 * THIS IS DELIBERATELY NOT A TRANSIENT. An MCP client declares its name
+	 * once, when the session opens, and then works for as long as the editor
+	 * stays open — which is routinely a whole day, with quiet hours in the
+	 * middle of it. An expiring memory therefore lapses mid-session, and
+	 * everything the app does after that is filed against nobody: the activity
+	 * log reads "An unnamed app changed a plugin" for changes made by the same
+	 * connection that named itself perfectly well that morning. What is stored
+	 * here is not a session but a fact about the account — the name of the last
+	 * client that opened a session as this user — and facts about a user belong
+	 * in user meta. Every declaration overwrites it, so the name can only be
+	 * wrong while two different apps are working as one WordPress user at the
+	 * same moment, which no expiry would have got right either.
 	 */
-	private const CLIENT_MEMORY_SECONDS = 3600;
-
-	private const CLIENT_MEMORY_PREFIX = 'sitehelm_client_';
+	private const CLIENT_MEMORY_KEY = 'sitehelm_client_name';
 
 	/**
 	 * Initialize the REST transport with an MCP server instance.
@@ -169,7 +178,8 @@ final class RestTransport {
 	 * the audit rows come from the `tools/call` messages that follow it. So
 	 * the declared name is remembered against the authenticated user and read
 	 * back on those later messages; without that, a standards-compliant
-	 * client is recorded as `unknown-client` forever.
+	 * client is recorded as `unknown-client` forever. The memory outlives the
+	 * session on purpose — see CLIENT_MEMORY_KEY.
 	 *
 	 * @param array<string, mixed> $message  The decoded JSON-RPC message.
 	 * @param string               $clientId The identity resolved from the header.
@@ -188,7 +198,7 @@ final class RestTransport {
 				return $clientId;
 			}
 
-			set_transient( self::CLIENT_MEMORY_PREFIX . $userId, $declared, self::CLIENT_MEMORY_SECONDS );
+			update_user_meta( $userId, self::CLIENT_MEMORY_KEY, $declared );
 
 			return self::UNKNOWN_CLIENT === $clientId ? $declared : $clientId;
 		}
@@ -197,7 +207,7 @@ final class RestTransport {
 			return $clientId;
 		}
 
-		$remembered = get_transient( self::CLIENT_MEMORY_PREFIX . $userId );
+		$remembered = get_user_meta( $userId, self::CLIENT_MEMORY_KEY, true );
 
 		return is_string( $remembered ) && '' !== $remembered ? $remembered : $clientId;
 	}

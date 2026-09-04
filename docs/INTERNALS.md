@@ -1076,11 +1076,23 @@ not cleaned at the transport reaches the column uncleaned. Precedence, in
 Nothing is audited on `initialize` — `McpServer::handle()` consumes `$clientId`
 in the `tools/call` branch alone — so the message that carries the declaration
 and the messages that produce audit rows are disjoint, and each POST is
-stateless. The name is therefore stored as `sitehelm_client_<userId>` for
-`CLIENT_MEMORY_SECONDS` (3600) and read back on later messages. Before this
-existed, every standards-compliant MCP client — which is all of them, since the
-header is ours alone — was recorded as `unknown-client` forever, and it read as
-working because the header path was correct.
+stateless. The name is therefore stored in user meta under
+`CLIENT_MEMORY_KEY` (`sitehelm_client_name`) and read back on later messages.
+Before this existed, every standards-compliant MCP client — which is all of
+them, since the header is ours alone — was recorded as `unknown-client`
+forever, and it read as working because the header path was correct.
+
+**The memory has no expiry, and that is the second half of the same bug.** It
+was a one-hour transient until 2026-09-04. A client declares its name once, when
+the session opens, and then works for as long as the editor stays open — a whole
+day, with quiet hours in the middle of it — so an expiring memory lapses
+mid-session and every change after that is filed against nobody: the Activity
+screen reads *An unnamed app changed a plugin* for a connection that named
+itself perfectly well that morning. What is stored is not a session but a fact
+about the account, the last client to open a session as this user, and facts
+about a user belong in user meta. Every declaration overwrites it, so the name
+can only be wrong while two different apps work as one WordPress user at the
+same moment — which no expiry would have got right either.
 
 Both sources go through `normalizeClientId()`: control characters stripped
 (the value is rendered in the console), then `mb_substr()` to 191 characters,
@@ -1626,7 +1638,12 @@ not a full URL must therefore arrive with a callback.
   client + verb (past tense; "could not …" on failure, "started to …" on pending,
   "restored …" on `OUTCOME_RESTORED` and "could not restore …" on
   `OUTCOME_RESTORE_FAILED`) + target title (`get_post` title when the target is a post,
-  otherwise the kind word from a small map, raw kind when unknown). `verb(operation)` maps
+  otherwise the kind word from a small map, raw kind when unknown). A `plugin:` or
+  `theme:` target is named first from its own header — `get_plugins()` keyed by entry file,
+  or by directory when the key is the WordPress.org slug an install was asked for, and
+  `wp_get_theme()->exists()` for a stylesheet — so a row says "changed the Elementor plugin"
+  rather than reading a file path back at the owner; the kind word is the fallback for an
+  extension WordPress can no longer find. `verb(operation)` maps
   the operation-id suffix (`create/update/delete/publish/…`, `predelete` counts as change);
   `client('')` reads "An app". History uses it for the "What happened" column and keeps the
   raw operation id in a `.sitehelm-table__sub code` underneath.
@@ -1708,7 +1725,8 @@ notice if `sitehelm_boot()` is absent); *src/* is PSR-4 `SiteHelm\Pro\` with
 option `sitehelm_pro_licence`, is gone). The free plugin requires `freemius/wordpress-sdk`
 through Composer and `sitehelm.php` initialises it at file load — `sitehelm_fs()`,
 product id `37703`, `has_addons => true`, `has_paid_plans => false`,
-`is_org_compliant => true`, menu under the `sitehelm` page with contact/support off — then
+`is_org_compliant => true`, menu under the `sitehelm` page with contact, support, add-ons
+and account all off — then
 fires `sitehelm_fs_loaded`. The init sits inside the `defined( 'ABSPATH' )` guard because
 the test bootstrap includes the file. `tools/build-plugin-zip.php` packs the SDK directory
 (vendor/freemius/wordpress-sdk) alongside `vendor/composer`. The Pro plugin is the Freemius
@@ -1716,8 +1734,18 @@ the test bootstrap includes the file. `tools/build-plugin-zip.php` packs the SDK
 `sitehelm_fs_loaded` (or finds the parent already active), and `Licence::gate()` is now
 `function_exists( 'sitehelm_pro_fs' ) && sitehelm_pro_fs()->can_use_premium_code()`, throwing
 the same `OperationException(IntegrationUnavailable, …)` when it is false. Licence entry,
-activation and renewals are Freemius screens (Account under the SiteHelm menu); the Health
-tab keeps a read-only Pro section that states the licence state and links there. The rule
+activation and renewals are Freemius screens; the Health tab keeps a read-only Pro section
+that states the licence state and links there. **The Account page is not in the menu**, and
+the Add-Ons page is not either. SiteHelm is installed on sites its buyer does not own, and
+that page prints the licence holder's real name, email address, billing address, payment
+history and API keys into the admin menu of every site the licence covers, where any
+administrator reads them on the way past. Hiding a Freemius submenu does not unregister its
+page — `add_submenu_item( …, $show_submenu = false )` still calls `add_subpage()` — so
+`admin.php?page=sitehelm-account` still answers, which is what `Licence::account_url()`
+links to and why syncing, moving or deactivating a licence is unaffected. `account => false`
+also closes the Add-Ons page, which kept appearing despite `addons => false` because
+`is_submenu_item_visible()` returns true whenever you are on the page and the Account tab
+was its only route. The rule
 stands: **every Pro unit calls the gate itself before it looks at anything else** — the
 bootstrap only wires.
 

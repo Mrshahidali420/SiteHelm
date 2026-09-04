@@ -138,6 +138,14 @@ final class Phrasebook {
 			}
 		}
 
+		if ( 'plugin' === $kind || 'theme' === $kind ) {
+			$named = self::extension( $kind, $id );
+
+			if ( '' !== $named ) {
+				return $named;
+			}
+		}
+
 		$kinds = [
 			'post'       => __( 'a post', 'sitehelm' ),
 			'comment'    => __( 'a comment', 'sitehelm' ),
@@ -151,6 +159,7 @@ final class Phrasebook {
 			'settings'   => __( 'the site settings', 'sitehelm' ),
 			'redirect'   => __( 'a redirect', 'sitehelm' ),
 			'plugin'     => __( 'a plugin', 'sitehelm' ),
+			'theme'      => __( 'a theme', 'sitehelm' ),
 			'site'       => __( 'this site', 'sitehelm' ),
 		];
 
@@ -166,6 +175,103 @@ final class Phrasebook {
 		}
 
 		return $target_key;
+	}
+
+	/**
+	 * One plugin or theme by the name its own header gives it.
+	 *
+	 * A row records what it needs to find the thing again — `elementor/
+	 * elementor.php`, or the WordPress.org slug an install was asked for — and
+	 * neither is what the site owner calls it. Reading a file path back at
+	 * somebody is how the log ends up saying less than it knows: "changed a
+	 * plugin" when the row could have said "changed the Elementor plugin".
+	 * WordPress is the only authority on the name, so an extension that has
+	 * since been deleted cannot be named and falls back to its kind.
+	 *
+	 * @param string $kind Either `plugin` or `theme`.
+	 * @param string $id   The rest of the target key.
+	 * @return string The phrase, or an empty string if WordPress cannot name it.
+	 */
+	private static function extension( string $kind, string $id ): string {
+		if ( '' === $id ) {
+			return '';
+		}
+
+		$name = 'theme' === $kind ? self::theme_name( $id ) : self::plugin_name( $id );
+
+		if ( '' === $name ) {
+			return '';
+		}
+
+		return 'theme' === $kind
+			? sprintf(
+				/* translators: %s: a theme's name, such as "Hello Elementor". */
+				__( 'the %s theme', 'sitehelm' ),
+				$name
+			)
+			: sprintf(
+				/* translators: %s: a plugin's name, such as "Elementor". */
+				__( 'the %s plugin', 'sitehelm' ),
+				$name
+			);
+	}
+
+	/**
+	 * The name in a plugin's header, by entry file or by directory.
+	 *
+	 * Both shapes reach here: a plugin that was already installed is recorded
+	 * by its entry file, while an install is recorded by the slug it was asked
+	 * for, and the slug is the directory the entry file ends up in.
+	 *
+	 * @param string $id The entry file or the directory.
+	 */
+	private static function plugin_name( string $id ): string {
+		if ( ! function_exists( 'get_plugins' ) ) {
+			if ( ! defined( 'ABSPATH' ) ) {
+				return '';
+			}
+
+			require_once ABSPATH . 'wp-admin/includes/plugin.php';
+		}
+
+		if ( ! function_exists( 'get_plugins' ) ) {
+			return '';
+		}
+
+		$plugins = get_plugins();
+
+		if ( isset( $plugins[ $id ]['Name'] ) ) {
+			return (string) $plugins[ $id ]['Name'];
+		}
+
+		foreach ( $plugins as $file => $data ) {
+			$parts = explode( '/', (string) $file );
+
+			if ( $parts[0] === $id && isset( $data['Name'] ) ) {
+				return (string) $data['Name'];
+			}
+		}
+
+		return '';
+	}
+
+	/**
+	 * The name in a theme's header.
+	 *
+	 * @param string $stylesheet The theme's own directory.
+	 */
+	private static function theme_name( string $stylesheet ): string {
+		if ( ! function_exists( 'wp_get_theme' ) ) {
+			return '';
+		}
+
+		$theme = wp_get_theme( $stylesheet );
+
+		if ( ! is_object( $theme ) || ! method_exists( $theme, 'exists' ) || ! $theme->exists() ) {
+			return '';
+		}
+
+		return (string) $theme->get( 'Name' );
 	}
 
 	/**

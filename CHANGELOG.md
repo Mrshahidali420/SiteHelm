@@ -46,6 +46,20 @@ an operation behaves.
   SiteHelm now answers that request itself, showing the release notes for the version on
   offer, and still opens with what is installed when GitHub cannot be reached.
 - **"By SiteHelm" now links to the website** on the Plugins screen and in the details panel.
+- **The activity log stopped naming the app that made the change.** An app names itself once,
+  when it opens the connection, and then works for as long as it stays open — a whole day,
+  often with quiet hours in it. SiteHelm remembered that name for an hour, so everything done
+  after the first hour was filed against nobody and read as "An unnamed app changed a plugin".
+  The name is now kept with the account that connected and lasts until a different app
+  connects as that account.
+- **A plugin or theme in the log is named.** Rows recorded the entry file or the
+  WordPress.org slug and read as "changed a plugin"; they now say "changed the Elementor
+  plugin", falling back to the kind when the plugin or theme has since been deleted.
+- **The account page is no longer in the menu.** SiteHelm is installed on sites its buyer
+  does not own, and the licensing account page prints the licence holder's name, email
+  address, billing address, payment history and API keys into the admin menu of every site
+  the licence covers. It still answers at its own address, which is what the licence screen
+  links to, so syncing or moving a licence is unchanged.
 
 ## [0.12.0] — 2026-09-04
 
