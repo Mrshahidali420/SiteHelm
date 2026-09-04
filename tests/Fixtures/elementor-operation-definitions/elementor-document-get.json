@@ -6,6 +6,11 @@
                 "type": "integer",
                 "minimum": 1,
                 "description": "Identifier of the Elementor document to read. Call elementor-document-list for the documents Elementor controls."
+            },
+            "rootId": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_-]{1,64}$",
+                "description": "Optional. Return only this element and everything inside it, instead of the whole document. Use it after a narrowed response to open one band at full depth. The totals and hints still describe the whole document."
             }
         },
         "required": [
@@ -14,7 +19,7 @@
         "additionalProperties": false
     },
     "outputSchema": {
-        "$id": "urn:sitehelm:schema:elementor-document-get:output:1",
+        "$id": "urn:sitehelm:schema:elementor-document-get:output:2",
         "type": "object",
         "properties": {
             "document": {
@@ -55,7 +60,7 @@
                 "items": {
                     "$ref": "#/$defs/elementorNode"
                 },
-                "description": "The document's top-level elements, each carrying its own children, in stored order."
+                "description": "The document's top-level elements, each carrying its own children, in stored order — or, when rootId was given, the named element alone. Read narrowed before treating this as the whole tree."
             },
             "totals": {
                 "type": "object",
@@ -80,6 +85,34 @@
                     "nodeCount",
                     "maxDepth",
                     "widgetTypeCounts"
+                ],
+                "additionalProperties": false
+            },
+            "narrowed": {
+                "type": "object",
+                "properties": {
+                    "applied": {
+                        "type": "boolean",
+                        "description": "True when this response holds less of the tree than the document does. False means the tree below is complete."
+                    },
+                    "keptDepth": {
+                        "type": "integer",
+                        "description": "The greatest zero-based nesting depth this response carries. Elements below it were dropped; the ones that were kept still report their true childCount."
+                    },
+                    "omittedNodes": {
+                        "type": "integer",
+                        "description": "How many elements of the requested tree are not in this response."
+                    },
+                    "message": {
+                        "type": "string",
+                        "description": "A sentence naming what was left out and which call returns it. Empty when nothing was narrowed."
+                    }
+                },
+                "required": [
+                    "applied",
+                    "keptDepth",
+                    "omittedNodes",
+                    "message"
                 ],
                 "additionalProperties": false
             },
@@ -191,6 +224,7 @@
             "document",
             "nodes",
             "totals",
+            "narrowed",
             "pageSettings",
             "hints"
         ],
@@ -231,7 +265,7 @@
                     },
                     "childCount": {
                         "type": "integer",
-                        "description": "How many children this element has, counting only the ones this response returns."
+                        "description": "How many children this element actually has in the document. When a response reports narrowed.applied, an element at the deepest kept level carries its true count beside an empty children array — that difference is how you see there is more below than you were handed."
                     },
                     "children": {
                         "type": "array",

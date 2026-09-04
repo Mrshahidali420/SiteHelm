@@ -18,6 +18,7 @@ use SiteHelm\Contracts\PermissionMode;
 use SiteHelm\Modules\Elementor\ElementorDocument;
 use SiteHelm\Modules\Elementor\ElementorDocumentGet;
 use SiteHelm\Modules\Elementor\ElementorDocumentHints;
+use SiteHelm\Modules\Elementor\ElementorTreeNarrowing;
 use SiteHelm\Modules\Elementor\ElementorFields;
 use SiteHelm\Modules\Elementor\ElementorModule;
 use SiteHelm\Modules\Elementor\ElementorPageSettings;
@@ -319,7 +320,7 @@ final class ElementorDocumentGetTest extends TestCase {
 	public function test_the_response_carries_the_document_summary_the_nodes_and_the_totals(): void {
 		$this->withElementor();
 
-		$this->assertSame( [ 'document', 'nodes', 'totals', 'pageSettings', 'hints' ], array_keys( $this->get() ) );
+		$this->assertSame( [ 'document', 'nodes', 'totals', 'narrowed', 'pageSettings', 'hints' ], array_keys( $this->get() ) );
 	}
 
 	/**
@@ -405,7 +406,7 @@ final class ElementorDocumentGetTest extends TestCase {
 		$this->withElementor();
 
 		$schema   = ElementorDocumentGet::definition()->outputSchema;
-		$expected = [ 'document', 'nodes', 'totals', 'pageSettings', 'hints' ];
+		$expected = [ 'document', 'nodes', 'totals', 'narrowed', 'pageSettings', 'hints' ];
 
 		$this->assertSame( $expected, array_keys( $schema['properties'] ) );
 		$this->assertSame( $expected, $schema['required'] );
@@ -417,6 +418,61 @@ final class ElementorDocumentGetTest extends TestCase {
 			$schema['properties']['hints']['items']['properties']['code']['enum'],
 			'The declared codes must be the ones the emitter can emit, or a client filtering on the enum silently stops matching.'
 		);
+	}
+
+	// -------------------------------------------------------------- narrowing
+
+	/**
+	 * A page small enough to send whole still says so.
+	 *
+	 * The marker is on EVERY response, not only the shortened ones. A member that
+	 * appears exclusively when something went missing is a member clients never
+	 * learn to read, which is the same as not having one.
+	 */
+	public function test_a_document_that_fits_reports_that_nothing_was_narrowed(): void {
+		$this->withElementor();
+
+		$narrowed = $this->get()[ ElementorTreeNarrowing::FIELD_NARROWED ];
+
+		$this->assertFalse( $narrowed['applied'] );
+		$this->assertSame( 0, $narrowed['omittedNodes'] );
+		$this->assertSame( '', $narrowed['message'] );
+	}
+
+	/**
+	 * `rootId` answers one band, and the totals still describe the page.
+	 *
+	 * DELIBERATELY WHOLE-DOCUMENT TOTALS. An operator opening one section has not
+	 * stopped asking about the page, and totals that quietly switched to
+	 * describing the excerpt would look exactly like totals that did not.
+	 */
+	public function test_a_root_identifier_returns_that_element_alone(): void {
+		$this->withElementor();
+
+		$whole  = $this->get();
+		$result = $this->get( [ 'id' => self::DOCUMENT_ID, 'rootId' => 'bbb222' ] );
+
+		$this->assertSame( [ 'bbb222' ], array_column( $result['nodes'], 'id' ) );
+		$this->assertSame( $whole['totals'], $result['totals'], 'The totals describe the whole page, not the excerpt.' );
+	}
+
+	/**
+	 * An element identifier the document does not carry is a refusal, never an
+	 * empty tree — an empty tree here reads as "that section is empty", which is a
+	 * different site state and the one a write would act on.
+	 */
+	public function test_an_unknown_root_identifier_refuses_as_target_not_found(): void {
+		$this->withElementor();
+
+		$this->expectException( OperationException::class );
+
+		try {
+			$this->get( [ 'id' => self::DOCUMENT_ID, 'rootId' => 'nosuchelement' ] );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::TargetNotFound, $e->errorCode );
+
+			throw $e;
+		}
 	}
 
 	// ------------------------------------------------------------------ hints

@@ -108,7 +108,7 @@ final class ElementorDocumentGet {
 	 * later `schemaVersion` bump identifies a different resource rather than
 	 * redefining this one.
 	 */
-	public const OUTPUT_SCHEMA_ID = 'urn:sitehelm:schema:elementor-document-get:output:1';
+	public const OUTPUT_SCHEMA_ID = 'urn:sitehelm:schema:elementor-document-get:output:2';
 
 	/**
 	 * The operation's registered definition, beside the code that produces the
@@ -122,14 +122,19 @@ final class ElementorDocumentGet {
 			id: 'elementor-document-get',
 			domain: Domain::Elementor,
 			mode: Mode::Read,
-			description: 'Return one Elementor document\'s stored element tree, normalized into stable nodes with their types, derived labels, nesting depth and child counts, plus whole-tree totals and the page\'s own page settings — the layout it actually renders with and whether the theme title is hidden, and any authoring hints this particular page has earned. Element settings are not returned.',
+			description: 'Return one Elementor document\'s stored element tree, normalized into stable nodes with their types, derived labels, nesting depth and child counts, plus whole-tree totals and the page\'s own page settings — the layout it actually renders with and whether the theme title is hidden, and any authoring hints this particular page has earned. Element settings are not returned. A tree too large to send whole is returned shortened by depth and says so in narrowed; pass rootId to open one band at full depth.',
 			inputSchema: [
 				'type'                 => 'object',
 				'properties'           => [
-					'id' => [
+					'id'     => [
 						'type'        => 'integer',
 						'minimum'     => 1,
 						'description' => 'Identifier of the Elementor document to read. Call elementor-document-list for the documents Elementor controls.',
+					],
+					'rootId' => [
+						'type'        => 'string',
+						'pattern'     => ElementorWriteFields::ELEMENT_ID_PATTERN,
+						'description' => 'Optional. Return only this element and everything inside it, instead of the whole document. Use it after a narrowed response to open one band at full depth. The totals and hints still describe the whole document.',
 					],
 				],
 				'required'             => [ 'id' ],
@@ -139,21 +144,22 @@ final class ElementorDocumentGet {
 				'$id'                  => self::OUTPUT_SCHEMA_ID,
 				'type'                 => 'object',
 				'properties'           => [
-					'document'                          => ElementorFields::documentSummarySchema(),
-					'nodes'                             => [
+					'document'                             => ElementorFields::documentSummarySchema(),
+					'nodes'                                => [
 						'type'        => 'array',
 						'items'       => [ '$ref' => '#/$defs/' . ElementorFields::NODE_DEF ],
-						'description' => 'The document\'s top-level elements, each carrying its own children, in stored order.',
+						'description' => 'The document\'s top-level elements, each carrying its own children, in stored order — or, when rootId was given, the named element alone. Read narrowed before treating this as the whole tree.',
 					],
-					'totals'                            => ElementorFields::treeTotalsSchema(),
+					'totals'                               => ElementorFields::treeTotalsSchema(),
+					ElementorTreeNarrowing::FIELD_NARROWED => ElementorTreeNarrowing::schema(),
 					ElementorPageSettings::FIELD_PAGE_SETTINGS => ElementorPageSettings::reportSchema(),
-					ElementorDocumentHints::FIELD_HINTS => ElementorDocumentHints::schema(),
+					ElementorDocumentHints::FIELD_HINTS    => ElementorDocumentHints::schema(),
 				],
-				'required'             => [ 'document', 'nodes', 'totals', ElementorPageSettings::FIELD_PAGE_SETTINGS, ElementorDocumentHints::FIELD_HINTS ],
+				'required'             => [ 'document', 'nodes', 'totals', ElementorTreeNarrowing::FIELD_NARROWED, ElementorPageSettings::FIELD_PAGE_SETTINGS, ElementorDocumentHints::FIELD_HINTS ],
 				'additionalProperties' => false,
 				'$defs'                => [ ElementorFields::NODE_DEF => ElementorFields::nodeSchema() ],
 			],
-			schemaVersion: 1,
+			schemaVersion: 2,
 			requiredCapabilities: [ 'edit_post' ],
 			risk: Risk::Low,
 			isReadOnly: true,
@@ -257,10 +263,35 @@ final class ElementorDocumentGet {
 		// send an operator to look at.
 		$page_settings = ElementorPageSettings::report( $document_id );
 
+		// Selected from the whole tree, then measured. `totals` and the hints are
+		// deliberately left describing the WHOLE document: the operator asked
+		// about a page, and a subtree read that reported the subtree's totals
+		// would answer a question nobody asked while looking exactly like the
+		// answer to the one they did.
+		$requested = $normalized['nodes'];
+		$root_id   = isset( $input['rootId'] ) ? (string) $input['rootId'] : '';
+
+		if ( '' !== $root_id ) {
+			$found = ElementorTreeNarrowing::subtree( $requested, $root_id );
+
+			if ( null === $found ) {
+				throw new OperationException(
+					ErrorCode::TargetNotFound,
+					'No element in this document carries the identifier you named.',
+					'Read the document without rootId to see the identifiers it holds, then name one of those.'
+				);
+			}
+
+			$requested = [ $found ];
+		}
+
+		$narrowed = ElementorTreeNarrowing::narrow( $requested );
+
 		return [
 			'document'                                 => $summary,
-			'nodes'                                    => $normalized['nodes'],
+			'nodes'                                    => $narrowed['nodes'],
 			'totals'                                   => $normalized['totals'],
+			ElementorTreeNarrowing::FIELD_NARROWED     => $narrowed[ ElementorTreeNarrowing::FIELD_NARROWED ],
 			ElementorPageSettings::FIELD_PAGE_SETTINGS => $page_settings,
 			ElementorDocumentHints::FIELD_HINTS        => ElementorDocumentHints::forDocument( $page_settings, $elements ),
 		];
