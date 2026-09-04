@@ -333,7 +333,7 @@ generated CSS afterwards, so changes appear on the front end without opening the
 
 | Operation | Does | Capability | Risk | Rollback |
 |---|---|---|---|---|
-| `elementor-element-add` | Inserts an element at a position in the tree | `edit_post` | medium | supported |
+| `elementor-element-add` | Inserts an element at a position in the tree; a container can be asked for by preset, and `full-bleed` stores the settings a section needs to run edge to edge | `edit_post` | medium | supported |
 | `elementor-element-update` | Updates an element's settings | `edit_post` | medium | supported |
 | `elementor-elements-update` | Updates several elements' settings as one change; one bad entry refuses all of them | `edit_post` | medium | supported |
 | `elementor-widget-settings-update` | Updates a widget's settings against its control schema | `edit_post` | medium | supported |

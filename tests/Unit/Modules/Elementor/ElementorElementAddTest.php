@@ -18,6 +18,7 @@ use SiteHelm\Contracts\PreviewPolicy;
 use SiteHelm\Contracts\RollbackPolicy;
 use SiteHelm\Contracts\SnapshotPolicy;
 use SiteHelm\Modules\Elementor\ElementorApi;
+use SiteHelm\Modules\Elementor\ElementorContainerPreset;
 use SiteHelm\Modules\Elementor\ElementorElementAdd;
 use SiteHelm\Modules\Elementor\ElementorElementAddInput;
 use SiteHelm\Modules\Elementor\ElementorPresence;
@@ -119,17 +120,17 @@ final class ElementorElementAddTest extends TestCase {
 	}
 
 	/**
-	 * The input schema is CLOSED and declares exactly the six documented members.
+	 * The input schema is CLOSED and declares exactly the seven documented members.
 	 *
 	 * A write whose schema admitted an undeclared member would let a caller send
 	 * something the payload never carries and read the silence as acceptance.
 	 */
-	public function test_the_input_schema_is_closed_and_declares_the_six_documented_members(): void {
+	public function test_the_input_schema_is_closed_and_declares_the_seven_documented_members(): void {
 		$schema = ElementorElementAdd::definition()->inputSchema;
 
 		$this->assertFalse( $schema['additionalProperties'] );
 		$this->assertSame(
-			[ 'document', 'parentElementId', 'index', 'elType', 'widgetType', 'settings' ],
+			[ 'document', 'parentElementId', 'index', 'elType', 'widgetType', 'settings', 'preset' ],
 			array_keys( $schema['properties'] )
 		);
 		$this->assertSame( [ 'document', 'elType' ], $schema['required'] );
@@ -765,6 +766,147 @@ final class ElementorElementAddTest extends TestCase {
 		$planned = $this->plan( $this->arguments( [ 'elType' => 'container' ] ) );
 
 		$this->assertSame( [], $planned->payload[ ElementorElementAddInput::INPUT_SETTINGS ] );
+	}
+
+	// ------------------------------------------------------- the preset
+
+	/**
+	 * REQ-0114: the preset reaches the payload as stored settings.
+	 *
+	 * The two values it contributes are the two Elementor's kit would otherwise
+	 * apply invisibly, so a caller reading this plan back sees the whole of what
+	 * the container will render with rather than the half it typed.
+	 */
+	public function test_a_container_asked_for_full_bleed_stores_zero_padding_and_full_width(): void {
+		$this->withElementor();
+		$this->storeRaw( (string) json_encode( $this->fixtureTree() ) );
+
+		$planned = $this->plan(
+			$this->arguments(
+				[
+					'elType' => 'container',
+					'preset' => ElementorContainerPreset::PRESET_FULL_BLEED,
+				]
+			)
+		);
+
+		$settings = $planned->payload[ ElementorElementAddInput::INPUT_SETTINGS ];
+
+		$this->assertSame( 'full', $settings[ ElementorContainerPreset::KEY_CONTENT_WIDTH ] );
+		$this->assertSame( '0', $settings[ ElementorContainerPreset::KEY_PADDING ]['top'] );
+		$this->assertSame( '0', $settings[ ElementorContainerPreset::KEY_PADDING ]['left'] );
+	}
+
+	/**
+	 * The preset sits beside the caller's own settings; neither is dropped.
+	 */
+	public function test_the_preset_and_the_callers_own_settings_are_both_stored(): void {
+		$this->withElementor();
+		$this->storeRaw( (string) json_encode( $this->fixtureTree() ) );
+
+		$planned = $this->plan(
+			$this->arguments(
+				[
+					'elType'   => 'container',
+					'settings' => [ 'flex_gap' => [ 'size' => 20 ] ],
+					'preset'   => ElementorContainerPreset::PRESET_FULL_BLEED,
+				]
+			)
+		);
+
+		$settings = $planned->payload[ ElementorElementAddInput::INPUT_SETTINGS ];
+
+		$this->assertSame( [ 'size' => 20 ], $settings['flex_gap'] );
+		$this->assertSame( 'full', $settings[ ElementorContainerPreset::KEY_CONTENT_WIDTH ] );
+	}
+
+	/**
+	 * The preset is folded in AFTER the caller's own settings have been judged
+	 * against the element registry, and the settings it contributes are this
+	 * module's own constants rather than caller input. So a site whose registry
+	 * cannot be read still gets a full-bleed container: there is nothing here for
+	 * the registry to have an opinion about.
+	 */
+	public function test_a_preset_alone_is_stored_on_a_site_whose_registry_cannot_be_read(): void {
+		$this->withElementor();
+		$this->storeRaw( (string) json_encode( $this->fixtureTree() ) );
+
+		WriteTargetFakePlugin::$instance->elements_manager = null;
+
+		$planned = $this->plan(
+			$this->arguments(
+				[
+					'elType' => 'container',
+					'preset' => ElementorContainerPreset::PRESET_FULL_BLEED,
+				]
+			)
+		);
+
+		$this->assertSame(
+			'full',
+			$planned->payload[ ElementorElementAddInput::INPUT_SETTINGS ][ ElementorContainerPreset::KEY_CONTENT_WIDTH ]
+		);
+	}
+
+	/**
+	 * A preset asked for on a widget is refused end to end, not just in the class
+	 * that owns the rule.
+	 */
+	public function test_a_preset_on_a_widget_is_refused(): void {
+		$this->withElementor();
+		$this->storeRaw( (string) json_encode( $this->fixtureTree() ) );
+
+		$this->assertRefusal(
+			ErrorCode::InvalidInput,
+			$this->arguments(
+				[
+					'elType'     => 'widget',
+					'widgetType' => 'e-heading',
+					'preset'     => ElementorContainerPreset::PRESET_FULL_BLEED,
+				]
+			)
+		);
+	}
+
+	/**
+	 * A caller sending a setting the preset also writes is refused rather than
+	 * quietly overruled in either direction.
+	 */
+	public function test_a_preset_colliding_with_an_explicit_setting_is_refused(): void {
+		$this->withElementor();
+		$this->storeRaw( (string) json_encode( $this->fixtureTree() ) );
+
+		$this->assertRefusal(
+			ErrorCode::InvalidInput,
+			$this->arguments(
+				[
+					'elType'   => 'container',
+					'settings' => [ ElementorContainerPreset::KEY_CONTENT_WIDTH => 'boxed' ],
+					'preset'   => ElementorContainerPreset::PRESET_FULL_BLEED,
+				]
+			)
+		);
+	}
+
+	/**
+	 * The plan a preset produces is still byte-identical across two runs — the
+	 * invariant the whole write phase rests on.
+	 */
+	public function test_planning_a_preset_twice_produces_a_byte_identical_payload(): void {
+		$this->withElementor();
+		$this->storeRaw( (string) json_encode( $this->fixtureTree() ) );
+
+		$input = $this->arguments(
+			[
+				'elType' => 'container',
+				'preset' => ElementorContainerPreset::PRESET_FULL_BLEED,
+			]
+		);
+
+		$this->assertSame(
+			json_encode( $this->plan( $input )->payload ),
+			json_encode( $this->plan( $input )->payload )
+		);
 	}
 
 	/**

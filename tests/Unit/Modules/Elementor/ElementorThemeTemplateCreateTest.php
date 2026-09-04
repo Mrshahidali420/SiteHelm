@@ -24,6 +24,7 @@ use SiteHelm\Modules\Elementor\ElementorDocument;
 use SiteHelm\Modules\Elementor\ElementorDocumentWriter;
 use SiteHelm\Modules\Elementor\ElementorFields;
 use SiteHelm\Modules\Elementor\ElementorKit;
+use SiteHelm\Modules\Elementor\ElementorTemplateLibrary;
 use SiteHelm\Modules\Elementor\ElementorTemplateTarget;
 use SiteHelm\Modules\Elementor\ElementorThemeConditions;
 use SiteHelm\Modules\Elementor\ElementorThemeTemplateCreate;
@@ -315,6 +316,23 @@ final class ElementorThemeTemplateCreateTest extends TestCase {
 		$this->assertSame(
 			ElementorDocumentWriter::EDIT_MODE,
 			$this->meta[ $id . '|' . ElementorDocument::META_EDIT_MODE ]
+		);
+	}
+
+	/**
+	 * REQ-0114: the type is recorded as a TERM as well as as meta.
+	 *
+	 * The meta is what this plugin's reads and its own verification ask for, so a
+	 * create that wrote only the meta passed every check here and still produced a
+	 * header that Elementor's Theme Builder does not list — the screen an operator
+	 * would go to next. The term is what that screen queries by.
+	 */
+	public function test_the_type_is_also_recorded_in_the_taxonomy_elementors_screens_query(): void {
+		$id = $this->createdIdFrom( $this->applied() );
+
+		$this->assertSame(
+			'header',
+			$this->terms[ $id . '|' . ElementorTemplateLibrary::TAXONOMY_TYPE ] ?? null
 		);
 	}
 

@@ -54,7 +54,7 @@ final class ServerInstructions {
 	/**
 	 * The kit padding that insets a section meant to run edge to edge.
 	 */
-	public const POINT_PADDING = "2. Full-bleed sections need zero container padding. Elementor's kit applies 10px on all four sides of every container, so a section meant to run edge to edge must set its container padding to 0 or it renders inset.";
+	public const POINT_PADDING = "2. Full-bleed sections need zero container padding. Elementor's kit insets every container by 10px, so set container padding to 0 - or add the container with preset full-bleed, which stores that and full content width.";
 
 	/**
 	 * The hover rule that reaches further than the band it was written for.

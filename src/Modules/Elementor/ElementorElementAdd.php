@@ -162,13 +162,13 @@ final class ElementorElementAdd implements WriteOperation {
 			id: self::OPERATION_ID,
 			domain: Domain::Elementor,
 			mode: Mode::Write,
-			description: 'Add one element — a container, a section, a column, or a widget — to an Elementor document at a chosen position.',
+			description: 'Add one element — a container, a section, a column, or a widget — to an Elementor document at a chosen position. A container can be asked for by preset: "full-bleed" stores the zero padding and full content width a section needs to run edge to edge, which Elementor\'s kit otherwise overrides invisibly.',
 			inputSchema: [
 				'type'                 => 'object',
 				'properties'           => [
-					ElementorWriteFields::INPUT_DOCUMENT  => $shared[ ElementorWriteFields::INPUT_DOCUMENT ],
+					ElementorWriteFields::INPUT_DOCUMENT   => $shared[ ElementorWriteFields::INPUT_DOCUMENT ],
 					ElementorElementAddInput::INPUT_PARENT_ELEMENT_ID => $parent,
-					ElementorElementAddInput::INPUT_INDEX => [
+					ElementorElementAddInput::INPUT_INDEX  => [
 						'type'        => 'integer',
 						'minimum'     => 0,
 						'description' => 'Zero-based position among the destination\'s existing children. Send 0, the default, for first; a position past the last child places the element at the end.',
@@ -188,6 +188,7 @@ final class ElementorElementAdd implements WriteOperation {
 						'maxProperties' => ElementorElementAddInput::MAX_SETTINGS,
 						'description'   => 'The new element\'s settings, keyed by setting name. Omit it entirely for an element with no settings of its own. A widget accepts only the settings it declares.',
 					],
+					ElementorContainerPreset::INPUT_PRESET => ElementorContainerPreset::schema(),
 				],
 				'required'             => [ ElementorWriteFields::INPUT_DOCUMENT, ElementorElementAddInput::INPUT_EL_TYPE ],
 				'additionalProperties' => false,
@@ -282,6 +283,17 @@ final class ElementorElementAdd implements WriteOperation {
 		$widget_type = $this->inputs->requestedWidgetType( $el_type, $input );
 		$settings    = $this->inputs->requestedSettings( $widget_type, $input, $el_type );
 		$index       = $this->inputs->requestedIndex( $input );
+
+		// THE PRESET IS FOLDED IN AFTER THE CALLER'S OWN SETTINGS HAVE BEEN
+		// CHECKED AGAINST THE ELEMENT'S SCHEMA, AND BEFORE ANYTHING READS THEM.
+		// The settings it contributes are container settings this module owns, so
+		// running them through `assertKnownKeys` would only ask the registry to
+		// confirm a constant; the caller's half is what needed checking, and a
+		// collision between the two is refused rather than resolved.
+		$settings = ElementorContainerPreset::apply(
+			ElementorContainerPreset::requested( $input, $el_type ),
+			$settings
+		);
 
 		$tree      = $this->document->elements( $post_id );
 		$parent_id = $this->inputs->requestedParent( $tree, $input );

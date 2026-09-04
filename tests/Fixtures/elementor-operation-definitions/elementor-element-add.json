@@ -44,6 +44,17 @@
                 "type": "object",
                 "maxProperties": 200,
                 "description": "The new element's settings, keyed by setting name. Omit it entirely for an element with no settings of its own. A widget accepts only the settings it declares."
+            },
+            "preset": {
+                "type": [
+                    "string",
+                    "null"
+                ],
+                "enum": [
+                    "full-bleed",
+                    null
+                ],
+                "description": "Optional, and only for elType \"container\". \"full-bleed\" stores zero padding and full content width, the two settings a section needs to run edge to edge — Elementor's kit otherwise insets every container by 10px and boxes its content, neither of which is visible in what the write reports back. Do not send padding or content_width alongside it."
             }
         },
         "required": [

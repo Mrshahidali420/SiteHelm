@@ -395,6 +395,23 @@ final class ElementorTemplateSaveTest extends TestCase {
 	}
 
 	/**
+	 * REQ-0114: the type is recorded as a TERM as well as as meta.
+	 *
+	 * The docblock above is right that the wrong stored type hides a template
+	 * from the section the author looked in — and so does the RIGHT stored type
+	 * with no term beside it, because the library screen queries the taxonomy
+	 * rather than the meta.
+	 */
+	public function test_the_type_is_also_recorded_in_the_taxonomy_elementors_screens_query(): void {
+		$id = $this->createdIdFrom( $this->applied() );
+
+		$this->assertSame(
+			'section',
+			$this->terms[ $id . '|' . ElementorTemplateLibrary::TAXONOMY_TYPE ] ?? null
+		);
+	}
+
+	/**
 	 * The tree really is in the created post, through the real writer — a save
 	 * that reported success and stored nothing is the failure this plugin exists
 	 * to catch.

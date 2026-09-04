@@ -658,6 +658,23 @@ final class ElementorTemplateImportTest extends TestCase {
 	}
 
 	/**
+	 * REQ-0114: the type is recorded as a TERM as well as as meta.
+	 *
+	 * An import is the one create where the operator is most likely to go
+	 * looking: someone else's template, brought in to be found again. The meta
+	 * satisfies every read this plugin makes; the term is what the library
+	 * screen they will open queries by.
+	 */
+	public function test_the_type_is_also_recorded_in_the_taxonomy_elementors_screens_query(): void {
+		$id = $this->createdIdFrom( $this->applied() );
+
+		$this->assertSame(
+			'section',
+			$this->terms[ $id . '|' . ElementorTemplateLibrary::TAXONOMY_TYPE ] ?? null
+		);
+	}
+
+	/**
 	 * The validated tree really is in the created post, through the real writer.
 	 */
 	public function test_the_tree_is_stored_in_the_created_template(): void {
