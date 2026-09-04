@@ -1,0 +1,33 @@
+# Tell wpsitehelm.com that the plugin moved.
+#
+# The site builds its changelog, roadmap and operations table from this repo's
+# CHANGELOG.md, ROADMAP.md and docs/OPERATIONS.md. Without this it only learned
+# about a change when somebody published the site by hand, so merged work —
+# including everything under [Unreleased] — sat invisible for days.
+#
+# The site also checks hourly on its own, so a missing token delays the update;
+# it does not lose it.
+name: Tell the site
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'CHANGELOG.md'
+      - 'ROADMAP.md'
+      - 'docs/OPERATIONS.md'
+  workflow_dispatch:
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ask the site to rebuild
+        env:
+          TOKEN: ${{ secrets.MARKETING_DISPATCH_TOKEN }}
+          GH_TOKEN: ${{ secrets.MARKETING_DISPATCH_TOKEN }}
+        if: env.TOKEN != ''
+        run: |
+          gh api repos/Mrshahidali420/sitehelm-marketing/dispatches \
+            -f event_type=plugin-changed
+        # gh reads GH_TOKEN, and this one must be able to write to the other repo.
