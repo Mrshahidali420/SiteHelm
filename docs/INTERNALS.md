@@ -2462,6 +2462,17 @@ speaks through.
   (`snippet_code`, `snippet_css`, `snippet_js`) are already in the free
   `SensitiveFields` list, asserted by a Pro test against the free constant — a payload is
   a byte count and twelve characters of sha256 everywhere a change is shown.
+- **A snippet can be stored in WPCode or Code Snippets instead**, named as `host` on the
+  three write operations, and the whole feature is one line of wiring: every operation in
+  the module takes a `SnippetRepository` and nothing else, so `CodeModule` puts a router in
+  front of the first-party store and no operation knows there is more than one library.
+  What is *not* routed matters more. The loader asks the store which snippets are live, and
+  a foreign library answers nothing at all — a snippet WPCode already runs would otherwise
+  run twice. Everything hanging off that answer stops at the boundary with it: SiteHelm
+  refuses to switch a foreign snippet on, safe mode does not reach it, a fatal error does
+  not quarantine it, and it has no hook and no page contexts. One key still means one
+  snippet, so a write naming a library for a key another library holds is refused by name
+  rather than duplicated.
 
 ## 42. Pro Elementor (Pro 0.6.0) — what the free repo needs to know
 
