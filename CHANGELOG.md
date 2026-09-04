@@ -9,6 +9,16 @@ Every entry names the user-visible outcome. Internal refactors, test additions, 
 documentation-only changes are not listed unless they change what an agent can do or how
 an operation behaves.
 
+## [Unreleased]
+
+### Fixed
+- **"View details" answered "Plugin not found".** Both routes into the plugin details panel
+  — the link beside the version on the Plugins screen, and "View version X details" in the
+  update row — asked the WordPress.org directory about a plugin that has never been in it.
+  SiteHelm now answers that request itself, showing the release notes for the version on
+  offer, and still opens with what is installed when GitHub cannot be reached.
+- **"By SiteHelm" now links to the website** on the Plugins screen and in the details panel.
+
 ## [0.12.0] — 2026-09-04
 
 **Update this one promptly if you have bought Pro.** Activating a licence led to a page that

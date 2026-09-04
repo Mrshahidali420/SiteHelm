@@ -5,7 +5,9 @@
  * Version:           0.12.0
  * Requires at least: 6.6
  * Requires PHP:      8.1
+ * Plugin URI:        https://wpsitehelm.com/
  * Author:            SiteHelm
+ * Author URI:        https://wpsitehelm.com/
  * License:           GPL-2.0-or-later
  * Text Domain:       sitehelm
  * Update URI:        https://github.com/Mrshahidali420/SiteHelm

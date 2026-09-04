@@ -31,6 +31,12 @@ namespace SiteHelm\Admin;
  * retry GitHub on every one of them — an outage at GitHub must not become
  * latency in wp-admin.
  *
+ * The class also answers `plugins_api`. Core builds the update row's "View
+ * version X details" link from the slug alone, pointed at the plugin directory,
+ * so a plugin that updates from GitHub gets a link to a directory page that has
+ * never existed — "Plugin not found" where the changelog should be. Answering
+ * the information request ourselves puts the release's own notes there.
+ *
  * @package SiteHelm
  */
 final class GithubUpdates {
@@ -51,8 +57,14 @@ final class GithubUpdates {
 	public const RELEASES_URL = 'https://api.github.com/repos/' . self::REPO . '/releases/latest';
 
 	/**
-	 * The cached answer: array{version: string, url: string, package: string},
-	 * or the string "miss" when the last lookup found nothing usable.
+	 * The slug core asks the directory about, and the one we answer for.
+	 */
+	public const SLUG = 'sitehelm';
+
+	/**
+	 * The cached answer: array{version: string, url: string, package: string,
+	 * notes: string, date: string}, or the string "miss" when the last lookup
+	 * found nothing usable.
 	 */
 	public const TRANSIENT = 'sitehelm_github_release';
 
@@ -115,6 +127,7 @@ final class GithubUpdates {
 	 */
 	public function register(): void {
 		add_filter( self::FILTER, [ $this, 'offer' ], 10, 3 );
+		add_filter( 'plugins_api', [ $this, 'information' ], 10, 3 );
 		add_action( 'admin_notices', [ $this, 'notice' ] );
 	}
 
@@ -143,11 +156,75 @@ final class GithubUpdates {
 
 		return [
 			'id'      => 'https://github.com/' . self::REPO,
-			'slug'    => 'sitehelm',
+			'slug'    => self::SLUG,
 			'version' => $release['version'],
 			'url'     => $release['url'],
 			'package' => $release['package'],
 		];
+	}
+
+	/**
+	 * Answer the details panel for this plugin instead of the directory.
+	 *
+	 * Both routes into the panel — "View details" beside the version, and
+	 * "View version X details" in the update row — end at the same request, and
+	 * the directory has no page to answer it with. What comes back here is the
+	 * release the update offer is made from, so the changelog someone reads
+	 * before updating is the notes of the version they are being offered.
+	 *
+	 * A failed lookup still gets an answer, built from the installed version:
+	 * an outage at GitHub should cost the panel its changelog, not leave the
+	 * reader looking at "Plugin not found".
+	 *
+	 * @param object|array|false $result The answer so far, usually false.
+	 * @param string             $action What the caller asked for.
+	 * @param object|array       $args   The request; `slug` is the one we check.
+	 * @return object|array|false Our answer, or the incoming value unchanged.
+	 */
+	public function information( $result, string $action, $args ) {
+		if ( 'plugin_information' !== $action ) {
+			return $result;
+		}
+
+		$slug = is_object( $args ) ? ( $args->slug ?? null ) : ( is_array( $args ) ? ( $args['slug'] ?? null ) : null );
+
+		if ( self::SLUG !== $slug ) {
+			return $result;
+		}
+
+		$release = $this->latest();
+		$notes   = null === $release ? '' : ReleaseNotes::html( $release['notes'] ?? '' );
+
+		return (object) [
+			'name'          => 'SiteHelm',
+			'slug'          => self::SLUG,
+			'version'       => $release['version'] ?? SITEHELM_VERSION,
+			'author'        => '<a href="' . esc_url( Pricing::SITE_URL ) . '">SiteHelm</a>',
+			'homepage'      => Pricing::SITE_URL,
+			'download_link' => $release['package'] ?? '',
+			'last_updated'  => $release['date'] ?? '',
+			'sections'      => [
+				'description' => self::description(),
+				'changelog'   => '' === $notes ? self::no_notes() : $notes,
+			],
+		];
+	}
+
+	/**
+	 * The panel's opening tab: what the plugin is, and where the rest lives.
+	 */
+	private static function description(): string {
+		return '<p>' . esc_html__( 'SiteHelm exposes this site to an AI client as typed operations, behind capability checks, a preview of every change, a verified read-back and a way out. It is free and open source.', 'sitehelm' ) . '</p>'
+			. '<p><a href="' . esc_url( Pricing::SITE_URL ) . '">' . esc_html__( 'wpsitehelm.com', 'sitehelm' ) . '</a> &middot; '
+			. '<a href="https://github.com/' . self::REPO . '">' . esc_html__( 'Source and releases on GitHub', 'sitehelm' ) . '</a></p>';
+	}
+
+	/**
+	 * What the changelog tab says when the release could not be read.
+	 */
+	private static function no_notes(): string {
+		return '<p>' . esc_html__( 'The release notes could not be fetched from GitHub just now.', 'sitehelm' ) . ' '
+			. '<a href="https://github.com/' . self::REPO . '/releases">' . esc_html__( 'Read them on the releases page', 'sitehelm' ) . '</a>.</p>';
 	}
 
 	/**
@@ -192,9 +269,11 @@ final class GithubUpdates {
 	/**
 	 * The newest release, from cache or from GitHub.
 	 *
-	 * @return array{version: string, url: string, package: string}|null Null
-	 *         when nothing newer can be offered — the lookup failed, the answer
-	 *         did not parse, or the release carries no built zip.
+	 * @return array{version: string, url: string, package: string, notes: string,
+	 *         date: string}|null Null when nothing newer can be offered — the
+	 *         lookup failed, the answer did not parse, or the release carries no
+	 *         built zip. An entry cached before the notes were captured has
+	 *         neither `notes` nor `date`; both are read defensively.
 	 */
 	private function latest(): ?array {
 		$cached = get_transient( self::TRANSIENT );
@@ -224,7 +303,7 @@ final class GithubUpdates {
 	 * The cached release only — the notice must never be the thing that makes
 	 * wp-admin wait on GitHub. Core's own update check fills the cache.
 	 *
-	 * @return array{version: string, url: string, package: string}|null
+	 * @return array{version: string, url: string, package: string, notes: string, date: string}|null
 	 */
 	private function cached(): ?array {
 		$cached = get_transient( self::TRANSIENT );
@@ -235,7 +314,7 @@ final class GithubUpdates {
 	/**
 	 * Ask GitHub for the latest release and reduce it to an offer.
 	 *
-	 * @return array{version: string, url: string, package: string}|null
+	 * @return array{version: string, url: string, package: string, notes: string, date: string}|null
 	 */
 	private function fetch(): ?array {
 		$answer = ( $this->request )( self::RELEASES_URL );
@@ -268,6 +347,8 @@ final class GithubUpdates {
 				? $release['html_url']
 				: 'https://github.com/' . self::REPO . '/releases',
 			'package' => $package,
+			'notes'   => is_string( $release['body'] ?? null ) ? $release['body'] : '',
+			'date'    => is_string( $release['published_at'] ?? null ) ? $release['published_at'] : '',
 		];
 	}
 

@@ -7,6 +7,7 @@ namespace SiteHelm\Tests\Unit\Admin;
 use Brain\Monkey\Functions;
 use SiteHelm\Admin\AdminMenu;
 use SiteHelm\Admin\GithubUpdates;
+use SiteHelm\Admin\Pricing;
 use SiteHelm\Tests\Doubles\AdminWordPressStubs;
 use SiteHelm\Tests\TestCase;
 
@@ -27,9 +28,11 @@ final class GithubUpdatesTest extends TestCase {
 	private static function release( string $version, bool $asset = true ): string {
 		return (string) json_encode(
 			[
-				'tag_name' => 'v' . $version,
-				'html_url' => 'https://github.com/' . GithubUpdates::REPO . '/releases/tag/v' . $version,
-				'assets'   => $asset ? [
+				'tag_name'     => 'v' . $version,
+				'html_url'     => 'https://github.com/' . GithubUpdates::REPO . '/releases/tag/v' . $version,
+				'body'         => "### Fixed\n- The thing that was broken.",
+				'published_at' => '2026-09-04T08:22:05Z',
+				'assets'       => $asset ? [
 					[ 'name' => 'not-the-plugin.txt', 'browser_download_url' => 'https://example.test/not-it' ],
 					[
 						'name'                 => 'sitehelm-' . $version . '.zip',
@@ -177,5 +180,55 @@ final class GithubUpdatesTest extends TestCase {
 		ob_start();
 		$updates->notice();
 		$this->assertSame( '', (string) ob_get_clean() );
+	}
+
+	/**
+	 * Asks the details panel about a slug.
+	 *
+	 * @param string $slug The plugin the panel was opened for.
+	 * @return object|array|false
+	 */
+	private function information( GithubUpdates $updates, string $slug = 'sitehelm' ) {
+		return $updates->information( false, 'plugin_information', (object) [ 'slug' => $slug ] );
+	}
+
+	public function testTheDetailsPanelIsAnsweredHereRatherThanByTheDirectory(): void {
+		// The directory has no sitehelm page, so an unanswered request renders
+		// "Plugin not found" where the changelog belongs.
+		$panel = $this->information( $this->updates( [ 'code' => 200, 'body' => self::release( '9.9.9' ) ] ) );
+
+		$this->assertIsObject( $panel );
+		$this->assertSame( 'SiteHelm', $panel->name );
+		$this->assertSame( 'sitehelm', $panel->slug );
+		$this->assertSame( '9.9.9', $panel->version );
+		$this->assertSame( 'https://example.test/sitehelm-9.9.9.zip', $panel->download_link );
+		$this->assertSame( '2026-09-04T08:22:05Z', $panel->last_updated );
+		$this->assertStringContainsString( 'The thing that was broken.', $panel->sections['changelog'] );
+	}
+
+	public function testTheDetailsPanelCreditsSiteHelmAndLinksToTheWebsite(): void {
+		$panel = $this->information( $this->updates( [ 'code' => 200, 'body' => self::release( '9.9.9' ) ] ) );
+
+		$this->assertIsObject( $panel );
+		$this->assertStringContainsString( 'href="' . Pricing::SITE_URL . '"', $panel->author );
+		$this->assertStringContainsString( 'SiteHelm', $panel->author );
+		$this->assertSame( Pricing::SITE_URL, $panel->homepage );
+	}
+
+	public function testTheDetailsPanelStillOpensWhenGithubCannotBeReached(): void {
+		$panel = $this->information( $this->updates( null ) );
+
+		$this->assertIsObject( $panel );
+		$this->assertSame( SITEHELM_VERSION, $panel->version );
+		$this->assertStringContainsString( 'could not be fetched', $panel->sections['changelog'] );
+	}
+
+	public function testAnotherPluginsDetailsRequestIsLeftAlone(): void {
+		$calls   = 0;
+		$updates = $this->updates( [ 'code' => 200, 'body' => self::release( '9.9.9' ) ], $calls );
+
+		$this->assertFalse( $this->information( $updates, 'akismet' ) );
+		$this->assertFalse( $updates->information( false, 'query_plugins', (object) [ 'slug' => 'sitehelm' ] ) );
+		$this->assertSame( 0, $calls );
 	}
 }
