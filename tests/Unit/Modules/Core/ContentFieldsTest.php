@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace SiteHelm\Tests\Unit\Modules\Core;
 
+use Brain\Monkey\Filters;
 use Brain\Monkey\Functions;
 use SiteHelm\Modules\Core\ContentFields;
 use SiteHelm\Tests\TestCase;
@@ -114,6 +115,56 @@ final class ContentFieldsTest extends TestCase {
 		);
 
 		$this->assertSame( [ 'ok_key', 'subtitle' ], $this->fields->allowlist() );
+	}
+
+	/**
+	 * The screen is not the only way to name a field. A theme that ships its own
+	 * fields can say so in code, and until it could, a site had to be told to go
+	 * and type them in by hand.
+	 */
+	public function test_a_theme_can_declare_its_own_fields_through_the_filter(): void {
+		Functions\when( 'get_option' )->justReturn( [ 'subtitle' ] );
+		Filters\expectApplied( 'sitehelm_meta_allowlist' )
+			->once()
+			->andReturn( [ 'subtitle', 'theme_field' ] );
+
+		$this->assertSame( [ 'subtitle', 'theme_field' ], $this->fields->allowlist() );
+	}
+
+	/**
+	 * THE FILTER NAMES FIELDS; IT DOES NOT CHANGE THE RULES ABOUT THEM. A filter
+	 * that could add `_edit_lock` would be a way around the protected-key rule
+	 * rather than a way to use it, and every write path trusts that rule.
+	 */
+	public function test_the_filter_cannot_add_a_field_the_screen_would_refuse(): void {
+		Functions\when( 'get_option' )->justReturn( [] );
+		Filters\expectApplied( 'sitehelm_meta_allowlist' )
+			->once()
+			->andReturn( [ '_edit_lock', 'bad key!', str_repeat( 'a', 256 ), 'fine' ] );
+
+		$this->assertSame( [ 'fine' ], $this->fields->allowlist() );
+	}
+
+	public function test_a_filter_that_returns_nonsense_leaves_the_saved_fields_alone(): void {
+		Functions\when( 'get_option' )->justReturn( [ 'subtitle' ] );
+		Filters\expectApplied( 'sitehelm_meta_allowlist' )
+			->once()
+			->andReturn( 'not an array' );
+
+		$this->assertSame( [ 'subtitle' ], $this->fields->allowlist() );
+	}
+
+	/**
+	 * A site that has never saved anything still asks, because the filter is the
+	 * half of the list that no screen writes.
+	 */
+	public function test_a_site_with_nothing_saved_still_offers_the_filter(): void {
+		Functions\when( 'get_option' )->justReturn( 'not an array either' );
+		Filters\expectApplied( 'sitehelm_meta_allowlist' )
+			->once()
+			->andReturn( [ 'theme_field' ] );
+
+		$this->assertSame( [ 'theme_field' ], $this->fields->allowlist() );
 	}
 
 	public function test_read_returns_null_for_a_missing_post(): void {

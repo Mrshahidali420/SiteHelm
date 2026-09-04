@@ -119,7 +119,7 @@ final class ContentMetaUpdate implements WriteOperation {
 					'meta' => [
 						'type'        => 'array',
 						'maxItems'    => self::MAX_FIELDS,
-						'description' => 'Custom fields to write. Every key must appear in the site\'s metadata allowlist; if any does not, none are written.',
+						'description' => 'Custom fields to write. Every key must be one a site administrator named on the SiteHelm status screen; if any is not, none are written.',
 						'items'       => [
 							'type'                 => 'object',
 							'properties'           => [
@@ -129,9 +129,9 @@ final class ContentMetaUpdate implements WriteOperation {
 									'description' => 'An allowlisted custom field name.',
 								],
 								'value' => [
-									'type'        => 'string',
+									'type'        => [ 'string', 'number', 'boolean' ],
 									'maxLength'   => self::MAX_VALUE_LENGTH,
-									'description' => 'The value to store, as text.',
+									'description' => 'The value to store. WordPress keeps custom fields as text, so a number is stored as its plain form (1.0 becomes 1) and true and false are stored as 1 and 0.',
 								],
 							],
 							'required'             => [ 'key', 'value' ],
@@ -263,11 +263,20 @@ final class ContentMetaUpdate implements WriteOperation {
 				);
 			}
 
-			if ( ! is_string( $entry['key'] ?? null ) || ! is_string( $entry['value'] ?? null ) ) {
+			if ( ! is_string( $entry['key'] ?? null ) ) {
 				throw new OperationException(
 					ErrorCode::InvalidInput,
-					'Every metadata entry must name a key and a text value.',
+					'Every metadata entry must name a key.',
 					'Send each custom field as an object with a key and a value, then request a fresh preview.'
+				);
+			}
+
+			$value = self::as_stored_text( $entry['value'] ?? null );
+			if ( null === $value ) {
+				throw new OperationException(
+					ErrorCode::InvalidInput,
+					'A custom field value must be text, a number, or true or false.',
+					'Send the value as text, a number, or true or false, then request a fresh preview.'
 				);
 			}
 
@@ -279,7 +288,7 @@ final class ContentMetaUpdate implements WriteOperation {
 				);
 			}
 
-			$requested[ $entry['key'] ] = $entry['value'];
+			$requested[ $entry['key'] ] = $value;
 		}
 
 		if ( [] === $requested ) {
@@ -472,6 +481,41 @@ final class ContentMetaUpdate implements WriteOperation {
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
 
 	/**
+	 * The text WordPress will hold for a value a caller sent, or null to refuse.
+	 *
+	 * EVERY CUSTOM FIELD IS STORED AS TEXT, and this operation promises the
+	 * exact map a later read will project back. So the conversion has to happen
+	 * here, before the promise is made, rather than being left to PHP at the
+	 * moment of the write: a value promised as the number 321 and read back as
+	 * the string "321" is a verification failure on a write that in fact did
+	 * exactly what was asked.
+	 *
+	 * True and false become 1 and 0 rather than "1" and "", which is what a bare
+	 * cast would give. An empty string is how this operation records a field
+	 * that holds nothing, and false is not that.
+	 *
+	 * @param mixed $value The value as it arrived.
+	 *
+	 * @return string|null The text to store, or null if there is no honest one.
+	 */
+	private static function as_stored_text( mixed $value ): ?string {
+		if ( is_string( $value ) ) {
+			return $value;
+		}
+		if ( is_bool( $value ) ) {
+			return $value ? '1' : '0';
+		}
+		if ( is_int( $value ) ) {
+			return (string) $value;
+		}
+		if ( is_float( $value ) && is_finite( $value ) ) {
+			return (string) $value;
+		}
+
+		return null;
+	}
+
+	/**
 	 * Refuses unless EVERY requested key is in the site's metadata allowlist.
 	 *
 	 * Every key is checked before any is written, which is the operation's whole
@@ -509,7 +553,7 @@ final class ContentMetaUpdate implements WriteOperation {
 				throw new OperationException(
 					ErrorCode::Forbidden,
 					'One of the requested custom fields is not in this site\'s metadata allowlist, so none of them were written.',
-					'Ask a site administrator to add the field to the SiteHelm metadata allowlist, then request a fresh preview.'
+					'Ask a site administrator to add the field on the SiteHelm status screen, under "Custom fields SiteHelm may write", then request a fresh preview.'
 				);
 			}
 		}

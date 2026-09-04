@@ -3413,3 +3413,41 @@ one and report every property in both as lost.
 
 Only operations that author a class pass ids — delete and reorder pass none, so a write that
 authors nothing asks the parser nothing.
+
+---
+
+## 57. The custom-field allowlist, and the two ways onto it
+
+`ContentFields::allowlist()` is the only gate on which custom fields `content-meta-update`
+may write, and until this change it read `sitehelm_meta_allowlist` — an option with no
+writer anywhere in the plugin. The list was therefore empty on every install, so the
+operation advertised `available: true` and then refused every request it was given. The
+catalogue could not have said otherwise: `CatalogBuilder::blocked_reason()` answers at
+module level, and the module was fine.
+
+**Two sources, one validator.** `MetaAllowlistAction` (`admin_post_sitehelm_meta_allowlist`,
+always bound) writes the option from a textarea on Status — capability → nonce →
+split on `/[\r\n,]+/` → validate → `update_option`, capped at `MAX_KEYS = 200`. A theme or
+plugin adds its own through the `sitehelm_meta_allowlist` filter, applied inside
+`allowlist()` over the saved keys. Both then pass the same loop, so **the filter names
+fields; it does not change the rules about them**: a filter returning `_edit_lock` gets the
+refusal a person typing it would get. A filter returning a non-array is discarded and the
+saved keys stand.
+
+`ContentFields::is_writable_field_name()` holds the rule — non-empty, no leading underscore,
+within `MAX_META_KEY_LENGTH`, `/^[A-Za-z0-9_-]+$/` — because the screen and the reader both
+ask it. Two copies would drift, and the drifted copy would be the one nobody was looking at.
+The screen drops a name it would refuse and **counts** it (`sitehelm_fields_ignored=n`)
+rather than saving it, so nothing sits in the list looking like it works. The saved keys the
+form owns and the filtered keys it does not are rendered separately: the second list is
+information, not something the box can edit.
+
+**Values are text on the way out.** WordPress stores meta as text, and the promise this
+operation makes is compared against a later read by `WriteVerifier`, so a value promised as
+the number `321` and read back as `"321"` would fail a write that did exactly what was asked.
+`ContentMetaUpdate::as_stored_text()` normalises before anything is promised: `int` and
+finite `float` by cast (`1.0` → `'1'`), `bool` to `'1'`/`'0'` rather than the `'1'`/`''` a
+bare cast gives, string unchanged, anything else refused as `InvalidInput`. The input schema
+declares `'type' => [ 'string', 'number', 'boolean' ]`, which is why `SchemaValidator` now
+accepts a union: its `match ( $type )` had `default => true`, so a list of types would have
+switched type checking off entirely and stringified an array into the violation message.

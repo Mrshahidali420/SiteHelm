@@ -1162,7 +1162,7 @@
                     "meta": {
                         "type": "array",
                         "maxItems": 50,
-                        "description": "Custom fields to write. Every key must appear in the site's metadata allowlist; if any does not, none are written.",
+                        "description": "Custom fields to write. Every key must be one a site administrator named on the SiteHelm status screen; if any is not, none are written.",
                         "items": {
                             "type": "object",
                             "properties": {
@@ -1172,9 +1172,13 @@
                                     "description": "An allowlisted custom field name."
                                 },
                                 "value": {
-                                    "type": "string",
+                                    "type": [
+                                        "string",
+                                        "number",
+                                        "boolean"
+                                    ],
                                     "maxLength": 65535,
-                                    "description": "The value to store, as text."
+                                    "description": "The value to store. WordPress keeps custom fields as text, so a number is stored as its plain form (1.0 becomes 1) and true and false are stored as 1 and 0."
                                 }
                             },
                             "required": [

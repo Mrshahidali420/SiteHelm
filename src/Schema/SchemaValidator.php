@@ -115,17 +115,35 @@ final class SchemaValidator {
 		// empty object a client sent against a schema this validator itself
 		// published, with a message about types rather than about content. Two
 		// operations have already been shaped around that refusal.
-		$type_ok = match ( $type ) {
-			'string'  => is_string( $value ),
-			'integer' => is_int( $value ),
-			'number'  => is_int( $value ) || is_float( $value ),
-			'boolean' => is_bool( $value ),
-			'array'   => is_array( $value ) && array_is_list( $value ),
-			'object'  => is_array( $value ) && ( [] === $value || ! array_is_list( $value ) ),
-			default   => true,
-		};
+		//
+		// A SPEC MAY NAME MORE THAN ONE TYPE, and one match is enough. JSON
+		// Schema has always allowed that, and a property that genuinely accepts
+		// a number or a string has to say so somewhere: saying it in the schema
+		// is how a client learns it, and saying it nowhere is how a client
+		// learns it by being refused.
+		$accepted = is_array( $type ) ? $type : [ $type ];
+
+		$type_ok = false;
+		foreach ( $accepted as $candidate ) {
+			$type_ok = match ( $candidate ) {
+				'string'  => is_string( $value ),
+				'integer' => is_int( $value ),
+				'number'  => is_int( $value ) || is_float( $value ),
+				'boolean' => is_bool( $value ),
+				'array'   => is_array( $value ) && array_is_list( $value ),
+				'object'  => is_array( $value ) && ( [] === $value || ! array_is_list( $value ) ),
+				default   => true,
+			};
+
+			if ( $type_ok ) {
+				break;
+			}
+		}
+
 		if ( ! $type_ok ) {
-			return [ "property '{$key}' must be of type {$type}" ];
+			$named = implode( ' or ', array_map( 'strval', $accepted ) );
+
+			return [ "property '{$key}' must be of type {$named}" ];
 		}
 
 		if ( isset( $spec['enum'] ) && ! in_array( $value, $spec['enum'], true ) ) {

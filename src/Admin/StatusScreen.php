@@ -15,6 +15,7 @@ use SiteHelm\Bootstrap\Extensions;
 use SiteHelm\Contracts\ModuleHealth;
 use SiteHelm\Contracts\ModuleId;
 use SiteHelm\Gateway\McpServer;
+use SiteHelm\Modules\Core\ContentFields;
 use SiteHelm\Storage\Installer;
 use SiteHelm\Storage\Retention;
 
@@ -113,6 +114,7 @@ final class StatusScreen {
 		$this->render_readiness();
 		$this->render_environment();
 		$this->render_storage();
+		$this->render_meta_allowlist();
 		$this->render_retention();
 		Extensions::status_sections();
 
@@ -400,6 +402,84 @@ final class StatusScreen {
 		}
 
 		return $blocked;
+	}
+
+	/**
+	 * Which custom fields SiteHelm may write: a list of names, one per line.
+	 *
+	 * SiteHelm writes no custom field that is not named here, which is the whole
+	 * point of the box, so the section says what naming one means before it
+	 * offers to save any. Fields a theme or plugin declared for itself are shown
+	 * underneath and cannot be edited here, because this form does not own them.
+	 */
+	private function render_meta_allowlist(): void {
+		$saved = MetaAllowlistAction::saved();
+
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Reading an outcome from a redirect this plugin produced; it reports and grants nothing.
+		$state = isset( $_GET[ MetaAllowlistAction::ARG_STATE ] ) ? sanitize_key( wp_unslash( (string) $_GET[ MetaAllowlistAction::ARG_STATE ] ) ) : '';
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- As above.
+		$ignored = isset( $_GET[ MetaAllowlistAction::ARG_IGNORED ] ) ? absint( wp_unslash( (string) $_GET[ MetaAllowlistAction::ARG_IGNORED ] ) ) : 0;
+
+		Ui::section_open(
+			__( 'Custom fields SiteHelm may write', 'sitehelm' ),
+			__( 'Name the custom fields a connected client is allowed to change, one per line. Anything not named here is refused, and SiteHelm never writes a field whose name starts with an underscore.', 'sitehelm' )
+		);
+
+		if ( MetaAllowlistAction::STATE_SAVED === $state ) {
+			printf(
+				'<div class="sitehelm-note sitehelm-note--ok" role="status"><p>%s</p></div>',
+				esc_html(
+					sprintf(
+						/* translators: %s: number of fields. */
+						_n( '%s custom field can now be written.', '%s custom fields can now be written.', count( $saved ), 'sitehelm' ),
+						number_format_i18n( count( $saved ) )
+					)
+				)
+			);
+		}
+
+		if ( $ignored > 0 ) {
+			printf(
+				'<div class="sitehelm-note sitehelm-note--waiting"><p>%s</p></div>',
+				esc_html(
+					sprintf(
+						/* translators: %s: number of entries. */
+						_n(
+							'%s entry was not saved. A field name can use letters, numbers, hyphens and underscores, and cannot start with an underscore.',
+							'%s entries were not saved. A field name can use letters, numbers, hyphens and underscores, and cannot start with an underscore.',
+							$ignored,
+							'sitehelm'
+						),
+						number_format_i18n( $ignored )
+					)
+				)
+			);
+		}
+
+		printf( '<form method="post" action="%s">', esc_url( admin_url( 'admin-post.php' ) ) );
+		wp_nonce_field( MetaAllowlistAction::NONCE );
+		printf(
+			'<input type="hidden" name="action" value="%1$s"><label class="screen-reader-text" for="sitehelm-meta-allowlist">%2$s</label>'
+				. '<textarea id="sitehelm-meta-allowlist" name="%3$s" rows="6" class="large-text code" spellcheck="false" placeholder="%4$s">%5$s</textarea>'
+				. '<p><button type="submit" class="sitehelm-btn sitehelm-btn--small">%6$s</button></p></form>',
+			esc_attr( MetaAllowlistAction::ACTION ),
+			esc_html__( 'Custom field names, one per line', 'sitehelm' ),
+			esc_attr( MetaAllowlistAction::FIELD ),
+			esc_attr__( 'For example: subtitle', 'sitehelm' ),
+			esc_textarea( implode( "\n", $saved ) ),
+			esc_html__( 'Save', 'sitehelm' )
+		);
+
+		$declared = array_values( array_diff( ( new ContentFields() )->allowlist(), $saved ) );
+		if ( [] !== $declared ) {
+			printf(
+				'<p class="sitehelm-followup">%s <code>%s</code></p>',
+				esc_html__( 'A theme or plugin on this site also declared these, and they can only be changed in that code:', 'sitehelm' ),
+				esc_html( implode( ', ', $declared ) )
+			);
+		}
+
+		Ui::section_close();
 	}
 
 	/**

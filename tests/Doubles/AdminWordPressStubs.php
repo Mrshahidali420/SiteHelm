@@ -268,6 +268,7 @@ final class AdminWordPressStubs {
 			static fn( string $value ): string => (string) preg_replace( '/[^a-z0-9_\-]/', '', strtolower( $value ) )
 		);
 		Functions\when( 'sanitize_text_field' )->alias( static fn( string $value ): string => trim( $value ) );
+		Functions\when( 'sanitize_textarea_field' )->alias( static fn( string $value ): string => trim( $value ) );
 		Functions\when( 'wp_unslash' )->returnArg( 1 );
 		Functions\when( 'absint' )->alias( static fn( $value ): int => abs( (int) $value ) );
 		Functions\when( 'wp_nonce_field' )->justReturn( '' );

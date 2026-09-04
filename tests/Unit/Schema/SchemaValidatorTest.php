@@ -396,6 +396,67 @@ final class SchemaValidatorTest extends TestCase {
 	}
 
 	/**
+	 * A property that really does take more than one kind of value has to be
+	 * able to say so. Before it could, the only honest schema was the narrow
+	 * one, and callers found out about the other kinds by being refused.
+	 *
+	 * @dataProvider unionValues
+	 *
+	 * @param mixed $value A value the union admits.
+	 */
+	public function test_a_property_naming_several_types_accepts_any_of_them( mixed $value ): void {
+		$this->validator->validate( [ 'field' => $value ], $this->unionSchema() );
+
+		$this->assertTrue( true, 'Validation passed without throwing.' );
+	}
+
+	/**
+	 * Values the union in unionSchema() admits.
+	 *
+	 * @return array<string, array{mixed}>
+	 */
+	public static function unionValues(): array {
+		return [
+			'text'    => [ 'a string' ],
+			'integer' => [ 321 ],
+			'float'   => [ 1.5 ],
+			'true'    => [ true ],
+			'false'   => [ false ],
+		];
+	}
+
+	/**
+	 * A UNION IS NOT AN ABSENCE OF RULES. A spec naming several types once fell
+	 * through to no type check at all, which let an array reach an operation
+	 * that had been promised a scalar.
+	 */
+	public function test_a_property_naming_several_types_still_refuses_the_others(): void {
+		try {
+			$this->validator->validate( [ 'field' => [ 'nested' ] ], $this->unionSchema() );
+			$this->fail( 'Expected a value outside the union to be refused.' );
+		} catch ( OperationException $refused ) {
+			$this->assertSame( ErrorCode::InvalidInput, $refused->errorCode );
+			$this->assertStringContainsString( 'string or number or boolean', $refused->getMessage() );
+		}
+	}
+
+	/**
+	 * One schema with a property that takes text, a number, or true or false.
+	 *
+	 * @return array<string, mixed> The schema.
+	 */
+	private function unionSchema(): array {
+		return [
+			'type'                 => 'object',
+			'properties'           => [
+				'field' => [ 'type' => [ 'string', 'number', 'boolean' ] ],
+			],
+			'required'             => [ 'field' ],
+			'additionalProperties' => false,
+		];
+	}
+
+	/**
 	 * Non-object schema should throw InvalidArgumentException.
 	 */
 	public function test_non_object_schema_is_a_programming_error(): void {
