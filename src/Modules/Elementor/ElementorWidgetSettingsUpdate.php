@@ -260,7 +260,10 @@ final class ElementorWidgetSettingsUpdate implements WriteOperation {
 		// Judged on the caller's own spelling, before the device suffix goes on:
 		// a condition references base control names and so does a control's
 		// declared type, so `image_mobile` would find no descriptor at all.
-		$warnings = $this->merge->mediaWarnings( $node, $requested );
+		$warnings = array_merge(
+			$this->merge->mediaWarnings( $node, $requested ),
+			$this->merge->richTextWarnings( $node, $requested )
+		);
 
 		$suffixed = $this->suffixed( $requested, $device );
 
@@ -274,7 +277,7 @@ final class ElementorWidgetSettingsUpdate implements WriteOperation {
 			$this->merge->withSettings(
 				$tree,
 				$element_id,
-				$this->merge->merged( $node[ ElementorPropCoercion::NODE_SETTINGS ], $suffixed )
+				$this->merge->mergedFor( $node, $suffixed )
 			)
 		);
 
@@ -551,7 +554,7 @@ final class ElementorWidgetSettingsUpdate implements WriteOperation {
 			$this->merge->withSettings(
 				$tree,
 				$element_id,
-				$this->merge->merged( $node[ ElementorPropCoercion::NODE_SETTINGS ], $suffixed )
+				$this->merge->mergedFor( $node, $suffixed )
 			)
 		);
 

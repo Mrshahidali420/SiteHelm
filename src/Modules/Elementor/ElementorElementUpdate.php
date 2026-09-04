@@ -226,7 +226,10 @@ final class ElementorElementUpdate implements WriteOperation {
 
 		$this->merge->assertKnownKeys( $node, $settings );
 
-		$warnings = $this->merge->mediaWarnings( $node, $settings );
+		$warnings = array_merge(
+			$this->merge->mediaWarnings( $node, $settings ),
+			$this->merge->richTextWarnings( $node, $settings )
+		);
 
 		// Named before the merge AND before the payload, so the row ids the
 		// promise is taken over are the same ones `applyChange()` stores.
@@ -236,7 +239,7 @@ final class ElementorElementUpdate implements WriteOperation {
 			$this->merge->withSettings(
 				$tree,
 				$element_id,
-				$this->merge->merged( $node[ ElementorPropCoercion::NODE_SETTINGS ], $settings )
+				$this->merge->mergedFor( $node, $settings )
 			)
 		);
 
@@ -460,7 +463,7 @@ final class ElementorElementUpdate implements WriteOperation {
 			$this->merge->withSettings(
 				$tree,
 				$element_id,
-				$this->merge->merged( $node[ ElementorPropCoercion::NODE_SETTINGS ], $settings )
+				$this->merge->mergedFor( $node, $settings )
 			)
 		);
 
