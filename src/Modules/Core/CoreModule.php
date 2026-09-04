@@ -141,6 +141,13 @@ final class CoreModule implements IntegrationModule {
 			[ new ContentLinksCheck( $fields, new ContentLinks( $redirects ) ), 'handle' ]
 		);
 
+		// The one read that looks at the site's own front end rather than its
+		// database, so an agent can see what its write actually rendered.
+		$registry->register(
+			ContentRenderedRead::definition(),
+			[ new ContentRenderedRead( $fields, new ContentLinks( $redirects ), new RenderedPage() ), 'handle' ]
+		);
+
 		$registry->register( CommentList::definition(), [ new CommentList(), 'handle' ] );
 
 		// The user read is registered here, under system-read, while its write goes

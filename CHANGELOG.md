@@ -12,6 +12,20 @@ an operation behaves.
 ## [Unreleased]
 
 ### Added
+- **An agent can now see the page a visitor is served, not the row it wrote.** Every write
+  SiteHelm performs reports success by reading the database back, which says the value was
+  stored and says nothing about whether the page renders. `content-rendered-get` fetches one
+  published item's own front-end address and reports what came back: the status code, any
+  redirect, the title, meta description, canonical and robots tags, the Open Graph and
+  Twitter tags, the heading outline with a count of H1s, how many images carry no alt text,
+  how many links point inside the site and how many out, and the word count — with the
+  markup itself on request. The address is not something you pass in: there is no property
+  for one, so the only page that can ever be fetched is the permalink of the item you named,
+  on this site's own host. Drafts, password-protected items and post types with no public
+  page are refused before anything is requested, because a fetch that carries no cookies
+  would report them as broken.
+
+### Added — earlier in this release
 - **A free site now says what Pro would add, instead of reading as impossible.** Ask an
   agent to do something only the add-on does and it used to answer that SiteHelm cannot do
   it at all — because a listing is the only place most agents look, and an operation absent

@@ -3137,3 +3137,49 @@ not connect": something else answering discovery, an address the app cannot reac
 site that cannot reach itself, and a client asking for a protocol version outside
 `McpServer::SUPPORTED_PROTOCOL_VERSIONS`. The versions are printed from that constant, so the
 page cannot drift from what the negotiator accepts.
+
+## 53. Rendered page fetch (REQ-0108) in one screen
+
+`content-rendered-get` is the only operation in the plugin that reads the site's front end
+rather than its database. Everything else verifies a write by reading the row back, which
+proves the value was stored and proves nothing about whether the page renders — the class of
+bug that produced the Elementor page-template desync and the collapsed-CSS defect.
+
+**Why loopback and not an in-process render.** Rendering the document inside the request would
+be cheaper and would be wrong: the request runs under `REST_REQUEST` with output already begun,
+and Elementor's `Frontend` only hooks `template_redirect`, so the markup produced would not be
+the markup a visitor is served. The operation therefore fetches the permalink over HTTP.
+`wp_http_validate_url()` exempts the home host from its private-address refusal and
+`WP_Http::block_request()` exempts it even under `WP_HTTP_BLOCK_EXTERNAL`, so a site on a
+private network still answers itself.
+
+**The address is impossible, not merely refused.** The input schema is `{ id, includeHtml }`
+with `additionalProperties: false`. There is no `url`, `source`, `path` or `package` property
+at all, so there is no refusal to forget to write; `ContentRenderedReadTest` asserts the
+absence of those names directly. The URL is derived from `get_permalink()`, and because that
+value passes through a filter another plugin owns, the host is compared to `home_url()`'s
+before any request is made. `MediaUrlGuard` is deliberately **not** reused here: it exists to
+refuse loopback and private ranges, which is exactly what this operation must reach.
+
+**Refused before the fetch, not after.** The request carries no cookies, so a draft, a
+password-protected item or a post type with no public page would come back 404 and be reported
+as a broken page. All three are `ErrorCode::Conflict` before anything is requested. An absent
+post and a post the caller may not edit are the same `TargetNotFound`, and neither reaches the
+fetcher. A published page answering 500 is the finding the operation exists to surface, so that
+comes back as data, not as a refusal.
+
+**The two halves fail for different reasons.** `ContentRenderedRead` fetches; `RenderedPage`
+reads markup and touches no WordPress function except the injected `ContentLinks`, which is the
+same object `content-links-check` uses so the two operations cannot disagree about what
+"internal" means. `RenderedPage::parse()` follows `SvgSanitizer::parse()`: internal errors on
+inside a `try/finally`, `LIBXML_NONET | LIBXML_NOERROR | LIBXML_NOWARNING`, and `LIBXML_NOENT`
+never passed — despite the name it *substitutes* entities. Parse failure returns `null` rather
+than throwing, because a body cut at the fetch ceiling is the normal case and half a reading
+beats none.
+
+**The ceilings.** `MAX_FETCH_BYTES` (1 MiB) bounds the transport and sets `bodyTruncated`;
+`MAX_HTML_BYTES` (64 KiB) bounds the markup echoed back and sets `htmlTruncated`;
+`RenderedPage::MAX_HEADINGS` (100) bounds the outline, but `h1Count` counts every H1 past it,
+because "is there exactly one H1" is the question that figure answers and a cap must not hide
+the second one. A transport failure is `IntegrationUnavailable` and never repeats the
+transport's own message, which carries host names and occasionally proxy credentials.

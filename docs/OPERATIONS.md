@@ -1,6 +1,6 @@
 # Operations reference
 
-SiteHelm exposes **103 operations** through **11 MCP tools**, called dispatchers. Every operation is
+SiteHelm exposes **104 operations** through **11 MCP tools**, called dispatchers. Every operation is
 declared once, in code, with a strict input schema (`additionalProperties: false`), a required
 capability, a risk level, and preview, snapshot, and rollback policies. That declaration is the
 contract the gateway enforces and the catalogue an agent discovers.
@@ -89,7 +89,7 @@ string, authorization header, or resolved IP address.
 
 Posts, pages, custom post types, and taxonomies.
 
-### `content-read` — 15 operations
+### `content-read` — 16 operations
 
 | Operation | Does | Capability |
 |---|---|---|
@@ -100,6 +100,7 @@ Posts, pages, custom post types, and taxonomies.
 | `content-blocks-get` | Returns the block outline of one item, or one addressed block in full | `edit_post` |
 | `redirect-list` | Lists every redirect this site serves, with the table's size and capacity | `manage_options` |
 | `content-links-check` | Reports the links in one item, resolving this site's own against its posts and redirects | `edit_post` |
+| `content-rendered-get` | Fetches one published item's own front-end address and reports what it actually rendered — status, redirect, title, meta description, canonical, robots, social tags, heading outline, images missing alt text, link split and word count, and the markup itself on request | `edit_post` |
 | `comment-list` | Lists comments by status, post, or search term, newest first | `moderate_comments` |
 | `content-seo-get` | Reads one item's search-engine metadata from whichever SEO plugin the site runs | `edit_post` |
 | `content-seo-score-get` | Reads one item's SEO and readability scores as the SEO plugin stored them, with the findings SiteHelm derives | `edit_post` |
