@@ -37,6 +37,12 @@ use Closure;
 final class Pricing {
 
 	/**
+	 * The plugin's home on the web — what "By SiteHelm" links to, and where
+	 * every other public address here hangs off.
+	 */
+	public const SITE_URL = 'https://wpsitehelm.com/';
+
+	/**
 	 * Where the live list is published.
 	 */
 	public const FEED_URL = 'https://wpsitehelm.com/pricing.json';
