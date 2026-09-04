@@ -15,6 +15,7 @@ use SiteHelm\Contracts\ErrorCode;
 use SiteHelm\Contracts\OperationException;
 use SiteHelm\Modules\Elementor\ElementorGlobalClassUpdate;
 use SiteHelm\Modules\Elementor\ElementorGlobalClassWrite;
+use SiteHelm\Tests\Doubles\GlobalClassFakeParser;
 use SiteHelm\Tests\Doubles\GlobalClassFixtures;
 use SiteHelm\Tests\TestCase;
 
@@ -100,6 +101,39 @@ final class ElementorGlobalClassUpdateTest extends TestCase {
 		$this->assertSame( 'Card wide', $this->definition( $planned, 'g-card' )[ ElementorGlobalClassWrite::CLASS_LABEL ] );
 		$this->assertSame( [ 'g-button', 'g-card' ], $planned->payload[ ElementorGlobalClassWrite::PAYLOAD_ORDER ] );
 		$this->assertSame( [ 'label' ], $planned->previewDetail['updated']['changed'] );
+	}
+
+	/**
+	 * REQ-0115: the update hands its own class to the parser.
+	 *
+	 * The check lives in the shared machinery, but only the operation knows
+	 * which class it touched — an update that stopped naming its own would go
+	 * back to merging properties that never render, with the shared file green.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_a_style_property_elementor_discards_is_reported_by_the_update(): void {
+		$this->installGlobalClassRepository();
+		$this->seedGlobalClasses(
+			[ 'g-card' => $this->globalClassDefinition( 'g-card', 'Card', [ 'font-size' => 16 ] ) ],
+			[ 'g-card' ]
+		);
+		GlobalClassFakeParser::$accepted = [ 'font-size' ];
+
+		$planned = $this->plan(
+			[
+				ElementorGlobalClassUpdate::INPUT_ID     => 'g-card',
+				ElementorGlobalClassUpdate::INPUT_STYLES => [ 'not-a-prop' => '1px' ],
+			]
+		);
+
+		$this->assertSame(
+			[ 'font-size' => 16 ],
+			$this->definition( $planned, 'g-card' )[ ElementorGlobalClassWrite::CLASS_VARIANTS ][0]['props']
+		);
+		$this->assertCount( 1, $planned->warnings );
+		$this->assertStringContainsString( 'not-a-prop', $planned->warnings[0] );
 	}
 
 	/**

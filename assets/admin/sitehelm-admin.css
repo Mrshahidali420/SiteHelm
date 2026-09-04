@@ -16,7 +16,8 @@
 }
 
 .sitehelm-app,
-.sitehelm-widget {
+.sitehelm-widget,
+.sitehelm-modal {
 	--sh-font-heading: "Geist", system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 	--sh-font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 	--sh-primary: #6366f1;
@@ -105,12 +106,18 @@
 	accent-color: var(--sh-primary);
 }
 
-.sitehelm-app a {
+/* Bare links only. A descendant selector here carries more weight than the
+ * single class every styled anchor is built from, so an unqualified
+ * `.sitehelm-app a` repaints the buttons, the tabs and the help menu too --
+ * and a primary button, whose own rule is the one being overridden, ends up
+ * drawn in its own background colour with the label still in the markup.
+ * Anything with a class of its own brings its own colour. */
+.sitehelm-app a:not([class]) {
 	color: var(--sh-primary);
 }
 
-.sitehelm-app a:hover,
-.sitehelm-app a:focus-visible {
+.sitehelm-app a:not([class]):hover,
+.sitehelm-app a:not([class]):focus-visible {
 	color: var(--sh-primary-hover);
 }
 
@@ -2298,22 +2305,19 @@
 }
 
 /* -------------------------------------------------------------------------
- * Home: the "Get started" walkthrough.
+ * Home: the optional "When you're ready" list.
  *
- * State-driven, so it needs no dismissed flag: the block reduces itself to a
- * single line once every step is done. The current step is marked with a word
- * and a border as well as a tint, never colour alone.
+ * State-driven, so it needs no dismissed flag: the block removes itself once
+ * all four are done. Nothing in it is numbered and nothing is marked current,
+ * because none of it is required -- connecting is asked for by the dialog,
+ * once, and this is what is left over.
  * ---------------------------------------------------------------------- */
 .sitehelm-walkthrough {
-	margin: 0 0 24px;
+	margin: 24px 0;
 	padding: 20px;
 	background: var(--sh-gray-50);
 	border: 1px solid var(--sh-gray-200);
 	border-radius: var(--sh-radius);
-}
-
-.sitehelm-walkthrough.is-complete {
-	padding: 12px 16px;
 }
 
 .sitehelm-walkthrough__head {
@@ -2330,47 +2334,9 @@
 	color: var(--sh-gray-500);
 }
 
-.sitehelm-walkthrough__summary {
-	display: flex;
-	align-items: center;
-	gap: 8px;
-	margin: 0;
-	font-size: 13px;
-	font-weight: 600;
-	color: var(--sh-ok-ink);
-}
-
-.sitehelm-walkthrough__tick {
-	display: inline-flex;
-	color: var(--sh-ok);
-}
-
 .sitehelm-walkthrough__tickmark {
 	width: 16px;
 	height: 16px;
-}
-
-.sitehelm-walkthrough__toggle {
-	display: inline-flex;
-	align-items: center;
-	padding: 2px;
-	background: none;
-	border: 0;
-	border-radius: var(--sh-radius-sm);
-	color: var(--sh-gray-500);
-	cursor: pointer;
-}
-
-.sitehelm-walkthrough__toggle:hover {
-	color: var(--sh-gray-800);
-}
-
-.sitehelm-walkthrough__toggle[aria-expanded="true"] .dashicons {
-	transform: rotate(180deg);
-}
-
-.sitehelm-walkthrough__toggle .dashicons {
-	transition: transform var(--sh-ease);
 }
 
 .sitehelm-walkthrough__steps {
@@ -2380,10 +2346,6 @@
 	margin: 0;
 	padding: 0;
 	list-style: none;
-}
-
-.sitehelm-walkthrough.is-complete .sitehelm-walkthrough__steps {
-	margin-top: 16px;
 }
 
 .sitehelm-walkthrough__step {
@@ -2396,12 +2358,6 @@
 	border: 1px solid var(--sh-gray-200);
 	border-radius: var(--sh-radius-sm);
 	color: var(--sh-gray-500);
-}
-
-.sitehelm-walkthrough__step.is-current {
-	border-color: var(--sh-primary);
-	box-shadow: var(--sh-shadow-sm);
-	color: var(--sh-primary);
 }
 
 .sitehelm-walkthrough__step.is-done {
@@ -2434,11 +2390,6 @@
 	color: var(--sh-gray-900);
 }
 
-.sitehelm-walkthrough__num {
-	font-variant-numeric: tabular-nums;
-	color: var(--sh-gray-400);
-}
-
 .sitehelm-walkthrough__help {
 	font-size: 12px;
 	line-height: 1.5;
@@ -2465,8 +2416,202 @@
 	color: var(--sh-ok);
 }
 
+/* -------------------------------------------------------------------------
+ * The first-run connect dialog.
+ *
+ * Printed in the admin footer, outside .sitehelm-app, which is why the token
+ * block at the top of this file names .sitehelm-modal too: a var() that does
+ * not resolve takes its whole declaration with it, silently.
+ *
+ * One job, one primary control. "Not now" submits like the close button does,
+ * but is styled as a quiet link rather than a second button, so the two ways
+ * out do not read as an even choice.
+ * ---------------------------------------------------------------------- */
+.sitehelm-modal {
+	max-width: 420px;
+	padding: 0;
+	background: var(--sh-white);
+	border: 0;
+	border-radius: var(--sh-radius-lg);
+	box-shadow: var(--sh-shadow-lg);
+	color: var(--sh-gray-900);
+}
+
+.sitehelm-modal::backdrop {
+	background: rgba(17, 24, 39, 0.5);
+}
+
+.sitehelm-modal__panel {
+	position: relative;
+	padding: 28px 28px 24px;
+	text-align: center;
+}
+
+.sitehelm-modal__close {
+	position: absolute;
+	top: 8px;
+	right: 8px;
+	display: inline-flex;
+	padding: 4px;
+	background: none;
+	border: 0;
+	border-radius: var(--sh-radius-sm);
+	color: var(--sh-gray-400);
+	cursor: pointer;
+}
+
+.sitehelm-modal__close:hover,
+.sitehelm-modal__close:focus-visible {
+	color: var(--sh-gray-800);
+}
+
+.sitehelm-modal__art {
+	display: inline-flex;
+	color: var(--sh-primary);
+}
+
+.sitehelm-modal__title {
+	margin: 8px 0 0;
+	font-family: var(--sh-font-heading);
+	font-size: 18px;
+	font-weight: 600;
+	color: var(--sh-gray-900);
+}
+
+.sitehelm-modal__lede {
+	margin: 8px 0 20px;
+	font-size: 13px;
+	line-height: 1.6;
+	color: var(--sh-gray-500);
+}
+
+.sitehelm-modal__cta,
+.sitehelm-modal__dismiss {
+	margin: 0;
+}
+
+.sitehelm-modal__later {
+	margin-top: 14px;
+	padding: 4px;
+	background: none;
+	border: 0;
+	font-size: 12px;
+	color: var(--sh-gray-500);
+	text-decoration: underline;
+	cursor: pointer;
+}
+
+.sitehelm-modal__later:hover,
+.sitehelm-modal__later:focus-visible {
+	color: var(--sh-gray-800);
+}
+
 @media screen and (max-width: 782px) {
 	.sitehelm-walkthrough__steps {
 		grid-template-columns: 1fr;
 	}
+}
+
+/* Upgrade screen: the plan cards.
+ *
+ * Three across on a wide screen, one under the other on a narrow one. The
+ * recommended plan is marked by a flag and a heavier border, never by colour
+ * alone. Prices come from the pricing feed, so nothing here assumes a
+ * particular number of digits.
+ */
+.sitehelm-plans {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+	gap: 16px;
+	margin: 20px 0;
+}
+
+.sitehelm-plan {
+	display: flex;
+	flex-direction: column;
+	padding: 20px;
+	background: #fff;
+	border: 1px solid var(--sh-gray-200);
+	border-radius: var(--sh-radius-lg);
+}
+
+.sitehelm-plan--featured {
+	border-color: var(--sh-primary);
+	box-shadow: 0 0 0 1px var(--sh-primary);
+}
+
+.sitehelm-plan__flag {
+	margin: 0 0 10px;
+	font-size: 11px;
+	font-weight: 600;
+	line-height: 1.4;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	color: var(--sh-primary-hover);
+}
+
+.sitehelm-plan__name {
+	margin: 0;
+	font-family: var(--sh-font-heading);
+	font-size: 17px;
+	font-weight: 600;
+	color: var(--sh-ink);
+}
+
+.sitehelm-plan__sites {
+	margin: 2px 0 12px;
+	font-size: 13px;
+	color: var(--sh-gray-500);
+}
+
+.sitehelm-plan__price {
+	margin: 0 0 4px;
+	display: flex;
+	align-items: baseline;
+	gap: 6px;
+}
+
+.sitehelm-plan__now {
+	font-family: var(--sh-font-heading);
+	font-size: 30px;
+	font-weight: 700;
+	line-height: 1.1;
+	color: var(--sh-ink);
+}
+
+.sitehelm-plan__cycle {
+	font-size: 13px;
+	color: var(--sh-gray-500);
+}
+
+.sitehelm-plan__who {
+	margin: 8px 0 16px;
+	font-size: 13px;
+	line-height: 1.5;
+	color: var(--sh-gray-600);
+}
+
+.sitehelm-plan .sitehelm-buy {
+	margin-top: auto;
+	text-align: center;
+}
+
+.sitehelm-plan__once {
+	margin: 10px 0 0;
+	text-align: center;
+	font-size: 13px;
+}
+
+.sitehelm-plan__once .sitehelm-buy {
+	color: var(--sh-primary-hover);
+	text-decoration: underline;
+}
+
+.sitehelm-list {
+	margin: 8px 0 0;
+	padding-left: 18px;
+	font-size: 13px;
+	line-height: 1.7;
+	color: var(--sh-gray-600);
+	list-style: disc;
 }

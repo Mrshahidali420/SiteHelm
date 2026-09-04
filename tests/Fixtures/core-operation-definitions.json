@@ -7,6 +7,7 @@
         "content-blocks-get",
         "redirect-list",
         "content-links-check",
+        "content-rendered-get",
         "comment-list",
         "content-update",
         "content-create",
@@ -27,7 +28,7 @@
         "site-settings-read",
         "audit-list"
     ],
-    "operationCount": 26,
+    "operationCount": 27,
     "definitions": {
         "content-get": {
             "inputSchema": {
@@ -535,6 +536,131 @@
                     },
                     "links": {
                         "type": "array"
+                    }
+                },
+                "additionalProperties": false
+            }
+        },
+        "content-rendered-get": {
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "Identifier of the content item whose public page to fetch."
+                    },
+                    "includeHtml": {
+                        "type": "boolean",
+                        "description": "Also return the page markup, cut at 65536 bytes. Off by default; the extracted summary answers most questions without it."
+                    }
+                },
+                "required": [
+                    "id"
+                ],
+                "additionalProperties": false
+            },
+            "outputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer"
+                    },
+                    "url": {
+                        "type": "string"
+                    },
+                    "status": {
+                        "type": "integer"
+                    },
+                    "contentType": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "bytes": {
+                        "type": "integer"
+                    },
+                    "bodyTruncated": {
+                        "type": "boolean"
+                    },
+                    "redirect": {
+                        "type": [
+                            "object",
+                            "null"
+                        ]
+                    },
+                    "lang": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "title": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "metaDescription": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "canonical": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "robots": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "openGraph": {
+                        "type": "object"
+                    },
+                    "twitter": {
+                        "type": "object"
+                    },
+                    "headings": {
+                        "type": "array"
+                    },
+                    "headingsTruncated": {
+                        "type": "boolean"
+                    },
+                    "h1Count": {
+                        "type": "integer"
+                    },
+                    "imageCount": {
+                        "type": "integer"
+                    },
+                    "imagesMissingAlt": {
+                        "type": "integer"
+                    },
+                    "linkCount": {
+                        "type": "integer"
+                    },
+                    "internalLinkCount": {
+                        "type": "integer"
+                    },
+                    "externalLinkCount": {
+                        "type": "integer"
+                    },
+                    "wordCount": {
+                        "type": "integer"
+                    },
+                    "html": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "htmlTruncated": {
+                        "type": "boolean"
                     }
                 },
                 "additionalProperties": false

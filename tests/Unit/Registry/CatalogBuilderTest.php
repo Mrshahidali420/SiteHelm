@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace SiteHelm\Tests\Unit\Registry;
 
 use Brain\Monkey\Functions;
+use SiteHelm\Admin\ProCatalogue;
 use SiteHelm\Contracts\Domain;
 use SiteHelm\Contracts\Mode;
 use SiteHelm\Contracts\ModuleId;
@@ -575,5 +576,113 @@ final class CatalogBuilderTest extends TestCase {
 
 		$this->assertSame( [], $catalog['operations'] );
 		$this->assertCount( 1, $this->builder->build( 'system-read', $this->makeContext() )['operations'] );
+	}
+
+	/**
+	 * A listing is the only place most agents look. An operation absent from it
+	 * does not read as locked, it reads as impossible -- so the ones the add-on
+	 * would add are named, with somewhere to go.
+	 */
+	public function test_a_free_listing_names_the_pro_operations_that_dispatcher_would_gain(): void {
+		$catalog = $this->builder->build( 'system-read', $this->makeContext() );
+
+		$this->assertArrayHasKey( 'proOperations', $catalog );
+		$this->assertStringContainsString( ProCatalogue::PRICING_URL, $catalog['proOperations']['note'] );
+
+		$named = array_column( $catalog['proOperations']['operations'], 'description', 'operation' );
+		$this->assertArrayHasKey( 'seo-settings-get', $named );
+		$this->assertSame( ProCatalogue::OPERATIONS['seo-settings-get']['description'], $named['seo-settings-get'] );
+	}
+
+	/**
+	 * Clients flatten this payload into one list of operations, and when they do
+	 * the key an entry hung under is gone. So each advertised operation says it
+	 * is unavailable in the same members a real entry uses, rather than relying
+	 * on its position to say it.
+	 */
+	public function test_every_advertised_pro_operation_is_marked_unavailable_like_any_other_entry(): void {
+		$catalog = $this->builder->build( 'system-read', $this->makeContext() );
+
+		$this->assertNotSame( [], $catalog['proOperations']['operations'] );
+
+		foreach ( $catalog['proOperations']['operations'] as $entry ) {
+			$this->assertArrayHasKey( 'available', $entry, $entry['operation'] );
+			$this->assertFalse( $entry['available'], $entry['operation'] );
+			$this->assertSame( 'requires_pro', $entry['blockedReason'], $entry['operation'] );
+		}
+	}
+
+	/**
+	 * The member describes this dispatcher, not the whole add-on: a Pro
+	 * operation belonging elsewhere has no business in a system-read listing.
+	 */
+	public function test_the_pro_listing_is_scoped_to_the_dispatcher_being_listed(): void {
+		$catalog = $this->builder->build( 'system-read', $this->makeContext() );
+		$named   = array_column( $catalog['proOperations']['operations'], 'operation' );
+
+		foreach ( $named as $id ) {
+			$this->assertSame( 'system-read', ProCatalogue::OPERATIONS[ $id ]['dispatcher'] );
+		}
+	}
+
+	/**
+	 * With the add-on active the operation is registered, so "buy Pro" would be
+	 * false. Dispatcher treats a registered-then-switched-off operation the same
+	 * way, and so does this: not offered, not advertised.
+	 */
+	public function test_a_registered_pro_operation_is_not_advertised_as_purchasable(): void {
+		$this->registry->register( $this->proDouble( 'seo-settings-get' ), static fn(): array => [] );
+
+		$catalog = $this->builder->build( 'system-read', $this->makeContext() );
+		$named   = array_column( $catalog['proOperations']['operations'], 'operation' );
+
+		$this->assertNotContains( 'seo-settings-get', $named );
+	}
+
+	/**
+	 * Nothing to sell on this dispatcher, nothing said about it. The member is
+	 * absent rather than present and empty.
+	 */
+	public function test_a_dispatcher_the_add_on_does_not_extend_carries_no_pro_member(): void {
+		$this->assertArrayNotHasKey( 'proOperations', $this->builder->build( 'media-read', $this->makeContext() ) );
+	}
+
+	/**
+	 * Stands in for an operation the add-on registered under its own id.
+	 *
+	 * @param string $id The Pro operation identifier to occupy.
+	 */
+	private function proDouble( string $id ): OperationDefinition {
+		return new OperationDefinition(
+			id: $id,
+			domain: Domain::System,
+			mode: Mode::Read,
+			description: 'Registered by the add-on.',
+			inputSchema: [
+				'type'                 => 'object',
+				'properties'           => [],
+				'additionalProperties' => false,
+			],
+			outputSchema: [
+				'type'                 => 'object',
+				'properties'           => [],
+				'additionalProperties' => false,
+			],
+			schemaVersion: 1,
+			requiredCapabilities: [ 'manage_options' ],
+			risk: Risk::Low,
+			isReadOnly: true,
+			isDestructive: false,
+			isIdempotent: true,
+			previewPolicy: PreviewPolicy::NotApplicable,
+			snapshotPolicy: SnapshotPolicy::NotApplicable,
+			rollbackPolicy: RollbackPolicy::NotApplicable,
+			module: ModuleId::Diagnostics,
+			supportedVersions: [ 'wordpress' => '>=6.6' ],
+			example: [
+				'operation' => $id,
+				'arguments' => [],
+			],
+		);
 	}
 }

@@ -26,11 +26,48 @@ final class PluginLinksTest extends TestCase {
 		$this->assertStringContainsString( 'page=' . AdminMenu::PAGE_STATUS, $links['sitehelm-status'] );
 	}
 
-	public function testAnUnlicensedSiteIsOfferedProAfterTheRowsOwnLinks(): void {
+	/**
+	 * The row's Pro link stays in wp-admin: the Upgrade screen carries the plans
+	 * and, on a site that has the add-on, the licence field.
+	 */
+	public function testASiteWithoutProIsOfferedItAfterTheRowsOwnLinks(): void {
 		$links = PluginLinks::add( [ 'deactivate' => '<a href="#">Deactivate</a>' ] );
 
-		$this->assertStringContainsString( ProCatalogue::PRICING_URL, $links['sitehelm-pro'] );
+		$this->assertStringContainsString( 'page=' . AdminMenu::PAGE_UPGRADE, $links['sitehelm-pro'] );
 		$this->assertStringContainsString( '>Get Pro</a>', $links['sitehelm-pro'] );
+		$this->assertStringNotContainsString( ProCatalogue::PRICING_URL, $links['sitehelm-pro'] );
+		$this->assertStringNotContainsString( 'target="_blank"', $links['sitehelm-pro'] );
+	}
+
+	/**
+	 * Somebody who already owns a licence is offered the field, not the price.
+	 */
+	public function testAnUnlicensedSiteIsOfferedTheLicenceInstead(): void {
+		$links = PluginLinks::add(
+			[ 'deactivate' => '<a href="#">Deactivate</a>' ],
+			new ProCatalogue(
+				static fn(): array => [
+					'state' => ProCatalogue::STATE_UNLICENSED,
+					'url'   => '',
+				]
+			)
+		);
+
+		$this->assertStringContainsString( '>Activate Pro</a>', $links['sitehelm-pro'] );
+	}
+
+	public function testALicensedSiteIsNotOfferedPro(): void {
+		$links = PluginLinks::add(
+			[ 'deactivate' => '<a href="#">Deactivate</a>' ],
+			new ProCatalogue(
+				static fn(): array => [
+					'state' => ProCatalogue::STATE_ACTIVE,
+					'url'   => '',
+				]
+			)
+		);
+
+		$this->assertArrayNotHasKey( 'sitehelm-pro', $links );
 	}
 
 	public function testAUserWhoCannotOpenTheConsoleIsNotOfferedLinksIntoIt(): void {

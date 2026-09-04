@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace SiteHelm\Tests\Unit\Admin;
 
+use SiteHelm\Admin\AdminMenu;
 use SiteHelm\Admin\ProCatalogue;
 use SiteHelm\Contracts\Domain;
 use SiteHelm\Contracts\Mode;
@@ -14,6 +15,7 @@ use SiteHelm\Contracts\Risk;
 use SiteHelm\Contracts\RollbackPolicy;
 use SiteHelm\Contracts\SnapshotPolicy;
 use SiteHelm\Registry\CapabilityRegistry;
+use SiteHelm\Tests\Doubles\AdminWordPressStubs;
 use SiteHelm\Tests\TestCase;
 
 final class ProCatalogueTest extends TestCase {
@@ -74,19 +76,24 @@ final class ProCatalogueTest extends TestCase {
 	}
 
 	/**
-	 * Without the add-on and without the SDK, the answer is "absent" with no
-	 * link — not a fatal error on a site that has neither.
+	 * Without the add-on and without the SDK, the answer is "absent" pointing at
+	 * this plugin's own Upgrade screen — not a fatal error on a site that has
+	 * neither, and not one of the SDK's addresses, which are registered only
+	 * where the SDK decides to register them.
 	 */
-	public function testWithoutTheAddOnOrTheSdkTheCatalogueAnswersAbsentWithNoLink(): void {
+	public function testWithoutTheAddOnOrTheSdkTheCatalogueAnswersAbsentPointingAtOurOwnScreen(): void {
+		AdminWordPressStubs::install();
+
 		$this->assertFalse( function_exists( 'sitehelm_pro_fs' ) );
 
 		$this->assertSame(
 			[
 				'state' => ProCatalogue::STATE_ABSENT,
-				'url'   => '',
+				'url'   => ProCatalogue::upgrade_url(),
 			],
 			( new ProCatalogue() )->probe()
 		);
+		$this->assertStringContainsString( 'page=' . AdminMenu::PAGE_UPGRADE, ProCatalogue::upgrade_url() );
 	}
 
 	public function testTheResolverSeamAnswersInPlaceOfTheAddOn(): void {

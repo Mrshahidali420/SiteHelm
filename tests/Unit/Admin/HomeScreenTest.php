@@ -120,23 +120,33 @@ final class HomeScreenTest extends TestCase {
 		$this->assertStringNotContainsString( 'All good', $html );
 	}
 
-	public function testTheStoreIsAskedNineQuestionsAndNoMore(): void {
+	/**
+	 * Eight rather than nine: the ninth used to be the OAuth registrations
+	 * table, and whether anything can reach this site is the connect dialog's
+	 * question now, not Home's.
+	 */
+	public function testTheStoreIsAskedEightQuestionsAndNoMore(): void {
 		$this->render( 0, [ 0, 0, 0 ], [], [] );
 
-		$this->assertCount( 9, $this->wpdb->queries );
+		$this->assertCount( 8, $this->wpdb->queries );
 		$this->assertStringContainsString( 'recorded_at', $this->wpdb->queries[0] );
 	}
 
 	/**
 	 * While the add-on is not active, "Where to go" ends with one Pro card:
-	 * what it adds, and the address where it is bought.
+	 * what it adds, and the way in.
+	 *
+	 * The card stays inside wp-admin. It used to leave for the pricing page,
+	 * which meant somebody who had already bought a licence was sent to a
+	 * website to look at prices; the Upgrade screen answers both questions.
 	 */
 	public function testAnUnlicensedSiteSeesTheProCard(): void {
 		$html = $this->render( 0, [ 0, 0, 0 ], [], [] );
 
 		$this->assertStringContainsString( 'SiteHelm Pro', $html );
-		$this->assertStringContainsString( ProCatalogue::PRICING_URL, $html );
+		$this->assertStringContainsString( 'page=' . AdminMenu::PAGE_UPGRADE, $html );
 		$this->assertStringContainsString( 'See what Pro adds', $html );
+		$this->assertStringNotContainsString( ProCatalogue::PRICING_URL, $html );
 	}
 
 	/**
@@ -159,37 +169,49 @@ final class HomeScreenTest extends TestCase {
 		$html = (string) ob_get_clean();
 
 		$this->assertStringNotContainsString( ProCatalogue::PRICING_URL, $html );
+		$this->assertStringNotContainsString( 'page=' . AdminMenu::PAGE_UPGRADE, $html );
 		$this->assertStringNotContainsString( 'See what Pro adds', $html );
 	}
 
 	/**
-	 * A site with nothing done opens with the walkthrough, above the verdict,
-	 * with the first step marked for anyone reading by structure rather than
-	 * by tint.
+	 * The optional list carries no numbering, no tally and no current marker,
+	 * and it sits BELOW the verdict and the numbers. Somebody who has already
+	 * connected an app came to Home to see what their apps did, and a list of
+	 * suggestions at the top of the screen reads as a set of instructions.
 	 */
-	public function testAFreshSiteSeesTheWalkthroughWithStepOneCurrent(): void {
+	public function testTheOptionalListIsQuietUngatedAndBelowTheNumbers(): void {
 		$html = $this->render( 0, [ 0, 0, 0 ], [], [] );
 
-		$this->assertStringContainsString( 'Get started', $html );
-		$this->assertStringContainsString( 'Connect a client', $html );
-		$this->assertStringContainsString( 'Choose what it may touch', $html );
+		$this->assertStringContainsString( 'When you&#039;re ready', $html );
+		$this->assertStringContainsString( 'None of this is required', $html );
+		$this->assertStringContainsString( 'Choose what an app may touch', $html );
 		$this->assertStringContainsString( 'Undo it', $html );
-		$this->assertStringContainsString( 'aria-current="step"', $html );
-		$this->assertSame( 1, substr_count( $html, 'aria-current="step"' ) );
 
-		// The current step is the first one, and it sits above the verdict.
-		$this->assertLessThan( strpos( $html, 'No app is connected yet' ), strpos( $html, 'Get started' ) );
-		$this->assertLessThan(
-			strpos( $html, 'Choose what it may touch' ),
-			strpos( $html, 'aria-current="step"' )
-		);
+		$this->assertStringNotContainsString( 'aria-current="step"', $html );
+		$this->assertStringNotContainsString( 'sitehelm-walkthrough__num', $html );
+		$this->assertStringNotContainsString( 'Get started', $html );
+		$this->assertDoesNotMatchRegularExpression( '/Step \d+ of \d+/', $html );
+
+		$this->assertGreaterThan( strpos( $html, 'No app is connected yet' ), strpos( $html, 'When you&#039;re ready' ) );
 	}
 
 	/**
-	 * A used credential answers "connected" and "a call was made" on its own,
-	 * because reads leave no audit row: the log records changes only.
+	 * Connecting is the dialog's job now, so the list must not ask for it
+	 * again -- and it is not the list's business whether a credential exists,
+	 * only whether one has ever been used.
 	 */
-	public function testAUsedCredentialClosesTheFirstAndThirdStepsWithAnEmptyLog(): void {
+	public function testTheOptionalListNeverAsksForAConnection(): void {
+		$html = $this->render( 0, [ 0, 0, 0 ], [], [] );
+
+		$this->assertStringNotContainsString( 'Connect a client', $html );
+		$this->assertStringNotContainsString( 'Open Connect', $html );
+	}
+
+	/**
+	 * A used credential answers "a call was made" on its own, because reads
+	 * leave no audit row: the log records changes only.
+	 */
+	public function testAUsedCredentialTicksTheTestCallWithAnEmptyLog(): void {
 		$this->wpdb->varQueue    = [ 0, 0, 0, 0, 0, 0 ];
 		$this->wpdb->resultQueue = [ [], [] ];
 
@@ -197,31 +219,41 @@ final class HomeScreenTest extends TestCase {
 		( new HomeScreen( new AuditStore(), null, self::credentials( 1755300000 ) ) )->render();
 		$html = (string) ob_get_clean();
 
-		// Steps one and three are done; step two is the open one.
-		$this->assertSame( 2, substr_count( $html, 'sitehelm-walkthrough__done' ) );
-		$this->assertStringContainsString( 'Step 3 of 5', $html );
+		$this->assertSame( 1, substr_count( $html, 'sitehelm-walkthrough__done' ) );
 		$this->assertLessThan(
-			strpos( $html, 'Make a test call' ),
-			strpos( $html, 'aria-current="step"' )
+			strpos( $html, 'sitehelm-walkthrough__done' ),
+			strpos( $html, 'Make a test call' )
 		);
 	}
 
 	/**
-	 * Once every step is done the block is one line and the steps are rendered
-	 * closed, so a console someone has been using for months does not keep
-	 * teaching them what they already did.
+	 * A credential that exists but has never been used ticks nothing. The list
+	 * is about what was done, not about what is possible.
 	 */
-	public function testASettledSiteSeesOnlyTheCollapsedLine(): void {
+	public function testAnUnusedCredentialTicksNothing(): void {
+		$this->wpdb->varQueue    = [ 0, 0, 0, 0, 0, 0 ];
+		$this->wpdb->resultQueue = [ [], [] ];
+
+		ob_start();
+		( new HomeScreen( new AuditStore(), null, self::credentials( 0 ) ) )->render();
+		$html = (string) ob_get_clean();
+
+		$this->assertStringNotContainsString( 'sitehelm-walkthrough__done', $html );
+	}
+
+	/**
+	 * Once all four are done the block goes away entirely. A list of finished
+	 * things is furniture, and Home has better uses for the space than a record
+	 * of what an owner already knows they did.
+	 */
+	public function testASettledSiteSeesNoListAtAll(): void {
 		AdminWordPressStubs::$options[ ContextFactory::MODE_OPTION ] = 'safe-write';
 
 		$rows = [ self::row( 'content-post-update', AuditRecorder::OUTCOME_APPLIED, 'Claude Code', 'snap-1' ) ];
 		$html = $this->render( 1, [ 0, 0, 0 ], $rows, $rows, 1, 1 );
 
-		$this->assertStringContainsString( 'All set — 5 of 5', $html );
-		$this->assertStringContainsString( 'sitehelm-walkthrough is-complete', $html );
-		$this->assertStringContainsString( 'sitehelm-walkthrough__steps" hidden', $html );
-		$this->assertStringNotContainsString( 'Get started', $html );
-		$this->assertStringNotContainsString( 'aria-current="step"', $html );
+		$this->assertStringNotContainsString( 'sitehelm-walkthrough', $html );
+		$this->assertStringNotContainsString( 'When you&#039;re ready', $html );
 	}
 
 	/**

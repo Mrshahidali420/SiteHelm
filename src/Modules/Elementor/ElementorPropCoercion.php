@@ -343,6 +343,44 @@ final class ElementorPropCoercion {
 
 		return ElementorMediaAdvisory::warnings( $settings, $schema->controls() );
 	}
+
+	/**
+	 * The prop type one atomic setting key declares, if it declares one.
+	 *
+	 * THE ONLY WAY TO ASK THIS QUESTION FROM OUTSIDE, and it exists so the merge
+	 * layer can tell a rich-text key from every other key without keeping a
+	 * second list of which widgets have one. A hardcoded table of type names is
+	 * what the class docblock rules out: Elementor renames its prop types
+	 * between versions, and a list that fell behind would quietly stop shaping
+	 * the values it was written to protect.
+	 *
+	 * NULL FOR EVERY CLASSIC WIDGET AND EVERY UNDECLARED KEY. A classic control
+	 * has no prop type at all, and a key the schema does not declare is the
+	 * site's own history rather than an error on this path.
+	 *
+	 * @param string $type    The element's schema type.
+	 * @param string $key     The setting key.
+	 * @param string $el_type Which registry declares the type.
+	 *
+	 * @return string|null The declared prop type, or null when there is none.
+	 */
+	public function propType( string $type, string $key, string $el_type = ElementorElementAddInput::EL_TYPE_WIDGET ): ?string {
+		try {
+			$schema = $this->schema( $type, $el_type );
+		} catch ( OperationException $unreadable ) {
+			unset( $unreadable );
+
+			return null;
+		}
+
+		if ( ! $schema->isAtomic() ) {
+			return null;
+		}
+
+		$declared = $schema->props()[ $key ]['type'] ?? null;
+
+		return is_string( $declared ) ? $declared : null;
+	}
 	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 
 	/**
@@ -470,12 +508,25 @@ final class ElementorPropCoercion {
 	 * already-enveloped image apart looking for members it no longer carries at
 	 * that level and re-wrap it around nothing.
 	 *
+	 * A RICH-TEXT PROP IS SHAPED BEFORE THE IDEMPOTENCE TEST, not after, and the
+	 * order matters for the same reason the test itself comes first elsewhere.
+	 * A value already carrying the rich-text envelope can still hold a bare
+	 * string where the editor requires a `{content, children}` object — that is
+	 * precisely the shape a previous version of this class wrote — so an early
+	 * return on the envelope alone would leave the document exactly as broken as
+	 * it found it. `ElementorRichText::shape()` is itself idempotent, so running
+	 * it on a correct value is a no-op rather than a second wrapping.
+	 *
 	 * @param string $type  The declared prop type name.
 	 * @param mixed  $value The stored value.
 	 *
 	 * @return mixed The enveloped value.
 	 */
 	private function coerce_value( string $type, mixed $value ): mixed {
+		if ( ElementorRichText::isRichText( $type ) ) {
+			return ElementorRichText::shape( $type, $value );
+		}
+
 		if ( $this->is_enveloped( $value ) ) {
 			return $value;
 		}

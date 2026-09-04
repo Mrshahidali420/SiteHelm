@@ -14,6 +14,7 @@ use SiteHelm\Contracts\ErrorCode;
 use SiteHelm\Contracts\OperationException;
 use SiteHelm\Modules\Elementor\ElementorClassRepositorySnapshot;
 use SiteHelm\Modules\Elementor\ElementorGlobalClassWrite;
+use SiteHelm\Tests\Doubles\GlobalClassFakeParser;
 use SiteHelm\Tests\Doubles\GlobalClassFakeRepository;
 use SiteHelm\Tests\Doubles\GlobalClassFixtures;
 use SiteHelm\Tests\TestCase;
@@ -311,6 +312,156 @@ final class ElementorGlobalClassWriteTest extends TestCase {
 			$writes->fieldsFor( $items, [ 'g-card' ] ),
 			$writes->readBackState( ElementorClassRepositorySnapshot::TARGET_KEY )->fields
 		);
+	}
+
+	// ------- REQ-0115: what Elementor would actually keep
+
+	/**
+	 * THE DEFECT THIS CLOSES, stated as a test. The repository stores without
+	 * parsing, so before this a class carrying a property Elementor rejects was
+	 * written intact, read back identical, verified by digest, and rendered
+	 * without the rule. Nothing in the exchange said so.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_a_property_elementor_discards_is_left_out_of_the_plan_and_named(): void {
+		$this->installGlobalClassRepository();
+		GlobalClassFakeParser::$accepted = [ 'color' ];
+
+		$planned = $this->globalClassWrites()->plan(
+			[
+				'g-card' => $this->globalClassDefinition(
+					'g-card',
+					'Card',
+					[
+						'color'      => 'red',
+						'not-a-prop' => '1px',
+					]
+				),
+			],
+			[ 'g-card' ],
+			[],
+			[],
+			[ 'g-card' ]
+		);
+
+		$stored = $planned->payload[ ElementorGlobalClassWrite::PAYLOAD_ITEMS ]['g-card']['variants'][0]['props'];
+
+		$this->assertSame(
+			[ 'color' => 'red' ],
+			$stored,
+			'What is stored must be what Elementor keeps, not what the caller sent.'
+		);
+		$this->assertCount( 1, $planned->warnings );
+		$this->assertStringContainsString( 'not-a-prop', $planned->warnings[0] );
+		$this->assertSame(
+			[
+				[
+					ElementorGlobalClassWrite::DISCARD_CLASS      => 'g-card',
+					ElementorGlobalClassWrite::DISCARD_PROPERTY   => 'not-a-prop',
+					ElementorGlobalClassWrite::DISCARD_BREAKPOINT => 'desktop',
+					ElementorGlobalClassWrite::DISCARD_STATE      => null,
+				],
+			],
+			$planned->previewDetail[ ElementorGlobalClassWrite::DETAIL_DISCARDED ]
+		);
+	}
+
+	/**
+	 * A class whose every property is discarded renders nothing, which is the
+	 * `ElementorConditionGate` case: refuse rather than write an empty class and
+	 * report success.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_a_class_elementor_keeps_no_properties_of_is_refused(): void {
+		$this->installGlobalClassRepository();
+		GlobalClassFakeParser::$accepted = [ 'color' ];
+
+		try {
+			$this->globalClassWrites()->plan(
+				[ 'g-card' => $this->globalClassDefinition( 'g-card', 'Card', [ 'not-a-prop' => '1px' ] ) ],
+				[ 'g-card' ],
+				[],
+				[],
+				[ 'g-card' ]
+			);
+			$this->fail( 'A class that would render nothing must be refused at plan time.' );
+		} catch ( OperationException $exception ) {
+			$this->assertSame( ErrorCode::InvalidInput, $exception->errorCode );
+		}
+	}
+
+	/**
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_a_class_the_parser_rejects_outright_is_refused(): void {
+		$this->installGlobalClassRepository();
+		GlobalClassFakeParser::$rejected = [ 'g-card' ];
+
+		try {
+			$this->globalClassWrites()->plan(
+				[ 'g-card' => $this->globalClassDefinition( 'g-card', 'Card', [ 'color' => 'red' ] ) ],
+				[ 'g-card' ],
+				[],
+				[],
+				[ 'g-card' ]
+			);
+			$this->fail( 'A class Elementor keeps nothing of must be refused.' );
+		} catch ( OperationException $exception ) {
+			$this->assertSame( ErrorCode::InvalidInput, $exception->errorCode );
+		}
+	}
+
+	/**
+	 * An Elementor that renamed the parser must not become an Elementor whose
+	 * global classes cannot be written at all.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_an_unaskable_parser_is_a_warning_and_not_a_refusal(): void {
+		$this->installGlobalClassRepository();
+		GlobalClassFakeParser::$unreachable = true;
+
+		$planned = $this->globalClassWrites()->plan(
+			[ 'g-card' => $this->globalClassDefinition( 'g-card', 'Card', [ 'not-a-prop' => '1px' ] ) ],
+			[ 'g-card' ],
+			[],
+			[],
+			[ 'g-card' ]
+		);
+
+		$this->assertCount( 1, $planned->warnings );
+		$this->assertArrayNotHasKey(
+			ElementorGlobalClassWrite::DETAIL_DISCARDED,
+			$planned->previewDetail,
+			'A parser that was never asked has discarded nothing that can be listed.'
+		);
+	}
+
+	/**
+	 * A delete and a reorder author no class, so there is nothing for the parser
+	 * to have an opinion about — and asking anyway would let an unrelated class
+	 * somebody else wrote block a delete.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_a_write_that_authors_no_class_asks_the_parser_nothing(): void {
+		$this->installGlobalClassRepository();
+		GlobalClassFakeParser::$rejected = [ 'g-card' ];
+
+		$planned = $this->globalClassWrites()->plan(
+			[ 'g-card' => $this->globalClassDefinition( 'g-card', 'Card', [ 'not-a-prop' => '1px' ] ) ],
+			[ 'g-card' ],
+			[]
+		);
+
+		$this->assertSame( [], $planned->warnings );
 	}
 
 	public function test_an_identifier_the_set_does_not_hold_is_a_missing_target(): void {

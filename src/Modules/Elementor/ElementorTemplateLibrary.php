@@ -47,6 +47,15 @@ final class ElementorTemplateLibrary {
 	public const META_VERSION = '_elementor_version';
 
 	/**
+	 * The taxonomy a template's type is ALSO recorded in.
+	 *
+	 * Elementor stores the type twice, and the two copies answer different
+	 * questions. The meta key above is what a document reads; this taxonomy is
+	 * what the library and Theme Builder screens query by. See `stampType()`.
+	 */
+	public const TAXONOMY_TYPE = 'elementor_library_type';
+
+	/**
 	 * The stored template types that are reusable content rather than theme
 	 * documents.
 	 *
@@ -125,6 +134,39 @@ final class ElementorTemplateLibrary {
 	 */
 	public static function takesConditions( string $type ): bool {
 		return in_array( $type, ElementorThemeConditions::THEME_TYPES, true );
+	}
+
+	/**
+	 * Records a created template's type in BOTH places Elementor keeps it.
+	 *
+	 * REQ-0114. A template's type is stored twice: as post meta, which every
+	 * read in this module and Elementor's own document class ask for, and as a
+	 * term in the `elementor_library_type` taxonomy, which is what Elementor's
+	 * library and Theme Builder screens QUERY BY. Writing the meta alone produces
+	 * a template that is correct in the database, correct on read-back, correct
+	 * on verification — and absent from the only screen an operator would look
+	 * for it on. That is the defect class this batch closes: a write that reports
+	 * success while the thing it wrote is not where it belongs.
+	 *
+	 * THE TERM IS SET, NOT APPENDED. A template has exactly one type, and
+	 * `wp_set_object_terms()` with a scalar replaces whatever was there, which is
+	 * what a create wants and what Elementor itself does.
+	 *
+	 * THE TERM WRITE IS NOT JUDGED, and the reason is the same one
+	 * `ContentTermsAssign` records at length: `wp_set_object_terms()` answers a
+	 * WP_Error on a taxonomy that is not registered, which is exactly the state
+	 * of a site where Elementor is present but its library post type has not
+	 * booted yet. The meta is the value this plugin's own reads and verification
+	 * rest on; the term is what makes the template visible in Elementor's UI, and
+	 * a template that exists with its meta correct is a far better outcome than a
+	 * create refused because a taxonomy was not registered at the moment it ran.
+	 *
+	 * @param int    $template_id The created template's post id.
+	 * @param string $type        The stored template type.
+	 */
+	public static function stampType( int $template_id, string $type ): void {
+		update_post_meta( $template_id, ElementorThemeConditions::META_TYPE, $type );
+		wp_set_object_terms( $template_id, $type, self::TAXONOMY_TYPE );
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 }

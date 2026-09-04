@@ -408,7 +408,7 @@ final class ElementorTemplateImport implements WriteOperation {
 		$template_id = (int) $created;
 		$settings    = $planned->payload[ self::PAYLOAD_PAGE_SETTINGS ] ?? [];
 
-		update_post_meta( $template_id, ElementorThemeConditions::META_TYPE, $planned->payload[ self::PAYLOAD_TYPE ] );
+		ElementorTemplateLibrary::stampType( $template_id, $planned->payload[ self::PAYLOAD_TYPE ] );
 		update_post_meta( $template_id, ElementorDocument::META_EDIT_MODE, ElementorDocumentWriter::EDIT_MODE );
 
 		if ( is_array( $settings ) && [] !== $settings ) {

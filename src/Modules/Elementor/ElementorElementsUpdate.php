@@ -526,6 +526,7 @@ final class ElementorElementsUpdate implements WriteOperation {
 					$this->merge->assertKnownKeys( $node, $settings );
 
 					$warnings[] = $this->merge->mediaWarnings( $node, $settings );
+					$warnings[] = $this->merge->richTextWarnings( $node, $settings );
 
 					// The named settings are written back into the entry as well
 					// as merged here, because the payload carries the entries and
@@ -536,7 +537,7 @@ final class ElementorElementsUpdate implements WriteOperation {
 					return $this->merge->withSettings(
 						$tree,
 						$element_id,
-						$this->merge->merged( $node[ ElementorPropCoercion::NODE_SETTINGS ], $settings )
+						$this->merge->mergedFor( $node, $settings )
 					);
 				}
 			);

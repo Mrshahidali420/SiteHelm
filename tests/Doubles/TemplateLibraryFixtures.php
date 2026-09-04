@@ -49,6 +49,17 @@ use WP_Post;
 trait TemplateLibraryFixtures {
 
 	/**
+	 * Every term assignment made, keyed `<post id>|<taxonomy>`.
+	 *
+	 * Declared HERE rather than in the contract above, because no using class
+	 * has a member of this name to collide with and a fifth line of contract
+	 * nobody can enforce is worse than a trait property that simply exists.
+	 *
+	 * @var array<string, mixed>
+	 */
+	private array $terms = [];
+
+	/**
 	 * Installs a fake `\Elementor\Plugin` carrying the fixture widget schema.
 	 *
 	 * `documents` stays null, so `ElementorApi::saveDocument()` finds no document
@@ -232,6 +243,19 @@ trait TemplateLibraryFixtures {
 				unset( $this->meta[ $post_id . '|' . $key ] );
 
 				return true;
+			}
+		);
+
+		// REQ-0114. The term is the OTHER half of a template's type, and the half
+		// Elementor's own library and Theme Builder screens query by. Without this
+		// double the three creates could stop writing it and every assertion in
+		// this suite would stay green while the created template went missing from
+		// the only screen an operator looks for it on.
+		Functions\when( 'wp_set_object_terms' )->alias(
+			function ( int $post_id, mixed $terms, string $taxonomy ): array {
+				$this->terms[ $post_id . '|' . $taxonomy ] = $terms;
+
+				return [ 1 ];
 			}
 		);
 

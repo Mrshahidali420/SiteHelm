@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       SiteHelm
  * Description:       Secure WordPress MCP operations platform: safe, auditable AI-driven site operations.
- * Version:           0.11.0
+ * Version:           0.12.0
  * Requires at least: 6.6
  * Requires PHP:      8.1
  * Author:            SiteHelm
@@ -16,7 +16,7 @@
 declare(strict_types=1);
 
 if ( ! defined( 'SITEHELM_VERSION' ) ) {
-	define( 'SITEHELM_VERSION', '0.11.0' );
+	define( 'SITEHELM_VERSION', '0.12.0' );
 	define( 'SITEHELM_MIN_PHP', '8.1' );
 	define( 'SITEHELM_MIN_WP', '6.6' );
 	define( 'SITEHELM_PLUGIN_FILE', __FILE__ );
@@ -115,11 +115,19 @@ if ( defined( 'ABSPATH' ) && ! function_exists( 'sitehelm_fs' ) ) {
 					'has_addons'       => true,
 					'has_paid_plans'   => false,
 					'is_org_compliant' => true,
+					// The Add-Ons submenu is hidden: it lists exactly one add-on, it
+					// has to reach Freemius over the network to draw itself, and on a
+					// host that blocks outbound calls it renders "We couldn't load the
+					// add-ons list" — which was one of the two routes the console
+					// offered for buying Pro. SiteHelm's own Upgrade screen answers the
+					// same question from prices it already has. Add-on support itself is
+					// untouched; only the SDK's page is.
 					'menu'             => [
 						'slug'       => 'sitehelm',
 						'first-path' => 'admin.php?page=sitehelm',
 						'contact'    => false,
 						'support'    => false,
+						'addons'     => false,
 					],
 				]
 			);

@@ -404,10 +404,12 @@ final class Ui {
 	 *
 	 * @param string $title The section heading.
 	 * @param string $note  One or two sentences of context, or an empty string.
+	 * @param string $id    An anchor for the section, or an empty string for none.
 	 */
-	public static function section_open( string $title, string $note = '' ): void {
+	public static function section_open( string $title, string $note = '', string $id = '' ): void {
 		printf(
-			'<section class="sitehelm-section"><h2 class="sitehelm-section__head">%s</h2>',
+			'<section class="sitehelm-section"%s><h2 class="sitehelm-section__head">%s</h2>',
+			'' === $id ? '' : sprintf( ' id="%s"', esc_attr( $id ) ),
 			esc_html( $title )
 		);
 

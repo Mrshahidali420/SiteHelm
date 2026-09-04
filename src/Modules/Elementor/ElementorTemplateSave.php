@@ -303,7 +303,7 @@ final class ElementorTemplateSave implements WriteOperation {
 
 		$template_id = (int) $created;
 
-		update_post_meta( $template_id, ElementorThemeConditions::META_TYPE, $planned->payload[ self::PAYLOAD_TYPE ] );
+		ElementorTemplateLibrary::stampType( $template_id, $planned->payload[ self::PAYLOAD_TYPE ] );
 		update_post_meta( $template_id, ElementorDocument::META_EDIT_MODE, ElementorDocumentWriter::EDIT_MODE );
 
 		$this->writer->write(

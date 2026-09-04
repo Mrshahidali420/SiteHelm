@@ -401,6 +401,128 @@ final class ElementorSettingsMerge {
 
 	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- The module vocabulary is camelCase across every class.
 	/**
+	 * The same merge, with every rich-text value shaped against the one stored.
+	 *
+	 * THE DEFECT THIS CLOSES. Elementor's atomic rich-text props hold the words
+	 * and the editor's inline-formatting tree together, and `merged()` replaces
+	 * a key's value whole — so a caller sending `"title": "New heading"` stored
+	 * a bare string where a `{content, children}` object belongs and dropped the
+	 * formatting tree in the same stroke. The page went on rendering, which is
+	 * why nothing caught it; the next editor save of that widget threw. See
+	 * `ElementorRichText` for the shape and for why the tree is kept rather than
+	 * the write refused.
+	 *
+	 * THE NODE IS TAKEN RATHER THAN THE STORED MAP, unlike `merged()`, because
+	 * shaping needs the declared prop type as well as the stored value and the
+	 * type is resolved from the node's own registry. Every caller of `merged()`
+	 * in this module already passed `$node[settings]` as the base, so nothing is
+	 * asked of them that they were not already holding.
+	 *
+	 * @param array<string, mixed> $node      The descriptor `node()` returned.
+	 * @param array<string, mixed> $requested The caller's requested settings.
+	 *
+	 * @return array<string, mixed> The merged settings.
+	 */
+	public function mergedFor( array $node, array $requested ): array {
+		$stored = $this->stored_settings( $node );
+
+		foreach ( $requested as $key => $value ) {
+			$type = is_string( $key ) ? $this->rich_text_type( $node, $key ) : null;
+
+			if ( null !== $type ) {
+				$requested[ $key ] = ElementorRichText::shape( $type, $value, $stored[ $key ] ?? null );
+			}
+		}
+
+		return $this->merged( $stored, $requested );
+	}
+
+	/**
+	 * The advisories a rich-text update earns.
+	 *
+	 * ONE WARNING PER KEY WHOSE FORMATTING SURVIVED A REWORDING, and none at all
+	 * otherwise. The tree Elementor stores anchors each span — a link, a bold
+	 * run — to a position in the text it was written against, so carrying it
+	 * across a substantially rewritten passage can leave the emphasis on the
+	 * wrong words. Keeping it is still the right default (see `mergedFor()`);
+	 * this is what stops the choice being silent.
+	 *
+	 * A KEY WITH NO STORED FORMATTING EARNS NOTHING. There is nothing to have
+	 * carried, so a warning there would be noise on the ordinary case, which is
+	 * how an advisory stops being read.
+	 *
+	 * @param array<string, mixed> $node     The descriptor `node()` returned.
+	 * @param array<string, mixed> $settings The caller's requested settings.
+	 *
+	 * @return array<int, string> The advisories, empty when there are none.
+	 */
+	public function richTextWarnings( array $node, array $settings ): array {
+		$stored   = $this->stored_settings( $node );
+		$warnings = [];
+
+		foreach ( $settings as $key => $value ) {
+			if ( ! is_string( $key ) || null === $this->rich_text_type( $node, $key ) ) {
+				continue;
+			}
+
+			$held = $stored[ $key ] ?? null;
+
+			if ( [] === ElementorRichText::children( $held ) ) {
+				continue;
+			}
+
+			if ( ElementorRichText::content( $held ) === ElementorRichText::content( $value ) ) {
+				continue;
+			}
+
+			$warnings[] = sprintf(
+				'The setting "%s" carries inline formatting the editor stored with its text — links, bold and italic runs — and the new wording was saved with that formatting kept rather than discarded. Elementor anchors each run to a position in the text it was written against, so a substantially rewritten passage can end up with its emphasis on the wrong words. Open the widget in the editor and check the formatting if the wording changed by more than a few words.',
+				$key
+			);
+		}
+
+		return $warnings;
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+
+	/**
+	 * A node's stored settings, as a map whatever the node carries.
+	 *
+	 * @param array<string, mixed> $node The descriptor `node()` returned.
+	 *
+	 * @return array<string, mixed> The stored settings.
+	 */
+	private function stored_settings( array $node ): array {
+		$stored = $node[ ElementorPropCoercion::NODE_SETTINGS ] ?? [];
+
+		return is_array( $stored ) ? $stored : [];
+	}
+
+	/**
+	 * The rich-text prop type one setting key declares, if it declares one.
+	 *
+	 * ASKED OF THE LIVE SCHEMA rather than of a list kept here, which is
+	 * `ElementorPropCoercion`'s rule and holds for the same reason: Elementor
+	 * renames its prop types between versions, and a list that fell behind would
+	 * silently stop shaping the values it exists to protect.
+	 *
+	 * @param array<string, mixed> $node The descriptor `node()` returned.
+	 * @param string               $key  The setting key.
+	 *
+	 * @return string|null The rich-text prop type, or null when the key is not one.
+	 */
+	private function rich_text_type( array $node, string $key ): ?string {
+		$type = $this->coercion->propType(
+			(string) ( $node[ self::NODE_SCHEMA_TYPE ] ?? '' ),
+			$key,
+			(string) ( $node[ self::NODE_EL_TYPE ] ?? '' )
+		);
+
+		return is_string( $type ) && ElementorRichText::isRichText( $type ) ? $type : null;
+	}
+
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- The module vocabulary is camelCase across every class.
+	/**
 	 * A copy of the tree with one element's settings replaced.
 	 *
 	 * A REPLACEMENT RATHER THAN A REMOVE-AND-INSERT, because remove-and-insert

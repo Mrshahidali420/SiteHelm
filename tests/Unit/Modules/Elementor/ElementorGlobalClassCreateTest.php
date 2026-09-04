@@ -16,6 +16,7 @@ use SiteHelm\Modules\Elementor\ElementorClassRepositorySnapshot;
 use SiteHelm\Modules\Elementor\ElementorGlobalClassCreate;
 use SiteHelm\Modules\Elementor\ElementorGlobalClassWrite;
 use SiteHelm\Modules\Elementor\ElementorIdMint;
+use SiteHelm\Tests\Doubles\GlobalClassFakeParser;
 use SiteHelm\Tests\Doubles\GlobalClassFakeRepository;
 use SiteHelm\Tests\Doubles\GlobalClassFixtures;
 use SiteHelm\Tests\TestCase;
@@ -104,6 +105,42 @@ final class ElementorGlobalClassCreateTest extends TestCase {
 			$items[ $id ][ ElementorGlobalClassWrite::CLASS_VARIANTS ][0]['meta']
 		);
 		$this->assertSame( [ 'font-size' => 16 ], $items[ $id ][ ElementorGlobalClassWrite::CLASS_VARIANTS ][0]['props'] );
+	}
+
+	/**
+	 * REQ-0115: the create hands its own class to the parser.
+	 *
+	 * The check itself lives in the shared machinery, but only the operation
+	 * knows which class it authored — so a create that stopped naming its own
+	 * class would go back to storing properties that never render, with every
+	 * test in the shared file still green.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_a_style_property_elementor_discards_is_reported_by_the_create(): void {
+		$this->installGlobalClassRepository();
+		GlobalClassFakeParser::$accepted = [ 'font-size' ];
+
+		$planned = $this->plan(
+			[
+				ElementorGlobalClassCreate::INPUT_LABEL  => 'Card',
+				ElementorGlobalClassCreate::INPUT_STYLES => [
+					'font-size'  => 16,
+					'not-a-prop' => '1px',
+				],
+			]
+		);
+
+		$items = $planned->payload[ ElementorGlobalClassWrite::PAYLOAD_ITEMS ];
+		$id    = array_key_first( $items );
+
+		$this->assertSame(
+			[ 'font-size' => 16 ],
+			$items[ $id ][ ElementorGlobalClassWrite::CLASS_VARIANTS ][0]['props']
+		);
+		$this->assertCount( 1, $planned->warnings );
+		$this->assertStringContainsString( 'not-a-prop', $planned->warnings[0] );
 	}
 
 	/**

@@ -377,13 +377,31 @@ final class ProCatalogue {
 	}
 
 	/**
+	 * The console's own Upgrade screen, which answers both states.
+	 *
+	 * Every link the console offers about Pro points here, and it is a page this
+	 * plugin registers itself. The two addresses the SDK can hand us do not
+	 * survive contact with real sites: `addon_url()` lands on an Add-Ons list
+	 * that fails to load when a host blocks outbound calls to Freemius, and
+	 * `get_account_url()` on an add-on builds `sitehelm-pro-account`, a slug the
+	 * SDK never registers for an add-on, so it answers "you are not allowed to
+	 * access this page". Both were being handed to owners as the way to buy or
+	 * activate.
+	 */
+	public static function upgrade_url(): string {
+		return admin_url( 'admin.php?page=' . AdminMenu::PAGE_UPGRADE );
+	}
+
+	/**
 	 * The add-on's state on this site and the one link the console may offer.
 	 *
-	 * Absent: the add-on is not installed; the link is the free plugin's own
-	 * Add-Ons page for it. Unlicensed: installed but the licence is not active;
-	 * the link is its Account page. Active: no link — there is nothing to sell.
-	 * Every lookup is guarded, so a site without the SDK answers "absent" with
-	 * no link rather than failing.
+	 * Absent and unlicensed both point at the Upgrade screen: it shows the plans
+	 * in the first case and the licence field in the second, and it decides which
+	 * by probing the same state, so the caller does not have to. Active carries no
+	 * link — there is nothing left to sell or enter.
+	 *
+	 * Every lookup is guarded, so a site without the SDK answers "absent" rather
+	 * than failing.
 	 *
 	 * @return array{state: string, url: string}
 	 */
@@ -393,17 +411,9 @@ final class ProCatalogue {
 		}
 
 		if ( ! function_exists( 'sitehelm_pro_fs' ) ) {
-			$url = '';
-			if ( function_exists( 'sitehelm_fs' ) ) {
-				$fs = sitehelm_fs();
-				if ( is_object( $fs ) && method_exists( $fs, 'addon_url' ) ) {
-					$url = (string) $fs->addon_url( self::ADDON_SLUG );
-				}
-			}
-
 			return [
 				'state' => self::STATE_ABSENT,
-				'url'   => $url,
+				'url'   => self::upgrade_url(),
 			];
 		}
 
@@ -418,7 +428,7 @@ final class ProCatalogue {
 
 		return [
 			'state' => self::STATE_UNLICENSED,
-			'url'   => is_object( $fs ) && method_exists( $fs, 'get_account_url' ) ? (string) $fs->get_account_url() : '',
+			'url'   => self::upgrade_url(),
 		];
 	}
 

@@ -1190,8 +1190,12 @@ console cannot disagree with the gateway.
   plugin carries a static catalogue of the Pro operation ids (`ProCatalogue::OPERATIONS`
   — dispatcher, module, read/write, description). `probe()` answers
   `{state: absent|unlicensed|active, url}` from `function_exists('sitehelm_pro_fs')` and
-  `can_use_premium_code()`, every lookup guarded; the url is `sitehelm_fs()->addon_url('sitehelm-pro')`
-  when absent, the add-on's Account page when unlicensed, `''` when active. A registered
+  `can_use_premium_code()`, every lookup guarded; the url is `ProCatalogue::upgrade_url()`
+  (`?page=sitehelm-upgrade`) when absent **or** unlicensed, `''` when active. Both SDK
+  addresses this used to hand out were dead on real sites: `addon_url()` lands on an
+  Add-Ons list that fails to load when a host cannot reach Freemius, and `get_account_url()`
+  on an add-on builds `sitehelm-pro-account`, a slug the SDK never registers for an add-on,
+  so the click is answered with "you are not allowed to access this page". A registered
   operation whose id is in the catalogue gets `sitehelm-tool--pro` and a leading
   `Ui::badge('pro', 'Pro')` (tone `pro` is in `Ui::TONES`), whatever the state. While the
   state is not active, catalogue ids the registry lacks render as `.sitehelm-tool--locked`
@@ -1411,8 +1415,11 @@ bounds it.
 `PluginLinks::add()` prepends `sitehelm-connect` ("Connect" → `?page=sitehelm`) and
 `sitehelm-status` ("Status" → `?page=sitehelm-status`) to the row, only when the viewer
 holds `AdminMenu::CAPABILITY`; otherwise the row is returned untouched. While the site is
-not Pro-licensed it also appends an amber "Get Pro" link (`ProCatalogue::PRICING_URL`,
-new tab) after the row's own links. Pure function, tested directly.
+not Pro-licensed it also appends an amber link after the row's own links, pointing at
+`ProCatalogue::upgrade_url()` in the same tab: "Activate Pro" while the add-on is installed
+without a licence, "Get Pro" while it is absent. `add()` takes an optional second
+`ProCatalogue` argument purely as a test seam — WordPress passes this filter one argument,
+so a live site always probes. Pure function, tested directly.
 
 ---
 
@@ -1465,7 +1472,14 @@ edit the same option.
   plugin's own published constants, so nothing untrusted is echoed; a **registered** Pro
   operation the operator switched off still gets the generic answer, because the add-on is
   already there and "install it" would be false. `CatalogBuilder($registry, $switches)`
-  omits switched-off operations from the catalogue. `Diagnostics\OperationSchema` refuses a
+  omits switched-off operations from the catalogue, and appends a **`proOperations`** member
+  — `{note, operations: [{operation, description}]}` — naming the `ProCatalogue::OPERATIONS`
+  entries for that dispatcher the registry does not hold, with `PRICING_URL` in the note. The
+  remediation above only fires for a caller who guessed an id; a listing is where an agent
+  actually looks, and an operation absent from one reads as impossible rather than locked.
+  The same registered-but-switched-off rule applies: `$registry->has($id)` excludes it, so
+  the member never offers to sell something the site already has. The member is omitted
+  entirely, not emitted empty, when the dispatcher has no absent Pro operations. `Diagnostics\OperationSchema` refuses a
   switched-off id with its unknown-name answer too (second ctor arg, defaults to reading the
   option itself because modules are built with no arguments by `IntegrationDirectory`).
 - **Wiring** — `Plugin::register()` creates one `OperationSwitches` and shares it with the
@@ -1544,41 +1558,69 @@ change; labels, slugs and one new screen did.
 After the tab loop, `add_pages()` calls `add_outward_links()`: two `add_submenu_page`
 entries whose slug is a full URL and whose callback is omitted, which WordPress renders
 as plain links — "Community" (`AdminMenu::COMMUNITY_URL`, the Facebook group, always)
-and an orange "Upgrade to Pro" (`ProCatalogue::PRICING_URL`, only while
-`(new ProCatalogue())->probe()['state']` is not `STATE_ACTIVE` — a menu that keeps
-selling to someone who already paid reads as not knowing they paid). `admin_head`
+— plus one ordinary submenu entry, the Upgrade screen (`PAGE_UPGRADE` =
+`sitehelm-upgrade`, `UpgradeScreen`), labelled "Upgrade to Pro" while the add-on is absent
+and "Activate Pro" while it is installed without a licence, and added only while the
+injected `ProCatalogue`'s state is not `STATE_ACTIVE` — a menu that keeps selling to
+someone who already paid reads as not knowing they paid. The catalogue is
+`AdminMenu`'s fifth constructor argument so the menu's states are testable. `admin_head`
 prints the orange style, `admin_footer` a two-line script adding
-`target="_blank" rel="noopener noreferrer"` to both.
+`target="_blank" rel="noopener noreferrer"` to the outward link.
+
+`AdminMenuTest` pins the defect this arrangement was built for: an entry whose slug names
+a page nobody registered is accepted at registration time, drawn in the menu, and answered
+on click with "Sorry, you are not allowed to access this page". Every entry whose slug is
+not a full URL must therefore arrive with a callback.
 
 - **Home** (`HomeScreen($store = new AuditStore(), $pro = new ProCatalogue(), $credentials = null)`,
   `RECENT` = 5, `WINDOW` = 7 days) runs
   eight `AuditStore` queries in a fixed order — this-week count, three failure counts, the
-  walkthrough's all-time `applied` and `restored` counts, then the recent sample and the
+  optional list's all-time `applied` and `restored` counts, then the recent sample and the
   "lately" list — and says it in one sentence:
   "All good" / "N changes this week, nothing failed." or "N things could not be done this
   week", three `.sitehelm-statcard` tiles, a `.sitehelm-feed` of the last five sentences,
   and a "Connect an app" call to action when the log is empty. While the injected
   `ProCatalogue` does not probe `STATE_ACTIVE`, a last card sells Pro by operation count
-  ("See what Pro adds" → `ProCatalogue::PRICING_URL`); a licensed site never sees it. Tests drive it with
+  ("See what Pro adds" → `ProCatalogue::upgrade_url()`); a licensed site never sees it. Tests drive it with
   `FakeWpdb` queues in exactly that order (`varQueue` then `resultQueue`).
-- **`Admin\Walkthrough`** is the "Get started" block Home renders **above** the verdict:
-  five steps — connect a client, choose what it may touch, make a test call, make a first
-  change, undo it — each with a decorative inline SVG, one line of help and one button to the
-  right tab. `Walkthrough::steps( $connected, $scoped, $called, $changed, $undone )` is pure
-  PHP (no WordPress) and returns `key`/`done`/`current` triples, so every transition is unit
-  tested in `WalkthroughTest`; the current step is the **first** open one, so a gap early on is
-  pointed at even when later steps are done. `render()` prints the markup, `is_complete()` and
-  `done_count()` drive the collapsed "All set — 5 of 5" line, which is all a settled site sees:
-  the `<ol>` ships with `hidden` and the chevron that reopens it ships with `hidden` too, revealed
-  by `initWalkthrough()` in `sitehelm-admin.js`. **Nothing is remembered** — no dismissed flag and
-  no option write — so the five states come from what they describe:
-  `connected` = a `SiteHelm MCP` application password exists (via `Credentials::for_users(
-  ConnectScreen::selectable_users() )`; the store is opened lazily and skipped entirely when
-  `WP_Application_Passwords` is absent) **or** any audit row exists **or**
-  `SiteHelm\Auth\OAuthStore::has_authenticated()` says so — asked through `is_callable()` because
-  that class need not exist; `scoped` = `get_option( ContextFactory::MODE_OPTION )` is not `false`;
-  `called` = a credential carries a non-zero `last_used`, **because the audit log records changes
-  and not reads** — a client that has only ever fetched something leaves no row; `changed` =
+- **`Admin\ConnectModal`** is the first-run dialog, and it asks for **one** thing: connect an
+  app. It is printed by `AdminMenu::print_connect_modal()` on `admin_footer`, gated on
+  `get_current_screen()->id` through `AdminMenu::is_console_screen()` (the hook passes an empty
+  suffix, so the screen object is the only source), so it can open on **any** console screen —
+  "nothing can reach this site" is just as true on Permissions as on Home. `render_if_needed()`
+  checks `AdminMenu::CAPABILITY` first, then `should_open( $connected, $dismissed )`:
+  `connected` = `OAuthStore::has_authenticated()` (through `is_callable()`, the class need not
+  exist) **or** a `SiteHelm MCP` application password exists (`Credentials::for_users(
+  ConnectScreen::selectable_users() )`, store opened lazily and skipped when
+  `WP_Application_Passwords` is absent); `dismissed` = the per-user `sitehelm_connect_modal_dismissed`
+  meta. **This is the one remembered thing on Home** — a panel over the screen has to be
+  dismissible for good — and it is stored **per user**, so a second administrator arriving later
+  still gets the one instruction they need. The connected half stays live rather than an
+  "onboarded" flag: revoke every credential and the dialog is offered again, unless that
+  administrator already said no. Both ways out (the × and "Not now") POST the same
+  `ConnectModalAction` form, because a close that only hid it would reopen on the next page
+  load; `ConnectModalAction::handle()` checks the capability, then `check_admin_referer()`, writes
+  the meta and redirects to `wp_get_referer()` (Home when there is none) through
+  `wp_safe_redirect()`. The `<dialog>` is printed **closed**; `initConnectModal()` in
+  `sitehelm-admin.js` calls `showModal()`, which is what supplies the backdrop, focus trap and
+  Escape. `--sh-*` tokens are defined on `.sitehelm-app, .sitehelm-widget, .sitehelm-modal` —
+  the dialog renders outside `.sitehelm-app`, and an unresolvable `var()` deletes the whole
+  declaration.
+- **`Admin\Walkthrough`** is the "When you're ready" list Home renders **below** the verdict,
+  the numbers and "What changed lately", by `render_walkthrough()`: four **optional** things —
+  choose what an app may touch, make a test call, make a first change, undo it — each with a
+  decorative inline SVG, one line of help and one button to the right tab. **Not a checklist:**
+  no numbering, no "step N of M", no current-step marker, because a numbered list reads as
+  obligations and none of these are — connecting is the only thing that must happen and it is
+  not in this list at all. `Walkthrough::steps( $scoped, $called, $changed, $undone )` is pure
+  PHP (no WordPress) and returns `key`/`done` pairs only — a `current` member would invent an
+  order the console does not impose — so every transition is unit tested in `WalkthroughTest`.
+  `render()` prints nothing once `is_complete()`: a list of finished things is furniture.
+  **Nothing here is remembered** — no dismissed flag and no option write — so the four states
+  come from what they describe: `scoped` = `get_option( ContextFactory::MODE_OPTION )` is not
+  `false`; `called` = a credential carries a non-zero `last_used` **or** any audit row exists,
+  **because the audit log records changes and not reads** — a client that has only ever fetched
+  something leaves no row but does leave a last-used stamp; `changed` =
   `count( [ 'outcome' => applied ] ) > 0`; `undone` = the same for `restored`.
 - **`Admin\Phrasebook`** turns an audit row into a sentence: `sentence(row)` =
   client + verb (past tense; "could not …" on failure, "started to …" on pending,
@@ -1592,6 +1634,43 @@ prints the orange style, `admin_footer` a two-line script adding
   state says "Connect an app on the Connect tab".
 - **Tools** opens with a `.sitehelm-advanced` callout ("most owners only need Permissions")
   and keeps the per-operation switches of §27.
+- **Upgrade** (`UpgradeScreen($pricing = new Pricing(), $pro = new ProCatalogue())`,
+  `PAGE_UPGRADE` = `sitehelm-upgrade`) is the one page every Pro link in the console points
+  at, and it decides what to show from `ProCatalogue::probe()`:
+  - **absent** — the plans, priced, with the featured one flagged
+    (`.sitehelm-plan--featured` + `.sitehelm-plan__flag`, exactly one of each);
+  - **unlicensed** — the licence field first ("Activate SiteHelm Pro", "installed but not
+    licensed"), the plans below it;
+  - **active** — "Pro is active", no prices and no checkout at all.
+  Buying is always a real `<a href>` to the hosted checkout
+  (`Pricing::checkout_url($pricing_id, $cycle)` →
+  `https://checkout.freemius.com/plugin/37704/plan/62673/?pricing_id=…&billing_cycle=annual|lifetime`,
+  never a coupon parameter), progressively upgraded by `UpgradeScreen::CHECKOUT_JS` (the
+  Freemius-hosted overlay) through `[data-sitehelm-checkout]`. A blocked script therefore
+  still sells; a test asserts every checkout anchor carries the hosted `href`.
+- **`Admin\Pricing`** is the price source: `FEED_URL` = `https://wpsitehelm.com/pricing.json`
+  published from the marketing site's own pricing data, read with `wp_remote_get` (5s), cached
+  in the `sitehelm_pricing` transient for `CACHE_SECONDS` (12h) and — as the empty string, so
+  a cached failure is never mistaken for a list of no plans — for `FAILURE_SECONDS` (1h) after
+  a bad read. Validation is **all or nothing**: a feed that fails any check is rejected whole
+  and `FALLBACK_PLANS`/`FALLBACK_INCLUDES`/`FALLBACK_NOTE`, compiled into the plugin, answer
+  instead (`is_live()` says which was used). `pricingId` is digit-only, and every string the
+  feed carries is escaped on the way out — a test proves feed text cannot reach the page as
+  markup. The constructor takes an optional fetcher closure as the test seam; `forget()`
+  drops the transient.
+- **`Admin\LicenceDialog`** wraps the SDK's own licence modal, and nothing in this plugin
+  reads, stores or forwards a key. `print_dialog()` calls
+  `$fs->_add_license_activation_dialog_box()` once per request into the footer, skipped on
+  the Plugins list where the SDK already prints its own; `trigger($label, $classes)` renders
+  the button the SDK's script binds (`TRIGGER_CLASS` = `activate-license-trigger` suffixed
+  with `affix()`, the add-on's unique affix). `is_available()` is false with no add-on and
+  false against an SDK too old to carry the method, in which case callers print
+  `fallback_sentence()` — where the Plugins-row link is — rather than a button that would do
+  nothing.
+- **`Admin\UnlicensedNotice`** is the non-dismissible `notice notice-warning` shown on every
+  admin screen while the add-on is installed without a licence: it names the problem and
+  links to the Upgrade screen. Silent when the state is absent or active, silent on the
+  Upgrade screen itself, and silent for a viewer without `AdminMenu::CAPABILITY`.
 - **The tab row does not stretch** (`.sitehelm-appnav__item { flex: 0 0 auto }`) — more
   tabs are planned and the row scrolls instead of squeezing.
 
@@ -2623,6 +2702,57 @@ about the double, not about Elementor. `tests/Doubles/WriteTargetFakeClassicWidg
 exists to hold the other shape, and the regression test sweeps a tree mixing `e-heading`
 with `html`.
 
+**The envelope is not always the whole shape — rich text nests.** Elementor's atomic
+rich-text props (`e-heading.title`, `e-paragraph.paragraph`, `e-button.text`, form and tab
+labels) are `Html_V3_Prop_Type`, and what they hold inside the envelope is an object rather
+than a string:
+
+```
+{"$$type":"html-v3","value":{"content":{"$$type":"string","value":"Call us today"},
+                             "children":[ … ]}}
+```
+
+`children` is the editor's inline-formatting tree — the links, the bold runs — stored as
+plain objects with no prop-type wrapping of their own. `html-v2`, the predecessor some
+unmigrated widgets still declare, validates the same shape more strictly: it requires the
+member to be present.
+
+Two things follow, and `ElementorRichText` exists for both. **Storing the words where the
+object belongs breaks the widget to edit, not to view.** The page renders, the write reports
+success, and Elementor's `parse_atomic_settings()` throws "Settings validation failed" the
+first time somebody opens that widget and presses update — so the failure surfaces to a
+person who is already halfway through fixing something else, with nothing to say when it was
+introduced. **And a merge that replaced the whole value per key deleted the formatting
+tree**, because the caller sent words and the words are only half of what was there.
+
+So the settings merge routes rich-text keys through `ElementorRichText::shape()`, which
+canonicalises every form a caller sends (a bare string, a string envelope, the inner object,
+a whole outer envelope) and carries the stored `children` across an update that only changes
+the words. A request naming its own `children` wins, including an explicitly empty one —
+that is how formatting is cleared on purpose. A request carrying nothing readable keeps the
+STORED words rather than emptying the heading; an empty string asked for deliberately is
+still honoured. The rich-text branch sits **before** the coercion's is-it-already-enveloped
+early return, because a value can carry the right envelope around a bare string — that is
+precisely what earlier versions of this plugin wrote — and returning early on the envelope
+alone would leave those documents as broken as it found them.
+
+Keeping the tree is a **warning, not a refusal** (`ElementorSettingsMerge::richTextWarnings()`,
+surfaced on the plan beside the media advisory). This is the `ElementorMediaAdvisory` side of
+the module's two precedents rather than the `ElementorConditionGate` side: nothing fails to
+render either way, and what is at stake is editor state the caller never asked to discard.
+The advisory fires only when stored formatting existed AND the wording changed — Elementor
+anchors each run to a position in the text it was written against, so a substantially
+rewritten passage can end up with its emphasis on the wrong words. A key with no stored
+formatting earns nothing, because an advisory that fires on the ordinary case is one nobody
+reads.
+
+Which keys are rich text is asked of the **live schema** (`ElementorPropCoercion::propType()`),
+never of a list kept here. Elementor renames prop types between releases, and a list that
+fell behind would silently stop shaping the values it exists to protect. The fixture registry
+carries an `html-v3` prop for the same reason it carries a classic widget and a repeater: a
+double that can only express one shape of an integration makes the suite's green evidence
+about the double.
+
 **A declared key is not necessarily a rendered key.** `assertKnownKeys()` answers "does this
 widget accept this setting"; a classic control can accept a value and still never render it,
 because a `condition` on it is unsatisfied. See §49.
@@ -3058,3 +3188,148 @@ not connect": something else answering discovery, an address the app cannot reac
 site that cannot reach itself, and a client asking for a protocol version outside
 `McpServer::SUPPORTED_PROTOCOL_VERSIONS`. The versions are printed from that constant, so the
 page cannot drift from what the negotiator accepts.
+
+## 53. Rendered page fetch (REQ-0108) in one screen
+
+`content-rendered-get` is the only operation in the plugin that reads the site's front end
+rather than its database. Everything else verifies a write by reading the row back, which
+proves the value was stored and proves nothing about whether the page renders — the class of
+bug that produced the Elementor page-template desync and the collapsed-CSS defect.
+
+**Why loopback and not an in-process render.** Rendering the document inside the request would
+be cheaper and would be wrong: the request runs under `REST_REQUEST` with output already begun,
+and Elementor's `Frontend` only hooks `template_redirect`, so the markup produced would not be
+the markup a visitor is served. The operation therefore fetches the permalink over HTTP.
+`wp_http_validate_url()` exempts the home host from its private-address refusal and
+`WP_Http::block_request()` exempts it even under `WP_HTTP_BLOCK_EXTERNAL`, so a site on a
+private network still answers itself.
+
+**The address is impossible, not merely refused.** The input schema is `{ id, includeHtml }`
+with `additionalProperties: false`. There is no `url`, `source`, `path` or `package` property
+at all, so there is no refusal to forget to write; `ContentRenderedReadTest` asserts the
+absence of those names directly. The URL is derived from `get_permalink()`, and because that
+value passes through a filter another plugin owns, the host is compared to `home_url()`'s
+before any request is made. `MediaUrlGuard` is deliberately **not** reused here: it exists to
+refuse loopback and private ranges, which is exactly what this operation must reach.
+
+**Refused before the fetch, not after.** The request carries no cookies, so a draft, a
+password-protected item or a post type with no public page would come back 404 and be reported
+as a broken page. All three are `ErrorCode::Conflict` before anything is requested. An absent
+post and a post the caller may not edit are the same `TargetNotFound`, and neither reaches the
+fetcher. A published page answering 500 is the finding the operation exists to surface, so that
+comes back as data, not as a refusal.
+
+**The two halves fail for different reasons.** `ContentRenderedRead` fetches; `RenderedPage`
+reads markup and touches no WordPress function except the injected `ContentLinks`, which is the
+same object `content-links-check` uses so the two operations cannot disagree about what
+"internal" means. `RenderedPage::parse()` follows `SvgSanitizer::parse()`: internal errors on
+inside a `try/finally`, `LIBXML_NONET | LIBXML_NOERROR | LIBXML_NOWARNING`, and `LIBXML_NOENT`
+never passed — despite the name it *substitutes* entities. Parse failure returns `null` rather
+than throwing, because a body cut at the fetch ceiling is the normal case and half a reading
+beats none.
+
+**The ceilings.** `MAX_FETCH_BYTES` (1 MiB) bounds the transport and sets `bodyTruncated`;
+`MAX_HTML_BYTES` (64 KiB) bounds the markup echoed back and sets `htmlTruncated`;
+`RenderedPage::MAX_HEADINGS` (100) bounds the outline, but `h1Count` counts every H1 past it,
+because "is there exactly one H1" is the question that figure answers and a cap must not hide
+the second one. A transport failure is `IntegrationUnavailable` and never repeats the
+transport's own message, which carries host names and occasionally proxy credentials.
+
+## 54. The ceiling on an Elementor document read (REQ-0112)
+
+`ElementorTreeNarrowing` exists because a correct response nobody receives is a failed read.
+Elementor nests containers inside containers, and a landing page nobody would call large
+reaches several hundred nodes; encoded whole that tree is megabytes, and the client truncates
+it, spends its whole context on it, or drops it — three outcomes that all surface as "the read
+did not work" and none of which name the size as the cause.
+
+**The axis is depth, and the reason is what a reader loses.** Cutting breadth would drop whole
+sections of a page; cutting depth drops leaves. The top-level bands are what an operator is
+orienting themselves in, and the leaves are what they name once they know which band to ask
+about — so `narrow()` walks down from the deepest level present and returns the first pruned
+tree whose encoding fits `MAX_NODES_BYTES` (256 KiB). If even depth 0 overflows, it keeps the
+longest prefix of top-level nodes that fits rather than answering nothing.
+
+**Two rules make the shortened answer honest rather than merely shorter.**
+
+1. A node whose children were dropped keeps its **true `childCount`** beside an empty
+   `children` array. That difference is the *only* signal the client gets that there is more
+   below; a pruned node reporting `childCount` 0 would be a lie it could not detect. This is
+   why `ElementorFields::nodeSchema()`'s `childCount` description says the count is what the
+   document holds, not what the response carries — the old wording said the opposite and had
+   to change with this feature.
+2. `totals` and `hints` always describe the **whole document**, before anything was dropped,
+   and so does a `rootId` read. They answer "what is this page", which the excerpt is not.
+
+**The ceiling is a constant, never an input.** A caller who could raise it could ask for the
+response that kills it, which is the failure the class exists to prevent. The measure is taken
+with `wp_json_encode()` — the transport's own encoder — because a measure taken with a
+different one is a measure of a different string, and a ceiling wrong in the direction of "it
+fits" is no ceiling.
+
+**`rootId` is the way back to what was dropped.** It returns one element and everything inside
+it, searched on the *normalized* tree rather than the stored one, because the caller is naming
+an id it read out of a previous normalized response. An id no element carries is
+`TargetNotFound`, not an empty tree. The subtree is itself narrowed if it has to be, and its
+`narrowed` counts then describe the subtree — the document's own numbers travel in `totals`.
+
+**The report is always present**, `applied: false` and an empty `message` on a complete
+response, because a member that comes and goes is one a client cannot tell from a member it
+failed to parse. Adding it bumped `elementor-document-get` to `schemaVersion` 2 and its
+`OUTPUT_SCHEMA_ID` to `…:output:2`: a new required output member is a different resource, not
+a redefinition of the old one.
+
+## 55. Container presets, and the defaults a read-back cannot see (REQ-0114)
+
+`ElementorContainerPreset` exists because Elementor's kit supplies values the element does not
+store. A container carries 10px of padding on all four sides and boxes its content, both from
+the kit; neither appears on the element, so a section written to run edge to edge is stored
+exactly as sent, read back byte-identical, verified green, and rendered inset. Nothing in the
+response is wrong — the knowledge simply is not in it.
+
+The precedent this follows is deliberate. `ElementorConditionGate` **refuses** when nothing
+would render; `ElementorMediaAdvisory` **warns** when it renders badly. A preset does neither:
+it makes the knowledge **a value the caller can send**. `preset: "full-bleed"` on a container
+expands to the zeroed padding and the full-width content the look requires.
+
+**A preset is shorthand, never an override.** Sending `padding` or `content_width` beside one
+is refused rather than merged, because either resolution — the preset winning or the explicit
+value winning — silently discards half of what was asked for.
+
+## 56. Global classes are stored without being parsed (REQ-0115)
+
+`Global_Classes_Repository::put()` performs no validation. The parsing that decides which
+style properties are real lives one layer above it, in Elementor's REST controller, where
+`Global_Classes_Parser::make()->parse_items()` runs each definition through `Props_Parser`,
+which keeps only the keys the prop schema declares. SiteHelm writes through the repository, so
+a property outside that schema is stored intact, reads back identical, satisfies the digest,
+and renders nothing.
+
+**A read-back can never see this.** The repository returns what it was given, so the only way
+to learn what Elementor accepts is to ask the parser — and the moment to ask is **plan time**,
+before anything is stored, because the preview is where an agent can still fix it.
+
+`ElementorApi::parseGlobalClass()` is the wrapper, and it is guarded at every step: the class
+existing, `make` existing, the result being an object, `parse_items` and `unwrap` existing.
+Any shape it does not recognise returns `null`. **Null means the parser could not be asked**,
+and that is deliberately not a refusal — Elementor's internals move, and refusing every
+global-class write the day a class is renamed trades a non-rendering property for a broken
+operation. An `accepted` of `null` inside a returned parse is the stronger fact: the parser
+was asked and kept nothing.
+
+`ElementorGlobalClassWrite::plan()` takes the ids the operation authored and acts on three
+outcomes:
+
+| Outcome | Result |
+| --- | --- |
+| Parser keeps nothing of the class | `InvalidInput` refusal — it would render nothing |
+| Some properties dropped | Warning each, listed under `discarded` in the preview |
+| Parser unreachable | One warning, never a refusal |
+
+**What is stored is what the parser kept**, not what the caller sent — a warning alone would
+still leave non-rendering properties in the repository. Variants are matched by breakpoint and
+state, never by position: a positional match would compare a mobile variant against a desktop
+one and report every property in both as lost.
+
+Only operations that author a class pass ids — delete and reorder pass none, so a write that
+authors nothing asks the parser nothing.

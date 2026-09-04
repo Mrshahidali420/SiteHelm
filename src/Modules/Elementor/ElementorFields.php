@@ -199,7 +199,7 @@ final class ElementorFields {
 				],
 				'childCount' => [
 					'type'        => 'integer',
-					'description' => 'How many children this element has, counting only the ones this response returns.',
+					'description' => 'How many children this element actually has in the document. When a response reports narrowed.applied, an element at the deepest kept level carries its true count beside an empty children array — that difference is how you see there is more below than you were handed.',
 				],
 				'children'   => [
 					'type'        => 'array',

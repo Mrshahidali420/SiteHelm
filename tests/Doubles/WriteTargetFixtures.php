@@ -112,6 +112,18 @@ trait WriteTargetFixtures {
 						'image' => new WriteTargetFakePropType( 'image' ),
 					]
 				),
+
+				// THE FOURTH SHAPE, AND IT IS THERE FOR THE RICH TEXT. Elementor
+				// declares `e-paragraph`'s prop as `html-v3`, which stores an
+				// object holding the words and the editor's inline-formatting
+				// tree rather than a string. A registry of scalar props only is
+				// how a write that stored the words in the string's place — a
+				// value the editor throws on the first time anybody presses
+				// update, while the page renders perfectly — passed every test
+				// this suite has.
+				'e-paragraph' => new WriteTargetFakeWidget(
+					[ 'paragraph' => new WriteTargetFakePropType( 'html-v3' ) ]
+				),
 				'html'      => new WriteTargetFakeClassicWidget(
 					[
 						'html'          => [

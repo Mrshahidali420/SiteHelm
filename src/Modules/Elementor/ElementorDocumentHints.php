@@ -93,7 +93,7 @@ final class ElementorDocumentHints {
 	 * a dozen unpadded containers would otherwise push everything else in the
 	 * member out of a client's attention with twelve copies of one sentence.
 	 */
-	public const MESSAGE_CONTAINER_KIT_PADDING = 'Top-level containers whose stored settings declare no padding: %d. Each inherits Elementor\'s kit default of 10px on all four sides and will not render full-bleed; set padding to 0 on any container meant to run edge to edge.';
+	public const MESSAGE_CONTAINER_KIT_PADDING = 'Top-level containers whose stored settings declare no padding: %d. Each inherits Elementor\'s kit default of 10px on all four sides and will not render full-bleed; set padding to 0 on any container meant to run edge to edge, or add such a container with elementor-element-add\'s preset "full-bleed", which stores that and full content width together.';
 
 	/**
 	 * Every code this member may carry, in the order they are emitted.

@@ -8,90 +8,103 @@ use SiteHelm\Admin\Walkthrough;
 use SiteHelm\Tests\TestCase;
 
 /**
- * The walkthrough's arithmetic, with no WordPress anywhere near it.
+ * The optional list's arithmetic, with no WordPress anywhere near it.
  *
- * `Walkthrough::steps()` is the whole of the state machine, so every transition
- * a site can be in is asserted here rather than through rendered markup.
+ * `Walkthrough::steps()` is the whole of it, so every state a site can be in is
+ * asserted here rather than through rendered markup. The invariant the tests
+ * are really guarding is the absence of a sequence: no item is ever singled out
+ * as the one to do next, and connecting is not in the list at all.
  */
 final class WalkthroughTest extends TestCase {
 
+	public function testAFreshSiteHasFourThingsOpenAndNoneOfThemMandatory(): void {
+		$steps = Walkthrough::steps( false, false, false, false );
+
+		$this->assertCount( 4, $steps );
+		$this->assertSame( 0, Walkthrough::done_count( $steps ) );
+		$this->assertFalse( Walkthrough::is_complete( $steps ) );
+	}
+
 	/**
-	 * @return list<string> The keys of the steps marked current.
+	 * The list is a set of suggestions, not a sequence. Nothing in a returned
+	 * item may say "do this one next": a current marker would invent an order
+	 * the console does not impose, which is what the five-step version got
+	 * wrong.
 	 */
-	private static function current( array $steps ): array {
+	public function testNoItemIsEverMarkedAsTheCurrentOne(): void {
+		foreach ( [ false, true ] as $scoped ) {
+			foreach ( Walkthrough::steps( $scoped, false, true, false ) as $step ) {
+				$this->assertSame( [ 'key', 'done' ], array_keys( $step ) );
+			}
+		}
+	}
+
+	/**
+	 * Connecting is the dialog's job. If it reappeared here it would be back to
+	 * being one item among five, which is exactly the reading the split was
+	 * made to avoid.
+	 */
+	public function testConnectingIsNotOneOfTheOptionalThings(): void {
+		$keys = array_column( Walkthrough::steps( false, false, false, false ), 'key' );
+
+		$this->assertSame( Walkthrough::ORDER, $keys );
+		$this->assertNotContains( 'connect', $keys );
+	}
+
+	public function testEachAnswerMarksItsOwnItemAndNothingElse(): void {
+		$this->assertSame( [ Walkthrough::STEP_SCOPE ], self::done( Walkthrough::steps( true, false, false, false ) ) );
+		$this->assertSame( [ Walkthrough::STEP_CALL ], self::done( Walkthrough::steps( false, true, false, false ) ) );
+		$this->assertSame( [ Walkthrough::STEP_CHANGE ], self::done( Walkthrough::steps( false, false, true, false ) ) );
+		$this->assertSame( [ Walkthrough::STEP_UNDO ], self::done( Walkthrough::steps( false, false, false, true ) ) );
+	}
+
+	/**
+	 * A gap early on is just a gap. The five-step version treated it as the
+	 * step the owner had to be on; here the later done items keep their ticks
+	 * and the open one is simply still open.
+	 */
+	public function testAGapEarlyOnDoesNotHoldTheLaterOnesBack(): void {
+		$steps = Walkthrough::steps( false, true, true, true );
+
+		$this->assertSame(
+			[ Walkthrough::STEP_CALL, Walkthrough::STEP_CHANGE, Walkthrough::STEP_UNDO ],
+			self::done( $steps )
+		);
+		$this->assertSame( 3, Walkthrough::done_count( $steps ) );
+		$this->assertFalse( Walkthrough::is_complete( $steps ) );
+	}
+
+	public function testEverythingDoneIsComplete(): void {
+		$steps = Walkthrough::steps( true, true, true, true );
+
+		$this->assertSame( 4, Walkthrough::done_count( $steps ) );
+		$this->assertTrue( Walkthrough::is_complete( $steps ) );
+	}
+
+	public function testAnEmptyListIsNotComplete(): void {
+		$this->assertFalse( Walkthrough::is_complete( [] ) );
+	}
+
+	public function testTheItemsComeBackInTheOrderTheyAreOffered(): void {
+		$steps = Walkthrough::steps( false, false, false, false );
+
+		$this->assertSame( Walkthrough::ORDER, array_column( $steps, 'key' ) );
+	}
+
+	/**
+	 * @param list<array{key: string, done: bool}> $steps The items.
+	 *
+	 * @return list<string> The keys of the items marked done.
+	 */
+	private static function done( array $steps ): array {
 		$found = [];
 
 		foreach ( $steps as $step ) {
-			if ( $step['current'] ) {
+			if ( $step['done'] ) {
 				$found[] = $step['key'];
 			}
 		}
 
 		return $found;
-	}
-
-	public function testAFreshSiteIsOnStepOne(): void {
-		$steps = Walkthrough::steps( false, false, false, false, false );
-
-		$this->assertCount( 5, $steps );
-		$this->assertSame( [ Walkthrough::STEP_CONNECT ], self::current( $steps ) );
-		$this->assertSame( 0, Walkthrough::done_count( $steps ) );
-		$this->assertFalse( Walkthrough::is_complete( $steps ) );
-	}
-
-	public function testConnectingMovesToChoosingWhatItMayTouch(): void {
-		$steps = Walkthrough::steps( true, false, false, false, false );
-
-		$this->assertSame( [ Walkthrough::STEP_SCOPE ], self::current( $steps ) );
-		$this->assertSame( 1, Walkthrough::done_count( $steps ) );
-	}
-
-	public function testTheFirstTwoDoneMovesToTheTestCall(): void {
-		$steps = Walkthrough::steps( true, true, false, false, false );
-
-		$this->assertSame( [ Walkthrough::STEP_CALL ], self::current( $steps ) );
-		$this->assertSame( 2, Walkthrough::done_count( $steps ) );
-	}
-
-	public function testACalledSiteIsAskedForItsFirstChange(): void {
-		$steps = Walkthrough::steps( true, true, true, false, false );
-
-		$this->assertSame( [ Walkthrough::STEP_CHANGE ], self::current( $steps ) );
-	}
-
-	public function testAChangedSiteIsAskedToUndoIt(): void {
-		$steps = Walkthrough::steps( true, true, true, true, false );
-
-		$this->assertSame( [ Walkthrough::STEP_UNDO ], self::current( $steps ) );
-		$this->assertSame( 4, Walkthrough::done_count( $steps ) );
-		$this->assertFalse( Walkthrough::is_complete( $steps ) );
-	}
-
-	public function testEverythingDoneLeavesNoCurrentStep(): void {
-		$steps = Walkthrough::steps( true, true, true, true, true );
-
-		$this->assertSame( [], self::current( $steps ) );
-		$this->assertSame( 5, Walkthrough::done_count( $steps ) );
-		$this->assertTrue( Walkthrough::is_complete( $steps ) );
-	}
-
-	/**
-	 * A site that undid a change without ever saving a permission mode is still
-	 * missing step two. The current step is the FIRST open one, so the gap is
-	 * pointed at rather than skipped past because a later step happens to be
-	 * done.
-	 */
-	public function testAGapEarlyOnIsTheCurrentStepEvenWhenLaterOnesAreDone(): void {
-		$steps = Walkthrough::steps( true, false, true, true, true );
-
-		$this->assertSame( [ Walkthrough::STEP_SCOPE ], self::current( $steps ) );
-		$this->assertSame( 4, Walkthrough::done_count( $steps ) );
-		$this->assertFalse( Walkthrough::is_complete( $steps ) );
-	}
-
-	public function testTheStepsComeBackInTheOrderTheyAreDone(): void {
-		$steps = Walkthrough::steps( false, false, false, false, false );
-
-		$this->assertSame( Walkthrough::ORDER, array_column( $steps, 'key' ) );
 	}
 }

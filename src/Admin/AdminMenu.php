@@ -74,6 +74,16 @@ final class AdminMenu {
 	public const PAGE_MODULES = 'sitehelm-modules';
 
 	/**
+	 * The Upgrade screen's page slug.
+	 *
+	 * Not in {@see self::tabs()}: the screen exists only while there is something
+	 * to buy or activate, and a tab bar that gains and loses a tab depending on a
+	 * licence would move every other tab under the reader. It is registered as a
+	 * submenu entry of its own, below the console's screens.
+	 */
+	public const PAGE_UPGRADE = 'sitehelm-upgrade';
+
+	/**
 	 * The console's screens, in the order they appear.
 	 *
 	 * One list, read by both the WordPress submenu and the console's own tab bar,
@@ -153,18 +163,27 @@ final class AdminMenu {
 	private OperationSwitches $switches;
 
 	/**
+	 * The add-on's state, which decides whether the menu offers Pro at all.
+	 *
+	 * @var ProCatalogue
+	 */
+	private ProCatalogue $pro;
+
+	/**
 	 * Constructs the console.
 	 *
 	 * @param CapabilityRegistry                                     $registry   The registry the gateway is serving from.
 	 * @param array<string, array{version: ?string, health: string}> $health     The loader's health map.
 	 * @param Dispatcher|null                                        $dispatcher The gateway's dispatcher, for console rollback; null binds none.
 	 * @param OperationSwitches|null                                 $switches   The gateway's per-operation switches; null reads the option afresh.
+	 * @param ProCatalogue|null                                      $pro        The add-on's state; null probes the site.
 	 */
-	public function __construct( CapabilityRegistry $registry, array $health = [], ?Dispatcher $dispatcher = null, ?OperationSwitches $switches = null ) {
+	public function __construct( CapabilityRegistry $registry, array $health = [], ?Dispatcher $dispatcher = null, ?OperationSwitches $switches = null, ?ProCatalogue $pro = null ) {
 		$this->registry   = $registry;
 		$this->health     = $health;
 		$this->dispatcher = $dispatcher;
 		$this->switches   = $switches ?? new OperationSwitches();
+		$this->pro        = $pro ?? new ProCatalogue();
 	}
 
 	/**
@@ -174,6 +193,8 @@ final class AdminMenu {
 		add_action( 'admin_menu', [ $this, 'add_pages' ] );
 		add_action( 'admin_enqueue_scripts', [ $this, 'enqueue_assets' ] );
 		add_action( 'admin_post_' . ConnectScreen::ACTION_CREATE_PASSWORD, [ new ConnectScreen(), 'handle_create_password' ] );
+		add_action( 'admin_footer', [ $this, 'print_connect_modal' ] );
+		add_action( 'admin_post_' . ConnectModalAction::ACTION, [ new ConnectModalAction(), 'handle' ] );
 		add_action( 'admin_post_' . WriteModeAction::ACTION, [ new WriteModeAction(), 'handle' ] );
 		add_action( 'admin_post_' . RevokeAction::ACTION, [ new RevokeAction(), 'handle' ] );
 		add_action( 'admin_post_' . RetentionAction::ACTION, [ new RetentionAction(), 'handle' ] );
@@ -187,6 +208,7 @@ final class AdminMenu {
 		PluginLinks::register();
 		( new SiteHealth() )->register();
 		( new ActivationNotice() )->register();
+		( new UnlicensedNotice() )->register();
 
 		// Console rollback goes through the same dispatcher the gateway serves
 		// from, so the console can restore nothing an agent could not, and every
@@ -245,14 +267,20 @@ final class AdminMenu {
 	}
 
 	/**
-	 * The two submenu entries that leave wp-admin: the community group, and —
-	 * only while the Pro add-on is not active — where to buy it.
+	 * The last two submenu entries: the community group, which leaves wp-admin,
+	 * and — only while the Pro add-on is not active — the Upgrade screen, which
+	 * does not.
 	 *
 	 * A URL passed as the menu slug with no callback is rendered by WordPress
 	 * as a plain link to that URL, which is the convention plugins use for an
-	 * outward menu item. The upgrade entry disappears the moment a licence is
-	 * active: a menu that keeps selling to someone who already paid reads as
-	 * not knowing they paid.
+	 * outward menu item, and is how the community entry works. Upgrade used to
+	 * be one of those, pointing at the website's pricing page; it is now a page
+	 * of our own, because somebody deciding between plans should not be sent out
+	 * of their site to read them, and somebody holding a licence key needs a
+	 * field, not a brochure.
+	 *
+	 * The entry disappears the moment a licence is active: a menu that keeps
+	 * selling to someone who already paid reads as not knowing they paid.
 	 */
 	private function add_outward_links(): void {
 		add_submenu_page(
@@ -263,13 +291,20 @@ final class AdminMenu {
 			self::COMMUNITY_URL
 		);
 
-		if ( ProCatalogue::STATE_ACTIVE !== ( new ProCatalogue() )->probe()['state'] ) {
+		$state = (string) $this->pro->probe()['state'];
+
+		if ( ProCatalogue::STATE_ACTIVE !== $state ) {
 			add_submenu_page(
 				self::PAGE_HOME,
-				'',
-				'<span class="sitehelm-menu-upgrade">' . esc_html__( 'Upgrade to Pro', 'sitehelm' ) . '</span>',
+				__( 'SiteHelm Pro', 'sitehelm' ),
+				'<span class="sitehelm-menu-upgrade">'
+					. ( ProCatalogue::STATE_UNLICENSED === $state
+						? esc_html__( 'Activate Pro', 'sitehelm' )
+						: esc_html__( 'Upgrade to Pro', 'sitehelm' ) )
+					. '</span>',
 				self::CAPABILITY,
-				ProCatalogue::PRICING_URL
+				self::PAGE_UPGRADE,
+				[ new UpgradeScreen(), 'render' ]
 			);
 		}
 
@@ -286,16 +321,37 @@ final class AdminMenu {
 	}
 
 	/**
-	 * Make the outward menu entries open in a new tab. WordPress renders a
+	 * Make the outward menu entry open in a new tab. WordPress renders a
 	 * URL-slugged submenu item as a same-tab link; leaving wp-admin without
 	 * warning is worse than one line of script.
+	 *
+	 * Community is the only such entry left. Upgrade is a page of ours now, and
+	 * opening one of our own screens in a new tab would be a bug.
 	 */
 	public static function print_outward_targets(): void {
 		printf(
-			"<script>document.querySelectorAll('#adminmenu a[href^=\"%s\"], #adminmenu a[href^=\"%s\"]').forEach(function(a){a.target='_blank';a.rel='noopener noreferrer';});</script>",
-			esc_url( self::COMMUNITY_URL ),
-			esc_url( ProCatalogue::PRICING_URL )
+			"<script>document.querySelectorAll('#adminmenu a[href^=\"%s\"]').forEach(function(a){a.target='_blank';a.rel='noopener noreferrer';});</script>",
+			esc_url( self::COMMUNITY_URL )
 		);
+	}
+
+	/**
+	 * Print the first-run connect dialog under the console's screens.
+	 *
+	 * Hung on the footer rather than written into `Ui::app_open()`, which every
+	 * screen calls: the dialog belongs to the console as a whole, not to any one
+	 * screen, and the shell that opens a page is the wrong place to ask the site
+	 * whether anything can reach it. Gated on the same screens the stylesheet is,
+	 * because a dialog with no stylesheet is a wall of unstyled text.
+	 */
+	public function print_connect_modal(): void {
+		$screen = function_exists( 'get_current_screen' ) ? get_current_screen() : null;
+
+		if ( null === $screen || ! self::is_console_screen( (string) $screen->id ) ) {
+			return;
+		}
+
+		ConnectModal::render_if_needed();
 	}
 
 	/**

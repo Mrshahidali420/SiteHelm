@@ -817,6 +817,99 @@ final class ElementorElementUpdateTest extends TestCase {
 		$this->assertSame( [], $planned->warnings, 'This is the write the advisory exists to ask for.' );
 	}
 
+	// ------------------------------------------------------------ rich text
+
+	/**
+	 * Rewording a paragraph keeps the editor's formatting tree.
+	 *
+	 * THE PAGE RENDERED EITHER WAY, which is why this went unnoticed: the words
+	 * on screen were the new ones and the write reported success. What went
+	 * missing was the link somebody had put inside the sentence, and the only
+	 * place it showed up was in the editor, later, with nothing to say when.
+	 */
+	public function test_a_text_update_keeps_the_stored_editor_tree(): void {
+		$this->withElementor();
+		$this->storeFixture();
+
+		$operation = $this->elementUpdate();
+		$input     = $this->arguments(
+			[
+				'elementId' => 'w333333',
+				'settings'  => [ 'paragraph' => 'Call our team today' ],
+			]
+		);
+
+		$target  = $operation->resolveTarget( $input, $this->context() );
+		$planned = $operation->planChange( $target, $input, $this->context() );
+
+		$operation->captureSnapshot( $target, $this->context() );
+		$operation->applyChange( $target, $planned, $this->context() );
+
+		$stored = $this->storedSettings( 'w333333' )['paragraph'];
+
+		$this->assertSame(
+			'Call our team today',
+			$stored['value']['content']['value'],
+			'The words are the ones the caller asked for, in the place the editor reads them.'
+		);
+		$this->assertSame(
+			[
+				[
+					'id'       => 'a1',
+					'type'     => 'link',
+					'content'  => 'us',
+					'children' => [],
+				],
+			],
+			$stored['value']['children'],
+			'Nobody asked for the link to be deleted.'
+		);
+	}
+
+	/**
+	 * The kept formatting is said out loud on the plan.
+	 *
+	 * Elementor anchors each run to a position in the text it was written
+	 * against, so carrying it across a rewritten sentence can leave the emphasis
+	 * on the wrong words. Keeping it is still the right default; this is what
+	 * stops the choice being silent.
+	 */
+	public function test_kept_formatting_earns_an_advisory(): void {
+		$this->withElementor();
+		$this->storeFixture();
+
+		$operation = $this->elementUpdate();
+		$input     = $this->arguments(
+			[
+				'elementId' => 'w333333',
+				'settings'  => [ 'paragraph' => 'Call our team today' ],
+			]
+		);
+
+		$planned = $operation->planChange( $this->resolved( $operation, $input ), $input, $this->context() );
+
+		$this->assertCount( 1, $planned->warnings, 'One reworded rich-text key earns one sentence.' );
+		$this->assertStringContainsString( '"paragraph"', $planned->warnings[0], 'The operator has to learn which setting to check.' );
+	}
+
+	/**
+	 * A widget with no stored formatting says nothing.
+	 *
+	 * The false positive is the expensive failure for an advisory: one that
+	 * fires on every heading is one nobody reads.
+	 */
+	public function test_a_plain_text_update_warns_about_nothing(): void {
+		$this->withElementor();
+		$this->storeFixture();
+
+		$operation = $this->elementUpdate();
+		$input     = $this->arguments( [ 'elementId' => 'w111111', 'settings' => [ 'title' => 'Our services' ] ] );
+
+		$planned = $operation->planChange( $this->resolved( $operation, $input ), $input, $this->context() );
+
+		$this->assertSame( [], $planned->warnings, 'A widget carrying no inline formatting has nothing to report.' );
+	}
+
 	// ------------------------------------------------- repeater row identity
 
 	/**

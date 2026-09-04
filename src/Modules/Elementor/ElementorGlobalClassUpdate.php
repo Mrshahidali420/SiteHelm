@@ -78,31 +78,6 @@ final class ElementorGlobalClassUpdate implements WriteOperation {
 	public const MAX_STYLES_BYTES = 65536;
 
 	/**
-	 * The breakpoint the variant this operation edits applies at.
-	 */
-	private const BASE_BREAKPOINT = 'desktop';
-
-	/**
-	 * The variant member carrying which breakpoint and state it applies at.
-	 */
-	private const VARIANT_META = 'meta';
-
-	/**
-	 * The variant member carrying the styles themselves.
-	 */
-	private const VARIANT_PROPS = 'props';
-
-	/**
-	 * The meta member naming the breakpoint.
-	 */
-	private const META_BREAKPOINT = 'breakpoint';
-
-	/**
-	 * The meta member naming the element state.
-	 */
-	private const META_STATE = 'state';
-
-	/**
 	 * Constructs the operation.
 	 *
 	 * @param ElementorGlobalClassWrite $writes     The shared global-class machinery.
@@ -263,7 +238,9 @@ final class ElementorGlobalClassUpdate implements WriteOperation {
 					'changed'   => $changed,
 					'styleKeys' => $style_keys,
 				],
-			]
+			],
+			[],
+			[ $id ]
 		);
 	}
 	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
@@ -432,15 +409,15 @@ final class ElementorGlobalClassUpdate implements WriteOperation {
 		if ( null === $found ) {
 			$found              = count( $variants );
 			$variants[ $found ] = [
-				self::VARIANT_META  => [
-					self::META_BREAKPOINT => self::BASE_BREAKPOINT,
-					self::META_STATE      => null,
+				ElementorGlobalClassWrite::VARIANT_META  => [
+					ElementorGlobalClassWrite::META_BREAKPOINT => ElementorGlobalClassWrite::BASE_BREAKPOINT,
+					ElementorGlobalClassWrite::META_STATE => null,
 				],
-				self::VARIANT_PROPS => [],
+				ElementorGlobalClassWrite::VARIANT_PROPS => [],
 			];
 		}
 
-		$props = $variants[ $found ][ self::VARIANT_PROPS ] ?? [];
+		$props = $variants[ $found ][ ElementorGlobalClassWrite::VARIANT_PROPS ] ?? [];
 		$props = is_array( $props ) ? $props : [];
 
 		foreach ( $styles as $key => $value ) {
@@ -452,8 +429,8 @@ final class ElementorGlobalClassUpdate implements WriteOperation {
 			$props[ $key ] = $value;
 		}
 
-		$variants[ $found ][ self::VARIANT_PROPS ]               = $props;
-		$definition[ ElementorGlobalClassWrite::CLASS_VARIANTS ] = $variants;
+		$variants[ $found ][ ElementorGlobalClassWrite::VARIANT_PROPS ] = $props;
+		$definition[ ElementorGlobalClassWrite::CLASS_VARIANTS ]        = $variants;
 
 		return $definition;
 	}
@@ -471,10 +448,10 @@ final class ElementorGlobalClassUpdate implements WriteOperation {
 	 * @return bool True when it is the base variant.
 	 */
 	private function is_base( mixed $variant ): bool {
-		$meta = is_array( $variant ) ? ( $variant[ self::VARIANT_META ] ?? null ) : null;
+		$meta = is_array( $variant ) ? ( $variant[ ElementorGlobalClassWrite::VARIANT_META ] ?? null ) : null;
 
 		return is_array( $meta )
-			&& self::BASE_BREAKPOINT === ( $meta[ self::META_BREAKPOINT ] ?? null )
-			&& null === ( $meta[ self::META_STATE ] ?? null );
+			&& ElementorGlobalClassWrite::BASE_BREAKPOINT === ( $meta[ ElementorGlobalClassWrite::META_BREAKPOINT ] ?? null )
+			&& null === ( $meta[ ElementorGlobalClassWrite::META_STATE ] ?? null );
 	}
 }

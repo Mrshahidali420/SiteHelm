@@ -35,11 +35,16 @@ final class PluginLinks {
 	/**
 	 * Prepend the console's links to the row's action links.
 	 *
+	 * The add-on's state is injectable so the tests can ask for a licensed site
+	 * without an SDK in the process; WordPress passes this filter one argument,
+	 * so the seam is never filled in on a live site.
+	 *
 	 * @param array<int|string, string> $links The row's existing links.
+	 * @param ProCatalogue|null         $pro   The add-on's state; null probes the site.
 	 *
 	 * @return array<int|string, string>
 	 */
-	public static function add( array $links ): array {
+	public static function add( array $links, ?ProCatalogue $pro = null ): array {
 		if ( ! current_user_can( AdminMenu::CAPABILITY ) ) {
 			return $links;
 		}
@@ -57,11 +62,15 @@ final class PluginLinks {
 			),
 		];
 
-		if ( ProCatalogue::STATE_ACTIVE !== ( new ProCatalogue() )->probe()['state'] ) {
+		$state = (string) ( $pro ?? new ProCatalogue() )->probe()['state'];
+
+		if ( ProCatalogue::STATE_ACTIVE !== $state ) {
 			$links['sitehelm-pro'] = sprintf(
-				'<a href="%s" target="_blank" rel="noopener noreferrer" style="color:#b45309;font-weight:600;">%s</a>',
-				esc_url( ProCatalogue::PRICING_URL ),
-				esc_html__( 'Get Pro', 'sitehelm' )
+				'<a href="%s" style="color:#b45309;font-weight:600;">%s</a>',
+				esc_url( ProCatalogue::upgrade_url() ),
+				ProCatalogue::STATE_UNLICENSED === $state
+					? esc_html__( 'Activate Pro', 'sitehelm' )
+					: esc_html__( 'Get Pro', 'sitehelm' )
 			);
 		}
 

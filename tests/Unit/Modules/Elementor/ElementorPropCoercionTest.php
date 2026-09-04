@@ -84,8 +84,12 @@ final class ElementorPropCoercionTest extends TestCase {
 						'image' => new CoercionFakePropType( 'image' ),
 					]
 				),
+				// DECLARED THE WAY ELEMENTOR DECLARES IT. `e-paragraph`'s prop is
+				// `html-v3`, not a string, and this fixture said `string` for as
+				// long as the coercion did — which is how a write that stored the
+				// words where the editor expects an object passed the whole suite.
 				'e-paragraph' => new CoercionFakeWidget(
-					[ 'paragraph' => new CoercionFakePropType( 'string' ) ]
+					[ 'paragraph' => new CoercionFakePropType( 'html-v3' ) ]
 				),
 				'html'        => new CoercionFakeClassicWidget(
 					[
@@ -304,10 +308,98 @@ final class ElementorPropCoercionTest extends TestCase {
 			$coerced[0]['settings']['title']
 		);
 		$this->assertSame(
-			[ '$$type' => 'string', 'value' => 'Untouched' ],
+			[
+				'$$type' => 'html-v3',
+				'value'  => [
+					'content'  => [ '$$type' => 'string', 'value' => 'Untouched' ],
+					'children' => [],
+				],
+			],
 			$coerced[1]['elements'][0]['elements'][0]['settings']['paragraph'],
 			'A node the operation never touched must still be coerced; one corrupt prop anywhere locks the page.'
 		);
+	}
+
+	/**
+	 * A rich-text prop is nested, not merely enveloped.
+	 *
+	 * The envelope alone is what the coercion used to produce, and it is the
+	 * value Elementor's editor throws on the next time somebody presses update:
+	 * the page renders, the write reports success, and the widget is broken to
+	 * edit with nothing saying so.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_a_rich_text_prop_is_nested_into_the_shape_the_editor_parses(): void {
+		$this->installElementor();
+
+		$tree = [ $this->widget( 'e-paragraph', [ 'paragraph' => 'Words' ] ) ];
+
+		$this->assertSame(
+			[
+				'$$type' => 'html-v3',
+				'value'  => [
+					'content'  => [ '$$type' => 'string', 'value' => 'Words' ],
+					'children' => [],
+				],
+			],
+			$this->coercion->coerceTree( $tree )[0]['settings']['paragraph']
+		);
+	}
+
+	/**
+	 * A rich-text value already wearing its envelope is still nested.
+	 *
+	 * THE ONE CASE THE ENVELOPE TEST BELOW WOULD GET WRONG. Every other prop
+	 * type is finished once it carries an envelope, so the sweep returns it
+	 * untouched; a rich-text value can carry the right envelope around a bare
+	 * string — which is exactly what a previous version of this plugin wrote —
+	 * and an early return on the envelope alone would leave those documents as
+	 * broken as it found them.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_a_rich_text_envelope_around_a_bare_string_is_repaired(): void {
+		$this->installElementor();
+
+		$tree = [ $this->widget( 'e-paragraph', [ 'paragraph' => [ '$$type' => 'html-v3', 'value' => 'Words' ] ] ) ];
+
+		$this->assertSame(
+			[
+				'$$type' => 'html-v3',
+				'value'  => [
+					'content'  => [ '$$type' => 'string', 'value' => 'Words' ],
+					'children' => [],
+				],
+			],
+			$this->coercion->coerceTree( $tree )[0]['settings']['paragraph'],
+			'A document a previous version wrote has to be fixed by the next save, not preserved.'
+		);
+	}
+
+	/**
+	 * The editor tree a rich-text value already carries survives the sweep.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_the_sweep_keeps_an_existing_editor_tree(): void {
+		$this->installElementor();
+
+		$children = [ [ 'id' => 'a1', 'type' => 'span', 'content' => 'now', 'children' => [] ] ];
+		$stored   = [
+			'$$type' => 'html-v3',
+			'value'  => [
+				'content'  => [ '$$type' => 'string', 'value' => 'Call us now' ],
+				'children' => $children,
+			],
+		];
+
+		$tree = [ $this->widget( 'e-paragraph', [ 'paragraph' => $stored ] ) ];
+
+		$this->assertSame( $stored, $this->coercion->coerceTree( $tree )[0]['settings']['paragraph'] );
 	}
 
 	/**

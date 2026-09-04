@@ -333,10 +333,34 @@ trait SettingsUpdateFixtures {
 						'settings'   => [ 'title' => 'Second heading' ],
 						'elements'   => [],
 					],
+
+					// THE RICH-TEXT WIDGET, STORED THE WAY ELEMENTOR STORES ONE:
+					// the words in their own envelope inside the prop's, and the
+					// editor's formatting tree beside them. The link in that tree
+					// is what a text update used to delete without saying so.
 					[
 						'id'         => 'w333333',
 						'elType'     => 'widget',
 						'widgetType' => 'e-paragraph',
+						'settings'   => [
+							'paragraph' => [
+								'$$type' => 'html-v3',
+								'value'  => [
+									'content'  => [
+										'$$type' => 'string',
+										'value'  => 'Call us today',
+									],
+									'children' => [
+										[
+											'id'       => 'a1',
+											'type'     => 'link',
+											'content'  => 'us',
+											'children' => [],
+										],
+									],
+								],
+							],
+						],
 						'elements'   => [],
 					],
 				],
