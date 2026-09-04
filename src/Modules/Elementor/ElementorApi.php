@@ -91,6 +91,29 @@ final class ElementorApi {
 	public const GLOBAL_CLASSES_REPOSITORY = 'Elementor\Modules\GlobalClasses\Global_Classes_Repository';
 
 	/**
+	 * The class Elementor uses to validate a global class before storing it.
+	 *
+	 * IT IS NOT ON THE REPOSITORY'S OWN WRITE PATH, which is the whole reason
+	 * this constant exists. `Global_Classes_Repository::put()` stores what it is
+	 * given without looking at it; the parsing happens in Elementor's REST
+	 * controller, one layer above. SiteHelm writes through the repository, so a
+	 * style property Elementor's prop schema does not accept is stored intact,
+	 * read back byte-identical, and never rendered. Asking this class is the only
+	 * way a write here can find that out.
+	 */
+	public const GLOBAL_CLASSES_PARSER = 'Elementor\Modules\GlobalClasses\Parsers\Global_Classes_Parser';
+
+	/**
+	 * The member of a parse answering the class Elementor would keep.
+	 */
+	public const PARSE_ACCEPTED_KEY = 'accepted';
+
+	/**
+	 * The member of a parse answering what it objected to.
+	 */
+	public const PARSE_ERRORS_KEY = 'errors';
+
+	/**
 	 * The member of a global-class read holding the classes themselves.
 	 */
 	public const GLOBAL_CLASSES_ITEMS_KEY = 'items';
@@ -270,6 +293,95 @@ final class ElementorApi {
 
 		return false !== $repository->put( $items, $order );
 	}
+
+	/**
+	 * What Elementor would keep of one global class, and what it objected to.
+	 *
+	 * REQ-0115. The repository stores without parsing, so a write that goes
+	 * through it cannot learn from the write itself that a style property was
+	 * unacceptable — the property is stored, the read-back matches, the digest
+	 * agrees, and the class renders without it. This asks the parser the REST
+	 * controller asks, before anything is written, so the discard is a thing the
+	 * preview can say rather than a thing the operator finds in the browser.
+	 *
+	 * NULL IS "THE PARSER COULD NOT BE ASKED", and is deliberately not a
+	 * refusal. Elementor's internals move, and a plugin that refused every
+	 * global-class write the moment this class was renamed would be trading a
+	 * property that silently does not render for an operation that does not work
+	 * at all. The caller warns instead. `accepted` being null within a returned
+	 * parse is the different and much stronger fact: the parser WAS asked and
+	 * kept nothing.
+	 *
+	 * @param string               $id         The class identifier.
+	 * @param array<string, mixed> $definition The class definition as it would be stored.
+	 *
+	 * @return array{accepted: array<string, mixed>|null, errors: array<mixed>}|null
+	 *         The parse, or null when the parser could not be addressed.
+	 */
+	public function parseGlobalClass( string $id, array $definition ): ?array {
+		if ( ! $this->presence->isLoaded() || ! class_exists( self::GLOBAL_CLASSES_PARSER ) ) {
+			return null;
+		}
+
+		if ( ! method_exists( self::GLOBAL_CLASSES_PARSER, 'make' ) ) {
+			return null;
+		}
+
+		$parser = call_user_func( [ self::GLOBAL_CLASSES_PARSER, 'make' ] );
+
+		if ( ! is_object( $parser ) || ! method_exists( $parser, 'parse_items' ) ) {
+			return null;
+		}
+
+		$result = $parser->parse_items( [ $id => $definition ] );
+
+		if ( ! is_object( $result ) || ! method_exists( $result, 'unwrap' ) ) {
+			return null;
+		}
+
+		$unwrapped = $result->unwrap();
+		$accepted  = is_array( $unwrapped ) ? ( $unwrapped[ $id ] ?? null ) : null;
+
+		return [
+			self::PARSE_ACCEPTED_KEY => is_array( $accepted ) ? $accepted : null,
+			self::PARSE_ERRORS_KEY   => $this->parse_errors( $result ),
+		];
+	}
+
+	/**
+	 * One parse result's objections, as a plain array.
+	 *
+	 * Elementor's result carries its errors in a collection object whose own
+	 * shape is not part of any contract this plugin can rely on, so the only
+	 * thing asked of it is that it can become an array. When it cannot, the
+	 * answer is an empty list rather than null: the caller has already learned
+	 * the load-bearing fact from `accepted`, and an unreadable error list must
+	 * not turn a usable parse into an unusable one.
+	 *
+	 * @param object $result The parse result.
+	 *
+	 * @return array<mixed> The objections, or an empty list.
+	 */
+	private function parse_errors( object $result ): array {
+		if ( ! method_exists( $result, 'errors' ) ) {
+			return [];
+		}
+
+		$errors = $result->errors();
+
+		if ( is_array( $errors ) ) {
+			return $errors;
+		}
+
+		if ( ! is_object( $errors ) || ! method_exists( $errors, 'to_array' ) ) {
+			return [];
+		}
+
+		$listed = $errors->to_array();
+
+		return is_array( $listed ) ? $listed : [];
+	}
+
 	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 
 	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- The module vocabulary is camelCase across every class.

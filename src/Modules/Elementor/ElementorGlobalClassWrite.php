@@ -102,6 +102,56 @@ final class ElementorGlobalClassWrite {
 	public const CLASS_VARIANTS = 'variants';
 
 	/**
+	 * The preview-detail member listing the style properties Elementor discards.
+	 */
+	public const DETAIL_DISCARDED = 'discarded';
+
+	/**
+	 * The discard entry member naming the class the property was set on.
+	 */
+	public const DISCARD_CLASS = 'classId';
+
+	/**
+	 * The discard entry member naming the property itself.
+	 */
+	public const DISCARD_PROPERTY = 'property';
+
+	/**
+	 * The discard entry member naming the breakpoint it was set at.
+	 */
+	public const DISCARD_BREAKPOINT = 'breakpoint';
+
+	/**
+	 * The discard entry member naming the state it was set for.
+	 */
+	public const DISCARD_STATE = 'state';
+
+	/**
+	 * The member of a style variant holding which breakpoint and state it is for.
+	 */
+	public const VARIANT_META = 'meta';
+
+	/**
+	 * The member of a style variant holding the style properties themselves.
+	 */
+	public const VARIANT_PROPS = 'props';
+
+	/**
+	 * The member of a variant's meta naming its breakpoint.
+	 */
+	public const META_BREAKPOINT = 'breakpoint';
+
+	/**
+	 * The member of a variant's meta naming its state.
+	 */
+	public const META_STATE = 'state';
+
+	/**
+	 * The breakpoint a variant with no narrower one applies at.
+	 */
+	public const BASE_BREAKPOINT = 'desktop';
+
+	/**
 	 * The only class kind this plugin creates.
 	 */
 	public const TYPE_CLASS = 'class';
@@ -284,13 +334,14 @@ final class ElementorGlobalClassWrite {
 	 * @param array<int, string>   $order    The order the write produces.
 	 * @param array<string, mixed> $detail   The machine-only preview structure.
 	 * @param array<int, string>   $warnings Safe non-fatal notices for the operator.
+	 * @param array<int, string>   $touched  The class identifiers this write authored.
 	 *
 	 * @return PlannedChange The normalized payload and promised after-state.
 	 *
 	 * @throws OperationException With ErrorCode::InvalidInput when the produced
 	 *                           set is one Elementor would refuse.
 	 */
-	public function plan( array $items, array $order, array $detail, array $warnings = [] ): PlannedChange {
+	public function plan( array $items, array $order, array $detail, array $warnings = [], array $touched = [] ): PlannedChange {
 		$order = array_values( $order );
 
 		if ( count( $items ) > self::MAX_CLASSES ) {
@@ -317,6 +368,8 @@ final class ElementorGlobalClassWrite {
 				'List the classes with ' . ElementorGlobalClassList::OPERATION_ID . ' and retry with the identifiers it reports.'
 			);
 		}
+
+		[ $items, $warnings, $detail ] = $this->checked( $items, $touched, $warnings, $detail );
 
 		$payload = [
 			self::PAYLOAD_ITEMS => $items,
@@ -533,6 +586,212 @@ final class ElementorGlobalClassWrite {
 		return is_scalar( $label ) ? (string) $label : '';
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+
+	// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The messages are literals written for end users and quote no stored content.
+	/**
+	 * The class set as Elementor would keep it, with every discard reported.
+	 *
+	 * REQ-0115, AND THE ONLY PLACE IN THIS PLUGIN THAT ASKS. The repository
+	 * stores without parsing, so a style property Elementor's schema does not
+	 * accept is written intact, read back identical, and never rendered: the
+	 * whole exchange reports success and the class comes out missing a rule. The
+	 * parser is asked here, at plan time, because plan time is when the caller
+	 * can still fix it and the preview is where they will read the answer.
+	 *
+	 * WHAT IS STORED IS WHAT THE PARSER KEPT, not what the caller sent. Storing
+	 * the caller's version and merely warning would leave the repository holding
+	 * properties that render nowhere, which is the state this whole change exists
+	 * to stop producing.
+	 *
+	 * THE THREE OUTCOMES ARE DELIBERATELY DIFFERENT. A class the parser keeps
+	 * nothing of is refused, because a write whose entire effect is discarded is
+	 * the `ElementorConditionGate` case — nothing would render. Losing SOME
+	 * properties is a warning and a preview detail, because the rest of the class
+	 * is real and refusing it would be worse than reporting it. Not being able to
+	 * ask at all is one warning saying so: Elementor's internals move, and
+	 * refusing every global-class write the day this parser is renamed would
+	 * trade a property that quietly does not render for an operation that does
+	 * not work.
+	 *
+	 * @param array<string, mixed> $items    The class map the write produces.
+	 * @param array<int, string>   $touched  The class identifiers this write authored.
+	 * @param array<int, string>   $warnings The warnings gathered so far.
+	 * @param array<string, mixed> $detail   The machine-only preview structure.
+	 *
+	 * @return array{0: array<string, mixed>, 1: array<int, string>, 2: array<string, mixed>}
+	 *         The checked map, the warnings and the detail.
+	 *
+	 * @throws OperationException With ErrorCode::InvalidInput when a touched class
+	 *                           is one Elementor would keep nothing usable of.
+	 */
+	private function checked( array $items, array $touched, array $warnings, array $detail ): array {
+		$discarded   = [];
+		$unreachable = false;
+
+		foreach ( $touched as $id ) {
+			$definition = $items[ $id ] ?? null;
+
+			if ( ! is_string( $id ) || ! is_array( $definition ) ) {
+				continue;
+			}
+
+			$parse = $this->api->parseGlobalClass( $id, $definition );
+
+			if ( null === $parse ) {
+				$unreachable = true;
+
+				continue;
+			}
+
+			$accepted = $parse[ ElementorApi::PARSE_ACCEPTED_KEY ];
+
+			if ( ! is_array( $accepted ) ) {
+				throw new OperationException(
+					ErrorCode::InvalidInput,
+					'Elementor will not accept the global class this change describes, so nothing was planned.',
+					'Check the label and the style property names against what ' . ElementorGlobalClassList::OPERATION_ID . ' reports for a class the editor made.'
+				);
+			}
+
+			$lost      = $this->discarded_properties( $id, $definition, $accepted );
+			$requested = $this->requested_property_count( $definition );
+
+			if ( $requested > 0 && count( $lost ) === $requested ) {
+				throw new OperationException(
+					ErrorCode::InvalidInput,
+					'Elementor accepts none of the style properties this change sets, so the class would render nothing and nothing was planned.',
+					'Check the property names against what ' . ElementorGlobalClassList::OPERATION_ID . ' reports for a class the Elementor editor made.'
+				);
+			}
+
+			$items[ $id ] = $accepted;
+
+			foreach ( $lost as $entry ) {
+				$discarded[] = $entry;
+				$warnings[]  = sprintf(
+					'Elementor does not accept the style property `%1$s` on `%2$s`, so it is left out of this change and will not render.',
+					$entry[ self::DISCARD_PROPERTY ],
+					$entry[ self::DISCARD_CLASS ]
+				);
+			}
+		}
+
+		if ( $unreachable ) {
+			$warnings[] = 'This Elementor could not be asked which style properties it accepts, so any it rejects will be stored without rendering.';
+		}
+
+		if ( [] !== $discarded ) {
+			$detail[ self::DETAIL_DISCARDED ] = $discarded;
+		}
+
+		return [ $items, $warnings, $detail ];
+	}
+	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+
+	/**
+	 * Every style property the parser dropped from one class.
+	 *
+	 * Variants are matched by their breakpoint and state rather than by position,
+	 * because the parser is free to drop a whole variant and a positional match
+	 * would then compare a mobile variant against a desktop one and report every
+	 * property in both as lost.
+	 *
+	 * @param string               $id         The class identifier.
+	 * @param array<string, mixed> $definition The class as this write built it.
+	 * @param array<string, mixed> $accepted   The class as the parser kept it.
+	 *
+	 * @return array<int, array<string, mixed>> One entry per dropped property.
+	 */
+	private function discarded_properties( string $id, array $definition, array $accepted ): array {
+		$kept = [];
+
+		foreach ( $this->variants_of( $accepted ) as $variant ) {
+			$kept[ $this->variant_key( $variant ) ] = array_keys( $this->props_of( $variant ) );
+		}
+
+		$dropped = [];
+
+		foreach ( $this->variants_of( $definition ) as $variant ) {
+			$key   = $this->variant_key( $variant );
+			$meta  = is_array( $variant[ self::VARIANT_META ] ?? null ) ? $variant[ self::VARIANT_META ] : [];
+			$still = $kept[ $key ] ?? [];
+
+			foreach ( array_keys( $this->props_of( $variant ) ) as $property ) {
+				if ( in_array( $property, $still, true ) ) {
+					continue;
+				}
+
+				$dropped[] = [
+					self::DISCARD_CLASS      => $id,
+					self::DISCARD_PROPERTY   => (string) $property,
+					self::DISCARD_BREAKPOINT => $meta[ self::META_BREAKPOINT ] ?? self::BASE_BREAKPOINT,
+					self::DISCARD_STATE      => $meta[ self::META_STATE ] ?? null,
+				];
+			}
+		}
+
+		return $dropped;
+	}
+
+	/**
+	 * How many style properties one class definition sets, across every variant.
+	 *
+	 * @param array<string, mixed> $definition The class definition.
+	 *
+	 * @return int The count.
+	 */
+	private function requested_property_count( array $definition ): int {
+		$count = 0;
+
+		foreach ( $this->variants_of( $definition ) as $variant ) {
+			$count += count( $this->props_of( $variant ) );
+		}
+
+		return $count;
+	}
+
+	/**
+	 * One class definition's variants, as a list.
+	 *
+	 * @param array<string, mixed> $definition The class definition.
+	 *
+	 * @return array<int, array<string, mixed>> The variants.
+	 */
+	private function variants_of( array $definition ): array {
+		$variants = $definition[ self::CLASS_VARIANTS ] ?? [];
+
+		return is_array( $variants ) ? array_values( array_filter( $variants, 'is_array' ) ) : [];
+	}
+
+	/**
+	 * One variant's style properties.
+	 *
+	 * @param array<string, mixed> $variant The variant.
+	 *
+	 * @return array<string, mixed> The properties.
+	 */
+	private function props_of( array $variant ): array {
+		$props = $variant[ self::VARIANT_PROPS ] ?? [];
+
+		return is_array( $props ) ? $props : [];
+	}
+
+	/**
+	 * The breakpoint-and-state key one variant is matched by.
+	 *
+	 * @param array<string, mixed> $variant The variant.
+	 *
+	 * @return string The key.
+	 */
+	private function variant_key( array $variant ): string {
+		$meta = is_array( $variant[ self::VARIANT_META ] ?? null ) ? $variant[ self::VARIANT_META ] : [];
+
+		$breakpoint = $meta[ self::META_BREAKPOINT ] ?? self::BASE_BREAKPOINT;
+		$state      = $meta[ self::META_STATE ] ?? null;
+
+		return ( is_scalar( $breakpoint ) ? (string) $breakpoint : '' )
+			. '|' . ( is_scalar( $state ) ? (string) $state : '' );
+	}
 
 	// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The message is a literal written for end users and quotes no stored content.
 	/**

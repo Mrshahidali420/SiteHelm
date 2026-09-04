@@ -83,31 +83,6 @@ final class ElementorGlobalClassCreate implements WriteOperation {
 	public const MAX_STYLES_BYTES = 65536;
 
 	/**
-	 * The breakpoint a class's base variant applies at.
-	 */
-	private const BASE_BREAKPOINT = 'desktop';
-
-	/**
-	 * The variant member carrying which breakpoint and state it applies at.
-	 */
-	private const VARIANT_META = 'meta';
-
-	/**
-	 * The variant member carrying the styles themselves.
-	 */
-	private const VARIANT_PROPS = 'props';
-
-	/**
-	 * The meta member naming the breakpoint.
-	 */
-	private const META_BREAKPOINT = 'breakpoint';
-
-	/**
-	 * The meta member naming the element state.
-	 */
-	private const META_STATE = 'state';
-
-	/**
 	 * Separates the parts of the mint seed.
 	 *
 	 * NUL, matching `ElementorIdMint`'s own separator: it cannot occur in an
@@ -243,11 +218,11 @@ final class ElementorGlobalClassCreate implements WriteOperation {
 			ElementorGlobalClassWrite::CLASS_LABEL    => $label,
 			ElementorGlobalClassWrite::CLASS_VARIANTS => [
 				[
-					self::VARIANT_META  => [
-						self::META_BREAKPOINT => self::BASE_BREAKPOINT,
-						self::META_STATE      => null,
+					ElementorGlobalClassWrite::VARIANT_META  => [
+						ElementorGlobalClassWrite::META_BREAKPOINT => ElementorGlobalClassWrite::BASE_BREAKPOINT,
+						ElementorGlobalClassWrite::META_STATE      => null,
 					],
-					self::VARIANT_PROPS => $styles,
+					ElementorGlobalClassWrite::VARIANT_PROPS => $styles,
 				],
 			],
 		];
@@ -266,7 +241,9 @@ final class ElementorGlobalClassCreate implements WriteOperation {
 					'label'     => $label,
 					'styleKeys' => array_keys( $styles ),
 				],
-			]
+			],
+			[],
+			[ $id ]
 		);
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase,WordPress.Security.EscapeOutput.ExceptionNotEscaped

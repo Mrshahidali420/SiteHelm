@@ -75,11 +75,16 @@ trait GlobalClassFixtures {
 			class_alias( GlobalClassFakeRepository::class, 'Elementor\Modules\GlobalClasses\Global_Classes_Repository' );
 		}
 
+		if ( ! class_exists( 'Elementor\Modules\GlobalClasses\Parsers\Global_Classes_Parser', false ) ) {
+			class_alias( GlobalClassFakeParser::class, 'Elementor\Modules\GlobalClasses\Parsers\Global_Classes_Parser' );
+		}
+
 		if ( ! defined( 'ELEMENTOR_VERSION' ) ) {
 			define( 'ELEMENTOR_VERSION', '4.0.0' );
 		}
 
 		GlobalClassFakeRepository::reset();
+		GlobalClassFakeParser::reset();
 	}
 
 	/**
@@ -368,5 +373,156 @@ class GlobalClassFakeCollection {
 	 */
 	public function all(): array {
 		return $this->items;
+	}
+}
+
+/**
+ * A fake `Global_Classes_Parser`, reproducing the one fact that matters.
+ *
+ * REQ-0115. Elementor's parser keeps the style properties its prop schema
+ * declares and silently drops the rest, and the repository this plugin writes
+ * through does no parsing at all. Everything else the real parser does — how it
+ * coerces a value, what its error collection looks like — is deliberately not
+ * reproduced here, because no assertion in this suite is about any of it.
+ *
+ * `$accepted` being null means "accept everything", which is what almost every
+ * existing test wants: they were written before the parser was asked and their
+ * props are all legitimate.
+ *
+ * @package SiteHelm
+ */
+class GlobalClassFakeParser {
+
+	/**
+	 * The style property keys this parser keeps, or null to keep all of them.
+	 *
+	 * @var array<int, string>|null
+	 */
+	public static ?array $accepted = null;
+
+	/**
+	 * Class identifiers the parser rejects outright, keeping nothing.
+	 *
+	 * @var array<int, string>
+	 */
+	public static array $rejected = [];
+
+	/**
+	 * Whether the parser is unreachable, as an Elementor that renamed it is.
+	 *
+	 * @var bool
+	 */
+	public static bool $unreachable = false;
+
+	/**
+	 * Puts the parser back to accepting everything.
+	 *
+	 * @return void
+	 */
+	public static function reset(): void {
+		self::$accepted    = null;
+		self::$rejected    = [];
+		self::$unreachable = false;
+	}
+
+	/**
+	 * The upstream constructor's name.
+	 *
+	 * @return self|null The parser, or null when this fake site has none.
+	 */
+	public static function make(): ?self {
+		return self::$unreachable ? null : new self();
+	}
+
+	/**
+	 * Parses a class map, keeping only the accepted properties.
+	 *
+	 * @param array<string, mixed> $items The classes to parse.
+	 *
+	 * @return GlobalClassFakeParseResult The result.
+	 */
+	public function parse_items( array $items ): GlobalClassFakeParseResult {
+		$kept   = [];
+		$errors = [];
+
+		foreach ( $items as $id => $definition ) {
+			if ( in_array( $id, self::$rejected, true ) ) {
+				$errors[ $id ] = 'invalid_value';
+
+				continue;
+			}
+
+			$kept[ $id ] = $this->kept( $definition );
+		}
+
+		return new GlobalClassFakeParseResult( $kept, $errors );
+	}
+
+	/**
+	 * One class definition with its unaccepted properties removed.
+	 *
+	 * @param mixed $definition The definition.
+	 *
+	 * @return array<string, mixed> The kept definition.
+	 */
+	private function kept( mixed $definition ): array {
+		if ( ! is_array( $definition ) ) {
+			return [];
+		}
+
+		if ( null === self::$accepted || ! is_array( $definition['variants'] ?? null ) ) {
+			return $definition;
+		}
+
+		foreach ( $definition['variants'] as $index => $variant ) {
+			if ( ! is_array( $variant ) || ! is_array( $variant['props'] ?? null ) ) {
+				continue;
+			}
+
+			$definition['variants'][ $index ]['props'] = array_intersect_key(
+				$variant['props'],
+				array_flip( self::$accepted )
+			);
+		}
+
+		return $definition;
+	}
+}
+
+/**
+ * What `parse_items()` returns: the kept map, and what it objected to.
+ *
+ * @package SiteHelm
+ */
+class GlobalClassFakeParseResult {
+
+	/**
+	 * Constructs the result.
+	 *
+	 * @param array<string, mixed> $kept   The classes the parser kept.
+	 * @param array<string, mixed> $errors What it objected to.
+	 */
+	public function __construct(
+		private readonly array $kept,
+		private readonly array $errors,
+	) {
+	}
+
+	/**
+	 * The classes the parser kept.
+	 *
+	 * @return array<string, mixed> The kept map.
+	 */
+	public function unwrap(): array {
+		return $this->kept;
+	}
+
+	/**
+	 * What the parser objected to.
+	 *
+	 * @return array<string, mixed> The objections.
+	 */
+	public function errors(): array {
+		return $this->errors;
 	}
 }
