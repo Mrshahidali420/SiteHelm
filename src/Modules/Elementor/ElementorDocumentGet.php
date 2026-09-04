@@ -133,6 +133,7 @@ final class ElementorDocumentGet {
 					],
 					'rootId' => [
 						'type'        => 'string',
+						'maxLength'   => ElementorWriteFields::ELEMENT_ID_MAX_LENGTH,
 						'pattern'     => ElementorWriteFields::ELEMENT_ID_PATTERN,
 						'description' => 'Optional. Return only this element and everything inside it, instead of the whole document. Use it after a narrowed response to open one band at full depth. The totals and hints still describe the whole document.',
 					],

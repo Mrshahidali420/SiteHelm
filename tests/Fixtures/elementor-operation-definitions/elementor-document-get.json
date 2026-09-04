@@ -9,6 +9,7 @@
             },
             "rootId": {
                 "type": "string",
+                "maxLength": 64,
                 "pattern": "^[A-Za-z0-9_-]{1,64}$",
                 "description": "Optional. Return only this element and everything inside it, instead of the whole document. Use it after a narrowed response to open one band at full depth. The totals and hints still describe the whole document."
             }
