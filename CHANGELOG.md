@@ -9,7 +9,20 @@ Every entry names the user-visible outcome. Internal refactors, test additions, 
 documentation-only changes are not listed unless they change what an agent can do or how
 an operation behaves.
 
-## [Unreleased]
+## [0.12.0] — 2026-09-04
+
+**Update this one promptly if you have bought Pro.** Activating a licence led to a page that
+refused to open, so a paid site could not turn the add-on on by following either route the
+plugin offered. That is fixed below, and it is the reason this release should not wait.
+
+### Fixed — the licence route
+- **"Activate a licence" led to a page that refused to open.** The button on Health, and the
+  sentence an agent was given when a Pro operation refused, both pointed at an account page
+  the licensing SDK never registers for an add-on, so following either was answered with
+  "Sorry, you are not allowed to access this page" — and the Add-Ons screen, the other route
+  offered, could not load at all on a host that cannot reach the licensing service. Every
+  link about Pro now goes to SiteHelm's own Upgrade screen, which this plugin registers and
+  which works whether or not anything outbound succeeds, and the Add-Ons screen is gone.
 
 ### Added
 - **An agent can now see the page a visitor is served, not the row it wrote.** Every write
@@ -34,7 +47,6 @@ an operation behaves.
   content the look actually needs. It is shorthand, never an override: sending your own
   padding or content width beside it is refused rather than silently losing one of them.
 
-### Added — earlier in this release
 - **A free site now says what Pro would add, instead of reading as impossible.** Ask an
   agent to do something only the add-on does and it used to answer that SiteHelm cannot do
   it at all — because a listing is the only place most agents look, and an operation absent
@@ -114,13 +126,6 @@ an operation behaves.
   written, store its answer rather than the request, and name every discarded property in a
   warning and in the preview. A class Elementor keeps nothing of is refused, because it would
   render nothing at all. An Elementor that cannot be asked is a warning and not a refusal.
-- **"Activate a licence" led to a page that refused to open.** The button on Health, and the
-  sentence an agent was given when a Pro operation refused, both pointed at an account page
-  the licensing SDK never registers for an add-on, so following either was answered with
-  "Sorry, you are not allowed to access this page" — and the Add-Ons screen, the other route
-  offered, could not load at all on a host that cannot reach the licensing service. Every
-  link about Pro now goes to SiteHelm's own Upgrade screen, which this plugin registers and
-  which works whether or not anything outbound succeeds, and the Add-Ons screen is gone.
 - **Buttons in the console were drawn in their own background colour, label and all.** A link
   colour meant for bare links in prose outweighed every button, tab and menu item built from
   an anchor, so a primary button rendered as a solid block of colour with the text
