@@ -822,6 +822,29 @@ Design decisions that are not obvious from the code:
 - `SeoModule::health()` uses `isInstalled()` for the absent test and `isLoaded()`
   for the version-blocked test, so an old-but-present install is reported
   version-blocked **with its version**.
+- **`ModuleHealth::Unconfigured` is the fourth state, and this module is the only
+  one that produces it.** From roughly 1.0.200 Rank Math registers no `wp_head`
+  output at all until an owner has finished its setup wizard, so a site can store a
+  perfect title, description and social card through this module and serve none of
+  it. Every read and write still works, which is exactly why the old three-state
+  model reported the module `active` and every verification agreed with itself
+  while the public page carried nothing. `SeoProvider::isConfigured()` carries the
+  answer, defaults to `true` in both abstract bases, and is overridden only by
+  `RankMathProvider` (reading Rank Math's own `rank_math_is_configured` option).
+  `SeoPresence::isConfigured()` returns `true` when there is no provider at all: a
+  site with no SEO plugin is already reported `inactive`, and reporting it
+  unconfigured as well would tell an operator to finish setting up a plugin they do
+  not have.
+- **The fourth state is available, not blocked**, and four gates say so through the
+  one method `ModuleHealth::isOperational()` rather than four copies of the same
+  comparison: `CatalogBuilder::blocked_reason()` (no `blockedReason`),
+  `RollbackAdmission::assert_module_compatibility()` (rollback admitted),
+  `OperationsScreen::is_active()` and `StatusScreen::blocked_count()`. Each of them
+  compared against `ModuleHealth::Active` directly before this state existed, and
+  every one of them would have silently withdrawn a working module. The caveat is
+  reported instead — one sentence from `IntegrationHealth::explain()` and a line on
+  the module card, neither of which names the dependency, because a descriptor may
+  list seven plugins and only the installed one needs setting up.
 - The write declares `RollbackPolicy::Supported`, not `Required` — it overwrites
   rather than destroys, so a post whose metadata cannot be restored is a post with the
   metadata the caller asked for, not a hole.

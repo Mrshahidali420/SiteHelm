@@ -105,12 +105,21 @@ final class SeoModule implements IntegrationModule {
 	/**
 	 * The detected version and health status.
 	 *
-	 * The four states are the ones ElementorModule established and every
+	 * The first four states are the ones ElementorModule established and every
 	 * plugin-backed module since has repeated, in the same order and for the same
 	 * reasons: storage first, because with no local tables the module cannot serve a
 	 * call whatever the plugin's state is; then absent; then present-but-below-floor,
 	 * reported as version-blocked WITH the installed version, because an operator
 	 * told to update needs to see the version they are updating from; then active.
+	 *
+	 * THIS MODULE ADDED THE FIFTH, and it is the only one that can reach it so
+	 * far. A plugin can pass every check above and still be inert, because
+	 * several SEO plugins suppress their own front-end output until an owner
+	 * finishes their setup. Operations keep working in that state, so it is
+	 * reported after the floor check rather than before: the module is available,
+	 * and what is missing is the plugin's effect on the page a visitor is served.
+	 * {@see ModuleHealth::isOperational()} is what stops a caller reading it as a
+	 * failure.
 	 *
 	 * The version reported is the highest-precedence plugin that is PRESENT rather
 	 * than the one that is usable — SeoPresence::version() records why — so the
@@ -136,6 +145,13 @@ final class SeoModule implements IntegrationModule {
 			return [
 				'version' => $this->presence->version(),
 				'health'  => ModuleHealth::VersionBlocked->value,
+			];
+		}
+
+		if ( ! $this->presence->isConfigured() ) {
+			return [
+				'version' => $this->presence->version(),
+				'health'  => ModuleHealth::Unconfigured->value,
 			];
 		}
 

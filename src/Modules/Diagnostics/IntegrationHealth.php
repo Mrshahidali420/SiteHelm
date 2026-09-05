@@ -166,6 +166,19 @@ final class IntegrationHealth {
 			return sprintf( '%s is active and its operations are available.', $name );
 		}
 
+		// THE DEPENDENCY IS NOT NAMED IN THIS ONE SENTENCE, and that is deliberate
+		// rather than an omission. A descriptor may list several plugins any one of
+		// which satisfies the module — the SEO descriptor lists seven — and this
+		// state is reached because the plugin actually installed has not finished
+		// its setup. Substituting the whole list would tell an operator to go and
+		// set up six plugins they do not have.
+		if ( ModuleHealth::Unconfigured->value === $health ) {
+			return sprintf(
+				'%s is available and its operations work, but the plugin behind it has not finished its own setup, so nothing it stores is reaching the pages visitors are served. Finish that plugin\'s setup in the WordPress administration screens.',
+				$name
+			);
+		}
+
 		if ( ModuleHealth::VersionBlocked->value === $health ) {
 			return sprintf(
 				'%s is unavailable: %s is installed at %s, below the supported range %s. Update %s to enable this module\'s operations.',

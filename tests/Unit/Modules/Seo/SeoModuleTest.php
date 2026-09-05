@@ -122,6 +122,21 @@ final class SeoModuleTest extends TestCase {
 		$this->assertSame( ModuleId::Seo, ( new SeoModule( null ) )->id() );
 	}
 
+	/**
+	 * Makes Installer::isAvailable() answer ready and Rank Math answer set-up or not.
+	 *
+	 * @param bool $configured What `rank_math_is_configured` holds.
+	 */
+	private function stubRankMathSetup( bool $configured ): void {
+		Functions\when( 'get_option' )->alias(
+			static fn( string $key, mixed $fallback = false ): mixed => match ( $key ) {
+				Installer::STATUS_OPTION    => Installer::STATUS_READY,
+				'rank_math_is_configured'   => $configured,
+				default                     => $fallback,
+			}
+		);
+	}
+
 	// --------------------------------------------------------- module health
 
 	/**
@@ -188,6 +203,57 @@ final class SeoModuleTest extends TestCase {
 
 		$this->assertSame( ModuleHealth::Inactive->value, $health['health'] );
 		$this->assertNull( $health['version'] );
+	}
+
+	/**
+	 * THE FIFTH STATE, and the only plugin that can produce it.
+	 *
+	 * A Rank Math that has never been through its setup wizard is loaded, in range,
+	 * and storing everything SiteHelm writes to it — while registering no output on
+	 * the page a visitor is served. Reporting Active there is what let a whole set
+	 * of social cards be written, verified, and still be missing in the wild.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_a_supported_plugin_that_has_not_finished_its_setup_reports_unconfigured(): void {
+		define( 'RANK_MATH_VERSION', '1.0.210' );
+		$this->stubRankMathSetup( false );
+
+		$health = ( new SeoModule() )->health();
+
+		$this->assertSame( ModuleHealth::Unconfigured->value, $health['health'] );
+		$this->assertSame( '1.0.210', $health['version'] );
+	}
+
+	/**
+	 * The same plugin, set up, is plain Active — which is what makes the test above
+	 * about the option rather than about Rank Math being present at all.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_the_same_plugin_with_its_setup_finished_reports_active(): void {
+		define( 'RANK_MATH_VERSION', '1.0.210' );
+		$this->stubRankMathSetup( true );
+
+		$health = ( new SeoModule() )->health();
+
+		$this->assertSame( ModuleHealth::Active->value, $health['health'] );
+		$this->assertSame( '1.0.210', $health['version'] );
+	}
+
+	/**
+	 * THE SITE WITH NOTHING TO CONFIGURE MUST NOT READ AS UNCONFIGURED. With no SEO
+	 * plugin at all there is no setup anybody could finish, and the absent case is
+	 * already reported as inactive one line earlier; a second report here would send
+	 * an operator to finish setting up a plugin they do not have.
+	 */
+	public function test_a_site_with_no_seo_plugin_is_inactive_rather_than_unconfigured(): void {
+		$this->stubStorage( true );
+
+		$this->assertTrue( ( new SeoPresence() )->isConfigured() );
+		$this->assertSame( ModuleHealth::Inactive->value, ( new SeoModule() )->health()['health'] );
 	}
 
 	/**

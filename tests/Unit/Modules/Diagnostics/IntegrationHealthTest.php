@@ -186,6 +186,68 @@ final class IntegrationHealthTest extends TestCase {
 	}
 
 	/**
+	 * THE SENTENCE FOR A MODULE THAT WORKS AND STILL ISN'T DOING ANYTHING.
+	 *
+	 * This state is the one an operator is least likely to guess at. Every other
+	 * unhappy state stops the operations, so it announces itself the first time
+	 * somebody tries to use the module. This one does not: the writes succeed, the
+	 * reads agree, and the only symptom is out on the public page, where nobody
+	 * looks until a client does. So the sentence has to carry the whole diagnosis
+	 * on its own, and it is asserted whole rather than by substring.
+	 *
+	 * It must not read as unavailable. A module in this state answers every call
+	 * it ever did, and the word would send an operator hunting for a broken
+	 * install instead of an unfinished one — which is why the contrasting entry is
+	 * read from the same call.
+	 */
+	public function test_an_unconfigured_module_reads_as_working_but_not_yet_taking_effect(): void {
+		$by_id = $this->reportKeyedById(
+			[
+				ModuleId::Seo->value => [
+					'version' => '1.0.210',
+					'health'  => ModuleHealth::Unconfigured->value,
+				],
+				'elementor'          => [
+					'version' => '2.9.14',
+					'health'  => ModuleHealth::VersionBlocked->value,
+				],
+			]
+		);
+
+		$this->assertSame( ModuleHealth::Unconfigured->value, $by_id['seo']['health'] );
+		$this->assertSame( '1.0.210', $by_id['seo']['installedVersion'] );
+		$this->assertSame(
+			'SEO metadata is available and its operations work, but the plugin behind it has not finished its own setup, so nothing it stores is reaching the pages visitors are served. Finish that plugin\'s setup in the WordPress administration screens.',
+			$by_id['seo']['explanation']
+		);
+		$this->assertStringNotContainsString( 'unavailable', $by_id['seo']['explanation'] );
+		$this->assertStringContainsString( 'unavailable', $by_id['elementor']['explanation'] );
+	}
+
+	/**
+	 * The seven-plugin descriptor is why the sentence above names no dependency.
+	 *
+	 * Substituting the descriptor's `name` there would produce "but yoast-seo,
+	 * rank-math, aioseo, seopress, seo-framework, slim-seo, or surerank has not
+	 * finished its own setup" — an instruction to go and set up six plugins the
+	 * site does not have, issued by the operation whose whole job is to say what
+	 * to do next.
+	 */
+	public function test_the_unconfigured_sentence_never_recites_the_dependency_list(): void {
+		$by_id = $this->reportKeyedById(
+			[
+				ModuleId::Seo->value => [
+					'version' => '1.0.210',
+					'health'  => ModuleHealth::Unconfigured->value,
+				],
+			]
+		);
+
+		$this->assertStringNotContainsString( 'rank-math', $by_id['seo']['explanation'] );
+		$this->assertStringNotContainsString( 'yoast-seo', $by_id['seo']['explanation'] );
+	}
+
+	/**
 	 * The health map is the single currency. A handler that recomputed health by
 	 * calling `$module->health()` would answer `inactive` for Elementor here —
 	 * the plugin genuinely is not installed in this process — and the gateway

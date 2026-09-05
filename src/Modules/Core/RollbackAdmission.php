@@ -249,7 +249,10 @@ final class RollbackAdmission {
 		$current = $context->moduleVersions[ $module ] ?? [];
 		$health  = is_array( $current ) ? ( $current['health'] ?? ModuleHealth::Inactive->value ) : ModuleHealth::Inactive->value;
 
-		if ( ModuleHealth::Active->value !== $health ) {
+		// An unconfigured module is admitted. It records and restores through the
+		// same store it always did; the plugin's unfinished setup governs what
+		// visitors see, not whether a snapshot can be put back.
+		if ( true !== ModuleHealth::tryFrom( is_string( $health ) ? $health : '' )?->isOperational() ) {
 			throw new OperationException(
 				ErrorCode::RollbackUnavailable,
 				'The module that recorded this snapshot is not active, so restoration cannot be proven safe.',

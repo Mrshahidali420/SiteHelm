@@ -208,6 +208,27 @@ final class StatusScreenTest extends TestCase {
 		$this->assertStringNotContainsString( 'Advanced Custom Fields', $html );
 	}
 
+	/**
+	 * An unconfigured module counts as available here, because it is.
+	 *
+	 * Status answers one question — is anything holding SiteHelm back — and a
+	 * module whose operations all work is not. Counting it as blocked would put
+	 * the whole screen into "some modules are unavailable" over a plugin that is
+	 * answering every call, and send an operator looking for a broken install.
+	 */
+	public function testAnUnconfiguredModuleIsNotCountedAgainstReadiness(): void {
+		$health                          = $this->allActive();
+		$health[ ModuleId::Seo->value ] = [
+			'version' => '1.0.210',
+			'health'  => ModuleHealth::Unconfigured->value,
+		];
+
+		$html = $this->render( $health );
+
+		$this->assertStringContainsString( 'Everything available is active', $html );
+		$this->assertStringContainsString( '12 of 12', $html );
+	}
+
 	public function testTheEnvironmentReportsTheVersionsAnOperatorWouldBeAskedFor(): void {
 		$html = $this->render( $this->allActive() );
 

@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace SiteHelm\Tests\Unit\Modules\Seo;
 
+use Brain\Monkey\Functions;
 use SiteHelm\Modules\Seo\RankMathProvider;
 use SiteHelm\Modules\Seo\SeoFields;
 use SiteHelm\Tests\Doubles\SeoWordPressStubs;
@@ -55,6 +56,41 @@ final class RankMathProviderTest extends TestCase {
 
 	public function test_the_provider_names_itself_by_the_plugin_slug(): void {
 		$this->assertSame( 'rank-math', $this->provider->name() );
+	}
+
+	/**
+	 * THE ONLY PROVIDER THAT ANSWERS THIS WITH ANYTHING BUT TRUE, and it answers it
+	 * from one option Rank Math writes itself. From roughly 1.0.200 a fresh install
+	 * puts nothing on the page a visitor is served until an owner has been through
+	 * its setup, so a site can store a perfectly good title and description through
+	 * this provider and serve none of it.
+	 */
+	public function test_rank_math_reports_itself_configured_once_its_own_option_is_set(): void {
+		Functions\when( 'get_option' )->alias(
+			static fn( string $key, mixed $fallback = false ): mixed =>
+				'rank_math_is_configured' === $key ? '1' : $fallback
+		);
+
+		$this->assertTrue( $this->provider->isConfigured() );
+	}
+
+	/**
+	 * A missing option and a false one mean the same thing: setup never finished.
+	 * The absent case is the one a fresh install is actually in, so both are pinned.
+	 */
+	public function test_rank_math_reports_itself_unconfigured_when_the_option_is_absent_or_false(): void {
+		Functions\when( 'get_option' )->alias(
+			static fn( string $key, mixed $fallback = false ): mixed => $fallback
+		);
+
+		$this->assertFalse( $this->provider->isConfigured() );
+
+		Functions\when( 'get_option' )->alias(
+			static fn( string $key, mixed $fallback = false ): mixed =>
+				'rank_math_is_configured' === $key ? '0' : $fallback
+		);
+
+		$this->assertFalse( $this->provider->isConfigured() );
 	}
 
 	public function test_rank_math_reports_its_seo_score_and_no_readability_score(): void {

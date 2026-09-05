@@ -200,6 +200,50 @@ final class ModulesScreenTest extends TestCase {
 	}
 
 	/**
+	 * THE ONE CARD THAT CARRIES A WARNING AND STAYS AT FULL WEIGHT.
+	 *
+	 * Everything this module offers works, so dimming the card or dropping it out
+	 * of the active count would tell an operator their SEO operations are gone
+	 * when they are not. What is missing is narrower and easier to miss: the
+	 * plugin holding what SiteHelm writes is not putting any of it on the page a
+	 * visitor is served. So the card keeps its weight and gains a line.
+	 */
+	public function testAnUnconfiguredModuleIsBadgedAndExplainedWithoutBeingDimmed(): void {
+		$health                          = $this->allActive();
+		$health[ ModuleId::Seo->value ] = [
+			'version' => '1.0.210',
+			'health'  => ModuleHealth::Unconfigured->value,
+		];
+
+		$html = $this->render( $health );
+
+		$this->assertStringContainsString( 'Setup unfinished', $html );
+		$this->assertStringContainsString( 'sitehelm-badge--waiting', $html );
+		$this->assertStringContainsString( 'its own setup is unfinished', $html );
+		$this->assertStringNotContainsString( 'sitehelm-card--muted', $html );
+		$this->assertStringContainsString( 'Every module is active', $html );
+	}
+
+	/**
+	 * The waiting line names no plugin, for the same reason the health sentence
+	 * does not: the SEO module is satisfied by any one of seven, and reciting the
+	 * requirement would ask an operator to go and set up six they never installed.
+	 */
+	public function testTheUnconfiguredLineDoesNotReciteTheDependencyList(): void {
+		$health                          = $this->allActive();
+		$health[ ModuleId::Seo->value ] = [
+			'version' => '1.0.210',
+			'health'  => ModuleHealth::Unconfigured->value,
+		];
+
+		$html = $this->render( $health );
+
+		$this->assertStringNotContainsString( 'rank-math', $html );
+		$this->assertStringNotContainsString( 'Activate ', $html );
+		$this->assertStringNotContainsString( 'Update to ', $html );
+	}
+
+	/**
 	 * A module that is not active is dimmed as well as badged, because a wall of
 	 * identically weighted cards makes an operator read every badge to find the
 	 * one that is wrong.

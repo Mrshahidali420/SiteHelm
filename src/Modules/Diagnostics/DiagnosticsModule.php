@@ -135,7 +135,7 @@ final class DiagnosticsModule implements IntegrationModule {
 				id: 'system-integrations',
 				domain: Domain::System,
 				mode: Mode::Read,
-				description: 'Report which bundled integration modules are active, inactive, or version-blocked, and what each one needs.',
+				description: 'Report which bundled integration modules are active, inactive, version-blocked, or active but not yet configured, and what each one needs.',
 				inputSchema: [
 					'type'                 => 'object',
 					'properties'           => [],

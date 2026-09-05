@@ -36,6 +36,19 @@ namespace SiteHelm\Modules\Seo;
 abstract class SeoArrayMetaProvider implements SeoProvider {
 
 	/**
+	 * Whether this plugin is acting on what it stores.
+	 *
+	 * True unless a subclass knows better. Of the seven supported plugins only
+	 * Rank Math ships a gate that suppresses its own front-end output, and it is
+	 * the only one that overrides this. Claiming any of the others might be
+	 * dormant would mean reporting a caveat with nothing behind it.
+	 */
+	public function isConfigured(): bool {
+		return true;
+	}
+
+
+	/**
 	 * The path holding each writable text field.
 	 *
 	 * @return array<string, array{0: string, 1: string|null}> Field name => [meta key, sub-key].
