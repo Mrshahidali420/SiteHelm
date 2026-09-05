@@ -1182,6 +1182,16 @@ measured ~4.4:1 on the tinted surfaces and failed.
 
 ## 14. Media size caps — one number, asked in two places
 
+There is a second, larger ceiling for the ticket path, and it is deliberately not this
+one: `MediaMimeGuard::ticketByteCap()` is `min( MAX_TICKET_BYTES, wp_max_upload_size() )`,
+where `MAX_TICKET_BYTES` is 64 MiB — eight times the base64 ceiling. The two differ
+because they bound different risks. `decodedByteCap()` bounds a string the request body
+had to carry and PHP had to hold in memory to decode; `ticketByteCap()` bounds a file
+arriving as raw bytes on a route of its own, where the only real limit is what the host
+accepts. Both still stop at `wp_max_upload_size()`, so neither can promise more than the
+site can store. `inspectBytes()` takes the cap as its third argument for exactly this
+reason, and defaults to `decodedByteCap()` so the older callers are unchanged.
+
 `MediaMimeGuard::decodedByteCap()` is the only size ceiling in the media module:
 `min( MAX_DECODED_BYTES, wp_max_upload_size() )`, falling back to the built-in 8 MiB
 when the site reports nothing positive — a non-positive report is a misconfigured ini
@@ -3806,3 +3816,67 @@ already proved the path is inside the theme by the time a byte is read.
 Their tests build real directories in the system's temporary space. The thing
 under test is what `realpath()` answers, and a doubled filesystem would answer
 whatever the double was told — the containment check would be testing itself.
+## 65. Upload tickets — how bytes reach the site without passing through the model
+
+`media-upload-ticket` exists because of an arithmetic fact, not a performance one. Every
+argument an operation takes rides inside the request body the client assembles, and for an
+AI client that body is assembled by the model. A six megabyte zip is eight megabytes of
+base64 and roughly two million tokens, so `contentBase64` is not a slow way to move a
+package — it cannot move one at all. The ticket separates the permission, which is small
+and belongs in an ordinary previewed operation, from the payload, which is large and
+belongs on a route of its own.
+
+**Three files.** `UploadTickets` is the credential store, `MediaUploadTicket` is the
+operation that mints one, and `UploadReceiver` is the REST route that spends it. The
+operation is registered in `MediaModule::register()`; the route is registered in
+`Plugin::register()` beside `RestTransport`, because a module registers operations and not
+endpoints. The receiver is constructed with the same `OperationSwitches` instance the
+dispatcher holds, so switching uploads off switches the route off too.
+
+**The store is the plans table, and no migration was needed.** A ticket and a plan token
+are the same object with different words on it: a secret issued to one caller, bound to one
+site and one operation, valid for a bounded window, spendable exactly once. What makes
+`PlanStore` the right home rather than `AuthorizationCodes` is that `PlanStore::consume()`
+is a conditional `UPDATE` reporting `rows_affected`, so of two requests presenting the same
+ticket the winner sees one row and the loser sees none. `AuthorizationCodes::consume()` is
+a get-then-delete pair and is not atomic.
+
+**A ticket can never be mistaken for a plan token.** Rows are stored under
+`operation_id = 'media-upload-ticket:redeem'`, which is deliberately not the id of anything
+the dispatcher can run. `PlanAdmission` matches a token's row against the operation being
+called, so a ticket presented as a `planToken` matches nothing and is refused. Only the
+digest is stored, so a reader of the database cannot spend one.
+
+**The ticket is returned but never logged, and that is not an accident.**
+`WriteSettlement::settle()` puts `$after->fields` into the ephemeral response envelope, but
+the permanent audit row receives `measured_after( $planned, $after )`, which iterates only
+`array_keys( $planned->afterFields )` — the fields the plan *promised*. So the operation
+promises `filename` and `byteLength`, and carries `ticket`, `uploadUrl` and `expiresAt`
+unpromised. They reach the caller and stop there. `unpromised_warnings()` skips any field
+absent from `$before->fields`, and the target is create-shaped, so the unpromised fields
+raise no warning either. **Anything added to `afterFields` here becomes permanent audit
+content — check that before adding a field.**
+
+**What the receiver re-checks, and what it deliberately does not.** The ticket is the
+credential, which is why the route's `permission_callback` is open; it travels in an
+`X-SiteHelm-Ticket` header rather than in the URL, where access logs would keep it, or in
+`Authorization`, which belongs to `BearerAuthenticator`. At redemption the receiver checks
+the content type, resolves the ticket, checks the body length against the declared length
+and the sha256 when one was declared, then re-checks that writes are not paused, that the
+`media-upload` switch is on, and that the operator still holds `upload_files`. It does not
+re-run the whole policy chain, because two copies of a policy chain are two chances to
+disagree. The ticket is claimed only after every one of those checks passes and before
+anything is stored.
+
+**The file is still judged by its content.** The bytes go through the same
+`MediaMimeGuard::inspectBytes()` → `MediaAssetPlan::plan()` → `MediaSideload::store()` chain
+`media-upload` uses, with `ticketByteCap()` as the ceiling. The declared filename decides
+nothing; a zip is admitted only if the site's allowlist admits `application/zip`, which in
+the free plugin it does not — the add-on widens it through
+`sitehelm_media_mime_allowlist` while a Pro licence is active. Nothing about the ticket
+lives in Pro.
+
+**The audit row says `media-upload`.** The receiver files its row under
+`MediaUpload::definition()`, because the outcome is identical — a file the operator chose is
+now in the library — and the Activity screen already knows how to render that id. The
+ticket's own row is the previewed, logged record that permission was granted.

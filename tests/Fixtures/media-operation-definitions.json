@@ -8,9 +8,10 @@
         "media-upload",
         "media-import",
         "media-svg-upload",
-        "media-resize"
+        "media-resize",
+        "media-upload-ticket"
     ],
-    "operationCount": 9,
+    "operationCount": 10,
     "definitions": {
         "media-get": {
             "inputSchema": {
@@ -714,6 +715,81 @@
                 },
                 "required": [
                     "id"
+                ],
+                "additionalProperties": false
+            },
+            "outputSchema": {
+                "type": "object",
+                "oneOf": [
+                    {
+                        "title": "Plan phase",
+                        "type": "object",
+                        "properties": {
+                            "plan": {
+                                "type": "object",
+                                "description": "The change plan to approve, including its plan token."
+                            }
+                        },
+                        "required": [
+                            "plan"
+                        ],
+                        "additionalProperties": false
+                    },
+                    {
+                        "title": "Apply phase",
+                        "type": "object",
+                        "properties": {
+                            "target": {
+                                "type": "string",
+                                "description": "The concrete target that was written."
+                            },
+                            "changed": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                },
+                                "description": "The fields the approved plan changed."
+                            },
+                            "state": {
+                                "type": "object",
+                                "description": "The verified persisted state of the target."
+                            }
+                        },
+                        "required": [
+                            "target",
+                            "changed",
+                            "state"
+                        ],
+                        "additionalProperties": false
+                    }
+                ]
+            }
+        },
+        "media-upload-ticket": {
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "filename": {
+                        "type": "string",
+                        "maxLength": 255,
+                        "description": "Filename the uploaded file will take, including its extension. The file type is determined from the content when it arrives, never from this name."
+                    },
+                    "byteLength": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "Exact size of the file in bytes. A body of any other length is refused, so this must be the real size and not an estimate."
+                    },
+                    "contentSha256": {
+                        "type": "string",
+                        "minLength": 64,
+                        "maxLength": 64,
+                        "pattern": "^[a-f0-9]{64}$",
+                        "description": "Optional lowercase hex sha256 of the file. When given, a body that does not hash to it is refused."
+                    }
+                },
+                "required": [
+                    "filename",
+                    "byteLength"
                 ],
                 "additionalProperties": false
             },

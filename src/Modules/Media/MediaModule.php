@@ -152,5 +152,13 @@ final class MediaModule implements IntegrationModule {
 			MediaResize::definition(),
 			new MediaResize( $fields, $targets )
 		);
+
+		// The ticket is registered here; the route it is spent against is
+		// registered in Plugin::register alongside the other REST route, because
+		// a module registers operations and not endpoints.
+		$registry->registerWrite(
+			MediaUploadTicket::definition(),
+			new MediaUploadTicket( $guard )
+		);
 	}
 }

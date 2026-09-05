@@ -20,12 +20,19 @@ use SiteHelm\Tests\TestCase;
  */
 final class PluginTest extends TestCase {
 
+	/**
+	 * Two routes go up on `rest_api_init`: the gateway every operation is
+	 * dispatched through, and the upload route a ticket is spent against. The
+	 * second one exists because a file cannot travel as an operation argument,
+	 * so it is deliberately separate wiring rather than a branch inside the
+	 * first, and the count is asserted so dropping either is a failing test.
+	 */
 	public function test_register_boots_the_gateway_and_registers_the_route(): void {
 		Functions\when( 'is_admin' )->justReturn( false );
 		// OAuth is switched off for these three, so the boot under test is the
 		// gateway's alone. Its own wiring is covered in AuthServerTest.
 		Functions\when( 'get_option' )->justReturn( false );
-		Actions\expectAdded( 'rest_api_init' )->once();
+		Actions\expectAdded( 'rest_api_init' )->twice();
 
 		Plugin::instance()->register();
 

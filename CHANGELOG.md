@@ -53,6 +53,25 @@ an operation behaves.
   is written and once on where it actually lands, so a symlink pointing somewhere else on the
   server reads nothing. Long listings are capped and say so; a file over 256 KB and a file that
   is not text are refused outright rather than returned half-complete or mangled.
+- **A file on your own computer can now reach the site.** Everything an operation is given
+  travels inside the request the client assembles, which for an AI client means it travels
+  through the model as well. A six megabyte zip is eight megabytes of base64 and something near
+  two million tokens, so sending a package as an argument was never slow — it was impossible,
+  and that is why installing a theme from a laptop still meant wp-admin. `media-upload-ticket`
+  splits the permission from the payload. It returns a secret, an upload URL and an expiry; the
+  file is then posted straight to that URL as raw bytes with the secret in an
+  `X-SiteHelm-Ticket` header, so the bytes never pass through the agent at all. A ticket is
+  bound to one site, one operator, one filename and one exact byte length, and optionally to one
+  sha256, so it cannot be redirected at different content; it lasts ten minutes and is spent
+  exactly once, by a database update that reports how many rows it changed, so two requests
+  racing the same ticket produce one upload rather than two. The secret is stored only as a
+  digest, and it is deliberately left out of the fields the operation promises, so it reaches
+  you and stops there instead of being copied into the permanent audit row. When the file
+  arrives, SiteHelm checks again that writes are not paused, that uploads are switched on and
+  that you still hold the capability, and it judges the file by its content exactly as an
+  ordinary upload is judged. The result is filed in the activity log as `media-upload`, because
+  that is what happened. Nothing changes until a ticket is used, so there is nothing to roll
+  back: ignore it and it expires.
 - **A plugin or theme can be installed from a zip you already uploaded.** Until now the only
   source was WordPress.org by slug, so a theme you had built yourself — a child theme being
   worked on, a plugin that is not in the directory — had to go up through wp-admin by hand,
