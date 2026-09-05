@@ -3755,3 +3755,54 @@ inside a list its key is a number. The members of an `examples` list are now
 flagged as examples in their own right, or the same operation would be described
 two ways by the same catalog. Three operations that worked around the old rule by
 constructing a `stdClass` by hand now write an empty array like everything else.
+
+## 64. Reading a theme's own files
+
+The add-on installs themes and the console uploads them, and neither tells a
+caller what the theme it is about to change currently does. An agent asked to
+adjust a template had two options: guess from the rendered page, or replace the
+file wholesale. `system-theme-file-list` and `system-theme-file-read` are the
+missing half — the source of the thing being edited, read before it is replaced.
+
+Both go through `ThemeFileGate`, which holds the capability check, the theme
+lookup and the path rules in one place so the two operations cannot disagree
+about what is inside a theme. The capability is `manage_options`, matching
+`ThemeList` rather than `edit_themes`: gating a read on the capability its Pro
+sibling writes with would refuse a caller who may see the site's configuration
+but not alter its appearance.
+
+**A path is checked twice, and the two checks fail differently.** The first is a
+shape rule that runs before the disk is touched at all: no empty segment, no `.`,
+no `..`, no backslash, no null byte, no leading slash or drive letter, and a
+length cap. The second is `realpath()` containment — the resolved answer must
+still start with the theme root. Neither is enough alone. The shape rule cannot
+see a symlink, which is a perfectly ordinary-looking path that resolves
+somewhere else entirely; `realpath()` alone would answer `false` for a malformed
+path and leave the caller with "nothing there" when the real complaint is that
+the path was never legal. A leading slash is refused rather than trimmed, for
+the same reason: trimming turns `/etc/passwd` into a request for a file inside
+the theme and answers a question nobody asked.
+
+The listing walks breadth-first and does not follow links at all. A theme with a
+symlinked `vendor` directory would otherwise be listed twice or, worse, walk out
+of the theme entirely. It stops at 2,000 files and says so with `truncated`,
+publishing `limit` in every answer — a client that cannot see the cap cannot
+tell a short theme from a cut listing.
+
+The read refuses two things rather than doing them badly. A file over 256 KB is
+refused with its size named, not truncated: half a template parses, reads
+sensibly, and is missing the closing half of everything, so a caller that
+rewrote a file from a truncated read would delete the part it never saw. And a
+file whose bytes are not valid UTF-8 is refused, because the result is JSON and
+a font handed back through it comes out mangled while still looking like a
+successful read. The listing reports every file's size, so both refusals can be
+predicted before they are triggered.
+
+These are plain PHP filesystem calls rather than `WP_Filesystem`. `WP_Filesystem`
+can demand FTP credentials before it will read anything, which turns a read
+operation into a refusal on a large number of hosts; the containment check has
+already proved the path is inside the theme by the time a byte is read.
+
+Their tests build real directories in the system's temporary space. The thing
+under test is what `realpath()` answers, and a doubled filesystem would answer
+whatever the double was told — the containment check would be testing itself.

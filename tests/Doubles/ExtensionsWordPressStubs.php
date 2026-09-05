@@ -32,8 +32,8 @@ use stdClass;
  * seed either.
  *
  * There is no `wp_get_themes()` object class named anywhere in the module, so
- * the theme rows here are plain objects with the four accessors the operation
- * calls. Aliasing `WP_Theme` would pin a class the code never mentions.
+ * the theme rows here are plain objects with the accessors the operations call.
+ * Aliasing `WP_Theme` would pin a class the code never mentions.
  */
 trait ExtensionsWordPressStubs {
 
@@ -64,6 +64,16 @@ trait ExtensionsWordPressStubs {
 	 * @var array<string, array{name: string, template: string, version: string}>
 	 */
 	private array $installedThemes = [];
+
+	/**
+	 * Stylesheet => the directory that theme occupies on disk.
+	 *
+	 * Only the theme-file reads need this, and only they set it: everything else
+	 * in the module works from headers and never asks where a theme lives.
+	 *
+	 * @var array<string, string>
+	 */
+	private array $themeDirectories = [];
 
 	/**
 	 * The stylesheet of the theme the site is showing.
@@ -132,6 +142,23 @@ trait ExtensionsWordPressStubs {
 			}
 		);
 
+		Functions\when( 'wp_get_theme' )->alias(
+			function ( $stylesheet = '' ) {
+				$stylesheet = '' === (string) $stylesheet ? $this->liveStylesheet : (string) $stylesheet;
+
+				return $this->themeFor(
+					$stylesheet,
+					$this->installedThemes[ $stylesheet ] ?? [
+						'name'     => '',
+						'template' => $stylesheet,
+						'version'  => '',
+					],
+					array_key_exists( $stylesheet, $this->installedThemes ),
+					$this->themeDirectories[ $stylesheet ] ?? ''
+				);
+			}
+		);
+
 		Functions\when( 'get_stylesheet' )->alias(
 			fn() => $this->liveStylesheet
 		);
@@ -182,6 +209,21 @@ trait ExtensionsWordPressStubs {
 	}
 
 	/**
+	 * Puts a seeded theme at a real directory on disk.
+	 *
+	 * The theme-file reads resolve paths with `realpath()` and compare the
+	 * answer against the theme root, which only a real directory can exercise:
+	 * a doubled filesystem would agree with whatever the code asked it, and the
+	 * containment check is the one thing here that must not be taken on trust.
+	 *
+	 * @param string $stylesheet The theme's own directory name.
+	 * @param string $directory  Where it lives on disk.
+	 */
+	private function seedThemeDirectory( string $stylesheet, string $directory ): void {
+		$this->themeDirectories[ $stylesheet ] = $directory;
+	}
+
+	/**
 	 * Seeds the `update_plugins` transient the way WordPress writes it: object rows.
 	 *
 	 * @param array<string, string> $pending      Plugin file => the version an update would install.
@@ -229,23 +271,45 @@ trait ExtensionsWordPressStubs {
 	/**
 	 * One stored theme as the object `wp_get_themes()` would return for it.
 	 *
-	 * @param string                                                $stylesheet The theme's own directory.
-	 * @param array{name: string, template: string, version: string} $theme     The stored row.
+	 * @param string                                                 $stylesheet The theme's own directory.
+	 * @param array{name: string, template: string, version: string} $theme      The stored row.
+	 * @param bool                                                   $exists     Whether the theme is installed at all.
+	 * @param string                                                 $directory  Where the theme lives on disk.
 	 */
-	private function themeFor( string $stylesheet, array $theme ): object {
-		return new class( $stylesheet, $theme ) {
+	private function themeFor( string $stylesheet, array $theme, bool $exists = true, string $directory = '' ): object {
+		return new class( $stylesheet, $theme, $exists, $directory ) {
 
 			/**
 			 * Constructs the theme double.
 			 *
 			 * @param string                                                 $stylesheet The theme's own directory.
 			 * @param array{name: string, template: string, version: string} $theme      The stored row.
+			 * @param bool                                                   $exists     Whether the theme is installed at all.
+			 * @param string                                                 $directory  Where the theme lives on disk.
 			 */
 			public function __construct(
 				private readonly string $stylesheet,
-				private readonly array $theme
+				private readonly array $theme,
+				private readonly bool $exists,
+				private readonly string $directory
 			) {
 			}
+
+			/**
+			 * Whether this theme is installed.
+			 */
+			public function exists(): bool {
+				return $this->exists;
+			}
+
+			// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- WP_Theme's own surface, which this stands in for.
+			/**
+			 * Where the theme lives on disk.
+			 */
+			public function get_stylesheet_directory(): string {
+				return $this->directory;
+			}
+			// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 
 			// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- WP_Theme's own surface, which this stands in for.
 			/**

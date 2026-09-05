@@ -19,8 +19,9 @@ use SiteHelm\Storage\Installer;
  * Lists the site's plugins and themes and says what has an update waiting.
  *
  * A HYBRID MODULE, the shape SEO and Forms established: the free plugin ships
- * the two reads, and the seven operations that activate, deactivate, update,
- * switch or install arrive from the SiteHelm Pro add-on through
+ * the reads — what is installed, and what a theme's own files say — and the
+ * seven operations that activate, deactivate, update, switch or install arrive
+ * from the SiteHelm Pro add-on through
  * `sitehelm_register_operations`. That is why it is not in
  * `ProCatalogue::ADDON_ONLY_MODULES` — the module does something on a site with
  * no add-on — and why the console's Tools tab lists the writes as locked rather
@@ -130,8 +131,11 @@ final class ExtensionsModule implements IntegrationModule {
 	/**
 	 * Registers the extensions module's operations.
 	 *
-	 * One presence gate is shared by both reads, so a request asks whether the
-	 * inventory is loaded once rather than once per operation.
+	 * One presence gate is shared by every read, so a request asks whether the
+	 * inventory is loaded once rather than once per operation, and the two
+	 * theme-file reads share one gate object for the same reason: the path rules
+	 * they enforce are the same rules, and a second copy of them is a second
+	 * place for them to drift.
 	 *
 	 * @param CapabilityRegistry $registry The capability registry.
 	 */
@@ -144,6 +148,18 @@ final class ExtensionsModule implements IntegrationModule {
 		$registry->register(
 			ThemeList::definition(),
 			[ new ThemeList( $this->presence ), 'handle' ]
+		);
+
+		$files = new ThemeFileGate( $this->presence );
+
+		$registry->register(
+			ThemeFileList::definition(),
+			[ new ThemeFileList( $files ), 'handle' ]
+		);
+
+		$registry->register(
+			ThemeFileRead::definition(),
+			[ new ThemeFileRead( $files ), 'handle' ]
 		);
 	}
 }
