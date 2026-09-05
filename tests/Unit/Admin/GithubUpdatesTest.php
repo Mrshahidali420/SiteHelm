@@ -231,4 +231,98 @@ final class GithubUpdatesTest extends TestCase {
 		$this->assertFalse( $updates->information( false, 'query_plugins', (object) [ 'slug' => 'sitehelm' ] ) );
 		$this->assertSame( 0, $calls );
 	}
+
+	/**
+	 * The cache this class keeps is its own, and WordPress cannot see it.
+	 *
+	 * Core's "Check again" deletes the `update_plugins` site transient and
+	 * nothing else, so before this the button re-read a stale answer and
+	 * truthfully reported no update on a release that had already shipped. A
+	 * site owner had no way to make the plugin look again, which is how 0.13.0
+	 * stayed invisible on a live site and had to be installed by hand.
+	 */
+	/**
+	 * A release the way this class stores it, which is parsed rather than raw.
+	 *
+	 * @return array<string, string>
+	 */
+	private static function cachedRelease(): array {
+		return [
+			'version' => '9.9.9',
+			'url'     => 'https://github.com/' . GithubUpdates::REPO . '/releases/tag/v9.9.9',
+			'package' => 'https://example.test/sitehelm-9.9.9.zip',
+			'notes'   => 'The thing that was broken.',
+			'date'    => '2026-09-04T08:22:05Z',
+		];
+	}
+
+	public function testAForcedCheckDropsTheCachedReleaseSoTheNextLookupGoesOut(): void {
+		set_transient( GithubUpdates::TRANSIENT, self::cachedRelease(), GithubUpdates::TTL );
+		$_GET['force-check'] = '1';
+
+		try {
+			$this->updates( null )->flush_on_force_check();
+		} finally {
+			unset( $_GET['force-check'] );
+		}
+
+		$this->assertContains( GithubUpdates::TRANSIENT, AdminWordPressStubs::$deletedTransients );
+		$this->assertFalse( get_transient( GithubUpdates::TRANSIENT ) );
+	}
+
+	/**
+	 * Merely opening the Updates screen is not a forced check. Flushing there
+	 * too would send a request to GitHub on every page view of a screen the
+	 * site loads on its own schedule, against an anonymous limit of sixty an
+	 * hour shared with every other site on the host.
+	 */
+	public function testMerelyOpeningTheUpdatesScreenLeavesTheCacheAlone(): void {
+		set_transient( GithubUpdates::TRANSIENT, self::cachedRelease(), GithubUpdates::TTL );
+
+		$this->updates( null )->flush_on_force_check();
+
+		$this->assertSame( [], AdminWordPressStubs::$deletedTransients );
+		$this->assertNotFalse( get_transient( GithubUpdates::TRANSIENT ) );
+	}
+
+	/**
+	 * After an install or update has run, the cached answer describes a version
+	 * that may no longer be the one on disk. Holding it would let the plugin
+	 * offer an update it has just applied.
+	 */
+	public function testFinishingAnUpgradeDropsTheCachedRelease(): void {
+		set_transient( GithubUpdates::TRANSIENT, self::cachedRelease(), GithubUpdates::TTL );
+
+		$this->updates( null )->flush();
+
+		$this->assertFalse( get_transient( GithubUpdates::TRANSIENT ) );
+	}
+
+	/**
+	 * The lifetime is deliberately not twelve hours. WordPress checks for
+	 * updates on a twelve-hour schedule of its own, and two equal periods drift
+	 * into phase: a release published just after a check could sit unseen for a
+	 * further full cycle. Anything shorter than core's own interval breaks the
+	 * tie, so the guarantee is asserted as the relationship, not as the number.
+	 */
+	public function testTheCacheExpiresWellInsideWordpressOwnUpdateInterval(): void {
+		$this->assertLessThan( 12 * 60 * 60, GithubUpdates::TTL );
+	}
+
+	/**
+	 * A flushed cache is genuinely re-read rather than remembered in the
+	 * object, which is what makes the button on the Updates screen work.
+	 */
+	public function testTheReleaseIsFetchedAgainAfterAFlush(): void {
+		$calls   = 0;
+		$updates = $this->updates( [ 'code' => 200, 'body' => self::release( '9.9.9' ) ], $calls );
+
+		$this->offer( $updates );
+		$this->assertSame( 1, $calls );
+
+		$updates->flush();
+		$this->offer( $updates );
+
+		$this->assertSame( 2, $calls );
+	}
 }

@@ -74,9 +74,15 @@ final class GithubUpdates {
 	public const MISS = 'miss';
 
 	/**
-	 * How long a found release is trusted, in seconds (twelve hours).
+	 * How long a found release is trusted, in seconds (four hours).
+	 *
+	 * Twelve hours was the obvious number and the wrong one: WordPress runs its
+	 * own update check on a twelve-hour schedule too, so the two windows drift
+	 * into phase and a release published just after a check could stay invisible
+	 * for a full further cycle. Four hours decouples them, and the cost is a
+	 * handful of extra API calls a day against a limit of sixty an hour.
 	 */
-	public const TTL = 43200;
+	public const TTL = 14400;
 
 	/**
 	 * How long a failed lookup rests before being retried, in seconds (one hour).
@@ -129,6 +135,31 @@ final class GithubUpdates {
 		add_filter( self::FILTER, [ $this, 'offer' ], 10, 3 );
 		add_filter( 'plugins_api', [ $this, 'information' ], 10, 3 );
 		add_action( 'admin_notices', [ $this, 'notice' ] );
+		add_action( 'load-update-core.php', [ $this, 'flush_on_force_check' ] );
+		add_action( 'upgrader_process_complete', [ $this, 'flush' ] );
+	}
+
+	/**
+	 * Drop the cached release so the next lookup goes to GitHub.
+	 */
+	public function flush(): void {
+		delete_transient( self::TRANSIENT );
+	}
+
+	/**
+	 * Honour "Check again" on the Updates screen.
+	 *
+	 * Core's force-check deletes its own update_plugins transient and nothing
+	 * else, so this class kept answering out of its own cache and the button
+	 * reported "no update" on a release that had already shipped — with no way
+	 * for a site owner to make it look properly. A forced check now means what
+	 * it says.
+	 */
+	public function flush_on_force_check(): void {
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Core's own force-check flag; no state is changed here beyond dropping a cache.
+		if ( ! empty( $_GET['force-check'] ) ) {
+			$this->flush();
+		}
 	}
 
 	/**
