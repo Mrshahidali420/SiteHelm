@@ -310,4 +310,28 @@ final class PluginListTest extends TestCase {
 			}
 		};
 	}
+
+	public function test_a_plugin_parked_behind_its_own_wizard_is_reported_as_pending(): void {
+		// Every other column reports this plugin as healthy: installed, active,
+		// current version, no update waiting. It is doing nothing at all.
+		$this->seedPlugin( 'seo-by-rank-math/rank-math.php', 'Rank Math SEO', '1.0.230', true );
+
+		$row = $this->operation()->handle( [], $this->context() )['plugins'][0];
+
+		$this->assertTrue( $row['active'] );
+		$this->assertSame( 'pending', $row['onboarding'] );
+	}
+
+	public function test_a_plugin_whose_setup_was_finished_is_reported_as_complete(): void {
+		$this->seedPlugin( 'seo-by-rank-math/rank-math.php', 'Rank Math SEO', '1.0.230', true );
+		$this->seedOption( 'rank_math_is_configured', true );
+
+		$this->assertSame( 'complete', $this->operation()->handle( [], $this->context() )['plugins'][0]['onboarding'] );
+	}
+
+	public function test_a_plugin_siteHelm_has_no_recipe_for_reports_null_rather_than_complete(): void {
+		$this->seedPlugin( 'akismet/akismet.php', 'Akismet', '5.3', true );
+
+		$this->assertNull( $this->operation()->handle( [], $this->context() )['plugins'][0]['onboarding'] );
+	}
 }

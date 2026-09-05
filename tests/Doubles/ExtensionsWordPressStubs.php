@@ -91,6 +91,17 @@ trait ExtensionsWordPressStubs {
 	private array $siteTransients = [];
 
 	/**
+	 * Option name => stored value.
+	 *
+	 * A plugin's onboarding flags live here, and an absent name is the state a
+	 * plugin is in before it has ever been set up — which is the state the
+	 * onboarding read exists to notice.
+	 *
+	 * @var array<string, mixed>
+	 */
+	private array $options = [];
+
+	/**
 	 * Whether the doubled WordPress user holds the capability asked about.
 	 */
 	private bool $mayManage = true;
@@ -166,6 +177,22 @@ trait ExtensionsWordPressStubs {
 		Functions\when( 'get_site_transient' )->alias(
 			fn( $name ) => $this->siteTransients[ (string) $name ] ?? false
 		);
+
+		Functions\when( 'get_option' )->alias(
+			fn( $name, $default_value = false ) => array_key_exists( (string) $name, $this->options )
+				? $this->options[ (string) $name ]
+				: $default_value
+		);
+	}
+
+	/**
+	 * Seeds one stored option.
+	 *
+	 * @param string $name  The option name.
+	 * @param mixed  $value The stored value.
+	 */
+	private function seedOption( string $name, mixed $value ): void {
+		$this->options[ $name ] = $value;
 	}
 
 	/**

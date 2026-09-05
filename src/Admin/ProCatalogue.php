@@ -319,6 +319,18 @@ final class ProCatalogue {
 			'read'        => false,
 			'description' => 'Switch one plugin off. Previewed and reversible, and it refuses a plugin the network activated rather than changing something a single site does not own.',
 		],
+		'plugin-onboarding-complete'   => [
+			'dispatcher'  => 'content-write',
+			'module'      => ModuleId::Extensions,
+			'read'        => false,
+			'description' => 'Finish the setup wizard a newly activated plugin is parked behind, so it starts doing its job. One argument, the plugin slug, and it refuses a plugin SiteHelm has no recipe for rather than guessing at somebody else\'s flags.',
+		],
+		'plugin-option-set'            => [
+			'dispatcher'  => 'content-write',
+			'module'      => ModuleId::Extensions,
+			'read'        => false,
+			'description' => 'Write one of a known plugin\'s own setup options. The option has to be on the list SiteHelm ships for that plugin — this is not a general way to write any option on the site. Previewed and reversible.',
+		],
 		'plugin-update'                => [
 			'dispatcher'  => 'content-write',
 			'module'      => ModuleId::Extensions,

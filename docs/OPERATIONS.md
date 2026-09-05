@@ -469,7 +469,7 @@ what is actually in the database, so a restore puts back what was really there.
 | `user-list` | Lists user accounts by role or search term, newest registration first, with the role slugs this site has registered | `list_users` |
 | `site-settings-read` | Reads the whole site-settings allowlist, typed, in one call — the same fifteen fields `site-settings-set` can change, and nothing else | `manage_options` |
 | `audit-list` | Reads the change ledger: what changed, when, by whom, and what can be rolled back | `manage_options` |
-| `system-plugin-list` | Lists every plugin installed on this site with its version, whether it is active, whether the network activated it, and whether an update is waiting | `manage_options` |
+| `system-plugin-list` | Lists every plugin installed on this site with its version, whether it is active, whether the network activated it, whether an update is waiting, and whether the plugin's own setup wizard has ever been finished | `manage_options` |
 | `system-theme-list` | Lists every theme installed on this site with its version, which one is live, and whether an update is waiting | `manage_options` |
 | `system-theme-file-list` | Lists the files inside an installed theme, with the size and last-modified time of each, so a template can be found before it is read or replaced | `manage_options` |
 | `system-theme-file-read` | Reads one text file out of an installed theme; refuses a file over 256 KB and a file that is not text rather than returning part of it or a corrupted copy | `manage_options` |
@@ -602,12 +602,12 @@ missing; brand kits need only Elementor.
 > required, and a post that is not a kit is refused. An `elementor_active_kit` option naming
 > a kit that has been deleted is reported as no active kit rather than repeated back.
 
-### Plugins & themes (Pro) — eleven Pro operations
+### Plugins & themes (Pro) — thirteen Pro operations
 
-Shipped in SiteHelm Pro 0.7.0 and extended in 0.10.0, registered into the **free** Plugins &
-Themes module: the inventory reads above are free, and these eleven writes are the add-on's half. The reads ride
-`system-read` and the writes ride `content-write`; the eleven dispatchers are frozen and
-there is no `system-write`.
+Shipped in SiteHelm Pro 0.7.0 and extended since, registered into the **free** Plugins &
+Themes module: the inventory reads above are free, and these thirteen writes are the
+add-on's half. The reads ride `system-read` and the writes ride `content-write`; the two
+dispatchers are frozen and there is no `system-write`.
 
 | Operation | Dispatcher | Does | Capability | Rollback |
 |---|---|---|---|---|
@@ -622,6 +622,8 @@ there is no `system-write`.
 | `theme-delete` | `content-write` | Removes one theme's files for good; the live theme is refused, and so is a theme another installed theme is built on | `delete_themes` | not-applicable |
 | `plugin-install-upload` | `content-write` | Installs a plugin from a zip that is already an attachment in this site's own media library; the only argument is the attachment id, and a plugin already installed is overwritten with its old files copied aside first | `install_plugins` | supported |
 | `theme-install-upload` | `content-write` | The same for a theme, and overwriting the **live** theme is allowed and leaves it live — that is the case it exists for, iterating a child theme without a manual upload | `install_themes` | supported |
+| `plugin-onboarding-complete` | `content-write` | Finishes the setup wizard a newly activated plugin is parked behind, by writing the flags that plugin uses to record its own first run; a plugin SiteHelm ships no recipe for is refused rather than guessed at | `manage_options` | supported |
+| `plugin-option-set` | `content-write` | Writes one of a known plugin's own setup options. The option has to be one a shipped recipe names for that plugin, so this is not a general way to write any option on the site | `manage_options` | supported |
 
 > **Installing by slug reaches WordPress.org and nowhere else.** The input schema is a slug and
 > nothing else — there is no `url`, `package`, `source`, `path` or `zip` property anywhere in
@@ -658,10 +660,10 @@ there is no `system-write`.
 > shows you — and restore from that copy on a rollback. Overwriting the theme that is live is
 > the normal case rather than the exception: the theme stays live, which is the point.
 >
-> **The three option flips and the two package installs can be undone; the six other file
-> writes cannot.** Activate, deactivate
-> and switch snapshot the state they replace and restore it by re-running every guard they
-> applied forwards, so a restore refuses on the same grounds a forward call would. The two
+> **The five option writes and the two package installs can be undone; the six file writes
+> cannot.** Activate, deactivate, switch, the onboarding finish and the single option write
+> snapshot the state they replace and restore it by re-running every guard they applied
+> forwards, so a restore refuses on the same grounds a forward call would. The two
 > updates, the two slug installs and the two deletes declare `not-applicable` for both snapshot and
 > rollback and refuse a rollback attempt with `RollbackUnavailable`: WordPress has no clean
 > downgrade, and a rollback that quietly did nothing would be worse than one that says so. An
@@ -679,8 +681,20 @@ there is no `system-write`.
 > **`DISALLOW_FILE_MODS` and `DISALLOW_FILE_EDIT` stop exactly the eight file writes.** Both
 > updates, all four installs and both deletes are refused by name, with the constant named in the
 > refusal (`DISALLOW_FILE_MODS` when both are set), because a site that has locked its own file
-> modifications has answered this question already. The three option flips write no files and
+> modifications has answered this question already. The five option writes write no files and
 > are left alone.
+>
+> **Finishing a setup wizard writes flags SiteHelm ships a recipe for, and nothing else.**
+> Installing a plugin and switching it on stops one step short: Rank Math, Yoast, WooCommerce
+> and plenty of others park behind their own wizard and register no output at all until
+> somebody walks through it, and every column on `system-plugin-list` reports such a plugin as
+> healthy. The `onboarding` column is the one that does not — `pending` for a plugin that is
+> switched on and still parked, `complete` once its own flag says the wizard is finished, and
+> `null` for a plugin this version ships no recipe for. Each recipe was read out of the plugin
+> it belongs to rather than inferred, and a plugin with no recipe is refused by name rather
+> than guessed at: a guessed flag writes to somebody else's database. `plugin-option-set`
+> gates on the same recipes, so the only options it can reach are the ones a shipped recipe
+> already names — no core WordPress option is on any of them, and a test proves it.
 
 ### Code (Pro) — eighteen Pro operations
 
@@ -692,7 +706,7 @@ WordPress's own `edit_plugins` capability inside the handler, and every write is
 outright on a site that sets `DISALLOW_FILE_EDIT` or `DISALLOW_FILE_MODS` — a site that has
 locked its own code editing has answered this question already.
 
-The reads ride `system-read` and the writes ride `content-write`; the eleven dispatchers are
+The reads ride `system-read` and the writes ride `content-write`; the two dispatchers are
 frozen and there is no `system-write`.
 
 | Operation | Dispatcher | Does | Capability | Rollback |

@@ -36,6 +36,12 @@ use SiteHelm\Contracts\SnapshotPolicy;
  * the answer is stale. Forcing a check would make a read reach out to a third
  * party and rewrite site state, which is not what Mode::Read means here.
  *
+ * IT ALSO SAYS WHETHER A PLUGIN HAS EVER BEEN SET UP. A plugin that is present
+ * and switched on and still parked behind its own wizard does nothing at all,
+ * and every column above reports it as healthy. `onboarding` is the one that
+ * does not: see PluginOnboarding for which plugins are known and why an unknown
+ * one is reported as null rather than as finished.
+ *
  * @package SiteHelm
  */
 final class PluginList {
@@ -56,7 +62,7 @@ final class PluginList {
 			id: 'system-plugin-list',
 			domain: Domain::System,
 			mode: Mode::Read,
-			description: 'List every plugin installed on this site with its version, whether it is active, and whether an update is waiting.',
+			description: 'List every plugin installed on this site with its version, whether it is active, whether an update is waiting, and whether its own setup has been finished.',
 			inputSchema: [
 				'type'                 => 'object',
 				'properties'           => new \stdClass(),
@@ -102,8 +108,13 @@ final class PluginList {
 									'type'        => [ 'string', 'null' ],
 									'description' => 'The version the update would install, or null when no update is waiting.',
 								],
+								'onboarding'       => [
+									'type'        => [ 'string', 'null' ],
+									'enum'        => [ PluginOnboarding::COMPLETE, PluginOnboarding::PENDING, null ],
+									'description' => 'Whether the plugin\'s own setup has been finished: "complete", "pending" when it is switched on and still parked behind its wizard, or null when SiteHelm does not know how this plugin records it.',
+								],
 							],
-							'required'             => [ 'file', 'slug', 'name', 'version', 'active', 'networkActivated', 'updateAvailable', 'newVersion' ],
+							'required'             => [ 'file', 'slug', 'name', 'version', 'active', 'networkActivated', 'updateAvailable', 'newVersion', 'onboarding' ],
 							'additionalProperties' => false,
 						],
 						'description' => 'Every plugin installed, in the order WordPress lists them.',
@@ -191,6 +202,7 @@ final class PluginList {
 				'networkActivated' => is_plugin_active_for_network( $file ),
 				'updateAvailable'  => array_key_exists( $file, $pending ),
 				'newVersion'       => $pending[ $file ] ?? null,
+				'onboarding'       => PluginOnboarding::stateOf( $this->slugFor( $file ) ),
 			];
 		}
 

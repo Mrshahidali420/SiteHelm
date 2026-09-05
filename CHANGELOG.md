@@ -12,6 +12,15 @@ an operation behaves.
 ## [Unreleased]
 
 ### Changed
+- **The plugin list now tells you which plugins have never been set up.** Installing a plugin
+  and switching it on stops one step short of a plugin that does anything: Rank Math, Yoast,
+  WooCommerce and plenty of others park behind their own setup wizard and produce nothing at
+  all until somebody walks through it, and every column in the list reported such a plugin as
+  perfectly healthy. `system-plugin-list` now carries an `onboarding` column: "pending" for a
+  plugin that is switched on and still parked, "complete" once its own wizard is finished, and
+  nothing at all for a plugin SiteHelm ships no recipe for. It will not guess — a plugin whose
+  flags this version has never read is reported as unknown rather than as finished, because
+  saying "finished" would be a claim about somebody else's database.
 - **Redirects now show you what the other plugin is holding.** If a site runs SiteHelm's
   redirects and Rank Math's redirections at the same time, both can hold a rule for the same
   address and nothing decides which one the visitor gets — it comes down to which plugin

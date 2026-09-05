@@ -330,10 +330,11 @@ first operations are here: the SEO plugin's own settings read and written as one
 change, its per-post schema, and Rank Math's 404 log and redirections. Forms came next, and
 WooCommerce with them — products, prices, stock and categories read and written, with orders
 and customers read-only for good. Plugins and themes followed: the free plugin lists what is
-installed and what has an update waiting, and Pro activates, deactivates, switches, updates,
-installs — from WordPress.org by slug, or from a zip already in the media library — and
-deletes, which is
-previewed, refused for anything still running, and honest that there is no way back. Everything
+installed, what has an update waiting and what is still parked behind its own setup wizard,
+and Pro activates, deactivates, switches, updates, installs — from WordPress.org by slug, or
+from a zip already in the media library — finishes a setup wizard for the plugins it ships a
+recipe for, and deletes, which is previewed, refused for anything still running, and honest
+that there is no way back. Everything
 safety-related stays free, a free read never moves behind the paywall, and batch size is not
 a reason to charge: an operation that changes fifty posts under one preview and one rollback
 belongs in front of the licence, not behind it. See the roadmap for the Free/Pro split.
