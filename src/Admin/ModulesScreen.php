@@ -187,7 +187,7 @@ final class ModulesScreen {
 
 		printf(
 			'<article class="sitehelm-card%s"><div class="sitehelm-card__head">',
-			ModuleHealth::Active->value === $state ? '' : ' sitehelm-card--muted'
+			self::is_operational( $state ) ? '' : ' sitehelm-card--muted'
 		);
 
 		printf( '<h3 class="sitehelm-card__name">%s</h3>', esc_html( self::module_label( $module ) ) );
@@ -199,7 +199,12 @@ final class ModulesScreen {
 
 		printf( '<p class="sitehelm-card__desc">%s</p>', esc_html( self::module_summary( $module ) ) );
 
-		if ( ModuleHealth::Active->value !== $state ) {
+		// UNCONFIGURED IS THE ONE OPERATIONAL STATE THAT STILL NEEDS A LINE. The
+		// card is not muted and the module counts as active, because every
+		// operation it offers works — but the plugin behind it is not putting
+		// anything on the page a visitor is served, and an operator who is told
+		// nothing will find that out from a client rather than from here.
+		if ( ! self::is_operational( $state ) || ModuleHealth::Unconfigured->value === $state ) {
 			$this->render_waiting_on( $module, $state );
 		}
 
@@ -327,6 +332,21 @@ final class ModulesScreen {
 	 */
 	private function render_waiting_on( ModuleId $module, string $state ): void {
 		$requirement = self::requirement_for( $module );
+
+		// NO PLUGIN IS NAMED HERE. A module may be satisfied by any one of several
+		// plugins — the SEO module accepts seven — and this state is reached
+		// because whichever one is actually installed has not been set up.
+		// Printing the requirement would list six the site does not have.
+		if ( ModuleHealth::Unconfigured->value === $state ) {
+			printf(
+				'<p class="sitehelm-card__waiting">%s <a href="%s">%s</a></p>',
+				esc_html__( 'The plugin behind this module is active, but its own setup is unfinished, so nothing it stores reaches the front end.', 'sitehelm' ),
+				esc_url( admin_url( 'plugins.php' ) ),
+				esc_html__( 'Open Plugins', 'sitehelm' )
+			);
+
+			return;
+		}
 
 		if ( in_array( $module, ProCatalogue::ADDON_ONLY_MODULES, true ) ) {
 			// An add-on-only module is not waiting on anything the operator can
@@ -464,7 +484,7 @@ final class ModulesScreen {
 			$entry = $this->health[ $module->value ] ?? null;
 			$state = is_array( $entry ) && isset( $entry['health'] ) ? (string) $entry['health'] : '';
 
-			if ( ModuleHealth::Active->value === $state ) {
+			if ( self::is_operational( $state ) ) {
 				++$active;
 			}
 		}
@@ -566,6 +586,8 @@ final class ModulesScreen {
 				return __( 'Active', 'sitehelm' );
 			case ModuleHealth::VersionBlocked->value:
 				return __( 'Version too old', 'sitehelm' );
+			case ModuleHealth::Unconfigured->value:
+				return __( 'Setup unfinished', 'sitehelm' );
 			case ModuleHealth::Inactive->value:
 				return __( 'Not active', 'sitehelm' );
 			default:
@@ -584,8 +606,30 @@ final class ModulesScreen {
 				return 'ok';
 			case ModuleHealth::VersionBlocked->value:
 				return 'refused';
+			case ModuleHealth::Unconfigured->value:
+				return 'waiting';
 			default:
 				return 'neutral';
 		}
+	}
+
+	/**
+	 * Whether a recorded health value means the module can serve a call.
+	 *
+	 * THE COUNT AND THE MUTING BOTH ASK THIS, and both used to ask whether the
+	 * state was exactly `active`. That was the same question until a module could
+	 * be available and unconfigured at once. A module in that state answers every
+	 * operation, so greying its card out and leaving it out of the tally would
+	 * tell an operator it was broken when the only thing missing is the other
+	 * plugin's own setup. The badge is what says so instead.
+	 *
+	 * An unrecognised value is not operational. A module missing from the map
+	 * never ran, and a state this build does not know is a state it cannot
+	 * vouch for.
+	 *
+	 * @param string $state The recorded health value.
+	 */
+	private static function is_operational( string $state ): bool {
+		return ModuleHealth::tryFrom( $state )?->isOperational() ?? false;
 	}
 }

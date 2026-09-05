@@ -22,6 +22,15 @@ an operation behaves.
   worth repeating. Nothing that already worked changed its answer.
 
 ### Fixed
+- **A working SEO plugin could be doing nothing, and SiteHelm called it healthy.** Rank Math
+  stops putting anything on your public pages until you have been through its setup wizard. It
+  still stores everything written to it, so every title, description and social card SiteHelm
+  wrote was saved, read back correctly, and reported as done — while visitors and Facebook got
+  a page with none of it. Health now has a fourth answer for this. The module still works and
+  every operation still runs; the modules screen marks the card "Setup unfinished" and the
+  integration report says in a sentence that nothing the plugin holds is reaching the pages
+  people are served.
+
 - **Content types that are not public could not be listed.** `content-list` asked whether a
   content type was visible to visitors, so an enquiry log, a testimonial store, or any of the
   custom types a plugin registers for the admin screens only were refused as though they did

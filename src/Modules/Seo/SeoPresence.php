@@ -181,6 +181,22 @@ final class SeoPresence {
 	}
 
 	/**
+	 * Whether the detected plugin is acting on what it stores.
+	 *
+	 * TRUE WHEN THERE IS NO PLUGIN, which reads backwards until you ask what the
+	 * caller does with the answer. This says "no unfinished setup is standing
+	 * between the store and the front end", and a site with no SEO plugin has no
+	 * such gate. The absent case is already reported as inactive, and reporting
+	 * it a second time here would make the module look unconfigured on a site
+	 * that has nothing to configure.
+	 *
+	 * @return bool True when nothing is holding the plugin's output back.
+	 */
+	public function isConfigured(): bool {
+		return $this->provider()?->isConfigured() ?? true;
+	}
+
+	/**
 	 * The detected plugin's name, or null when none is usable.
 	 *
 	 * @return string|null The provider name.

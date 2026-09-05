@@ -64,6 +64,22 @@ final class AioseoProvider implements SeoProvider {
 	}
 
 	/**
+	 * True, because this plugin has no dormancy gate to read.
+	 *
+	 * THIS CLASS IS THE ONE PROVIDER THAT INHERITS NOTHING. It talks to a custom
+	 * table rather than post meta, so it implements the interface directly and
+	 * does not pick up the `true` default the two abstract bases state. The answer
+	 * is the same one they give, and it is written out here for the same reason
+	 * they write it out: the default belongs to the provider, not to a base class
+	 * this one happens not to extend.
+	 *
+	 * @return bool True when the plugin is acting on what it stores.
+	 */
+	public function isConfigured(): bool {
+		return true;
+	}
+
+	/**
 	 * Every field's current value for one post.
 	 *
 	 * @param int $post_id The post identifier.

@@ -396,7 +396,7 @@ final class StatusScreen {
 			$entry = $this->health[ $module->value ] ?? null;
 			$state = is_array( $entry ) && isset( $entry['health'] ) ? (string) $entry['health'] : '';
 
-			if ( ModuleHealth::Active->value !== $state ) {
+			if ( true !== ModuleHealth::tryFrom( $state )?->isOperational() ) {
 				++$blocked;
 			}
 		}

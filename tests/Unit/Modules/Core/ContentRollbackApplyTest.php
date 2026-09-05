@@ -562,6 +562,29 @@ final class ContentRollbackApplyTest extends TestCase {
 		}
 	}
 
+	/**
+	 * AN UNCONFIGURED MODULE STILL GIVES BACK WHAT IT TOOK.
+	 *
+	 * This admission asks whether the module that recorded a snapshot can be
+	 * trusted to put it back, and the answer turns on the store, not on what the
+	 * plugin is doing with the store. A plugin whose own setup is unfinished
+	 * writes and reads exactly the rows it always did — so the snapshot is as
+	 * restorable as it ever was, and refusing here would strand an owner's
+	 * rollback on the one state where nothing is actually broken.
+	 */
+	public function test_an_unconfigured_owning_module_can_still_be_rolled_back(): void {
+		$this->queueSnapshot( [], 2 );
+		$current = $this->operation->resolveTarget( [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );
+
+		$planned = $this->operation->planChange(
+			$current,
+			[ 'rollbackRef' => self::REFERENCE ],
+			$this->makeContext( '6.8.1', 'unconfigured' )
+		);
+
+		$this->assertNotEmpty( $planned->payload );
+	}
+
 	public function test_a_changed_module_version_is_rollback_unavailable(): void {
 		$this->queueSnapshot( [], 2 );
 		$current = $this->operation->resolveTarget( [ 'rollbackRef' => self::REFERENCE ], $this->makeContext() );

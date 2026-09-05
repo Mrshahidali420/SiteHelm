@@ -439,6 +439,30 @@ final class OperationsScreenTest extends TestCase {
 		$this->assertStringContainsString( '1 cannot run on this site yet', $html );
 	}
 
+	/**
+	 * The catalogue must not take an operation away over an unfinished setup.
+	 *
+	 * Every row belonging to an unconfigured module still runs, so marking those
+	 * rows "not active" and counting them as unable to run would be the screen
+	 * telling an operator they had lost operations they still have — and it would
+	 * disagree with the dispatcher, which answers them normally.
+	 */
+	public function testAnUnconfiguredModuleKeepsItsRowsAvailable(): void {
+		$registry = new CapabilityRegistry();
+		$registry->register( $this->readDefinition( 'content-read-one', Domain::Content ), static fn(): array => [] );
+
+		$health                              = $this->allActive();
+		$health[ ModuleId::Core->value ]     = [
+			'version' => '6.8.1',
+			'health'  => ModuleHealth::Unconfigured->value,
+		];
+
+		$html = $this->render( $registry, $health );
+
+		$this->assertStringNotContainsString( 'Not active', $html );
+		$this->assertStringNotContainsString( 'cannot run on this site', $html );
+	}
+
 	public function testEveryRowCarriesASwitchThatPostsTheOperationIdentifier(): void {
 		$registry = new CapabilityRegistry();
 		$registry->register( $this->readDefinition( 'content-list', Domain::Content ), static fn(): array => [] );

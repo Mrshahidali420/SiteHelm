@@ -141,6 +141,28 @@ final class CatalogBuilderTest extends TestCase {
 		$this->assertSame( 'unsupported_version', $catalog['operations'][0]['blockedReason'] );
 	}
 
+	/**
+	 * THE STATE THAT LOOKS LIKE A PROBLEM AND MUST NOT BE TREATED AS ONE.
+	 *
+	 * `unconfigured` says the plugin behind the module is loaded, in range, and
+	 * storing everything written to it, while not yet acting on what it holds.
+	 * Every operation answers exactly as it always did. This match arm is the
+	 * only thing standing between that and a site where adding a fourth health
+	 * state silently took away every SEO operation an owner had — refused by the
+	 * dispatcher, on a plugin that was working, over a caveat.
+	 *
+	 * The caveat is not lost by being admitted here. It is reported in a sentence
+	 * of its own by the integration health operation, which is where a warning
+	 * belongs; a refusal is not a warning, it is a removal.
+	 */
+	public function test_an_unconfigured_module_still_offers_every_operation(): void {
+		$catalog = $this->builder->build( 'system-read', $this->makeContext( 'unconfigured' ) );
+		$entry   = $catalog['operations'][0];
+
+		$this->assertTrue( $entry['available'] );
+		$this->assertNull( $entry['blockedReason'] );
+	}
+
 	public function test_empty_dispatcher_returns_empty_catalog_not_error(): void {
 		$catalog = $this->builder->build( 'elementor-write', $this->makeContext() );
 		$this->assertSame( 'elementor-write', $catalog['dispatcher'] );

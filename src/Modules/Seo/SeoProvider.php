@@ -42,6 +42,35 @@ interface SeoProvider {
 	public function name(): string;
 
 	/**
+	 * Whether this plugin is doing anything with what it stores.
+	 *
+	 * THE THIRD STATE THE HEALTH MODEL WAS MISSING. A plugin can be installed, in
+	 * range, activated and loaded, and still emit nothing at all, because several
+	 * SEO plugins park themselves behind their own setup and stay inert until an
+	 * owner walks through it. Everything SiteHelm does keeps working in that
+	 * state: the meta rows are written, and read back exactly as written. What
+	 * does not happen is the part a visitor would see.
+	 *
+	 * The damage that produced this method was silent and real. A theme that
+	 * emits its own social tags and stands down when an SEO plugin is present did
+	 * exactly that, the SEO plugin emitted nothing in its place, and the site
+	 * served no social cards from anyone while every SiteHelm answer said the
+	 * module was active.
+	 *
+	 * THE DEFAULT IS TRUE, and it is stated in each base class rather than
+	 * assumed, because "I have no evidence this plugin is dormant" and "this
+	 * plugin is working" are the same answer here and only one of them is worth
+	 * reporting. A provider overrides this only when its plugin has a gate that
+	 * can be read from an option, and the override names the option.
+	 *
+	 * @return bool True when the plugin is acting on what it stores.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+	 */
+	public function isConfigured(): bool;
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+
+	/**
 	 * Every field's current value for one post.
 	 *
 	 * EVERY KEY IN SeoFields::FIELD_ORDER IS PRESENT in the returned array, so a

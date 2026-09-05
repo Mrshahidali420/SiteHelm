@@ -64,6 +64,23 @@ final class RankMathProvider extends SeoMetaProvider {
 	}
 
 	/**
+	 * Whether Rank Math is doing anything with what it stores.
+	 *
+	 * ONE OPTION, AND IT IS RANK MATH'S OWN. From roughly 1.0.200 a fresh install
+	 * registers no `wp_head` output until an owner finishes its setup, and
+	 * `rank_math_is_configured` is the flag it sets when they do. Until then the
+	 * plugin is loaded, its version constant is defined, its meta rows are
+	 * written and read back faithfully, and not one of them reaches a page.
+	 *
+	 * The option is read rather than a class or method being probed, because the
+	 * class exists throughout and tells us nothing. A missing option and a false
+	 * one mean the same thing: setup has not been completed.
+	 */
+	public function isConfigured(): bool {
+		return (bool) get_option( 'rank_math_is_configured', false );
+	}
+
+	/**
 	 * The meta key holding each writable text field.
 	 *
 	 * @return array<string, string> Field name => meta key.

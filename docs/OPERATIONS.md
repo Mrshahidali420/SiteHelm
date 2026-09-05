@@ -42,7 +42,7 @@ on demand for the dispatcher actually in use.
 | `tools/list` | The 11 dispatchers |
 | Any dispatcher with no `operation` | That dispatcher's catalogue: operation ids, summaries, capabilities, policies |
 | `system-read` → `system-environment` | WordPress and PHP versions, active theme, registered post types and taxonomies |
-| `system-read` → `system-integrations` | Which optional integrations are `Active`, `Inactive`, or `VersionBlocked` |
+| `system-read` → `system-integrations` | Which optional integrations are `Active`, `Inactive`, `VersionBlocked`, or `Unconfigured` |
 | `elementor-read` → `elementor-control-schema` | The control schema for a widget or container, so an agent can construct valid settings |
 
 ## Policy vocabulary
@@ -434,7 +434,7 @@ what is actually in the database, so a restore puts back what was really there.
 |---|---|---|
 | `system-connection` | Confirms the gateway is reachable and reports who is authenticated | `read` |
 | `system-environment` | WordPress and PHP versions, theme, post types, taxonomies | `manage_options` |
-| `system-integrations` | Health of every optional integration: `Active`, `Inactive`, `VersionBlocked` | `manage_options` |
+| `system-integrations` | Health of every optional integration: `Active`, `Inactive`, `VersionBlocked`, `Unconfigured` | `manage_options` |
 | `system-operation-schema` | Returns one named operation's full input and output schema, so an agent fetches only the schema it is about to use | `read` |
 | `user-list` | Lists user accounts by role or search term, newest registration first, with the role slugs this site has registered | `list_users` |
 | `site-settings-read` | Reads the whole site-settings allowlist, typed, in one call — the same fifteen fields `site-settings-set` can change, and nothing else | `manage_options` |

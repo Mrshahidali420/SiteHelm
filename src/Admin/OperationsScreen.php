@@ -528,9 +528,13 @@ final class OperationsScreen {
 	}
 
 	/**
-	 * Whether the module behind an operation is active on this site.
+	 * Whether the module behind an operation will answer a call on this site.
 	 *
-	 * Read from the loader's own map, so the answer is the one the gateway gives.
+	 * Read from the loader's own map, so the answer is the one the gateway gives —
+	 * which is why this asks whether the state is operational rather than whether
+	 * it is exactly `active`. A module reported `unconfigured` is dispatched to
+	 * normally, and a catalogue that greyed its operations out would be telling an
+	 * operator they had lost something they still have.
 	 *
 	 * @param OperationDefinition $definition The operation.
 	 *
@@ -540,7 +544,7 @@ final class OperationsScreen {
 		$entry = $this->health[ $definition->module->value ] ?? null;
 		$state = is_array( $entry ) && isset( $entry['health'] ) ? (string) $entry['health'] : '';
 
-		return ModuleHealth::Active->value === $state;
+		return true === ModuleHealth::tryFrom( $state )?->isOperational();
 	}
 
 	/**
