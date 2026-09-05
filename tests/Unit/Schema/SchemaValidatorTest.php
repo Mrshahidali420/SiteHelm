@@ -92,6 +92,40 @@ final class SchemaValidatorTest extends TestCase {
 	}
 
 	/**
+	 * A GUESS DESERVES THE RIGHT ANSWER, NOT A SECOND GUESS. A caller reaching
+	 * for the name another API uses — `perPage` where this one says `limit` —
+	 * learns nothing from being told only that the word was wrong, and comes
+	 * back with another word.
+	 */
+	public function test_an_unknown_property_is_answered_with_the_names_that_are_accepted(): void {
+		try {
+			$this->validator->validate(
+				[
+					'title'   => 'x',
+					'perPage' => 10,
+				],
+				$this->schema
+			);
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			$this->assertStringContainsString( 'accepted properties are title, status, count', $e->getMessage() );
+		}
+	}
+
+	/**
+	 * The list is a courtesy for a wrong name, not a running commentary. Input
+	 * that names nothing unknown must not carry it.
+	 */
+	public function test_the_accepted_names_are_listed_only_when_a_name_was_wrong(): void {
+		try {
+			$this->validator->validate( [ 'status' => 'nope' ], $this->schema );
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			$this->assertStringNotContainsString( 'accepted properties', $e->getMessage() );
+		}
+	}
+
+	/**
 	 * Missing required property should be rejected.
 	 */
 	public function test_missing_required_property_is_rejected(): void {

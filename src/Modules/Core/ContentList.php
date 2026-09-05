@@ -34,6 +34,16 @@ use WP_Query;
  * disclosure of content the caller has no rights to. The primitive gates the
  * operation, the per-item check gates its contents.
  *
+ * LISTABLE IS NOT THE SAME AS PUBLIC. This gate used to ask whether a type was
+ * registered `public`, which is a question about visitors, and the answer turned
+ * away every form submission, order record and log entry a site keeps — content
+ * an administrator reads in wp-admin every day and a management tool has every
+ * reason to see. The question it asks now is whether the type has an editing
+ * surface at all (`public` or `show_ui`) and whether this account holds the
+ * type's own edit capability. Types with no surface — revisions, menu items, the
+ * scaffolding other plugins hide — stay out, and so does a type this account
+ * cannot edit, with the same refusal either way.
+ *
  * The filter set is closed on purpose: type, status, search, parent, limit and
  * offset, with the ordering fixed to most-recently-modified first. There is no
  * date range, author filter, taxonomy filter, client-chosen ordering, or meta
@@ -65,12 +75,12 @@ final class ContentList {
 					'type'   => [
 						'type'        => 'string',
 						'maxLength'   => 32,
-						'description' => 'A public content type this site registers, for example post or page. Defaults to post.',
+						'description' => 'A content type this site registers and this account can edit, for example post or page. Types with no editing screen, such as revisions, are not listable. Defaults to post.',
 					],
 					'status' => [
 						'type'        => 'string',
-						'enum'        => [ 'draft', 'pending', 'private', 'publish', 'trash' ],
-						'description' => 'Return only items in this status. Defaults to every status except trash.',
+						'enum'        => [ 'draft', 'pending', 'private', 'publish', 'trash', 'any' ],
+						'description' => 'Return only items in this status. Use any for every status this site registers, including statuses added by other plugins, but not the trash. Defaults to draft, pending, private and publish.',
 					],
 					'search' => [
 						'type'        => 'string',
@@ -186,7 +196,7 @@ final class ContentList {
 	 */
 	public function handle( array $input, OperationContext $context ): array {
 		$type = (string) ( $input['type'] ?? self::DEFAULT_TYPE );
-		$this->assert_public_type( $type );
+		$this->assert_listable_type( $type, $context );
 
 		$limit  = min( self::MAX_LIMIT, max( 1, (int) ( $input['limit'] ?? self::DEFAULT_LIMIT ) ) );
 		$offset = max( 0, (int) ( $input['offset'] ?? 0 ) );
@@ -205,28 +215,62 @@ final class ContentList {
 	/**
 	 * Refuses a content type this operation will not list.
 	 *
-	 * A type the site does not register and a type registered as non-public are
-	 * refused identically, and the message names neither the requested type nor
-	 * the types that do exist: a listing operation must not become a way to
-	 * enumerate a site's internal post types by guessing.
+	 * THREE FAILURES SHARE ONE MESSAGE, and that is the point. A type the site
+	 * does not register, a type with no editing screen, and a type this account
+	 * may not edit are refused identically, and the message names neither the
+	 * requested type nor the types that do exist: a listing operation must not
+	 * become a way to enumerate a site's internal post types by guessing, and it
+	 * must not become a way to learn which of them an account is short of.
 	 *
-	 * @param string $type The requested content type.
+	 * The capability asked for is the type's own `edit_posts`, not the literal
+	 * string: a type registered with its own capability set answers with that
+	 * set, and asking the generic capability would admit an account the type
+	 * itself keeps out.
+	 *
+	 * @param string           $type    The requested content type.
+	 * @param OperationContext $context The operation context.
 	 *
 	 * @throws OperationException With ErrorCode::InvalidInput.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 	 */
-	private function assert_public_type( string $type ): void {
+	private function assert_listable_type( string $type, OperationContext $context ): void {
 		$object = '' === $type ? null : get_post_type_object( $type );
 
-		if ( is_object( $object ) && isset( $object->public ) && true === $object->public ) {
+		$has_screen = is_object( $object )
+			&& ( true === ( $object->public ?? false ) || true === ( $object->show_ui ?? false ) );
+
+		if ( $has_screen && user_can( $context->userId, self::edit_capability_for( $object ) ) ) {
 			return;
 		}
 
 		throw new OperationException(
 			ErrorCode::InvalidInput,
 			'The requested content type is not available for listing on this site.',
-			'Choose a public content type this site registers, for example post or page.'
+			'Choose a content type this site registers and this account can edit, for example post or page.'
 		);
 	}
+
+	/**
+	 * The capability that governs editing items of one content type.
+	 *
+	 * A type registered without a capability set is governed by `edit_posts`,
+	 * which is also what WordPress itself falls back to.
+	 *
+	 * @param object $type_object The registered post type object.
+	 *
+	 * @return string The capability to ask for.
+	 */
+	private static function edit_capability_for( object $type_object ): string {
+		$caps = $type_object->cap ?? null;
+
+		if ( is_object( $caps ) && isset( $caps->edit_posts ) && is_string( $caps->edit_posts ) && '' !== $caps->edit_posts ) {
+			return $caps->edit_posts;
+		}
+
+		return 'edit_posts';
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 
 	/**
