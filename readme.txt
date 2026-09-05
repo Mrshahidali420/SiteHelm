@@ -22,7 +22,7 @@ SiteHelm connects your WordPress site to any AI agent that speaks MCP (the Model
 4. **Verification** — the result is read back and compared against what the preview promised. A mismatch is reported as a failure, not a success.
 5. **Rollback** — anything recorded can be rolled back from the admin console.
 
-**What the plugin deliberately excludes:** there is no eval, no snippet store, no theme-file editor, no SQL passthrough and no WP-CLI passthrough. Installing a plugin or theme is a Pro operation and reaches WordPress.org and nowhere else: it takes a WordPress.org slug and nothing else, there is no argument anywhere in the plugin that accepts a URL, a zip or a file path, and what lands is stored deactivated. There is no permanent delete in the operation surface — a trash operation moves an item to the bin and declares that rollback is required.
+**What the plugin deliberately excludes:** there is no eval, no snippet store, no theme-file editor, no SQL passthrough and no WP-CLI passthrough. Installing a plugin or theme is a Pro operation, and code reaches the site two ways and no other: from WordPress.org by slug, or from a zip the operator has already put in the site's own media library. No install accepts a URL or a file path as an argument, the package is read and refused before a byte moves, and a fresh install lands deactivated. There is no permanent delete in the operation surface — a trash operation moves an item to the bin and declares that rollback is required.
 
 **You stay in control from wp-admin:**
 
@@ -106,7 +106,7 @@ https://github.com/Mrshahidali420/SiteHelm/blob/main/CHANGELOG.md
 
 = 0.9.0 =
 * Two new reads: system-plugin-list and system-theme-list report every installed plugin and theme, versions, which are active, and which have an update waiting — read from WordPress's own last check, never triggering a new one.
-* Acting on them — activate, deactivate, switch theme, update, install — is SiteHelm Pro 0.7.0. Installs take a WordPress.org slug and nothing else, and what lands is stored deactivated.
+* Acting on them — activate, deactivate, switch theme, update, install — is SiteHelm Pro. An install takes a WordPress.org slug, or the id of a zip already in this site's media library, and nothing else; a fresh install lands deactivated.
 
 = 0.8.0 =
 * Updates now come straight from the plugin's GitHub releases: new versions appear on the Plugins screen and install with one click.

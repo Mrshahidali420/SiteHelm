@@ -246,7 +246,23 @@ The checklist above still applies EXCEPT steps 3 and 4 — there is no class to 
   sweeps the schemas to prove those names appear nowhere; the only address ever fetched
   is the `download_link` `plugins_api()`/`themes_api()` returns, asserted to begin
   `https://downloads.wordpress.org/`. `ReservedCapabilityTest` pins the other half: no
-  **free** operation may declare either grant. Adding any capability here is a one-line
+  **free** operation may declare either grant.
+- **REQ-0117 added a second source under those same two capabilities, and not a third
+  freedom.** `plugin-install-upload` and `theme-install-upload` install a zip that is
+  ALREADY AN ATTACHMENT on this site. Their only argument is `attachment`, an integer
+  id resolved through the free `MediaTarget`, so the caller must be able to edit that
+  attachment; the same schema sweep covers them, so they carry no `url`, `package`,
+  `source`, `path` or `zip` property either. Getting a zip into the library at all needs
+  the new `sitehelm_media_mime_allowlist` filter in `MediaFields` — the add-on appends
+  `application/zip` while a licence is active, and the filter runs BEFORE the deny list
+  and the site's own `get_allowed_mime_types()` are subtracted, so it can add a type but
+  never add its way past one. The package is opened and read before a byte moves, an
+  install over something already there copies the old directory aside first so the
+  change is reversible, and SiteHelm and its add-on are refused as the target. The
+  sentence that states the whole boundary, and the one to check any future proposal
+  against: code reaches this site's disk from WordPress.org by slug, or from a zip the
+  operator has already placed in this site's own media library, and no install anywhere
+  takes a web address or a file path as an argument. Adding any capability here is a one-line
   edit with a large blast radius, and
   `tests/Unit/Registry/ExcludedCapabilityTest.php` is what makes it visible. That file
   also sweeps every registered id for `php` / `eval` / `exec` / `shell` / `sql`

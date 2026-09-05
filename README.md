@@ -268,7 +268,7 @@ Not "not yet". Decided, and not revisited — recorded as requirements so nobody
 - **No arbitrary PHP execution.** No `eval`, no code injection tool, no "run this snippet."
 - **No unrestricted SQL.** Every query goes through `$wpdb->prepare`; there is no pass-through query tool.
 - **No unrestricted filesystem access.** No arbitrary read, write, or delete of site files.
-- **No code from anywhere but WordPress.org.** Installing a plugin or theme is a Pro operation, it takes a WordPress.org slug and nothing else, and what lands is stored deactivated. There is no argument anywhere in the plugin that accepts a URL, a zip, or a file path, and the only address ever fetched is the download link WordPress.org itself answers with — checked against `https://downloads.wordpress.org/` before a byte moves.
+- **No code from an address an agent chose.** Code reaches the site's disk two ways and no other: from WordPress.org by slug, or from a zip the operator has already put in the site's own media library. No install anywhere accepts a URL or a file path as an argument — the slug installs fetch only the download link WordPress.org itself answers with, checked against `https://downloads.wordpress.org/` before a byte moves, and the package installs take an attachment id and nothing else. Installing is a Pro operation either way, the package is read and refused before a byte moves, and a fresh install lands deactivated.
 - **No irreversible deletion.** Removal means trash or a reversible unlink, not `force_delete`.
 
 An agent that needs any of these needs a different tool, and you should think hard before giving it one.
@@ -331,7 +331,8 @@ change, its per-post schema, and Rank Math's 404 log and redirections. Forms cam
 WooCommerce with them — products, prices, stock and categories read and written, with orders
 and customers read-only for good. Plugins and themes followed: the free plugin lists what is
 installed and what has an update waiting, and Pro activates, deactivates, switches, updates,
-installs — from WordPress.org, by slug, and deactivated on arrival — and deletes, which is
+installs — from WordPress.org by slug, or from a zip already in the media library — and
+deletes, which is
 previewed, refused for anything still running, and honest that there is no way back. Everything
 safety-related stays free, a free read never moves behind the paywall, and batch size is not
 a reason to charge: an operation that changes fifty posts under one preview and one rollback

@@ -70,7 +70,7 @@ final class ServerInstructions {
 	 * a fact about this server's own constants, so it can never go stale in a way
 	 * a client could act on.
 	 */
-	public const CONTENT_WRITE_CARRIES = '`content-write` is not only posts and pages: plugins, themes, users, site settings, redirects, comments and code snippets are all on it. There is no `system-write`. Plugins and themes install from WordPress.org by slug only - never a zip or a URL - and WordPress core itself is never updated.';
+	public const CONTENT_WRITE_CARRIES = '`content-write` is not only posts and pages: plugins, themes, users, site settings, redirects, comments and code snippets are all on it. There is no `system-write`. Plugins and themes install from WordPress.org by slug or from a zip already in the media library, never from a web address or a file path you name, and WordPress core itself is never updated.';
 
 	/**
 	 * Introduces the Elementor points as failure modes, not style advice.

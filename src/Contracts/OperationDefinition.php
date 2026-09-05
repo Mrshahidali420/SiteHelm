@@ -78,6 +78,18 @@ final class OperationDefinition {
 	 * or `themes_api()`, fetches only the `download_link` that API returns, and
 	 * stores the result deactivated. There is no argument that accepts a URL, a
 	 * zip or a filesystem path — the input schema has no such property to fill.
+	 *
+	 * THE SAME PAIR OF CAPABILITIES ALSO ADMITS A ZIP THE OPERATOR ALREADY PUT
+	 * IN THE MEDIA LIBRARY, through `plugin-install-upload` and
+	 * `theme-install-upload`. The boundary that holds across all four is worth
+	 * stating in one sentence, because it is the one an auditor should check:
+	 * code reaches this site's disk from WordPress.org by slug, or from a zip
+	 * already attached to this site, and no install anywhere takes a web address
+	 * or a file path as an argument. The upload pair's only argument is an
+	 * attachment id, the attachment must be one the calling user may edit, the
+	 * package is read and refused before a byte moves, and SiteHelm itself
+	 * cannot be the thing overwritten.
+	 *
 	 * `unfiltered_php`, `edit_files`, `edit_plugins`, `edit_themes`,
 	 * `update_core` and `unfiltered_upload` stay permanently excluded, and
 	 * ExcludedCapabilityTest keeps them out of this list.

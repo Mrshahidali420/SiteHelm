@@ -51,6 +51,19 @@ use SiteHelm\Tests\TestCase;
  *   chose;
  * - what they install is stored DEACTIVATED, so installing is not running.
  *
+ * REQ-0117 ADDED A SECOND SOURCE AND NOT A THIRD FREEDOM. `plugin-install-upload`
+ * and `theme-install-upload`, also Pro-only and behind the same two capabilities,
+ * install a zip that is ALREADY AN ATTACHMENT ON THIS SITE. Their only argument
+ * is an attachment id the calling user must be able to edit; they still carry no
+ * `url`, `package`, `source`, `path` or `zip` property, so an agent cannot name
+ * an address or a file and have it fetched. The whole boundary, still true and
+ * worth checking as one sentence: code reaches this site's disk from
+ * WordPress.org by slug, or from a zip the operator already placed in this
+ * site's own media library, and no install anywhere takes a web address or a
+ * file path as an argument. Overwriting an installed package is allowed there,
+ * because iterating a child theme is the case it exists for, but the replaced
+ * files are copied aside first and SiteHelm itself is refused.
+ *
  * The narrowing is pinned twice below: once by the survivor assertion, which
  * proves the six capabilities that were never narrowed are still absent from the
  * allowlist, and once by the narrowing assertion, which proves no operation the
@@ -107,8 +120,8 @@ final class ExcludedCapabilityTest extends TestCase {
 	 * REQ-0085 under the narrowing the class docblock sets out. The six that
 	 * remain have no narrowing in view — each of them hands over a text editor
 	 * over the site's own PHP, the ability to replace WordPress itself, or an
-	 * upload path with no type checking, and none of those has a version that
-	 * takes a wordpress.org slug and stores the result inert.
+	 * upload path with no type checking, and none of those has a version that is
+	 * previewed, refusable before a byte moves, and reversible.
 	 *
 	 * @var string[]
 	 */
@@ -249,7 +262,7 @@ final class ExcludedCapabilityTest extends TestCase {
 			$this->assertNotContains(
 				$capability,
 				$allowed,
-				"REQ-0053 and REQ-0055 exclude {$capability} permanently, and REQ-0085's narrowing did not reach it: it has no wordpress.org-slug-only form and nothing it installs can be stored inert."
+				"REQ-0053 and REQ-0055 exclude {$capability} permanently, and neither REQ-0085's narrowing nor REQ-0117's second source reached it: it has no previewable, refusable, reversible form."
 			);
 		}
 	}

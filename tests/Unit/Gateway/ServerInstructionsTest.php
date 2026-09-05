@@ -41,8 +41,15 @@ final class ServerInstructionsTest extends TestCase {
 	 * it does not tell it that plugins live on `content-write`. The map and the
 	 * named absence are what actually intercept the guess, and they are worth
 	 * the 300 characters.
+	 *
+	 * Raised again, 1860 -> 1920, when a zip in the media library became a second
+	 * place code can come from. The old sentence said "by slug only - never a zip
+	 * or a URL", which is now wrong, and a client that believes it will not try
+	 * the route that works. Naming both sources costs about sixty characters and
+	 * removes a false statement; leaving the ceiling where it was would have
+	 * meant cutting a true one somewhere else to pay for it.
 	 */
-	private const MAX_LENGTH = 1860;
+	private const MAX_LENGTH = 1920;
 
 	/**
 	 * Test that the instructions text is not empty.
@@ -100,7 +107,8 @@ final class ServerInstructionsTest extends TestCase {
 	public function test_text_states_what_the_site_will_not_do(): void {
 		$text = ServerInstructions::text();
 
-		$this->assertStringContainsString( 'WordPress.org by slug only', $text );
+		$this->assertStringContainsString( 'WordPress.org by slug or from a zip', $text );
+		$this->assertStringContainsString( "never from a web address or a file path you name", $text );
 		$this->assertStringContainsString( 'core itself is never updated', $text );
 	}
 
