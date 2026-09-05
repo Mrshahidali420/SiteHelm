@@ -65,7 +65,7 @@ SiteHelm makes a different trade. It is smaller in surface area and much stricte
 | **When a write half-lands** | Silent | `VerificationFailed`, with the steps that completed |
 | **Undo** | Your backup plugin | A snapshot taken by the same plan, restorable by operation |
 | **Permissions** | Often a single API key | The authenticating WordPress user's real capabilities, re-checked per operation |
-| **Errors** | Whatever PHP threw | One of eleven typed error codes with an operator-facing remedy — never a stack trace, path, or SQL string |
+| **Errors** | Whatever PHP threw | One of thirteen typed error codes with an operator-facing remedy — never a stack trace, path, or SQL string |
 | **Surface** | 200+ loosely specified tools | 105 operations behind 11 dispatchers, each with a strict JSON Schema |
 
 Fewer tools is deliberate. Every operation here has a written acceptance criterion, an input schema that rejects unknown properties, and a test that fails if the guard protecting it is deleted.
@@ -251,12 +251,12 @@ Then ask an agent for something real. Good first prompts:
 
 **Snapshots precede changes.** Every field a restore might need is captured before the write, and restores gate on key *presence* rather than on a null-coalescing default, so "this list was empty" is never confused with "this list was not recorded."
 
-**Refusals leak nothing.** The eleven error codes carry an operator-facing message and a remedy. They never contain a stack trace, a filesystem path, a SQL fragment, `$wpdb->last_error`, an authorization header, or a resolved IP address. Server-side detail goes to `error_log`; the client gets a sentence it can act on.
+**Refusals leak nothing.** The thirteen error codes carry an operator-facing message and a remedy. They never contain a stack trace, a filesystem path, a SQL fragment, `$wpdb->last_error`, an authorization header, or a resolved IP address. Server-side detail goes to `error_log`; the client gets a sentence it can act on.
 
 <details>
-<summary>The eleven error codes</summary>
+<summary>The thirteen error codes</summary>
 
-`AuthenticationFailed` · `Forbidden` · `IntegrationUnavailable` · `UnsupportedVersion` · `InvalidInput` · `TargetNotFound` · `Conflict` · `StalePlan` · `ExecutionFailed` · `VerificationFailed` · `RollbackUnavailable`
+`AuthenticationFailed` · `Forbidden` · `IntegrationUnavailable` · `IntegrationUnlicensed` · `UpstreamUnavailable` · `UnsupportedVersion` · `InvalidInput` · `TargetNotFound` · `Conflict` · `StalePlan` · `ExecutionFailed` · `VerificationFailed` · `RollbackUnavailable`
 </details>
 
 **URL fetching is hardened.** Importing media from a URL is the most dangerous surface in the plugin, and it is treated that way: the host is resolved and validated before the connection, private, loopback, link-local, and reserved ranges are refused, every redirect hop is re-validated and re-pinned, the resolved address is pinned so the connection cannot be re-pointed between check and fetch, the wire read is capped, and the refusal is deliberately digit-free so it cannot become an SSRF oracle.

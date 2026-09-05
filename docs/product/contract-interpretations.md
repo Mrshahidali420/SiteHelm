@@ -123,3 +123,19 @@ The amendment is also out of order against the contract's own Change Policy, whi
 **Binding rule for Phase 3b (Decision 3).** An operation that accepts a reference to another object — an attachment id for REQ-0017, term ids for REQ-0016, a parent id — MUST validate that the reference resolves while *planning*, and return `invalid_input` when it does not. A bad reference must never reach verification: WordPress silently drops an unresolvable one, and under this ruling a dropped value classifies as an adjustment and therefore succeeds. Plan-time validation is the only place that separates operator error from platform adjustment; `WriteVerifier` cannot tell them apart, and a test pins that it does not try to.
 
 **Reversibility.** Expensive. `verified-with-adjustments` is a third enum case a client may branch on, and reverting would reinstate a false failure on writes that landed. The narrower alternative — keeping byte-equality and modelling every adjustment in the preview — is not reversible-to either, because Decision 1 records why it cannot be built.
+
+---
+
+## I8. Three different problems arrived as one error code
+
+**Contract says.** The error list is closed and each code carries a fixed meaning, and `integration_unavailable` means "the module that owns the operation is not active because its supported plugin is not installed or not activated".
+
+**Why it needed a ruling.** The shipped code used that one identifier for three unrelated situations. A plugin this site has never installed, a Pro operation the site has no licence for, and WordPress.org failing to answer a download request all came back as `integration_unavailable`. The caller's next move is different in each case — install something, buy something, or simply wait — and the code told it nothing about which. Worse, only the third can clear on its own, so a client that treated the code as permanent gave up on calls that would have worked a minute later, and a client that retried hammered a site that was never going to answer differently.
+
+**Ruling.** Two codes are added rather than the existing one renamed: `integration_unlicensed` and `upstream_unavailable`. `integration_unavailable` keeps its identifier and is narrowed to a dependency this site does not have active, which is what fifty of the sixty-four places that raise it already meant. `upstream_unavailable` is retryable; the other two are not.
+
+**Rationale.** Renaming was the obvious reading of the problem and the wrong answer. The enum's own docblock says codes never change meaning, and the identifier is on the wire in every client that has ever handled a refusal, so a rename breaks working integrations to fix a naming complaint. Adding costs a client nothing: one that has never heard of the two new codes still gets a typed refusal with a message and a remedy, and one that has learned them gets the three distinct actions. Only four raise sites moved, so sixty of the sixty-four refusals in the plugin mean exactly what they meant before.
+
+**Recorded in the contract (2026-09-05).** The stable-error-code table gains two rows marked with the date they were added, the count above it changes, and the document's Status carries a dated amendment line, following the shape of the 2026-07-26 amendment so an auditor reading the contract alone sees the change in place. The frozen literal list in `tests/Unit/Contracts/EnumsTest.php` is extended in the same commit, because that test is the thing that would otherwise put the codes back.
+
+**Reversibility.** Cheap in one direction only. Removing either code would break a client that had learned to branch on it, but nothing forces a client to learn them, and the meaning of every previously existing code is untouched.

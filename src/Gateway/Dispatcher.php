@@ -146,7 +146,7 @@ final class Dispatcher {
 		if ( ! $this->registry->has( $operation_id ) ) {
 			if ( isset( ProCatalogue::OPERATIONS[ $operation_id ] ) ) {
 				throw new OperationException(
-					ErrorCode::IntegrationUnavailable,
+					ErrorCode::IntegrationUnlicensed,
 					sprintf( "'%s' is part of SiteHelm Pro, which is not active on this site.", $operation_id ),
 					sprintf(
 						'A site administrator can add it by installing and licensing the SiteHelm Pro add-on — plans at %s. It is served by the %s tool once it is there. Until then, call the dispatcher without an operation to see what this site can do.',

@@ -870,6 +870,11 @@ final class DispatcherTest extends TestCase {
 	 * own constant, never the caller's text, and the remediation carries the
 	 * one address where the add-on is bought.
 	 *
+	 * THE CODE SAYS BUY, NOT INSTALL. This is the one refusal on the free plugin
+	 * that money clears, and it used to share `integration_unavailable` with every
+	 * missing dependency, so an agent could not tell "activate Elementor" from
+	 * "this is a paid feature".
+	 *
 	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 	 */
 	public function test_an_unregistered_pro_operation_names_the_add_on(): void {
@@ -879,7 +884,7 @@ final class DispatcherTest extends TestCase {
 			$this->dispatcher->dispatch( 'content-write', [ 'operation' => 'product-create' ], $this->makeContext() );
 			$this->fail( 'Expected OperationException' );
 		} catch ( OperationException $e ) {
-			$this->assertSame( ErrorCode::IntegrationUnavailable, $e->errorCode );
+			$this->assertSame( ErrorCode::IntegrationUnlicensed, $e->errorCode );
 			$this->assertStringContainsString( 'SiteHelm Pro', $e->getMessage() );
 			$this->assertStringContainsString( 'product-create', $e->getMessage() );
 			$this->assertStringContainsString( ProCatalogue::PRICING_URL, (string) $e->remediation );

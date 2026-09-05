@@ -49,6 +49,8 @@ final class EnumsTest extends TestCase {
 				'authentication_failed',
 				'forbidden',
 				'integration_unavailable',
+				'integration_unlicensed',
+				'upstream_unavailable',
 				'unsupported_version',
 				'invalid_input',
 				'target_not_found',
@@ -75,6 +77,7 @@ final class EnumsTest extends TestCase {
 		$this->assertFalse( ErrorCode::Forbidden->isRetryable() );
 		$this->assertFalse( ErrorCode::AuthenticationFailed->isRetryable() );
 		$this->assertFalse( ErrorCode::IntegrationUnavailable->isRetryable() );
+		$this->assertFalse( ErrorCode::IntegrationUnlicensed->isRetryable() );
 		$this->assertFalse( ErrorCode::UnsupportedVersion->isRetryable() );
 		$this->assertFalse( ErrorCode::TargetNotFound->isRetryable() );
 		$this->assertFalse( ErrorCode::VerificationFailed->isRetryable() );
@@ -83,5 +86,10 @@ final class EnumsTest extends TestCase {
 		$this->assertTrue( ErrorCode::Conflict->isRetryable() );
 		$this->assertTrue( ErrorCode::StalePlan->isRetryable() );
 		$this->assertTrue( ErrorCode::ExecutionFailed->isRetryable() );
+
+		// The one refusal on the list that clears without the caller doing
+		// anything. A remote service that was briefly down is worth waiting for;
+		// a dependency this site has never had is not.
+		$this->assertTrue( ErrorCode::UpstreamUnavailable->isRetryable() );
 	}
 }

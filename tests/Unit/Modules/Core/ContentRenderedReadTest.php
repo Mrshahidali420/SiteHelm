@@ -385,7 +385,8 @@ final class ContentRenderedReadTest extends TestCase {
 
 		$refused = $this->refusal();
 
-		$this->assertSame( ErrorCode::IntegrationUnavailable, $refused->errorCode );
+		$this->assertSame( ErrorCode::UpstreamUnavailable, $refused->errorCode );
+		$this->assertTrue( $refused->errorCode->isRetryable() );
 		$this->assertStringNotContainsString( 's3cr3t', $refused->getMessage() );
 		$this->assertStringNotContainsString( 's3cr3t', $refused->remediation );
 	}

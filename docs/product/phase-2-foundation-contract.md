@@ -3,6 +3,7 @@
 **Date:** 2026-07-24
 **Status:** Frozen. Phase 2 implements this contract exactly as written.
 **Amended 2026-07-26:** The `verification` field of `OperationResult` and the `verification_failed` error row now admit a third status, `verified-with-adjustments` — a write WordPress adjusted on save succeeds and is disclosed instead of being reported as a failure. Approved through the write-verification-contract design and recorded as interpretation I7, not through a prior revision of this document: the implementation shipped first and this amendment followed it, which is the reverse of the ordering the Change Policy below requires.
+**Amended 2026-09-05:** Two codes are added to the stable error list, taking it from eleven to thirteen: `integration_unlicensed` for an operation the site has no Pro licence for, and `upstream_unavailable` for a service outside the site that did not answer. `integration_unavailable` keeps its identifier and is narrowed to what it always mostly meant — a dependency this site does not have active. The three used to arrive as one code, so a caller could not tell "activate the plugin" from "buy the add-on" from "wait and try again", and only the third of those clears without anybody doing anything. Recorded as interpretation I8. As with the 2026-07-26 amendment, the implementation and this line ship together rather than the revision preceding the change.
 **Product:** SiteHelm — a secure WordPress MCP operations platform delivered as one plugin.
 **Scope:** Documentation-level contracts for the MCP gateway foundation: dispatchers, operation definitions, runtime context, change plans, results, errors, and integration modules.
 
@@ -190,13 +191,16 @@ Every failure returns one `OperationError` envelope. No SiteHelm response ever e
 
 ### Stable error codes
 
-All eleven codes below ship in V1. Each is required by the approved design.
+All eleven codes below shipped in V1. Each is required by the approved design. Two more, marked
+as added, arrived with the amendment of 2026-09-05 recorded in the Status above.
 
 | Code | Meaning | Retryability |
 |---|---|---|
 | `authentication_failed` | The request presented no credential or an invalid Application Password; no WordPress user could be resolved. | Not retryable with the same credential. Retry only after correcting the credential. |
 | `forbidden` | The resolved user lacks a required capability for the operation or target, or the policy engine rejected the request (permission mode, protected metadata, target restriction, or a permanently excluded behavior). | Not retryable. The condition changes only through WordPress-side configuration or permissions. |
 | `integration_unavailable` | The module that owns the operation is not active because its supported plugin is not installed or not activated. | Not retryable until a site administrator installs or activates the dependency. |
+| `integration_unlicensed` *(added 2026-09-05)* | The operation belongs to a paid add-on and this site has no active licence for it. The operation exists and is named; what is missing is the entitlement, not the software. | Not retryable. The condition changes only when a licence is bought and activated. |
+| `upstream_unavailable` *(added 2026-09-05)* | A service outside this WordPress installation did not answer or answered unusably — the WordPress.org package API, or the site's own front end fetched over HTTP. Nothing on the site is missing or misconfigured. | Retryable. This is the one refusal in the list that can clear without the caller changing anything, which is why it is separate from the two above. |
 | `unsupported_version` | The module detected its dependency at a version outside the operation's `supportedVersions`, so the operation is version-blocked. | Not retryable until the dependency moves into a supported version range. |
 | `invalid_input` | The request payload violated the strict input schema: missing property, wrong type, constraint violation, or an unknown property. Also returned for uploads that fail MIME or size validation. | Retryable only after correcting the input; identical input always fails identically. |
 | `target_not_found` | The addressed target (post, attachment, menu, element, field, or similar) does not exist or is not visible to the resolved user. | Not retryable with the same target reference. |

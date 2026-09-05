@@ -11,6 +11,16 @@ an operation behaves.
 
 ## [Unreleased]
 
+### Changed
+- **A refusal now says which of three problems it is.** "This is not available" used to cover a
+  plugin the site has not installed, a feature the site has no Pro licence for, and a service
+  outside the site that did not answer. Those need three different responses — install
+  something, buy something, or just try again — and only the last one fixes itself. There are
+  now three codes instead of one: `integration_unavailable` still means a dependency this site
+  does not have active, `integration_unlicensed` means the operation is part of Pro, and
+  `upstream_unavailable` means something outside the site was slow or down and the same call is
+  worth repeating. Nothing that already worked changed its answer.
+
 ### Fixed
 - **Content types that are not public could not be listed.** `content-list` asked whether a
   content type was visible to visitors, so an enquiry log, a testimonial store, or any of the
