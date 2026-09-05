@@ -57,6 +57,7 @@ final class CoreDefinitionInvariantsTest extends TestCase {
 		'redirect-list',
 		'content-links-check',
 		'content-rendered-get',
+		'content-style-check',
 		'comment-list',
 		'content-update',
 		'content-create',

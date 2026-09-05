@@ -8,6 +8,7 @@
         "redirect-list",
         "content-links-check",
         "content-rendered-get",
+        "content-style-check",
         "comment-list",
         "content-update",
         "content-create",
@@ -28,7 +29,7 @@
         "site-settings-read",
         "audit-list"
     ],
-    "operationCount": 27,
+    "operationCount": 28,
     "definitions": {
         "content-get": {
             "inputSchema": {
@@ -730,6 +731,77 @@
                     },
                     "htmlTruncated": {
                         "type": "boolean"
+                    }
+                },
+                "additionalProperties": false
+            }
+        },
+        "content-style-check": {
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "Identifier of the content item whose public page to read."
+                    },
+                    "selector": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200,
+                        "description": "The selector to report on, written as CSS: .menu-toggle, #site-header, or a.button. A rule is reported when the last part of its own selector carries everything you asked for, so .site-header .menu-toggle:hover is reported for .menu-toggle and .menu-toggle .icon is not."
+                    },
+                    "viewport": {
+                        "type": "integer",
+                        "minimum": 200,
+                        "maximum": 3840,
+                        "description": "The viewport width in pixels to evaluate media queries at. Defaults to 1280; use 390 for a phone."
+                    }
+                },
+                "required": [
+                    "id",
+                    "selector"
+                ],
+                "additionalProperties": false
+            },
+            "outputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer"
+                    },
+                    "url": {
+                        "type": "string"
+                    },
+                    "status": {
+                        "type": "integer"
+                    },
+                    "selector": {
+                        "type": "string"
+                    },
+                    "viewport": {
+                        "type": "integer"
+                    },
+                    "stylesheets": {
+                        "type": "array"
+                    },
+                    "rules": {
+                        "type": "array"
+                    },
+                    "rulesTruncated": {
+                        "type": "boolean"
+                    },
+                    "matchCount": {
+                        "type": "integer"
+                    },
+                    "winning": {
+                        "type": "object"
+                    },
+                    "unevaluated": {
+                        "type": "integer"
+                    },
+                    "imports": {
+                        "type": "array"
                     }
                 },
                 "additionalProperties": false

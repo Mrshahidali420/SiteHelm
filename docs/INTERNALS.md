@@ -3343,8 +3343,9 @@ page cannot drift from what the negotiator accepts.
 
 ## 53. Rendered page fetch (REQ-0108) in one screen
 
-`content-rendered-get` is the only operation in the plugin that reads the site's front end
-rather than its database. Everything else verifies a write by reading the row back, which
+`content-rendered-get` was the first operation in the plugin that reads the site's front end
+rather than its database, and is now one of two — `content-style-check` (§68) is the other, and
+both go through the same guard. Everything else verifies a write by reading the row back, which
 proves the value was stored and proves nothing about whether the page renders — the class of
 bug that produced the Elementor page-template desync and the collapsed-CSS defect.
 
@@ -3361,8 +3362,11 @@ with `additionalProperties: false`. There is no `url`, `source`, `path` or `pack
 at all, so there is no refusal to forget to write; `ContentRenderedReadTest` asserts the
 absence of those names directly. The URL is derived from `get_permalink()`, and because that
 value passes through a filter another plugin owns, the host is compared to `home_url()`'s
-before any request is made. `MediaUrlGuard` is deliberately **not** reused here: it exists to
-refuse loopback and private ranges, which is exactly what this operation must reach.
+before any request is made. That check, the capability check, the public-page check and the
+fetch itself live in `FrontEndPage`, not in the operation: a second front-end read now exists,
+and a guard that is copied is a guard that will one day be fixed in only one of its copies.
+`MediaUrlGuard` is deliberately **not** reused here: it exists to refuse loopback and private
+ranges, which is exactly what this operation must reach.
 
 **Refused before the fetch, not after.** The request carries no cookies, so a draft, a
 password-protected item or a post type with no public page would come back 404 and be reported
@@ -3978,3 +3982,51 @@ recipe and fails if one reaches for `siteurl`, `home`, `active_plugins`, `users_
 
 The registry and the read are free; the two writes, `plugin-onboarding-complete` and
 `plugin-option-set`, are the add-on's, which is the split the Extensions module already had.
+
+## 68. Why a page looks wrong, answered without a browser
+
+`content-style-check` closes the last gap in the verify loop. Every write in the plugin can be
+read back except a change to how something looks: `content-get` proves the content was stored,
+`content-rendered-get` proves the markup came out right, and the remaining question — does the
+breakpoint rule the fix depended on actually apply at 390 pixels — could only be answered by
+driving a browser at the site. This answers it from the server.
+
+**It is not a rendering engine and does not pretend to be one.** It does no layout, runs no
+scripts, resolves no inheritance and no `var()`, and does not know which elements on the page
+the selector matches. It reports the rules *written for* a selector, the conditions each sits
+under, and the cascade between them. What it deliberately skips it skips by name: an `@import`
+is recorded and not followed, an `@supports` block is reported as a condition rather than
+folded into the media query, `@keyframes` and `@font-face` contribute no rules. A wrong answer
+here would be worse than no answer, because it would be believed.
+
+**Four classes, each with one job.** `FrontEndPage` is the shared guard and fetcher (§53).
+`StyleSheets` finds a page's inline blocks and linked sheets **in document order**, because
+order decides the cascade and nothing may sort them afterwards. `CssRules` reads CSS text into
+rules. `StyleQuery` answers the three questions the report rests on: does this rule reach the
+selector, does its media condition hold at this width, and what is its specificity.
+
+**Matching is on the subject of the selector.** A rule written `.site-header .menu-toggle:hover`
+is reported for a request about `.menu-toggle`, because the thing it styles is the toggle; a
+rule written `.menu-toggle .icon` is not, because the thing it styles is the icon. That is the
+distinction an operator is actually asking about, and the one a plain text search over a
+stylesheet gets wrong in both directions. Classes, identifiers and attribute values are matched
+case-sensitively and element names are not, because that is what the page does — an earlier
+draft lower-cased everything and would have reported `.menuToggle` for `.menutoggle`.
+
+**A condition it cannot evaluate is reported as unevaluated, never guessed.** Width it knows,
+in `px`, `em`, `rem`, both the `min-width`/`max-width` spelling and the range form.
+`prefers-color-scheme`, `orientation`, `hover` and a `not` query it does not, and those rules
+come back with `applies: null`, are counted in `unevaluated`, and are held out of the cascade
+so a winner never rests on a guess.
+
+**Only this site's own sheets are fetched.** A page can link a font service or a CDN, and
+following those would turn a page read into a request to whatever host the markup names. An
+off-site sheet is reported as present and left unread, and a `data:` or `javascript:` href
+resolves to nothing at all rather than to a candidate address. `StyleSheets::MAX_SHEETS` (20)
+bounds how many are fetched; a sheet that does not answer is reported unread rather than
+failing the whole read, because the rules from every other sheet still stand.
+
+**The ceilings.** `CssRules::MAX_RULES` (5000) bounds how much CSS is read per call;
+`ContentStyleCheck::MAX_RULES` (100) bounds how many matching rules are listed. The winners are
+computed over **all** matches before that truncation, so a capped list never changes the answer
+to "what wins" — and `matchCount` reports the real total beside `rulesTruncated`.

@@ -65,6 +65,17 @@ an operation behaves.
   property names it accepts.
 
 ### Added
+- **Why a page looks wrong can now be answered without opening a browser.** SiteHelm could
+  show you what a page rendered, but not why it renders that way. If a menu button is still
+  showing on a phone, the question is whether the rule you wrote actually applies at that
+  width, and nothing short of loading the site in a browser could tell you.
+  `content-style-check` takes a page, a selector and a width, reads the stylesheets that page
+  links on your own site, and reports every rule written for that selector, whether each one
+  applies at the width you asked about, and which declaration wins. It is a stylesheet reader,
+  not a browser: it does not lay the page out, run scripts, or work out inherited values, and
+  a condition it cannot judge - a dark-mode query, say - is reported as unjudged rather than
+  guessed at, and kept out of the answer about which rule wins. Stylesheets on other sites,
+  such as a font service, are listed as present and left unread.
 - **A theme's own files can be read before anything replaces them.** SiteHelm could install a
   theme and switch to one, but it could not tell you what the theme you were about to change
   currently does, and theme file names are not guessable: the same header is `header.php` in one
