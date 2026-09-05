@@ -34,6 +34,19 @@ an operation behaves.
   property names it accepts.
 
 ### Added
+- **A plugin or theme can be installed from a zip you already uploaded.** Until now the only
+  source was WordPress.org by slug, so a theme you had built yourself — a child theme being
+  worked on, a plugin that is not in the directory — had to go up through wp-admin by hand,
+  which broke the one workflow an agent most needs to repeat. Two Pro operations,
+  `plugin-install-upload` and `theme-install-upload`, now install from a zip that is already an
+  attachment in this site's own media library. The only argument is the attachment id: there is
+  still no argument anywhere in the plugin that accepts a web address or a file path. The
+  preview opens the package and shows what it would replace, version against version, the way
+  wp-admin does; installing over something already there copies the old files aside first, so
+  the change can be rolled back; and overwriting the theme that is live is allowed and leaves it
+  live, because that is the case this exists for. Free SiteHelm gains the filter the add-on uses
+  to let a zip into the media library at all — it can widen the accepted types but cannot widen
+  past anything the site itself refuses.
 - **Menus can be created.** Every menu operation needed a menu to already exist, so a site
   built from nothing had to have its first menu made by hand in WordPress before anything
   else about menus could be done. `menu-create` takes a name and makes one empty menu; add

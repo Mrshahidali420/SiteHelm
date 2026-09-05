@@ -276,6 +276,13 @@ final class MediaFields {
 	 *    last so that neither the operator nor a plugin can add its way past
 	 *    them.
 	 *
+	 * `sitehelm_media_mime_allowlist` sits between step 2 and step 3, so a site
+	 * or an add-on can ADD a type — the Pro add-on appends `application/zip` so a
+	 * theme or plugin package can reach the library — but cannot add its way past
+	 * anything: the filtered list still runs the whole of step 3, so a filter that
+	 * returns `image/svg+xml`, `text/html` or a PHP type gets it subtracted again
+	 * immediately, and a type the site itself does not permit is dropped too.
+	 *
 	 * The deny list is subtracted on two independent axes because neither alone
 	 * is sufficient. DENIED_MIME_TYPES catches a denied type registered under an
 	 * extension the deny list does not name; DENIED_EXTENSIONS catches a type
@@ -289,6 +296,18 @@ final class MediaFields {
 		$configured = get_option( self::MIME_ALLOWLIST_OPTION, [] );
 		$requested  = is_array( $configured ) ? $this->normalize_types( $configured ) : [];
 		$effective  = [] === $requested ? self::DEFAULT_MIME_ALLOWLIST : $requested;
+
+		/**
+		 * Filters the MIME types SiteHelm will accept into the media library.
+		 *
+		 * Additive only in effect: whatever this returns is still subtracted
+		 * against the deny lists and the site's own `get_allowed_mime_types()`
+		 * below, so a filter cannot re-admit a denied type.
+		 *
+		 * @param string[] $effective The requested or default allowlist.
+		 */
+		$filtered  = apply_filters( 'sitehelm_media_mime_allowlist', $effective );
+		$effective = is_array( $filtered ) ? $this->normalize_types( $filtered ) : $effective;
 
 		$permitted = get_allowed_mime_types();
 		$permitted = is_array( $permitted ) ? $permitted : [];

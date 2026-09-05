@@ -570,10 +570,10 @@ missing; brand kits need only Elementor.
 > required, and a post that is not a kit is refused. An `elementor_active_kit` option naming
 > a kit that has been deleted is reported as no active kit rather than repeated back.
 
-### Plugins & themes (Pro) — nine Pro operations
+### Plugins & themes (Pro) — eleven Pro operations
 
 Shipped in SiteHelm Pro 0.7.0 and extended in 0.10.0, registered into the **free** Plugins &
-Themes module: the inventory reads above are free, and these nine writes are the add-on's half. The reads ride
+Themes module: the inventory reads above are free, and these eleven writes are the add-on's half. The reads ride
 `system-read` and the writes ride `content-write`; the eleven dispatchers are frozen and
 there is no `system-write`.
 
@@ -588,8 +588,10 @@ there is no `system-write`.
 | `theme-install` | `content-write` | Installs a theme from WordPress.org by its slug and does **not** make it live | `install_themes` | not-applicable |
 | `plugin-delete` | `content-write` | Removes one deactivated plugin's files for good; a plugin that is switched on, one the network activated, and SiteHelm itself are all refused | `delete_plugins` | not-applicable |
 | `theme-delete` | `content-write` | Removes one theme's files for good; the live theme is refused, and so is a theme another installed theme is built on | `delete_themes` | not-applicable |
+| `plugin-install-upload` | `content-write` | Installs a plugin from a zip that is already an attachment in this site's own media library; the only argument is the attachment id, and a plugin already installed is overwritten with its old files copied aside first | `install_plugins` | supported |
+| `theme-install-upload` | `content-write` | The same for a theme, and overwriting the **live** theme is allowed and leaves it live — that is the case it exists for, iterating a child theme without a manual upload | `install_themes` | supported |
 
-> **Installing reaches WordPress.org and nowhere else.** The input schema is a slug and
+> **Installing by slug reaches WordPress.org and nowhere else.** The input schema is a slug and
 > nothing else — there is no `url`, `package`, `source`, `path` or `zip` property anywhere in
 > it, and `additionalProperties: false` means one cannot be smuggled in. The slug is checked
 > against `/^[a-z0-9][a-z0-9-]*$/` before any network call, so a web address, a scheme, a
@@ -600,10 +602,33 @@ there is no `system-write`.
 > and a failed install removes exactly the folder it part-wrote in this call and nothing the
 > site already had.
 >
-> **The three option flips can be undone; the six file writes cannot.** Activate, deactivate
+> **A zip reaches the site only through the media library.** `plugin-install-upload` and
+> `theme-install-upload` take one argument, `attachment`, an integer id — there is still no
+> `url`, `package`, `source`, `path` or `zip` property anywhere, so nothing an agent names is
+> fetched. The file has to already be an attachment on this site, and one the calling account
+> may edit. Putting it there is a separate, previewed, logged call, `media-upload` or
+> `media-import`, and the site's own `get_allowed_mime_types()` still has to permit a zip:
+> SiteHelm's own allowlist is images only, and the add-on widens it to zip while a Pro licence
+> is active by way of a filter that runs **before** the deny lists are subtracted, so it can
+> add a type but never add its way past one. The package is opened and read before a byte
+> moves: two top-level directories, an entry escaping the directory, a missing `style.css` or
+> plugin header, or a PHP or WordPress requirement this site does not meet is refused in the
+> preview, and SiteHelm and its add-on cannot be the thing overwritten. The whole boundary in
+> one sentence, and it is the one worth auditing: **code reaches this site's disk from
+> WordPress.org by slug, or from a zip the operator has already placed in this site's own media
+> library, and no install anywhere takes a web address or a file path as an argument.**
+>
+> **Overwriting is how a child theme is iterated, so it is reversible.** The two package
+> installs copy the directory they are about to replace aside first, report the version they
+> read out of the zip against the version already installed — the same comparison wp-admin
+> shows you — and restore from that copy on a rollback. Overwriting the theme that is live is
+> the normal case rather than the exception: the theme stays live, which is the point.
+>
+> **The three option flips and the two package installs can be undone; the six other file
+> writes cannot.** Activate, deactivate
 > and switch snapshot the state they replace and restore it by re-running every guard they
 > applied forwards, so a restore refuses on the same grounds a forward call would. The two
-> updates, the two installs and the two deletes declare `not-applicable` for both snapshot and
+> updates, the two slug installs and the two deletes declare `not-applicable` for both snapshot and
 > rollback and refuse a rollback attempt with `RollbackUnavailable`: WordPress has no clean
 > downgrade, and a rollback that quietly did nothing would be worse than one that says so. An
 > update verifies the installed `version` on read-back and never the update transient — that
@@ -617,8 +642,8 @@ there is no `system-write`.
 > and before a single file moves, because a plan is approved in a separate call from the one
 > that made it.
 >
-> **`DISALLOW_FILE_MODS` and `DISALLOW_FILE_EDIT` stop exactly the six file writes.** Both
-> updates, both installs and both deletes are refused by name, with the constant named in the
+> **`DISALLOW_FILE_MODS` and `DISALLOW_FILE_EDIT` stop exactly the eight file writes.** Both
+> updates, all four installs and both deletes are refused by name, with the constant named in the
 > refusal (`DISALLOW_FILE_MODS` when both are set), because a site that has locked its own file
 > modifications has answered this question already. The three option flips write no files and
 > are left alone.

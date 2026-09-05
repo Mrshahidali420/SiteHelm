@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace SiteHelm\Tests\Unit\Modules\Media;
 
+use Brain\Monkey\Filters;
 use Brain\Monkey\Functions;
 use SiteHelm\Modules\Media\MediaFields;
 use SiteHelm\Tests\TestCase;
@@ -483,6 +484,69 @@ final class MediaFieldsTest extends TestCase {
 
 		$this->assertNotContains( 'image/svg+xml', $allowed );
 		$this->assertSame( [ 'image/png' ], $allowed );
+	}
+
+	/**
+	 * The filter is how the Pro add-on lets a theme or plugin package reach the
+	 * library: it appends `application/zip` while a licence is active, and the
+	 * package installs read the attachment back out.
+	 */
+	public function test_a_filter_can_add_a_type_the_site_permits(): void {
+		$this->stubWordPress();
+		Functions\when( 'get_allowed_mime_types' )->justReturn(
+			[
+				'png' => 'image/png',
+				'zip' => 'application/zip',
+			]
+		);
+		Filters\expectApplied( 'sitehelm_media_mime_allowlist' )
+			->once()
+			->andReturnUsing( static fn( array $types ): array => [ ...$types, 'application/zip' ] );
+
+		$this->assertContains( 'application/zip', $this->fields->mimeAllowlist() );
+	}
+
+	/**
+	 * THE FILTER RUNS BEFORE THE SUBTRACTION, NOT AFTER IT, which is the whole
+	 * reason it is safe to expose. A filter is the one place a third party gets
+	 * to speak, and if it spoke last it could hand back the scripting vector the
+	 * operator is not allowed to configure.
+	 */
+	public function test_a_filter_cannot_re_enable_a_denied_type(): void {
+		$this->stubWordPress();
+		Filters\expectApplied( 'sitehelm_media_mime_allowlist' )
+			->once()
+			->andReturn( [ 'image/svg+xml', 'image/png' ] );
+
+		$this->assertSame( [ 'image/png' ], $this->fields->mimeAllowlist() );
+	}
+
+	/**
+	 * A site that has narrowed its uploads keeps its narrowing, filter or not.
+	 */
+	public function test_a_filter_cannot_add_a_type_the_site_itself_refuses(): void {
+		$this->stubWordPress();
+		Filters\expectApplied( 'sitehelm_media_mime_allowlist' )
+			->once()
+			->andReturn( [ 'image/png', 'application/zip' ] );
+
+		$this->assertSame( [ 'image/png' ], $this->fields->mimeAllowlist() );
+	}
+
+	/**
+	 * A filter that answers with something that is not a list is ignored, the
+	 * same way a garbage stored option is.
+	 */
+	public function test_a_filter_answering_with_a_non_list_is_ignored(): void {
+		$this->stubWordPress();
+		Filters\expectApplied( 'sitehelm_media_mime_allowlist' )
+			->once()
+			->andReturn( 'application/zip' );
+
+		$this->assertSame(
+			[ 'image/jpeg', 'image/png', 'image/gif', 'image/webp' ],
+			$this->fields->mimeAllowlist()
+		);
 	}
 
 	/**

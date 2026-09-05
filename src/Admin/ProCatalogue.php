@@ -341,13 +341,13 @@ final class ProCatalogue {
 			'dispatcher'  => 'content-write',
 			'module'      => ModuleId::Extensions,
 			'read'        => false,
-			'description' => 'Install a plugin from WordPress.org by its slug. There is no argument that accepts a web address, a zip or a file path, and what is installed is always stored switched off — switching it on is a separate, deliberate step.',
+			'description' => 'Install a plugin from WordPress.org by its slug. There is no argument that accepts a web address or a file path, and what is installed is always stored switched off — switching it on is a separate, deliberate step. For a zip you hold, upload it to the media library and use plugin-install-upload.',
 		],
 		'theme-install'                => [
 			'dispatcher'  => 'content-write',
 			'module'      => ModuleId::Extensions,
 			'read'        => false,
-			'description' => 'Install a theme from WordPress.org by its slug, on the same terms as a plugin install: slug only, never a web address or a zip, and the theme is not made live.',
+			'description' => 'Install a theme from WordPress.org by its slug, on the same terms as a plugin install: slug only, never a web address or a file path, and the theme is not made live. For a zip you hold, upload it to the media library and use theme-install-upload.',
 		],
 
 		'plugin-delete'                => [
@@ -361,6 +361,19 @@ final class ProCatalogue {
 			'module'      => ModuleId::Extensions,
 			'read'        => false,
 			'description' => 'Remove one theme from this site for good, on the same terms as a plugin delete. The live theme is refused, and so is a theme another installed theme is built on.',
+		],
+
+		'plugin-install-upload'        => [
+			'dispatcher'  => 'content-write',
+			'module'      => ModuleId::Extensions,
+			'read'        => false,
+			'description' => 'Install a plugin from a zip that is already an attachment in the media library on this site. The only argument is the attachment id: there is still no web address and no file path. The preview reads the package and shows what it would replace, version against version, and a plugin already installed is overwritten with the old files copied aside first so the change can be rolled back.',
+		],
+		'theme-install-upload'         => [
+			'dispatcher'  => 'content-write',
+			'module'      => ModuleId::Extensions,
+			'read'        => false,
+			'description' => 'Install a theme from a zip that is already an attachment in the media library on this site, on the same terms as a plugin package. Overwriting the live theme is allowed and it stays live, which is the point: this is how a child theme is iterated. The replaced files are copied aside first.',
 		],
 	];
 
