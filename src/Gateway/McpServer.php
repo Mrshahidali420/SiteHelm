@@ -314,7 +314,7 @@ final class McpServer {
 			$safe = new OperationException(
 				ErrorCode::ExecutionFailed,
 				'An unexpected error occurred. The details were logged on the server.',
-				'Check the SiteHelm diagnostics on the site, then retry with a fresh request.'
+				'Open SiteHelm > Status in the WordPress admin, then retry with a fresh request.'
 			);
 			return $this->safeErrorResult( $id, $safe, $this->correlationIdOrUnresolved( $context ) );
 		}

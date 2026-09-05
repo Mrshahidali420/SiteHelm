@@ -33,14 +33,22 @@ final class AuditRedactor {
 	/**
 	 * Summarizes one change as JSON carrying only names and sizes.
 	 *
+	 * A failure note, when one is given, is carried through untouched. It is
+	 * formed by EngineLog rather than here because it describes a throwable and
+	 * not a field, and it is already free of values and of paths by the time it
+	 * arrives. Adding it here rather than in a column of its own keeps the audit
+	 * table's shape unchanged, so an existing install needs no migration.
+	 *
 	 * @param array<string, mixed> $beforeFields The resolved before-state.
 	 * @param array<string, mixed> $afterFields  The promised after-state.
+	 * @param string|null          $failure      What went wrong, when the write failed
+	 *                                           in a way nothing predicted.
 	 *
 	 * @return string The redacted summary as JSON.
 	 *
 	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
 	 */
-	public function summarize( array $beforeFields, array $afterFields ): string {
+	public function summarize( array $beforeFields, array $afterFields, ?string $failure = null ): string {
 		$changed = [];
 		$metrics = [];
 
@@ -60,13 +68,16 @@ final class AuditRedactor {
 		sort( $changed, SORT_STRING );
 		ksort( $metrics, SORT_STRING );
 
-		return (string) wp_json_encode(
-			[
-				'changed' => $changed,
-				'metrics' => [] === $metrics ? new stdClass() : $metrics,
-			],
-			self::JSON_FLAGS
-		);
+		$summary = [
+			'changed' => $changed,
+			'metrics' => [] === $metrics ? new stdClass() : $metrics,
+		];
+
+		if ( null !== $failure && '' !== $failure ) {
+			$summary['failure'] = $failure;
+		}
+
+		return (string) wp_json_encode( $summary, self::JSON_FLAGS );
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
 

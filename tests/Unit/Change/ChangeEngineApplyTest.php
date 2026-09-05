@@ -957,11 +957,11 @@ final class ChangeEngineApplyTest extends TestCase {
 		} catch ( OperationException $e ) {
 			$this->assertSame( ErrorCode::ExecutionFailed, $e->errorCode );
 			$this->assertSame(
-				'The write failed unexpectedly. The details were logged on the server.',
+				'The write failed unexpectedly. What went wrong was recorded on this site.',
 				$e->getMessage()
 			);
 			$this->assertSame(
-				'Generate a fresh preview and retry; check SiteHelm diagnostics if it recurs.',
+				'Open SiteHelm > Activity in the WordPress admin: the failed entry names the fault. Then generate a fresh preview and retry.',
 				$e->remediation
 			);
 			// Nothing from the underlying throwable is echoed anywhere in the
@@ -985,6 +985,73 @@ final class ChangeEngineApplyTest extends TestCase {
 			AuditRecorder::OUTCOME_EXECUTION_FAILED,
 			$this->wpdb->updates[0]['data']['outcome']
 		);
+	}
+
+	/**
+	 * The generic envelope is only half of what this branch owes. A site owner
+	 * whose write just failed has to be able to find out why, and until this
+	 * test existed the only record was a line in PHP's error log — a file most
+	 * shared hosting does not expose and some hosts never write. So the failure
+	 * was, in practice, unreadable by the one person able to fix it.
+	 *
+	 * The note goes on the audit row's summary, which the Activity screen
+	 * renders. It is NOT redacted, and it is not meant to be: it carries the
+	 * throwable's class, its message and the file and line, which is exactly
+	 * the detail the envelope withholds.
+	 *
+	 * That is why both halves are asserted together here. The row must gain the
+	 * note AND the envelope must still be clean of it; a change that satisfies
+	 * one by breaking the other is the failure mode this test exists to catch.
+	 */
+	public function test_an_unexpected_throwable_is_recorded_on_the_audit_row_without_reaching_the_envelope(): void {
+		$this->operation->applyThrows = new \RuntimeException(
+			'wpdb::query() failed: INSERT INTO wp_posts, secret-token abc123'
+		);
+
+		try {
+			$this->apply();
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			$this->assertStringNotContainsString( 'abc123', $e->getMessage() );
+			$this->assertStringNotContainsString( 'abc123', $e->remediation );
+		}
+
+		$summary = json_decode( (string) $this->wpdb->updates[0]['data']['summary'], true );
+
+		$this->assertIsArray( $summary );
+		$this->assertArrayHasKey( 'failure', $summary );
+		// The class, the message and the position are all there: an
+		// administrator reading this row learns what an unhandled failure was,
+		// which is the whole reason the row is worth opening.
+		$this->assertStringContainsString( 'RuntimeException', $summary['failure'] );
+		$this->assertStringContainsString( 'abc123', $summary['failure'] );
+		$this->assertStringContainsString( 'ChangeEngineApplyTest.php', $summary['failure'] );
+	}
+
+	/**
+	 * A note is only written when the failure was unexplained. An operation
+	 * that raised its own OperationException already told the caller what went
+	 * wrong in words it chose, and repeating that on the row would add nothing
+	 * while making every deliberate refusal look like a crash.
+	 */
+	public function test_an_operation_that_names_its_own_failure_records_no_failure_note(): void {
+		$this->operation->applyThrows = new OperationException(
+			ErrorCode::Conflict,
+			'Someone else changed this page while the plan was open.',
+			'Generate a fresh preview.'
+		);
+
+		try {
+			$this->apply();
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::Conflict, $e->errorCode );
+		}
+
+		$summary = json_decode( (string) $this->wpdb->updates[0]['data']['summary'], true );
+
+		$this->assertIsArray( $summary );
+		$this->assertArrayNotHasKey( 'failure', $summary );
 	}
 
 	/**

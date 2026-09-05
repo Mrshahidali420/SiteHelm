@@ -12,6 +12,13 @@ an operation behaves.
 ## [Unreleased]
 
 ### Changed
+- **A write that fails for an unforeseen reason now says what happened, somewhere you can read
+  it.** The message said the details had been logged on the server, and they had been written
+  to PHP's error log — a file most shared hosts do not hand over, and some never write at all.
+  So a failed write could leave nobody able to find out why. The failure is now recorded on the
+  write's own entry in SiteHelm > Activity, naming what went wrong and where, and the message
+  points at that screen instead of at one that never existed. The note stays on the site: the
+  agent that made the call gets the same short refusal it always did.
 - **The plugin list now tells you which plugins have never been set up.** Installing a plugin
   and switching it on stops one step short of a plugin that does anything: Rank Math, Yoast,
   WooCommerce and plenty of others park behind their own setup wizard and produce nothing at
