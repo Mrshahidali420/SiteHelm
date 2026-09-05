@@ -299,6 +299,42 @@ final class DispatcherTest extends TestCase {
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 
 	/**
+	 * The envelope nested one level too deep is named as the mistake it is. It
+	 * used to return the catalog — the identical answer a deliberate listing
+	 * gets — so a client that made this mistake read a success and never noticed
+	 * its operation had not run.
+	 */
+	public function test_an_envelope_nested_inside_arguments_is_named_rather_than_answered_with_the_catalog(): void {
+		try {
+			$this->dispatcher->dispatch(
+				'system-read',
+				[ 'arguments' => [ 'operation' => 'system-info', 'arguments' => [] ] ],
+				$this->makeContext()
+			);
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::InvalidInput, $e->errorCode );
+			$this->assertStringContainsString( 'nested one level too deep', $e->getMessage() );
+			$this->assertStringContainsString( 'top-level', $e->remediation );
+		}
+	}
+
+	/**
+	 * The guard is scoped to the mistake. Arguments that carry no `operation`
+	 * key still list the catalog, because a client may legitimately send an
+	 * empty or irrelevant arguments object while asking what is available.
+	 */
+	public function test_arguments_without_a_nested_operation_still_list_the_catalog(): void {
+		$response = $this->dispatcher->dispatch(
+			'system-read',
+			[ 'arguments' => [] ],
+			$this->makeContext()
+		);
+
+		$this->assertSame( 'system-read', $response['dispatcher'] );
+	}
+
+	/**
 	 * I1: the catalog lists only operations the caller is permitted to see.
 	 * An unauthorized caller must not learn that an operation exists at all.
 	 *
@@ -547,6 +583,10 @@ final class DispatcherTest extends TestCase {
 	 */
 	public function test_authorization_failure_wins_over_module_health(): void {
 		Functions\when( 'user_can' )->justReturn( false );
+
+		// The target exists, so this stays a pure permissions case: the gate's
+		// missing-target fallback is not in play and cannot be what refuses.
+		Functions\when( 'get_post' )->justReturn( (object) [ 'ID' => 42 ] );
 		$this->registerMetaCapabilityOperation();
 
 		$context = new OperationContext(

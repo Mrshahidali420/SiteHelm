@@ -89,7 +89,12 @@
                         "type": "object"
                     },
                     "meta": {
-                        "type": "object"
+                        "type": "object",
+                        "description": "Custom fields an administrator has allowed SiteHelm to write, and their values. These are the keys content-meta-update accepts."
+                    },
+                    "registeredMeta": {
+                        "type": "object",
+                        "description": "Fields the theme or a plugin registered on this post type with show_in_rest, and their values. Readable but not writable: adding a key to the allowlist on the SiteHelm status screen is what makes it writable, and it then appears under meta instead."
                     }
                 },
                 "additionalProperties": false

@@ -470,22 +470,95 @@ final class ContentFields {
 	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
 	 */
 	public function publicRecord( int $postId, array $fields ): array {
+		$registered = $this->registeredMeta( $postId, (string) ( $fields['post_type'] ?? '' ) );
+
 		return [
-			'id'            => $postId,
-			'type'          => $fields['post_type'] ?? '',
-			'status'        => $fields['post_status'] ?? '',
-			'title'         => $fields['post_title'] ?? '',
-			'slug'          => $fields['post_name'] ?? '',
-			'content'       => $fields['post_content'] ?? '',
-			'excerpt'       => $fields['post_excerpt'] ?? '',
-			'parent'        => $fields['post_parent'] ?? 0,
-			'menuOrder'     => $fields['menu_order'] ?? 0,
-			'template'      => $fields['page_template'] ?? '',
-			'modifiedGmt'   => $fields['post_modified_gmt'] ?? '',
-			'featuredMedia' => $fields['featured_media'] ?? 0,
-			'terms'         => [] === ( $fields['terms'] ?? [] ) ? new stdClass() : $fields['terms'],
-			'meta'          => [] === ( $fields['meta'] ?? [] ) ? new stdClass() : $fields['meta'],
+			'id'             => $postId,
+			'type'           => $fields['post_type'] ?? '',
+			'status'         => $fields['post_status'] ?? '',
+			'title'          => $fields['post_title'] ?? '',
+			'slug'           => $fields['post_name'] ?? '',
+			'content'        => $fields['post_content'] ?? '',
+			'excerpt'        => $fields['post_excerpt'] ?? '',
+			'parent'         => $fields['post_parent'] ?? 0,
+			'menuOrder'      => $fields['menu_order'] ?? 0,
+			'template'       => $fields['page_template'] ?? '',
+			'modifiedGmt'    => $fields['post_modified_gmt'] ?? '',
+			'featuredMedia'  => $fields['featured_media'] ?? 0,
+			'terms'          => [] === ( $fields['terms'] ?? [] ) ? new stdClass() : $fields['terms'],
+			'meta'           => [] === ( $fields['meta'] ?? [] ) ? new stdClass() : $fields['meta'],
+			'registeredMeta' => [] === $registered ? new stdClass() : $registered,
 		];
+	}
+
+	/**
+	 * Fields the site itself registered publicly, read but never written.
+	 *
+	 * A THEME THAT REGISTERS ITS OWN FIELD COULD NOT BE ASKED ABOUT IT. The write
+	 * allowlist governed the read as well, so a post carrying a key the theme had
+	 * declared with `show_in_rest` — a key WordPress serves to any editor over its
+	 * own REST API — came back with an empty `meta` map, and SiteHelm could build
+	 * a content model it was then unable to inspect. The two questions are not the
+	 * same privilege: writing an arbitrary key is a decision the site owner makes
+	 * on the status screen, while reading a value the site published on purpose is
+	 * not a decision at all.
+	 *
+	 * So they answer separately. This map is read-only and kept out of `read()`,
+	 * which feeds snapshots: a snapshot that captured a key the write path refuses
+	 * would record state no restore could put back. A key on the allowlist is
+	 * omitted here and reported under `meta`, so a field appears once and its one
+	 * appearance says whether it can be written.
+	 *
+	 * @param int    $postId   The post identifier.
+	 * @param string $postType The post type whose registrations apply.
+	 *
+	 * @return array<string, string|string[]> Registered key to value.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+	 */
+	public function registeredMeta( int $postId, string $postType ): array {
+		if ( ! function_exists( 'get_registered_meta_keys' ) ) {
+			return [];
+		}
+
+		$writable = $this->allowlist();
+
+		// Registrations naming this type, and those made for every post type.
+		$registered = get_registered_meta_keys( 'post', $postType );
+		$registered = is_array( $registered ) ? $registered : [];
+		$shared     = get_registered_meta_keys( 'post', '' );
+		$registered = array_merge( is_array( $shared ) ? $shared : [], $registered );
+
+		$map = [];
+		foreach ( $registered as $key => $args ) {
+			if ( ! is_string( $key ) || ! self::is_writable_field_name( $key ) ) {
+				continue;
+			}
+			if ( empty( $args['show_in_rest'] ) || in_array( $key, $writable, true ) ) {
+				continue;
+			}
+
+			$single = ! isset( $args['single'] ) || (bool) $args['single'];
+
+			if ( $single ) {
+				$value       = get_post_meta( $postId, $key, true );
+				$map[ $key ] = is_scalar( $value ) ? (string) $value : '';
+				continue;
+			}
+
+			$values      = get_post_meta( $postId, $key, false );
+			$values      = is_array( $values ) ? $values : [];
+			$map[ $key ] = array_values(
+				array_map(
+					static fn ( $value ): string => is_scalar( $value ) ? (string) $value : '',
+					$values
+				)
+			);
+		}
+
+		ksort( $map, SORT_STRING );
+
+		return $map;
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
 	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
