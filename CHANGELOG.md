@@ -24,6 +24,12 @@ an operation behaves.
   property names it accepts.
 
 ### Added
+- **Menus can be created.** Every menu operation needed a menu to already exist, so a site
+  built from nothing had to have its first menu made by hand in WordPress before anything
+  else about menus could be done. `menu-create` takes a name and makes one empty menu; add
+  items to it with `menu-item-create` and show it with `menu-location-assign`. A name the
+  site already uses is refused, the name is reported the way WordPress will actually store
+  it, and undoing the change deletes the menu it made and nothing else.
 - **The site icon and the site logo can be set.** Two of the first things any new site needs
   — the icon in the browser tab and the logo in the header — had to be set by hand in
   WordPress after everything else was built. `site-settings-set` now takes `siteIcon` and

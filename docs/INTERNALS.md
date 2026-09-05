@@ -3568,3 +3568,47 @@ when it is needed — a logo left behind by the previous theme.
 `readBack()` clears the `theme_mods_{stylesheet}` cache row as well as the option rows.
 Without it a logo write would be verified against the modifications blob as it stood
 before the write.
+
+---
+
+## 61. Creating a menu, and how a creation is reversed
+
+Every menu operation needed a menu that already existed. A site built from nothing
+therefore had to have its first menu made by hand before `menu-item-create` or
+`menu-location-assign` could do anything at all — the dispatcher was unreachable at
+exactly the moment it was most useful.
+
+`MenuCreate` (src/Modules/Menus/MenuCreate.php) makes one empty menu and nothing
+else. It deliberately does not take an initial location or a list of items even
+though both would be convenient. Assigning a location and adding items are already
+operations, each with its own preview, its own snapshot and its own rollback; folding
+them in would make one reversal responsible for three separate undoings and leave no
+honest answer for a partial failure.
+
+**The target is a literal.** The other writes resolve the thing they are about to
+change, and there is nothing here to resolve. `MenuTarget::NEW_MENU_KEY` is the
+constant `menu:new`, whose suffix is not digits, so `menuIdFromKey()` answers null for
+it and nothing downstream can mistake it for a menu that exists. `resolveNewMenu()`
+still asks for `edit_theme_options` before anything else, so a caller who may not
+administer menus learns nothing about the menus this site has.
+
+**The name is promised the way core will store it.** `wp_create_nav_menu()` applies
+`trim( esc_html( … ) )` before the name reaches the database, so `planChange()` applies
+the same normalization and promises the result. Promising the raw text would report
+`Sales & Support` as a verification failure for a write that landed exactly as
+WordPress intended.
+
+**The duplicate check is `get_term_by( 'name', … )`,** which is the test core itself
+makes before refusing with `menu_exists`, so a preview that passes is a write core will
+accept. It is deliberately not `menuFromKey()`: that resolves a numeric string as a term
+identifier, and would refuse the perfectly good menu name "2024" on a site whose primary
+menu happens to be term 2024.
+
+**A creation is reversed by difference.** The engine freezes the restore state before
+the write runs, so the new identifier can never be in it. The snapshot records the
+menu identifiers that existed; `restore()` diffs them against the ones that exist now.
+It prefers the identifier `applyChange()` remembered on the instance, deletes nothing
+when that menu is already gone, and refuses with `RollbackUnavailable` rather than
+guess when more than one menu appeared and nothing says which is ours. The deletion is
+verified by re-reading, because a `delete_term` handler can leave the term standing
+after a call that reported success.

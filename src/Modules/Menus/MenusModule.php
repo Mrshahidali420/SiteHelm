@@ -107,6 +107,7 @@ final class MenusModule implements IntegrationModule {
 
 		$registry->register( MenuList::definition(), [ new MenuList(), 'handle' ] );
 		$registry->register( MenuGet::definition(), [ new MenuGet( $fields ), 'handle' ] );
+		$registry->registerWrite( MenuCreate::definition(), new MenuCreate( $fields, $targets ) );
 		$registry->registerWrite( MenuItemCreate::definition(), new MenuItemCreate( $fields, $targets ) );
 		$registry->registerWrite( MenuItemUpdate::definition(), new MenuItemUpdate( $fields, $targets ) );
 		$registry->registerWrite( MenuItemsReorder::definition(), new MenuItemsReorder( $fields ) );

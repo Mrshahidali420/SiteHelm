@@ -104,6 +104,15 @@ final class MenuTarget {
 	public function __construct( private readonly MenuFields $fields ) {
 	}
 
+	/**
+	 * The target key a menu that does not exist yet is planned against.
+	 *
+	 * Deliberately not an identifier-shaped key: menuIdFromKey() answers null
+	 * for it, because its suffix is not digits, so nothing downstream can read
+	 * it as a menu that exists.
+	 */
+	public const NEW_MENU_KEY = MenuFields::MENU_PREFIX . 'new';
+
 	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- The target-key vocabulary is camelCase across every module.
 	/**
 	 * The stable target key naming one menu.
@@ -225,6 +234,33 @@ final class MenuTarget {
 		return new TargetState( self::menuTargetKey( (int) $menu->term_id ), true, [] );
 	}
 	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- The contract's own camelCase name.
+	/**
+	 * Resolves the target of a menu that does not exist yet.
+	 *
+	 * THERE IS NOTHING TO LOOK UP, so the key is a literal rather than an
+	 * identifier: a creation has no prior state for a preview to diff against
+	 * and no row for a key to name. The literal is stable across preview and
+	 * apply, which is what lets an approved plan be admitted at all, and
+	 * applyChange() answers the concrete `menu:{id}` key of what it created.
+	 *
+	 * The capability is still asked here rather than at apply, for the reason
+	 * resolveMenu() gives: a caller who may not administer menus is refused
+	 * before anything else happens.
+	 *
+	 * @param OperationContext $context The request context.
+	 *
+	 * @return TargetState The unresolved state, with no fields.
+	 *
+	 * @throws OperationException With ErrorCode::Forbidden.
+	 */
+	public function resolveNewMenu( OperationContext $context ): TargetState {
+		$this->assert_may_administer( $context );
+
+		return new TargetState( self::NEW_MENU_KEY, false, [] );
+	}
 	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 
 	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- The contract's own camelCase name.

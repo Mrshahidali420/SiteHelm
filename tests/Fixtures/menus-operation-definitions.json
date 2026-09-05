@@ -2,12 +2,13 @@
     "operationIds": [
         "menu-list",
         "menu-get",
+        "menu-create",
         "menu-item-create",
         "menu-item-update",
         "menu-items-reorder",
         "menu-location-assign"
     ],
-    "operationCount": 6,
+    "operationCount": 7,
     "definitions": {
         "menu-list": {
             "inputSchema": {
@@ -201,6 +202,69 @@
                         "additionalProperties": false
                     }
                 }
+            }
+        },
+        "menu-create": {
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200,
+                        "description": "The name the menu is listed under. It must not be the name of a menu this site already has."
+                    }
+                },
+                "required": [
+                    "name"
+                ],
+                "additionalProperties": false
+            },
+            "outputSchema": {
+                "type": "object",
+                "oneOf": [
+                    {
+                        "title": "Plan phase",
+                        "type": "object",
+                        "properties": {
+                            "plan": {
+                                "type": "object",
+                                "description": "The change plan to approve, including its plan token."
+                            }
+                        },
+                        "required": [
+                            "plan"
+                        ],
+                        "additionalProperties": false
+                    },
+                    {
+                        "title": "Apply phase",
+                        "type": "object",
+                        "properties": {
+                            "target": {
+                                "type": "string",
+                                "description": "The concrete target that was written."
+                            },
+                            "changed": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                },
+                                "description": "The fields the approved plan changed."
+                            },
+                            "state": {
+                                "type": "object",
+                                "description": "The verified persisted state of the target."
+                            }
+                        },
+                        "required": [
+                            "target",
+                            "changed",
+                            "state"
+                        ],
+                        "additionalProperties": false
+                    }
+                ]
             }
         },
         "menu-item-create": {

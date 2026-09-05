@@ -56,6 +56,7 @@ final class MenusDefinitionInvariantsTest extends TestCase {
 	private const OPERATION_IDS = [
 		'menu-list',
 		'menu-get',
+		'menu-create',
 		'menu-item-create',
 		'menu-item-update',
 		'menu-items-reorder',
@@ -70,7 +71,7 @@ final class MenusDefinitionInvariantsTest extends TestCase {
 	/**
 	 * The menus module's write count. Bumped by each later write task.
 	 */
-	private const MENUS_WRITE_COUNT = 4;
+	private const MENUS_WRITE_COUNT = 5;
 
 	/**
 	 * Every menus operation requires the one capability WordPress gates menu
@@ -190,8 +191,8 @@ final class MenusDefinitionInvariantsTest extends TestCase {
 	}
 
 	/**
-	 * The phase's own constraint, asserted rather than assumed: all six menus
-	 * operations gate on edit_theme_options and nothing else. A definition that
+	 * The phase's own constraint, asserted rather than assumed: every menus
+	 * operation gates on edit_theme_options and nothing else. A definition that
 	 * quietly asked for `read` would be a menu configuration disclosure, and a
 	 * definition that asked for `manage_options` would refuse an editor who is
 	 * meant to be able to do this.
