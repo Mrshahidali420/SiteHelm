@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace SiteHelm\Tests\Unit\Modules\Core;
 
 use Brain\Monkey\Functions;
+use SiteHelm\Modules\Core\ForeignRedirects;
 use SiteHelm\Modules\Core\RedirectRouter;
 use SiteHelm\Modules\Core\RedirectSet;
 use SiteHelm\Modules\Core\RedirectStore;
@@ -32,7 +33,7 @@ final class RedirectRouterTest extends RedirectTestCase {
 	}
 
 	public function test_a_redirect_stored_through_the_write_path_is_matched_by_the_router(): void {
-		$operation = new RedirectSet( $this->store );
+		$operation = new RedirectSet( $this->store, new ForeignRedirects( $this->store ) );
 		$context   = $this->makeContext();
 
 		// Deliberately a spelling nobody would store canonically: mixed case, a

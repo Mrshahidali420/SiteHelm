@@ -8,6 +8,7 @@ use Brain\Monkey\Functions;
 use SiteHelm\Contracts\OperationContext;
 use SiteHelm\Contracts\PermissionMode;
 use SiteHelm\Modules\Core\RedirectStore;
+use SiteHelm\Tests\Doubles\FakeRedirectionsDb;
 use SiteHelm\Tests\TestCase;
 
 /**
@@ -109,6 +110,29 @@ abstract class RedirectTestCase extends TestCase {
 				return $existed;
 			}
 		);
+	}
+
+	protected function tearDown(): void {
+		// The redirect tests that install one leave the rest of the suite a
+		// site with no database rather than a site with somebody else's.
+		unset( $GLOBALS['wpdb'] );
+
+		parent::tearDown();
+	}
+
+	/**
+	 * Installs another plugin's redirections table, holding the given rules.
+	 *
+	 * @param array<int, array<string, mixed>> $rows Rows built by FakeRedirectionsDb::row().
+	 *
+	 * @return FakeRedirectionsDb The installed double.
+	 */
+	protected function seedForeignRedirects( array $rows ): FakeRedirectionsDb {
+		$db              = new FakeRedirectionsDb();
+		$db->rows        = $rows;
+		$GLOBALS['wpdb'] = $db;
+
+		return $db;
 	}
 
 	/**

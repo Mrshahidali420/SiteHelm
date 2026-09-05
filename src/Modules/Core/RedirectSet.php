@@ -133,9 +133,13 @@ final class RedirectSet implements RollbackDelegate {
 	/**
 	 * Constructs the operation.
 	 *
-	 * @param RedirectStore $store The redirect table.
+	 * @param RedirectStore    $store   The redirect table.
+	 * @param ForeignRedirects $foreign The redirects other plugins hold.
 	 */
-	public function __construct( private readonly RedirectStore $store ) {
+	public function __construct(
+		private readonly RedirectStore $store,
+		private readonly ForeignRedirects $foreign,
+	) {
 	}
 
 	/**
@@ -267,11 +271,46 @@ final class RedirectSet implements RollbackDelegate {
 		// Every field is promised, because this operation sets every one of them:
 		// a create-or-replace writes the whole row, so there is no field here
 		// whose value after the write is anybody else's.
-		return new PlannedChange( $row, $row, RedirectStore::RECORD_FIELDS );
+		//
+		// THE CONFLICT IS A WARNING AND NOT A REFUSAL. Another plugin holding a
+		// rule for this path is a real problem — which of the two serves the
+		// visitor falls out of hook priority, which neither plugin promises and
+		// no caller can see — but an operator moving a site off another
+		// plugin's redirections writes over them on purpose, and a refusal
+		// would make the one legitimate case impossible. Preview is the moment
+		// the caller is still deciding, so the conflict is named there.
+		return new PlannedChange( $row, $row, RedirectStore::RECORD_FIELDS, $this->conflictWarnings( $source ) );
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 	// phpcs:enable Generic.CodeAnalysis.UnusedFunctionParameter.FoundAfterLastUsed
+
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- The module vocabulary is camelCase across every class.
+	/**
+	 * One warning per rule another plugin already holds for this path.
+	 *
+	 * At most three are reported. A site whose SEO plugin holds four rules
+	 * matching one path has one problem and not four, and a preview that
+	 * scrolled would bury the change it exists to show.
+	 *
+	 * @param string $source The normalised source path.
+	 *
+	 * @return string[] The warnings, empty when nothing else claims this path.
+	 */
+	private function conflictWarnings( string $source ): array {
+		$warnings = [];
+
+		foreach ( $this->foreign->matching( $source ) as $rule ) {
+			if ( count( $warnings ) >= 3 ) {
+				break;
+			}
+
+			$warnings[] = $this->foreign->describe( $rule, $source );
+		}
+
+		return $warnings;
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 
 	/**
 	 * Captures the entire redirect table this write is about to rewrite.

@@ -28,6 +28,7 @@ use SiteHelm\Modules\Core\ContentFields;
 use SiteHelm\Modules\Core\ContentRollbackApply;
 use SiteHelm\Modules\Core\ContentTarget;
 use SiteHelm\Modules\Core\CoreModule;
+use SiteHelm\Modules\Core\ForeignRedirects;
 use SiteHelm\Modules\Core\RedirectSet;
 use SiteHelm\Modules\Core\RedirectStore;
 use SiteHelm\Policy\PolicyEngine;
@@ -1797,7 +1798,9 @@ final class ContentRollbackApplyTest extends TestCase {
 	 * writes actually produce.
 	 */
 	private function registerRedirectOrigin(): void {
-		$this->registry->registerWrite( RedirectSet::definition(), new RedirectSet( new RedirectStore() ) );
+		$store = new RedirectStore();
+
+		$this->registry->registerWrite( RedirectSet::definition(), new RedirectSet( $store, new ForeignRedirects( $store ) ) );
 	}
 
 	/**

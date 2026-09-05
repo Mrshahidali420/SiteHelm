@@ -12,6 +12,19 @@ an operation behaves.
 ## [Unreleased]
 
 ### Changed
+- **Redirects now show you what the other plugin is holding.** If a site runs SiteHelm's
+  redirects and Rank Math's redirections at the same time, both can hold a rule for the same
+  address and nothing decides which one the visitor gets — it comes down to which plugin
+  happens to run first. Both rules stay stored and both read back as stored, so there was no
+  way to see it. `redirect-list` now returns the other plugin's rules beside its own, tagged
+  with who owns them, and `redirect-set` warns in its preview when the path you are about to
+  claim is already answered by one of them. It is a warning, not a refusal: writing over the
+  old plugin's rules is exactly what you do when you move a site across. A rule stored as a
+  regular expression is shown to you rather than run, and reported as a possible match rather
+  than a certain one.
+- **The Pro redirections listing now shows both halves too.** `seo-redirection-list` returns
+  SiteHelm's own redirects alongside Rank Math's, tagged with who owns them, so either listing
+  answers what the site actually serves rather than what one plugin happens to hold.
 - **A refusal now says which of three problems it is.** "This is not available" used to cover a
   plugin the site has not installed, a feature the site has no Pro licence for, and a service
   outside the site that did not answer. Those need three different responses — install

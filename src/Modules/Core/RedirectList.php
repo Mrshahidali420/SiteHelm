@@ -39,6 +39,15 @@ use SiteHelm\Contracts\SnapshotPolicy;
  * beside the rows so a client can see the bound approaching rather than discover
  * it when a write refuses.
  *
+ * ANOTHER PLUGIN'S RULES ARE REPORTED BESIDE SITEHELM'S OWN, tagged with the
+ * plugin that owns them. Two plugins can hold a rule for one path, and which one
+ * serves the visitor falls out of hook priority rather than out of anything
+ * either plugin promises. A client that read only this table would see a site
+ * with no redirect for a path that redirects, decide the path is free, and write
+ * a second answer for one address. They are reported and never edited: SiteHelm
+ * does not own them, and redirect-set and redirect-delete write only to
+ * SiteHelm's own table.
+ *
  * @package SiteHelm
  */
 final class RedirectList {
@@ -53,7 +62,7 @@ final class RedirectList {
 			id: 'redirect-list',
 			domain: Domain::Content,
 			mode: Mode::Read,
-			description: 'List every redirect this site serves, with the source path, the target, the status code, and whether the visitor\'s query string is carried over. Reports the table\'s capacity so a client can see the limit approaching.',
+			description: 'List every redirect this site serves, with the source path, the target, the status code, and whether the visitor\'s query string is carried over. Reports the table\'s capacity so a client can see the limit approaching, and the rules another redirect plugin on this site holds, so one read answers what the site actually serves.',
 			inputSchema: [
 				'type'                 => 'object',
 				'properties'           => [],
@@ -97,8 +106,55 @@ final class RedirectList {
 						'type'        => 'integer',
 						'description' => 'The greatest number of redirects this site will store.',
 					],
+					'others'    => [
+						'type'                 => 'object',
+						'description'          => 'The redirects another plugin on this site holds, which SiteHelm does not own and cannot change.',
+						'properties'           => [
+							'rules'     => [
+								'type'        => 'array',
+								'description' => 'Each rule another plugin holds, with the plugin that owns it.',
+								'items'       => [
+									'type'                 => 'object',
+									'properties'           => [
+										'owner'      => [
+											'type'        => 'string',
+											'description' => 'The plugin that holds this rule.',
+										],
+										'pattern'    => [
+											'type'        => 'string',
+											'description' => 'The source the owning plugin matches on, in that plugin\'s own spelling.',
+										],
+										'comparison' => [
+											'type'        => 'string',
+											'description' => 'How the owning plugin matches that source: exact, contains, start, end, or regex.',
+										],
+										'target'     => [
+											'type'        => 'string',
+											'description' => 'Where the owning plugin sends the visitor.',
+										],
+										'status'     => [
+											'type'        => 'integer',
+											'description' => 'The HTTP status the owning plugin answers with.',
+										],
+										'active'     => [
+											'type'        => 'boolean',
+											'description' => 'Whether the owning plugin has that rule switched on.',
+										],
+									],
+									'required'             => [ 'owner', 'pattern', 'comparison', 'target', 'status', 'active' ],
+									'additionalProperties' => false,
+								],
+							],
+							'truncated' => [
+								'type'        => 'boolean',
+								'description' => 'Whether the other plugin holds more rules than this listing reported.',
+							],
+						],
+						'required'             => [ 'rules', 'truncated' ],
+						'additionalProperties' => false,
+					],
 				],
-				'required'             => [ 'redirects', 'total', 'capacity' ],
+				'required'             => [ 'redirects', 'total', 'capacity', 'others' ],
 				'additionalProperties' => false,
 			],
 			schemaVersion: 1,
@@ -122,9 +178,13 @@ final class RedirectList {
 	/**
 	 * Constructs the operation.
 	 *
-	 * @param RedirectStore $store The redirect table.
+	 * @param RedirectStore    $store   The redirect table.
+	 * @param ForeignRedirects $foreign The redirects other plugins hold.
 	 */
-	public function __construct( private readonly RedirectStore $store ) {
+	public function __construct(
+		private readonly RedirectStore $store,
+		private readonly ForeignRedirects $foreign,
+	) {
 	}
 
 	/**
@@ -162,6 +222,7 @@ final class RedirectList {
 			'redirects' => array_values( $table ),
 			'total'     => count( $table ),
 			'capacity'  => RedirectStore::MAX_REDIRECTS,
+			'others'    => $this->foreign->all(),
 		];
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
