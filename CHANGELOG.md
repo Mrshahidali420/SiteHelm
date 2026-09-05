@@ -11,6 +11,30 @@ an operation behaves.
 
 ## [Unreleased]
 
+### Added
+
+- **A read of a page now shows the custom fields that are actually on it.** `content-get`
+  reported an empty `meta` on posts covered in custom fields, because that member only ever
+  listed the keys an administrator had allowed SiteHelm to write. A second member,
+  `registeredMeta`, now reports the fields a theme or plugin registered on the post type and
+  their values. They are readable, not writable, and the response says how to make one
+  writable.
+
+### Changed
+
+- **A mistyped id no longer looks like a permissions problem.** Asking for a post that does
+  not exist could come back as "your WordPress user lacks the 'edit_post' capability" — on an
+  administrator account — which sent operators to audit roles over a typo. Whether you got
+  that or a plain "not found" depended on nothing but which capability the operation happened
+  to declare. Now a missing target reads as a missing target, whichever operation you called.
+- **`retryable` no longer says retry on errors that can never succeed.** It was true for bad
+  input and expired plans, both of which sit beside a message explaining that sending the same
+  thing again cannot work. The flag now means only what it says: whether this exact request may
+  succeed later. What to do instead is still named in `remediation`.
+- **A call with the arguments nested one level too deep is now told so.** Sending
+  `{arguments: {operation: …}}` returned the entire catalog, which reads as success and is not.
+  It now comes back as invalid input naming the nesting.
+
 ## [0.13.0] — 2026-09-05
 
 The gap this release closes is that an agent could only ever hand the site things the site

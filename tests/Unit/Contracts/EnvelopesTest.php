@@ -46,7 +46,10 @@ final class EnvelopesTest extends TestCase {
 		$this->assertSame( 'stale_plan', $array['code'] );
 		$this->assertSame( 'The plan token expired.', $array['message'] );
 		$this->assertSame( 'Request a fresh preview and approve it again.', $array['remediation'] );
-		$this->assertTrue( $array['retryable'] );
+
+		// Not retryable: the same token is stale for good. The way out is the
+		// remediation — approve a fresh plan — which is a different request.
+		$this->assertFalse( $array['retryable'] );
 		$this->assertSame( 'corr-9', $array['correlationId'] );
 		$this->assertArrayNotHasKey( 'completedSteps', $array );
 		$this->assertArrayNotHasKey( 'compensation', $array );

@@ -105,6 +105,25 @@ final class Dispatcher {
 	public function dispatch( string $dispatcherName, array $args, OperationContext $context ): array {
 		$operation_id = $args['operation'] ?? '';
 		if ( ! is_string( $operation_id ) || '' === $operation_id ) {
+			// A CALL WITH THE WHOLE ENVELOPE NESTED ONE LEVEL TOO DEEP IS A
+			// MISTAKE, NOT A CATALOG REQUEST. `operation` and `arguments` are
+			// top-level members of the tool call; a client that puts them inside
+			// `arguments` has no operation at the level that counts, so this
+			// would otherwise fall through and answer with the full catalog —
+			// byte-identical to the answer a deliberate listing gets. The caller
+			// reads a success, and the operation it asked for never ran. That
+			// cost a round trip mid-diagnosis on a live site.
+			//
+			// Nothing legitimate has this shape: with no operation named there
+			// is no schema for a nested `operation` key to belong to.
+			if ( is_array( $args['arguments'] ?? null ) && array_key_exists( 'operation', $args['arguments'] ) ) {
+				throw new OperationException(
+					ErrorCode::InvalidInput,
+					'The call names no operation, but its arguments do — the members look nested one level too deep.',
+					'Send operation and arguments as top-level members of the tool call, not inside arguments. Omitting operation entirely lists the catalog.'
+				);
+			}
+
 			return $this->catalogBuilder->build( $dispatcherName, $context );
 		}
 

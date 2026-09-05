@@ -82,14 +82,30 @@ final class EnumsTest extends TestCase {
 		$this->assertFalse( ErrorCode::TargetNotFound->isRetryable() );
 		$this->assertFalse( ErrorCode::VerificationFailed->isRetryable() );
 		$this->assertFalse( ErrorCode::RollbackUnavailable->isRetryable() );
-		$this->assertTrue( ErrorCode::InvalidInput->isRetryable() );
 		$this->assertTrue( ErrorCode::Conflict->isRetryable() );
-		$this->assertTrue( ErrorCode::StalePlan->isRetryable() );
 		$this->assertTrue( ErrorCode::ExecutionFailed->isRetryable() );
 
 		// The one refusal on the list that clears without the caller doing
 		// anything. A remote service that was briefly down is worth waiting for;
 		// a dependency this site has never had is not.
 		$this->assertTrue( ErrorCode::UpstreamUnavailable->isRetryable() );
+	}
+
+	/**
+	 * The flag says whether THESE BYTES, sent again, may succeed. Both codes
+	 * below are cleared by sending something else — corrected arguments, or a
+	 * fresh plan token — and a different request is not a retry.
+	 *
+	 * They were both true until a real session produced `invalid_input` carrying
+	 * `retryable: true` beside the message "identical input always fails
+	 * identically". A client that reads the flag rather than the prose retries a
+	 * call that can never work. What the old value was reaching for is the
+	 * remediation field's job, and it is already there.
+	 *
+	 * @return void
+	 */
+	public function test_a_caller_mistake_is_not_retryable(): void {
+		$this->assertFalse( ErrorCode::InvalidInput->isRetryable() );
+		$this->assertFalse( ErrorCode::StalePlan->isRetryable() );
 	}
 }

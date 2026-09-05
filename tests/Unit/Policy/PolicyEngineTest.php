@@ -255,4 +255,83 @@ final class PolicyEngineTest extends TestCase {
 			$this->assertSame( [ 'assign_terms' ], $received );
 		}
 	}
+
+	/**
+	 * An identifier nothing answers to must not come back as a permissions
+	 * failure. WordPress maps a meta-capability against a missing post to
+	 * do_not_allow, so the precise check refuses an administrator over a typo —
+	 * and `content-style-check` on a live site did exactly that, telling the
+	 * operator to ask for access to a post that had never existed, while
+	 * `content-get`, which declares the primitive, said target_not_found for the
+	 * same class of mistake.
+	 *
+	 * The gate now steps aside and lets the handler answer. Both capabilities
+	 * are asked, in order, so the fallback cannot be reached without the precise
+	 * check failing first.
+	 */
+	public function test_a_missing_target_falls_through_to_the_handler_rather_than_being_refused(): void {
+		$received = [];
+
+		Functions\when( 'get_post' )->justReturn( null );
+		Functions\when( 'user_can' )->alias(
+			static function ( int $user, string $capability, ...$args ) use ( &$received ): bool {
+				$received[] = [ $capability, $args ];
+
+				return 'edit_posts' === $capability;
+			}
+		);
+
+		$this->policy->authorize(
+			$this->makeDefinition( Mode::Write, [ 'edit_post' ] ),
+			$this->makeContext( PermissionMode::SafeWrite ),
+			2170
+		);
+
+		$this->assertSame( [ [ 'edit_post', [ 2170 ] ], [ 'edit_posts', [] ] ], $received );
+	}
+
+	/**
+	 * The fallback is scoped to a target that is not there. A post that exists
+	 * and belongs to somebody else is the case the precise check is for, and it
+	 * still refuses — otherwise this would have widened every post-scoped
+	 * operation to anyone holding the site-wide primitive.
+	 */
+	public function test_a_post_someone_else_owns_is_still_refused(): void {
+		Functions\when( 'get_post' )->justReturn( (object) [ 'ID' => 2170 ] );
+		Functions\when( 'user_can' )->alias(
+			static fn ( int $user, string $capability, ...$args ): bool => 'edit_posts' === $capability
+		);
+
+		try {
+			$this->policy->authorize(
+				$this->makeDefinition( Mode::Write, [ 'edit_post' ] ),
+				$this->makeContext( PermissionMode::SafeWrite ),
+				2170
+			);
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::Forbidden, $e->errorCode );
+		}
+	}
+
+	/**
+	 * A caller who holds neither is refused whether or not the target exists, so
+	 * a missing identifier cannot be used to get further into an operation than
+	 * a present one would.
+	 */
+	public function test_a_missing_target_does_not_admit_a_caller_without_the_primitive(): void {
+		Functions\when( 'get_post' )->justReturn( null );
+		Functions\when( 'user_can' )->justReturn( false );
+
+		try {
+			$this->policy->authorize(
+				$this->makeDefinition( Mode::Write, [ 'edit_post' ] ),
+				$this->makeContext( PermissionMode::SafeWrite ),
+				2170
+			);
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::Forbidden, $e->errorCode );
+		}
+	}
 }

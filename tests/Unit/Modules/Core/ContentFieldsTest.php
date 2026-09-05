@@ -246,6 +246,102 @@ final class ContentFieldsTest extends TestCase {
 		$this->assertSame( 0, $record['featuredMedia'] );
 		$this->assertInstanceOf( stdClass::class, $record['terms'] );
 		$this->assertInstanceOf( stdClass::class, $record['meta'] );
+		$this->assertInstanceOf( stdClass::class, $record['registeredMeta'] );
+	}
+
+	/**
+	 * A field the theme registered with `show_in_rest` is readable without being
+	 * on the write allowlist. The two were one list, so a site whose theme
+	 * declared its own field got `meta: {}` back from a post that demonstrably
+	 * carried a value, and the model SiteHelm had built could not be inspected.
+	 */
+	public function test_a_registered_public_field_is_readable_without_being_writable(): void {
+		Functions\when( 'get_option' )->justReturn( [] );
+		Functions\when( 'get_registered_meta_keys' )->alias(
+			static fn ( string $type, string $subtype ): array => 'bmp_visual' === $subtype
+				? [ 'bmp_placement' => [ 'show_in_rest' => true, 'single' => true ] ]
+				: []
+		);
+		Functions\when( 'get_post_meta' )->justReturn( 'band-two' );
+
+		$map = $this->fields->registeredMeta( 75, 'bmp_visual' );
+
+		$this->assertSame( [ 'bmp_placement' => 'band-two' ], $map );
+	}
+
+	/**
+	 * Three keys a read must not surrender or duplicate: one registered for the
+	 * editor alone, one protected, and one the administrator has already made
+	 * writable — which belongs under `meta` and would otherwise be reported
+	 * twice, once as writable and once as not.
+	 */
+	public function test_private_protected_and_already_writable_keys_are_left_out(): void {
+		Functions\when( 'get_option' )->justReturn( [ 'bmp_writable' ] );
+		Functions\when( 'get_registered_meta_keys' )->alias(
+			static fn ( string $type, string $subtype ): array => '' === $subtype ? [] : [
+				'bmp_placement' => [ 'show_in_rest' => true ],
+				'bmp_internal'  => [ 'show_in_rest' => false ],
+				'_edit_lock'    => [ 'show_in_rest' => true ],
+				'bmp_writable'  => [ 'show_in_rest' => true ],
+			]
+		);
+		Functions\when( 'get_post_meta' )->justReturn( 'value' );
+
+		$this->assertSame( [ 'bmp_placement' ], array_keys( $this->fields->registeredMeta( 75, 'bmp_visual' ) ) );
+	}
+
+	/**
+	 * A key registered for every post type is reported too. Registering against
+	 * no subtype is how a plugin declares a field the whole site carries, and a
+	 * read that consulted only the named type would miss exactly those.
+	 */
+	public function test_a_key_registered_for_every_post_type_is_reported(): void {
+		Functions\when( 'get_option' )->justReturn( [] );
+		Functions\when( 'get_registered_meta_keys' )->alias(
+			static fn ( string $type, string $subtype ): array => '' === $subtype
+				? [ 'site_wide' => [ 'show_in_rest' => true ] ]
+				: [ 'type_only' => [ 'show_in_rest' => true ] ]
+		);
+		Functions\when( 'get_post_meta' )->justReturn( 'value' );
+
+		$this->assertSame( [ 'site_wide', 'type_only' ], array_keys( $this->fields->registeredMeta( 75, 'bmp_visual' ) ) );
+	}
+
+	/**
+	 * A field registered `single => false` holds a list, and WordPress answers
+	 * it as one. Flattening it to the first value would report a partial truth
+	 * as the whole value.
+	 */
+	public function test_a_multi_value_field_is_reported_as_a_list(): void {
+		Functions\when( 'get_option' )->justReturn( [] );
+		Functions\when( 'get_registered_meta_keys' )->alias(
+			static fn ( string $type, string $subtype ): array => '' === $subtype
+				? []
+				: [ 'bmp_tags' => [ 'show_in_rest' => true, 'single' => false ] ]
+		);
+		Functions\when( 'get_post_meta' )->justReturn( [ 'one', 'two' ] );
+
+		$this->assertSame( [ 'bmp_tags' => [ 'one', 'two' ] ], $this->fields->registeredMeta( 75, 'bmp_visual' ) );
+	}
+
+	/**
+	 * The registration API arrived in WordPress 4.6 and the plugin's floor is
+	 * far above it, so this branch is unreachable on any site that can run
+	 * SiteHelm. It is pinned anyway: an absent function must produce an empty
+	 * map rather than a fatal, and a guard nothing asserts is a guard that
+	 * quietly stops guarding.
+	 *
+	 * Its own process, because Brain Monkey defines a mocked function for the
+	 * whole run: once a sibling test above stubs it, function_exists() answers
+	 * true here and the branch under test is never entered.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_a_build_without_the_registration_api_reports_nothing_rather_than_failing(): void {
+		Functions\when( 'get_option' )->justReturn( [] );
+
+		$this->assertSame( [], $this->fields->registeredMeta( 75, 'bmp_visual' ) );
 	}
 
 	/**
