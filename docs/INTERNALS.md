@@ -3451,3 +3451,43 @@ bare cast gives, string unchanged, anything else refused as `InvalidInput`. The 
 declares `'type' => [ 'string', 'number', 'boolean' ]`, which is why `SchemaValidator` now
 accepts a union: its `match ( $type )` had `default => true`, so a list of types would have
 switched type checking off entirely and stringified an array into the violation message.
+
+---
+
+## 58. Listable is not the same as public
+
+`content-list` used to ask `get_post_type_object( $type )->public` and refuse anything that
+answered false. That is a question about visitors, and it is the wrong question. A custom post
+type registered with `public => false, show_ui => true` — an enquiry log, a testimonial store,
+half of what a plugin registers — has an editing screen a human uses every day, and the
+operation refused every one of them. A site could not even list the content it was built
+around.
+
+`ContentList::assert_listable_type()` asks two questions instead. Does this type have an
+editing surface at all (`public` **or** `show_ui`), and may this account edit that type
+(`user_can` against the type's own `cap->edit_posts`, falling back to `edit_posts` when the
+type declares none)? Both must answer yes. A type WordPress registers for its own bookkeeping
+with neither flag — revisions, menu items — still has no listing, because nothing about it is
+authored.
+
+**Three failures share one refusal message, and that is the point.** A type that does not
+exist, a type with no editing screen, and a type this account may not edit all produce *"The
+requested content type is not available for listing on this site."* Separating them would turn
+the operation into an oracle: a caller could enumerate the internal types a site registers, or
+map which capabilities an account is missing, one refusal at a time. The remediation names the
+two examples every site has, and no refusal ever names the capability it checked.
+
+The reading half stops here. `content-get` gates on no type at all — it gates on the item — so
+list-then-read works end to end for a private type as soon as listing does. `ContentCreate` and
+`TaxonomyList` still gate on `public`, deliberately: widening a write is a separate decision
+from widening a read, and it has not been made.
+
+`status` also gained `private` and `any`. `any` is WordPress's own spelling in `WP_Query`, and
+it is passed through as written rather than expanded, so it keeps meaning whatever WordPress
+means by it.
+
+**The unknown-property refusal answers with the names that are accepted.** `SchemaValidator`
+already refused `perPage` when the property is `count`, but it refused with nothing to aim at,
+so a caller guessed again. When any violation is an unknown property, the validator appends
+the accepted property names for that object. One change, and every operation in the catalogue
+answers a wrong property name the same way.

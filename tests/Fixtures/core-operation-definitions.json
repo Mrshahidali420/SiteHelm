@@ -95,7 +95,7 @@
                     "type": {
                         "type": "string",
                         "maxLength": 32,
-                        "description": "A public content type this site registers, for example post or page. Defaults to post."
+                        "description": "A content type this site registers and this account can edit, for example post or page. Types with no editing screen, such as revisions, are not listable. Defaults to post."
                     },
                     "status": {
                         "type": "string",
@@ -104,9 +104,10 @@
                             "pending",
                             "private",
                             "publish",
-                            "trash"
+                            "trash",
+                            "any"
                         ],
-                        "description": "Return only items in this status. Defaults to every status except trash."
+                        "description": "Return only items in this status. Use any for every status this site registers, including statuses added by other plugins, but not the trash. Defaults to draft, pending, private and publish."
                     },
                     "search": {
                         "type": "string",

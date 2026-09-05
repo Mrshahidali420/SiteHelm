@@ -11,7 +11,22 @@ an operation behaves.
 
 ## [Unreleased]
 
+### Fixed
+- **Content types that are not public could not be listed.** `content-list` asked whether a
+  content type was visible to visitors, so an enquiry log, a testimonial store, or any of the
+  custom types a plugin registers for the admin screens only were refused as though they did
+  not exist. It now asks whether the type has an editing screen and whether the account may
+  edit it, which is the question that was meant all along. Reading one of those items already
+  worked, so listing and reading now work together.
+- **A wrong property name was refused without saying what the right one is.** Sending
+  `perPage` instead of `count`, or any other near-miss, produced a refusal that named the
+  property that was wrong and left the caller to guess again. Every operation now lists the
+  property names it accepts.
+
 ### Added
+- **`content-list` accepts `private` and `any` as a status.** `private` lists items published
+  for logged-in readers only, and `any` lists everything except items in the trash, spelled
+  the way WordPress spells it.
 - **Snippets can be stored in WPCode or Code Snippets, in Pro.** If a site already runs one
   of those plugins, that is where its code belongs, and SiteHelm now writes into it: name
   `wpcode` or `code-snippets` as the host on `code-snippet-write`, `code-css-write` or

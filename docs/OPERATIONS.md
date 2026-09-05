@@ -95,7 +95,7 @@ Posts, pages, custom post types, and taxonomies.
 |---|---|---|
 | `content-get` | Reads one item with its fields, terms, and metadata | `edit_posts` |
 | `content-search` | Finds every document whose title, content, excerpt or Elementor data mentions a phrase, filtered to what you may edit | `edit_posts` |
-| `content-list` | Lists items with filtering and pagination | `edit_posts` |
+| `content-list` | Lists items of any content type this account can edit, public or not, with filtering and pagination | `edit_posts` |
 | `taxonomy-list` | Lists registered taxonomies and their terms | `edit_posts` |
 | `content-blocks-get` | Returns the block outline of one item, or one addressed block in full | `edit_post` |
 | `redirect-list` | Lists every redirect this site serves, with the table's size and capacity | `manage_options` |

@@ -80,19 +80,82 @@ final class ContentListTest extends TestCase {
 	}
 
 	/**
-	 * 'post' and 'page' are public, 'wp_internal' is registered but not public,
-	 * and anything else is not registered at all.
+	 * The site's registered types, in the four shapes that matter here.
+	 *
+	 * 'post' and 'page' are public. 'enquiry' is the shape a form plugin
+	 * registers: not public, but with an editing screen and its own capability.
+	 * 'gated' has a screen and a capability this account does not hold.
+	 * 'wp_internal' is registered with no screen at all, and anything else is
+	 * not registered.
+	 *
+	 * @var array<string, array{public: bool, show_ui: bool, cap: string}>
+	 */
+	private const REGISTERED_TYPES = [
+		'post'        => [
+			'public'  => true,
+			'show_ui' => true,
+			'cap'     => 'edit_posts',
+		],
+		'page'        => [
+			'public'  => true,
+			'show_ui' => true,
+			'cap'     => 'edit_pages',
+		],
+		'enquiry'     => [
+			'public'  => false,
+			'show_ui' => true,
+			'cap'     => 'edit_enquiries',
+		],
+		'gated'       => [
+			'public'  => false,
+			'show_ui' => true,
+			'cap'     => 'edit_gated_things',
+		],
+		'wp_internal' => [
+			'public'  => false,
+			'show_ui' => false,
+			'cap'     => 'edit_posts',
+		],
+	];
+
+	/**
+	 * The capabilities the account in these tests holds.
+	 */
+	private const HELD_CAPABILITIES = [ 'edit_posts', 'edit_pages', 'edit_enquiries' ];
+
+	/**
+	 * Stubs the site's registered types.
 	 */
 	private function stubPostTypes(): void {
 		Functions\when( 'get_post_type_object' )->alias(
 			static function ( string $type ): ?object {
-				if ( ! in_array( $type, [ 'post', 'page', 'wp_internal' ], true ) ) {
+				if ( ! isset( self::REGISTERED_TYPES[ $type ] ) ) {
 					return null;
 				}
-				$object         = new stdClass();
-				$object->public = 'wp_internal' !== $type;
+
+				$registered           = self::REGISTERED_TYPES[ $type ];
+				$object               = new stdClass();
+				$object->public       = $registered['public'];
+				$object->show_ui      = $registered['show_ui'];
+				$object->cap          = new stdClass();
+				$object->cap->edit_posts = $registered['cap'];
 
 				return $object;
+			}
+		);
+	}
+
+	/**
+	 * Approves the capabilities this account holds, and every per-item check.
+	 */
+	private function stubCapabilities(): void {
+		Functions\when( 'user_can' )->alias(
+			static function ( int $user_id, string $capability, int $post_id = 0 ): bool {
+				if ( 'edit_post' === $capability ) {
+					return true;
+				}
+
+				return in_array( $capability, self::HELD_CAPABILITIES, true );
 			}
 		);
 	}
@@ -106,7 +169,7 @@ final class ContentListTest extends TestCase {
 	 */
 	private function list( array $input ): array {
 		$this->stubPostTypes();
-		Functions\when( 'user_can' )->justReturn( true );
+		$this->stubCapabilities();
 		FakeWpQuery::$rows       = [ $this->makeRow( 42 ) ];
 		FakeWpQuery::$foundPosts = $this->foundPosts;
 
@@ -125,7 +188,11 @@ final class ContentListTest extends TestCase {
 		$this->stubPostTypes();
 		Functions\when( 'user_can' )->alias(
 			static function ( int $user_id, string $capability, int $post_id = 0 ) use ( $editable ): bool {
-				return 'edit_post' === $capability && in_array( $post_id, $editable, true );
+				if ( 'edit_post' !== $capability ) {
+					return in_array( $capability, self::HELD_CAPABILITIES, true );
+				}
+
+				return in_array( $post_id, $editable, true );
 			}
 		);
 		FakeWpQuery::$rows       = [ $this->makeRow( 41 ), $this->makeRow( 42 ) ];
@@ -234,7 +301,47 @@ final class ContentListTest extends TestCase {
 		$this->assertSame( 0, $result['offset'] );
 	}
 
-	public function test_a_non_public_post_type_is_refused_as_invalid_input(): void {
+	/**
+	 * PRIVATE IS NOT INTERNAL. Form submissions, order records and log entries
+	 * are registered without being public, and an administrator reads them in
+	 * wp-admin every day. A management tool that cannot see them has to send
+	 * its owner to a browser to check a single row.
+	 */
+	public function test_a_type_with_an_editing_screen_is_listed_even_though_it_is_not_public(): void {
+		$result = $this->list( [ 'type' => 'enquiry' ] );
+
+		$this->assertCount( 1, $result['items'] );
+	}
+
+	/**
+	 * The type has a screen; this account simply may not use it. The refusal is
+	 * the same one an unregistered type gets, because saying which of the two
+	 * happened tells the caller the type exists.
+	 */
+	public function test_a_type_this_account_may_not_edit_is_refused_like_one_that_does_not_exist(): void {
+		$gated       = null;
+		$unregistered = null;
+
+		try {
+			$this->list( [ 'type' => 'gated' ] );
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			$gated = $e;
+		}
+
+		try {
+			$this->list( [ 'type' => 'not_a_type' ] );
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			$unregistered = $e;
+		}
+
+		$this->assertSame( ErrorCode::InvalidInput, $gated->errorCode );
+		$this->assertSame( $unregistered->getMessage(), $gated->getMessage() );
+		$this->assertStringNotContainsString( 'edit_gated_things', $gated->getMessage() );
+	}
+
+	public function test_a_post_type_with_no_editing_screen_is_refused_as_invalid_input(): void {
 		try {
 			$this->list( [ 'type' => 'wp_internal' ] );
 			$this->fail( 'Expected OperationException' );
@@ -263,8 +370,25 @@ final class ContentListTest extends TestCase {
 		} catch ( OperationException $e ) {
 			$this->assertStringNotContainsString( 'wp_internal', $e->getMessage() );
 			$this->assertStringNotContainsString( 'WP_Query', $e->getMessage() );
-			$this->assertStringNotContainsString( 'page', $e->getMessage() );
+			$this->assertStringNotContainsString( 'enquiry', $e->getMessage() );
 		}
+	}
+
+	/**
+	 * WORDPRESS ALREADY HAS A WORD FOR EVERYTHING, and auditing a site is the
+	 * common case for wanting it. The default four statuses miss anything a
+	 * plugin registers of its own, which is exactly what an audit is looking
+	 * for.
+	 */
+	public function test_status_any_is_passed_to_the_query_as_wordpress_spells_it(): void {
+		$args = $this->capturedQueryArgs(
+			[
+				'type'   => 'post',
+				'status' => 'any',
+			]
+		);
+
+		$this->assertSame( 'any', $args['post_status'] );
 	}
 
 	public function test_results_are_ordered_most_recently_modified_first(): void {

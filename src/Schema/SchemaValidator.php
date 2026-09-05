@@ -60,12 +60,25 @@ final class SchemaValidator {
 		$violations = [];
 		$properties = $schema['properties'] ?? [];
 
+		$unknown = false;
 		foreach ( array_keys( $input ) as $key ) {
 			if ( ! array_key_exists( $key, $properties ) ) {
 				// Unknown keys are attacker-controlled: report a sanitized form so
 				// the message stays useful without being an injection vector.
 				$violations[] = "unknown property '" . $this->safe_property_name( (string) $key ) . "'";
+				$unknown      = true;
 			}
+		}
+
+		// A CALLER WHO GUESSED WRONG NEEDS THE RIGHT NAME, NOT A SECOND GUESS.
+		// A refusal that says only which word was wrong sends the next attempt
+		// off to guess again — asking for `perPage` when the property is
+		// `limit` is one round trip when the refusal names what is accepted and
+		// several when it does not. The names come from the schema this
+		// validator was handed, so listing them discloses nothing a catalogue
+		// read would not, and they are listed once however many were wrong.
+		if ( $unknown && [] !== $properties ) {
+			$violations[] = 'accepted properties are ' . implode( ', ', array_keys( $properties ) );
 		}
 		foreach ( $schema['required'] ?? [] as $required ) {
 			if ( ! array_key_exists( $required, $input ) ) {
