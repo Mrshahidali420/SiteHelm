@@ -1,6 +1,6 @@
 # Operations reference
 
-SiteHelm exposes **107 operations** through **11 MCP tools**, called dispatchers. Every operation is
+SiteHelm exposes **108 operations** through **11 MCP tools**, called dispatchers. Every operation is
 declared once, in code, with a strict input schema (`additionalProperties: false`), a required
 capability, a risk level, and preview, snapshot, and rollback policies. That declaration is the
 contract the gateway enforces and the catalogue an agent discovers.
@@ -255,7 +255,7 @@ links are listed per item, and `truncated` says when a page held more.
 | `media-list` | Lists the media library with filtering | `upload_files` |
 | `image-size-list` | Lists registered image sizes and their dimensions | `read` |
 
-### `media-write` — 6 operations
+### `media-write` — 7 operations
 
 | Operation | Does | Capability | Risk | Rollback |
 |---|---|---|---|---|
@@ -265,6 +265,25 @@ links are listed per item, and `truncated` says when a page held more.
 | `media-attach` | Attaches an existing item to a post | `edit_post` | medium | supported |
 | `media-resize` | Brings an oversized image within a width and height you name, keeping the original file | `edit_post` + `upload_files` | high | supported |
 | `media-svg-upload` | Adds one SVG image, rebuilt from a safe subset before it is stored | `upload_files` + `unfiltered_html` | high | supported |
+| `media-upload-ticket` | Issues a short-lived, single-use URL to post one large file to, for content too big to send as an argument | `upload_files` | high | not applicable |
+
+> **`media-upload-ticket` exists because an argument cannot carry a package.** Everything an
+> operation is given travels inside the request the client assembles, which for an AI client means
+> it travels through the model as well. A six megabyte zip is eight megabytes of base64 and
+> something close to two million tokens, so sending one as `contentBase64` is not slow — it is
+> impossible. The ticket splits the permission from the payload. The operation returns a secret, an
+> upload URL and an expiry; the client posts the raw bytes to that URL with the secret in an
+> `X-SiteHelm-Ticket` header and `Content-Type: application/octet-stream`, and the bytes never
+> touch the MCP route. A ticket is bound to one site, one operator, one filename and one exact byte
+> length, optionally to one sha256, lasts ten minutes and is spent exactly once by a conditional
+> update, so two requests presenting the same ticket produce one upload. The ticket itself is never
+> stored — only its digest is — and it is deliberately left out of the operation's promised fields,
+> so it reaches the caller's response and stops there rather than being copied into the permanent
+> audit row. Redemption re-checks that writes are not paused, that the `media-upload` switch is on
+> and that the operator still holds `upload_files`, and the arriving file is still judged by its
+> content the same way `media-upload` judges one. The audit row is filed under `media-upload`,
+> because that is what happened. Nothing is changed until the ticket is used, which is why it has
+> no rollback: ignore it and it expires.
 
 > **`media-import` is the most security-sensitive operation in SiteHelm.** The host is resolved and
 > validated before the connection is made; private, loopback, link-local, and reserved ranges are
@@ -608,8 +627,10 @@ there is no `system-write`.
 > `theme-install-upload` take one argument, `attachment`, an integer id — there is still no
 > `url`, `package`, `source`, `path` or `zip` property anywhere, so nothing an agent names is
 > fetched. The file has to already be an attachment on this site, and one the calling account
-> may edit. Putting it there is a separate, previewed, logged call, `media-upload` or
-> `media-import`, and the site's own `get_allowed_mime_types()` still has to permit a zip:
+> may edit. Putting it there is a separate, previewed, logged call, `media-upload`,
+> `media-import`, or — for a package too large to travel as an argument at all —
+> `media-upload-ticket` followed by a raw post to the URL it hands back. Whichever route the
+> file takes, the site's own `get_allowed_mime_types()` still has to permit a zip:
 > SiteHelm's own allowlist is images only, and the add-on widens it to zip while a Pro licence
 > is active by way of a filter that runs **before** the deny lists are subtracted, so it can
 > add a type but never add its way past one. The package is opened and read before a byte

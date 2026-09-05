@@ -53,6 +53,23 @@ final class MediaMimeGuard {
 	public const MAX_BASE64_LENGTH = 11534336;
 
 	/**
+	 * The hard ceiling on bytes arriving through a redeemed upload ticket.
+	 *
+	 * EIGHT TIMES THE BASE64 CEILING, AND THE DIFFERENCE IS THE WHOLE POINT OF THE
+	 * TICKET. MAX_DECODED_BYTES bounds a payload that travelled as an argument, and
+	 * an argument is read into memory whole, encoded, alongside everything else in
+	 * the request — so its ceiling is set by what a JSON body can carry, not by
+	 * what this site can store. A ticket's bytes arrive as a raw request body on a
+	 * route of their own, which is the transport WordPress itself uses for a
+	 * plugin zip, so the ceiling that applies is the site's.
+	 *
+	 * It is still a ceiling rather than a deferral to the site, because a site
+	 * reporting a very large or unreadable limit must not turn one request into an
+	 * unbounded allocation. ticketByteCap() takes whichever is smaller.
+	 */
+	public const MAX_TICKET_BYTES = 67108864;
+
+	/**
 	 * Constructs the guard.
 	 *
 	 * @param MediaFields $fields The projection that owns the effective allowlist.
@@ -125,6 +142,7 @@ final class MediaMimeGuard {
 
 	// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Messages are literals written for end users.
 	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- Pairs with inspect(); the guard's public vocabulary is camelCase like the contracts it serves.
+	// phpcs:disable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase -- $byteCap matches the guard's camelCase vocabulary.
 	/**
 	 * Validates already-decoded bytes, in memory, and reports what they are.
 	 *
@@ -137,8 +155,10 @@ final class MediaMimeGuard {
 	 * The steps run in this order and the order is load bearing: nothing
 	 * consults an allowlist until the bytes have identified themselves.
 	 *
-	 * @param string $filename The client-supplied filename.
-	 * @param string $bytes    The decoded payload.
+	 * @param string   $filename The client-supplied filename.
+	 * @param string   $bytes    The decoded payload.
+	 * @param int|null $byteCap  The ceiling to bound against, or null for the
+	 *                           base64 transport's own.
 	 *
 	 * @return array{bytes: string, filename: string, mimeType: string, extension: string}
 	 *         The decoded bytes, the sanitized filename, the sniffed type, and
@@ -148,9 +168,16 @@ final class MediaMimeGuard {
 	 *                            Refused content is a bad request on either
 	 *                            transport, never an execution failure.
 	 */
-	public function inspectBytes( string $filename, string $bytes ): array {
+	public function inspectBytes( string $filename, string $bytes, ?int $byteCap = null ): array {
 		// 2. Size, against the smaller of the built-in cap and the site's own.
-		if ( strlen( $bytes ) > self::decodedByteCap() ) {
+		//
+		// THE CAP IS A PARAMETER BECAUSE THE TRANSPORT DECIDES IT, not because a
+		// caller may choose to be lenient. Bytes that arrived as a base64 argument
+		// are bounded by what an argument may carry; bytes that arrived as a raw
+		// body on the upload route are bounded by what the site will store. Every
+		// other step below is identical, which is the reason they are shared, and
+		// defaulting to null keeps every existing caller on the ceiling it had.
+		if ( strlen( $bytes ) > ( $byteCap ?? self::decodedByteCap() ) ) {
 			throw new OperationException(
 				ErrorCode::InvalidInput,
 				'The content is larger than this site accepts.',
@@ -158,43 +185,11 @@ final class MediaMimeGuard {
 			);
 		}
 
-		// 3. The filename must survive sanitization and keep an extension. An
-		// extension-less name would leave wp_check_filetype_and_ext() with
-		// nothing to agree or disagree with, and step 6 would compare the
-		// sniffed type against an empty string forever.
-		$safe = (string) sanitize_file_name( $filename );
-		if ( '' === $safe ) {
-			throw new OperationException(
-				ErrorCode::InvalidInput,
-				'The requested filename contains no characters this site can store.',
-				'Choose a filename made of letters, numbers, dots, hyphens, or underscores, and request a fresh preview.'
-			);
-		}
-
-		$extension = strtolower( (string) pathinfo( $safe, PATHINFO_EXTENSION ) );
-		if ( '' === $extension ) {
-			throw new OperationException(
-				ErrorCode::InvalidInput,
-				'The requested filename has no file extension.',
-				'Include the file extension in the filename and request a fresh preview.'
-			);
-		}
-
-		// 3b. The extension deny list, before anything looks at the bytes.
-		//
-		// This is NOT shadowed by steps 5 and 6, and the case that proves it is
-		// real: wp_get_mime_types() is filterable through `mime_types`, so a
-		// plugin can map `phtml` to `image/png`. Steps 5 and 6 would then both
-		// agree and accept an executable extension. This check is what refuses
-		// it, and its test fakes exactly that map. It also catches the double
-		// extension `x.png.php`, whose pathinfo extension is `php`.
-		if ( in_array( $extension, MediaFields::DENIED_EXTENSIONS, true ) ) {
-			throw new OperationException(
-				ErrorCode::InvalidInput,
-				'This site does not accept the requested file extension.',
-				'Upload the asset as an image file and request a fresh preview.'
-			);
-		}
+		// 3 and 3b. Everything the filename alone decides.
+		[
+			'filename'  => $safe,
+			'extension' => $extension,
+		] = $this->inspectFilename( $filename );
 
 		// 4. Sniff the CONTENT. Never a claim.
 		$sniffed = $this->sniff( $bytes );
@@ -248,8 +243,99 @@ final class MediaMimeGuard {
 			'extension' => $extension,
 		];
 	}
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
 	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+
+	// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Messages are literals written for end users.
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- Pairs with inspect() and inspectBytes(); the guard's public vocabulary is camelCase like the contracts it serves.
+	/**
+	 * Everything the filename alone decides, with no bytes in hand.
+	 *
+	 * SEPARATED SO A CALLER CAN ASK BEFORE THE BYTES EXIST, which is what an
+	 * upload ticket needs: the ticket is issued from a filename and a declared
+	 * length, and the file itself does not arrive until afterwards. Refusing
+	 * `payload.php` at the moment the ticket is asked for is better than issuing
+	 * a ticket, letting an operator spend a minute uploading against it, and
+	 * refusing the same name at the end.
+	 *
+	 * IT IS NOT A SUBSTITUTE FOR inspectBytes(), and nothing may treat it as one.
+	 * These are the two checks that need no content; the four that follow them
+	 * all read the bytes, and they are the ones that stop a PHP script wearing a
+	 * `.png`. inspectBytes() calls this method rather than repeating it, so the
+	 * ticket and the upload refuse the same names for the same reasons.
+	 *
+	 * @param string $filename The client-supplied filename.
+	 *
+	 * @return array{filename: string, extension: string} The sanitized filename
+	 *         and its lowercase extension.
+	 *
+	 * @throws OperationException With ErrorCode::InvalidInput on every failure.
+	 */
+	public function inspectFilename( string $filename ): array {
+		// 3. The filename must survive sanitization and keep an extension. An
+		// extension-less name would leave wp_check_filetype_and_ext() with
+		// nothing to agree or disagree with, and step 6 would compare the
+		// sniffed type against an empty string forever.
+		$safe = (string) sanitize_file_name( $filename );
+		if ( '' === $safe ) {
+			throw new OperationException(
+				ErrorCode::InvalidInput,
+				'The requested filename contains no characters this site can store.',
+				'Choose a filename made of letters, numbers, dots, hyphens, or underscores, and request a fresh preview.'
+			);
+		}
+
+		$extension = strtolower( (string) pathinfo( $safe, PATHINFO_EXTENSION ) );
+		if ( '' === $extension ) {
+			throw new OperationException(
+				ErrorCode::InvalidInput,
+				'The requested filename has no file extension.',
+				'Include the file extension in the filename and request a fresh preview.'
+			);
+		}
+
+		// 3b. The extension deny list, before anything looks at the bytes.
+		//
+		// This is NOT shadowed by steps 5 and 6, and the case that proves it is
+		// real: wp_get_mime_types() is filterable through `mime_types`, so a
+		// plugin can map `phtml` to `image/png`. Steps 5 and 6 would then both
+		// agree and accept an executable extension. This check is what refuses
+		// it, and its test fakes exactly that map. It also catches the double
+		// extension `x.png.php`, whose pathinfo extension is `php`.
+		if ( in_array( $extension, MediaFields::DENIED_EXTENSIONS, true ) ) {
+			throw new OperationException(
+				ErrorCode::InvalidInput,
+				'This site does not accept the requested file extension.',
+				'Upload the asset as an image file and request a fresh preview.'
+			);
+		}
+
+		return [
+			'filename'  => $safe,
+			'extension' => $extension,
+		];
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- Pairs with inspect() and inspectBytes(); the guard's public vocabulary is camelCase like the contracts it serves.
+	/**
+	 * The ceiling on bytes arriving through a redeemed upload ticket.
+	 *
+	 * The same shape as decodedByteCap() and for the same reason — a site
+	 * reporting no positive limit falls back to the built-in ceiling rather than
+	 * to zero, because refusing every upload including a one-byte one reads as a
+	 * broken operation rather than as a size limit.
+	 *
+	 * @return int The maximum permitted byte count for a ticketed upload.
+	 */
+	public static function ticketByteCap(): int {
+		$limit = (int) wp_max_upload_size();
+
+		return $limit > 0 ? min( self::MAX_TICKET_BYTES, $limit ) : self::MAX_TICKET_BYTES;
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 
 	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- Pairs with inspect() and inspectBytes(); the guard's public vocabulary is camelCase like the contracts it serves.
 	/**

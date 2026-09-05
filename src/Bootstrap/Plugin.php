@@ -21,6 +21,9 @@ use SiteHelm\Gateway\Dispatcher;
 use SiteHelm\Gateway\McpServer;
 use SiteHelm\Gateway\RestTransport;
 use SiteHelm\Modules\Core\RedirectRouter;
+use SiteHelm\Modules\Media\MediaFields;
+use SiteHelm\Modules\Media\MediaMimeGuard;
+use SiteHelm\Modules\Media\UploadReceiver;
 use SiteHelm\Modules\Core\RedirectStore;
 use SiteHelm\Policy\OperationSwitches;
 use SiteHelm\Policy\PolicyEngine;
@@ -110,6 +113,15 @@ final class Plugin {
 
 		$transport = new RestTransport( $server );
 		add_action( 'rest_api_init', [ $transport, 'registerRoute' ] );
+
+		// A second route, for bytes only. Files too large to travel as an
+		// argument are posted here against a ticket issued by
+		// media-upload-ticket, so the MCP route never has to carry a package.
+		// It shares the operator's switches with the dispatcher, so switching
+		// uploads off switches this off too.
+		$media_fields = new MediaFields();
+		$uploads      = new UploadReceiver( $media_fields, new MediaMimeGuard( $media_fields ), $switches );
+		add_action( 'rest_api_init', [ $uploads, 'registerRoute' ] );
 
 		// The console is handed the same registry and the same health map the
 		// gateway is serving from. A second registry built for the admin could
