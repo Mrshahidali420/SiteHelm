@@ -2646,9 +2646,29 @@ filter instead of wordpress.org. `Admin\GithubUpdates` answers it:
   update. `tools/build-plugin-zip.php` writes entries under `sitehelm/`, which is
   what makes the asset installable over the live folder.
 - **Both outcomes are cached** in the `sitehelm_github_release` transient: a found
-  release for twelve hours, a failed lookup for one (as the string `"miss"`). Core
+  release for four hours, a failed lookup for one (as the string `"miss"`). Core
   refreshes the update transient on ordinary admin loads, so an uncached failure
-  would turn a GitHub outage into wp-admin latency.
+  would turn a GitHub outage into wp-admin latency. Four hours rather than twelve
+  because core checks on a twelve-hour schedule of its own, and two equal periods
+  drift into phase — a release published just after a check would sit unseen for a
+  further full cycle.
+- **A forced check clears this cache too.** Core's "Check again" deletes its own
+  `update_plugins` transient and nothing else, so the class went on answering from
+  its own note and reported no update on a release that had already shipped.
+  `load-update-core.php` + `force-check` flushes it; so does
+  `upgrader_process_complete`, which stops the note describing a version that is no
+  longer installed.
+- **A rate-limited refusal rests only until the limit lifts.** The transport carries
+  the response headers (lower-cased) as well as the status, and a 403 or 429 is read
+  for `Retry-After`, or for `X-RateLimit-Reset` when `X-RateLimit-Remaining` is `0`.
+  The flat hour was wrong twice over on a host whose whole IP address shares the
+  sixty unauthenticated calls: it waited an hour when the window reopened in four
+  minutes, and it could come back before the window reopened at all. The rest is
+  clamped to `MISS_TTL_MIN`..`MISS_TTL_MAX` (one minute to six hours) because the
+  stamp is somebody else's claim — a reset already in the past must not retry on the
+  next admin load, and one far in the future must not switch update checking off for
+  a week. Anything that is not the rate limiter still rests the flat hour, because
+  nothing in the response knows any better.
 - **The console notice** (`admin_notices`, console screens only, `update_plugins`
   capability) reads ONLY the cache and never fetches — core's own check fills it.
 - **Registration is outside `is_admin()`** in `Bootstrap\Plugin`, because core also

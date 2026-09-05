@@ -71,6 +71,13 @@ final class AdminWordPressStubs {
 	public static array $deletedTransients = [];
 
 	/**
+	 * How long each transient was asked to live, keyed by name, in seconds.
+	 *
+	 * @var array<string, int>
+	 */
+	public static array $transientExpirations = [];
+
+	/**
 	 * The signed-in user's identifier.
 	 */
 	public static int $currentUserId = 7;
@@ -146,6 +153,7 @@ final class AdminWordPressStubs {
 		self::$options              = [];
 		self::$transients           = [];
 		self::$deletedTransients    = [];
+		self::$transientExpirations = [];
 		self::$currentUserId        = 7;
 		self::$currentUserLogin     = 'agency';
 		self::$applicationPasswords = true;
@@ -241,8 +249,9 @@ final class AdminWordPressStubs {
 			static fn( string $key ) => self::$transients[ $key ] ?? false
 		);
 		Functions\when( 'set_transient' )->alias(
-			static function ( string $key, $value ): bool {
-				self::$transients[ $key ] = $value;
+			static function ( string $key, $value, $expiration = 0 ): bool {
+				self::$transients[ $key ]           = $value;
+				self::$transientExpirations[ $key ] = (int) $expiration;
 
 				return true;
 			}

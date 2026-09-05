@@ -29,7 +29,9 @@ namespace SiteHelm\Admin;
  * The lookup result is cached whether it succeeded or failed. Core refreshes
  * the update transient on ordinary admin loads, and an uncached failure would
  * retry GitHub on every one of them — an outage at GitHub must not become
- * latency in wp-admin.
+ * latency in wp-admin. A failure that came from the rate limiter rests only
+ * until the limit lifts, because the response says when that is and a flat
+ * hour would keep a release hidden long after it could have been offered.
  *
  * The class also answers `plugins_api`. Core builds the update row's "View
  * version X details" link from the slug alone, pointed at the plugin directory,
@@ -74,9 +76,15 @@ final class GithubUpdates {
 	public const MISS = 'miss';
 
 	/**
-	 * How long a found release is trusted, in seconds (twelve hours).
+	 * How long a found release is trusted, in seconds (four hours).
+	 *
+	 * Twelve hours was the obvious number and the wrong one: WordPress runs its
+	 * own update check on a twelve-hour schedule too, so the two windows drift
+	 * into phase and a release published just after a check could stay invisible
+	 * for a full further cycle. Four hours decouples them, and the cost is a
+	 * handful of extra API calls a day against a limit of sixty an hour.
 	 */
-	public const TTL = 43200;
+	public const TTL = 14400;
 
 	/**
 	 * How long a failed lookup rests before being retried, in seconds (one hour).
@@ -84,13 +92,30 @@ final class GithubUpdates {
 	public const MISS_TTL = 3600;
 
 	/**
+	 * The shortest a rate-limited lookup may rest, in seconds.
+	 *
+	 * A reset stamp can already be in the past by the time it is read, and a
+	 * zero-second rest would put the request back on the very next admin load.
+	 */
+	public const MISS_TTL_MIN = 60;
+
+	/**
+	 * The longest a rate-limited lookup may rest, in seconds (six hours).
+	 *
+	 * The header is a claim from somewhere else. A wrong or hostile stamp far in
+	 * the future must not be able to switch update checking off for a week.
+	 */
+	public const MISS_TTL_MAX = 21600;
+
+	/**
 	 * How long the release lookup may take, in seconds.
 	 */
 	public const TIMEOUT = 10;
 
 	/**
-	 * Fetches a URL. Signature: (string $url): ?array{code: int, body: string};
-	 * null when the request could not be made.
+	 * Fetches a URL. Signature: (string $url): ?array{code: int, body: string,
+	 * headers?: array<string, string>}; null when the request could not be made.
+	 * Header names arrive lower-cased.
 	 *
 	 * @var callable
 	 */
@@ -116,8 +141,9 @@ final class GithubUpdates {
 			}
 
 			return [
-				'code' => (int) wp_remote_retrieve_response_code( $response ),
-				'body' => (string) wp_remote_retrieve_body( $response ),
+				'code'    => (int) wp_remote_retrieve_response_code( $response ),
+				'body'    => (string) wp_remote_retrieve_body( $response ),
+				'headers' => self::flatten_headers( $response ),
 			];
 		};
 	}
@@ -129,6 +155,31 @@ final class GithubUpdates {
 		add_filter( self::FILTER, [ $this, 'offer' ], 10, 3 );
 		add_filter( 'plugins_api', [ $this, 'information' ], 10, 3 );
 		add_action( 'admin_notices', [ $this, 'notice' ] );
+		add_action( 'load-update-core.php', [ $this, 'flush_on_force_check' ] );
+		add_action( 'upgrader_process_complete', [ $this, 'flush' ] );
+	}
+
+	/**
+	 * Drop the cached release so the next lookup goes to GitHub.
+	 */
+	public function flush(): void {
+		delete_transient( self::TRANSIENT );
+	}
+
+	/**
+	 * Honour "Check again" on the Updates screen.
+	 *
+	 * Core's force-check deletes its own update_plugins transient and nothing
+	 * else, so this class kept answering out of its own cache and the button
+	 * reported "no update" on a release that had already shipped — with no way
+	 * for a site owner to make it look properly. A forced check now means what
+	 * it says.
+	 */
+	public function flush_on_force_check(): void {
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Core's own force-check flag; no state is changed here beyond dropping a cache.
+		if ( ! empty( $_GET['force-check'] ) ) {
+			$this->flush();
+		}
 	}
 
 	/**
@@ -286,17 +337,17 @@ final class GithubUpdates {
 			return $cached;
 		}
 
-		$release = $this->fetch();
+		$found = $this->fetch();
 
-		if ( null === $release ) {
-			set_transient( self::TRANSIENT, self::MISS, self::MISS_TTL );
+		if ( null === $found['release'] ) {
+			set_transient( self::TRANSIENT, self::MISS, $found['retry_in'] );
 
 			return null;
 		}
 
-		set_transient( self::TRANSIENT, $release, self::TTL );
+		set_transient( self::TRANSIENT, $found['release'], self::TTL );
 
-		return $release;
+		return $found['release'];
 	}
 
 	/**
@@ -314,42 +365,141 @@ final class GithubUpdates {
 	/**
 	 * Ask GitHub for the latest release and reduce it to an offer.
 	 *
-	 * @return array{version: string, url: string, package: string, notes: string, date: string}|null
+	 * The answer carries how long a failure should rest as well as the release
+	 * itself, because only the response knows: a refusal that came from the rate
+	 * limiter says when the limit lifts, and resting past that point hides a
+	 * release the site could already have been offered.
+	 *
+	 * @return array{release: array{version: string, url: string, package: string,
+	 *         notes: string, date: string}|null, retry_in: int}
 	 */
-	private function fetch(): ?array {
+	private function fetch(): array {
 		$answer = ( $this->request )( self::RELEASES_URL );
 
-		if ( null === $answer || 200 !== $answer['code'] ) {
-			return null;
+		if ( null === $answer ) {
+			return self::nothing( self::MISS_TTL );
+		}
+
+		if ( 200 !== $answer['code'] ) {
+			return self::nothing( self::retry_in( $answer ) );
 		}
 
 		$release = json_decode( $answer['body'], true );
 
 		if ( ! is_array( $release ) || ! is_string( $release['tag_name'] ?? null ) ) {
-			return null;
+			return self::nothing( self::MISS_TTL );
 		}
 
 		$version = ltrim( $release['tag_name'], 'v' );
 
 		if ( 1 !== preg_match( '/^\d+\.\d+\.\d+$/', $version ) ) {
-			return null;
+			return self::nothing( self::MISS_TTL );
 		}
 
 		$package = self::asset_url( is_array( $release['assets'] ?? null ) ? $release['assets'] : [], $version );
 
 		if ( null === $package ) {
-			return null;
+			return self::nothing( self::MISS_TTL );
 		}
 
 		return [
-			'version' => $version,
-			'url'     => is_string( $release['html_url'] ?? null )
-				? $release['html_url']
-				: 'https://github.com/' . self::REPO . '/releases',
-			'package' => $package,
-			'notes'   => is_string( $release['body'] ?? null ) ? $release['body'] : '',
-			'date'    => is_string( $release['published_at'] ?? null ) ? $release['published_at'] : '',
+			'release'  => [
+				'version' => $version,
+				'url'     => is_string( $release['html_url'] ?? null )
+					? $release['html_url']
+					: 'https://github.com/' . self::REPO . '/releases',
+				'package' => $package,
+				'notes'   => is_string( $release['body'] ?? null ) ? $release['body'] : '',
+				'date'    => is_string( $release['published_at'] ?? null ) ? $release['published_at'] : '',
+			],
+			'retry_in' => self::MISS_TTL,
 		];
+	}
+
+	/**
+	 * A lookup that found no release, resting for the given number of seconds.
+	 *
+	 * @param int $seconds How long before GitHub is asked again.
+	 * @return array{release: null, retry_in: int}
+	 */
+	private static function nothing( int $seconds ): array {
+		return [
+			'release'  => null,
+			'retry_in' => $seconds,
+		];
+	}
+
+	/**
+	 * How long to rest after a refusal.
+	 *
+	 * GitHub answers an exhausted rate limit with 403 or 429 and says when the
+	 * window reopens: `Retry-After` in seconds on a secondary limit, or
+	 * `X-RateLimit-Reset` as a Unix time on the hourly one. Sixty unauthenticated
+	 * calls an hour is generous for one site and thin for a host whose whole IP
+	 * address shares the allowance, and there the flat hour was wrong twice over:
+	 * it waited an hour when the window reopened in four minutes, and it could
+	 * come back before the window reopened at all.
+	 *
+	 * Anything that is not the rate limiter — an outage, a moved endpoint — still
+	 * rests the flat hour, because nothing in the response knows any better.
+	 *
+	 * @param array{code: int, body: string, headers?: array<string, string>} $answer The refusal.
+	 */
+	private static function retry_in( array $answer ): int {
+		if ( 403 !== $answer['code'] && 429 !== $answer['code'] ) {
+			return self::MISS_TTL;
+		}
+
+		$headers = isset( $answer['headers'] ) && is_array( $answer['headers'] ) ? $answer['headers'] : [];
+		$after   = $headers['retry-after'] ?? null;
+
+		if ( is_numeric( $after ) ) {
+			return self::clamp( (int) $after );
+		}
+
+		$remaining = $headers['x-ratelimit-remaining'] ?? null;
+		$reset     = $headers['x-ratelimit-reset'] ?? null;
+
+		if ( '0' !== (string) $remaining || ! is_numeric( $reset ) ) {
+			return self::MISS_TTL;
+		}
+
+		return self::clamp( (int) $reset - time() );
+	}
+
+	/**
+	 * Keep a rest between the floor and the ceiling.
+	 *
+	 * @param int $seconds The rest the response asked for.
+	 */
+	private static function clamp( int $seconds ): int {
+		return max( self::MISS_TTL_MIN, min( self::MISS_TTL_MAX, $seconds ) );
+	}
+
+	/**
+	 * Reduce a response to a lower-cased header name and value map.
+	 *
+	 * @param array|\WP_Error $response What the transport came back with.
+	 * @return array<string, string>
+	 */
+	private static function flatten_headers( $response ): array {
+		$headers = wp_remote_retrieve_headers( $response );
+
+		if ( is_object( $headers ) && method_exists( $headers, 'getAll' ) ) {
+			$headers = $headers->getAll();
+		}
+
+		if ( ! is_array( $headers ) ) {
+			return [];
+		}
+
+		$flat = [];
+
+		foreach ( $headers as $name => $value ) {
+			$flat[ strtolower( (string) $name ) ] = is_array( $value ) ? (string) end( $value ) : (string) $value;
+		}
+
+		return $flat;
 	}
 
 	/**
