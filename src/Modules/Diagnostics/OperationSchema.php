@@ -117,7 +117,7 @@ final class OperationSchema {
 				'requiredCapabilities' => $definition->requiredCapabilities,
 				'inputSchema'          => $definition->inputSchema,
 				'outputSchema'         => $definition->outputSchema,
-				'example'              => $definition->example,
+				'examples'             => $definition->examples(),
 			]
 		);
 	}

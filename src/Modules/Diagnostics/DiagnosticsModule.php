@@ -254,7 +254,10 @@ final class DiagnosticsModule implements IntegrationModule {
 						],
 						'inputSchema'          => [ 'type' => 'object' ],
 						'outputSchema'         => [ 'type' => 'object' ],
-						'example'              => [ 'type' => 'object' ],
+						'examples'             => [
+							'type'  => 'array',
+							'items' => [ 'type' => 'object' ],
+						],
 					],
 					'required'             => [
 						'operation',
@@ -264,7 +267,7 @@ final class DiagnosticsModule implements IntegrationModule {
 						'requiredCapabilities',
 						'inputSchema',
 						'outputSchema',
-						'example',
+						'examples',
 					],
 					'additionalProperties' => false,
 				],

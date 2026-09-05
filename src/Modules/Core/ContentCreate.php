@@ -130,6 +130,23 @@ final class ContentCreate implements WriteOperation {
 					'status' => 'draft',
 				],
 			],
+			moreExamples: [
+				// A published page that decides where it lives at the moment it
+				// is created: its address, the page it sits under, and the
+				// template the theme renders it through. Publishing needs a
+				// further permission than saving a draft does.
+				[
+					'operation' => 'content-create',
+					'arguments' => [
+						'type'     => 'page',
+						'title'    => 'Pricing',
+						'status'   => 'publish',
+						'slug'     => 'pricing',
+						'parent'   => 42,
+						'template' => 'templates/full-width.php',
+					],
+				],
+			],
 		);
 	}
 

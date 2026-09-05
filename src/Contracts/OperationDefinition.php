@@ -143,24 +143,25 @@ final class OperationDefinition {
 	 * PHPDoc uses array shorthand rather than generic list syntax because WPCS's
 	 * IncorrectTypeHint sniff does not understand generics.
 	 *
-	 * @param string                $id                   Stable kebab-case operation identifier.
-	 * @param Domain                $domain               The product domain.
-	 * @param Mode                  $mode                 Whether the operation reads or writes.
-	 * @param string                $description          Safe human-readable outcome statement.
-	 * @param array<string, mixed>  $inputSchema          Strict input schema.
-	 * @param array<string, mixed>  $outputSchema         Output schema for OperationResult data.
-	 * @param int                   $schemaVersion        Version of the schema pair, minimum 1.
-	 * @param string[]              $requiredCapabilities WordPress capabilities.
-	 * @param Risk                  $risk                 Blast-radius classification.
-	 * @param bool                  $isReadOnly           True when nothing is mutated.
-	 * @param bool                  $isDestructive        True when state could be lost without a snapshot.
-	 * @param bool                  $isIdempotent         True when re-applying yields the same state.
-	 * @param PreviewPolicy         $previewPolicy        Whether the plan phase is mandatory.
-	 * @param SnapshotPolicy        $snapshotPolicy       Whether pre-change state is captured.
-	 * @param RollbackPolicy        $rollbackPolicy       Whether the write can be reversed.
-	 * @param ModuleId              $module               The single implementing module.
-	 * @param array<string, string> $supportedVersions    Dependency version ranges.
-	 * @param array<string, mixed>  $example              At least one usage example.
+	 * @param string                           $id                   Stable kebab-case operation identifier.
+	 * @param Domain                           $domain               The product domain.
+	 * @param Mode                             $mode                 Whether the operation reads or writes.
+	 * @param string                           $description          Safe human-readable outcome statement.
+	 * @param array<string, mixed>             $inputSchema          Strict input schema.
+	 * @param array<string, mixed>             $outputSchema         Output schema for OperationResult data.
+	 * @param int                              $schemaVersion        Version of the schema pair, minimum 1.
+	 * @param string[]                         $requiredCapabilities WordPress capabilities.
+	 * @param Risk                             $risk                 Blast-radius classification.
+	 * @param bool                             $isReadOnly           True when nothing is mutated.
+	 * @param bool                             $isDestructive        True when state could be lost without a snapshot.
+	 * @param bool                             $isIdempotent         True when re-applying yields the same state.
+	 * @param PreviewPolicy                    $previewPolicy        Whether the plan phase is mandatory.
+	 * @param SnapshotPolicy                   $snapshotPolicy       Whether pre-change state is captured.
+	 * @param RollbackPolicy                   $rollbackPolicy       Whether the write can be reversed.
+	 * @param ModuleId                         $module               The single implementing module.
+	 * @param array<string, string>            $supportedVersions    Dependency version ranges.
+	 * @param array<string, mixed>             $example              At least one usage example.
+	 * @param array<int, array<string, mixed>> $moreExamples Further examples, one per distinct mode.
 	 *
 	 * @throws InvalidArgumentException When any contract rule is violated.
 	 *
@@ -188,6 +189,7 @@ final class OperationDefinition {
 		public readonly ModuleId $module,
 		public readonly array $supportedVersions,
 		public readonly array $example,
+		public readonly array $moreExamples = [],
 	) {
 		if ( 1 !== preg_match( self::ID_PATTERN, $id ) ) {
 			throw new InvalidArgumentException( "Operation id '{$id}' is not lower-case kebab-case." );
@@ -219,6 +221,14 @@ final class OperationDefinition {
 		}
 		if ( [] === $example ) {
 			throw new InvalidArgumentException( "Operation '{$id}' must provide a usage example." );
+		}
+		// A further example that names another operation is a copy-paste, and the
+		// catalog is the one surface where a caller cannot tell the difference:
+		// it reads the arguments and sends them to the id it asked about.
+		foreach ( $moreExamples as $further ) {
+			if ( [] === $further || ! isset( $further['operation'] ) || $further['operation'] !== $id ) {
+				throw new InvalidArgumentException( "Operation '{$id}': every further example must name this operation." );
+			}
 		}
 		if ( Domain::System === $domain && Mode::Write === $mode ) {
 			throw new InvalidArgumentException( "Operation '{$id}': the system domain has no write dispatcher." );
@@ -267,5 +277,23 @@ final class OperationDefinition {
 	public function dispatcherName(): string {
 		return $this->domain->value . '-' . $this->mode->value;
 	}
+
+	/**
+	 * Every usage example, the primary one first.
+	 *
+	 * The catalog publishes the list rather than the single example because it is
+	 * what a client reads before its first call. One example per operation makes
+	 * the simplest path the only documented one, and an operation with genuinely
+	 * distinct modes — a custom menu link against a page item, a draft against a
+	 * published page — then teaches a shape that is wrong for the other modes.
+	 *
+	 * @return array<int, array<string, mixed>> The examples, never empty.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+	 */
+	public function examples(): array {
+		return array_merge( [ $this->example ], $this->moreExamples );
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 }

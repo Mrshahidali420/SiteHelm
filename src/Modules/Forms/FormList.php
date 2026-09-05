@@ -102,7 +102,7 @@ final class FormList {
 			supportedVersions: FormsPresence::supportedVersions(),
 			example: [
 				'operation' => 'form-list',
-				'arguments' => new \stdClass(),
+				'arguments' => [],
 			],
 		);
 	}

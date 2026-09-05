@@ -39,9 +39,14 @@ use SiteHelm\Contracts\PermissionMode;
  * A listing describes each operation but does not carry its input and output
  * schemas. A dispatcher holding a dozen operations would otherwise spend most of
  * a client's context window on schemas for operations it will never call, and
- * the schemas are the largest part by far. Each entry keeps its usage example,
- * which states the argument shape concretely, and the catalog names the
+ * the schemas are the largest part by far. Each entry keeps its usage examples,
+ * which state the argument shape concretely, and the catalog names the
  * operation that returns one full schema on demand.
+ *
+ * An operation publishes more than one example when it has genuinely distinct
+ * modes. One example makes the simplest path the only documented one, and a
+ * client that copies it then writes a custom menu link where it meant to point
+ * at a page, because the entry never showed the other shape.
  *
  * @package SiteHelm
  */
@@ -184,7 +189,7 @@ final class CatalogBuilder {
 				'rollbackPolicy'       => $definition->rollbackPolicy->value,
 				'available'            => null === $blocked_reason,
 				'blockedReason'        => $blocked_reason,
-				'example'              => $definition->example,
+				'examples'             => $definition->examples(),
 			]
 		);
 	}

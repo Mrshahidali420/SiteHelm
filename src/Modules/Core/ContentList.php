@@ -151,6 +151,30 @@ final class ContentList {
 					'limit' => 20,
 				],
 			],
+			moreExamples: [
+				// The second page of every page on the site, whatever status it
+				// is in. Paging is "limit" and "offset", not a page number, and
+				// the default status filter hides drafts until "any" asks for
+				// them.
+				[
+					'operation' => 'content-list',
+					'arguments' => [
+						'type'   => 'page',
+						'status' => 'any',
+						'limit'  => 20,
+						'offset' => 20,
+					],
+				],
+				// Children of one page, which is how a section of the site is
+				// read without listing everything first.
+				[
+					'operation' => 'content-list',
+					'arguments' => [
+						'type'   => 'page',
+						'parent' => 42,
+					],
+				],
+			],
 		);
 	}
 

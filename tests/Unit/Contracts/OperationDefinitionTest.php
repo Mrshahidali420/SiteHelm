@@ -302,6 +302,61 @@ final class OperationDefinitionTest extends TestCase {
 		$this->makeDefinition( [ 'example' => [] ] );
 	}
 
+	/**
+	 * A further example that names another operation is a copy-paste, and the
+	 * catalog is the one surface where the mistake is invisible: a client reads
+	 * the arguments and sends them to the id it asked about.
+	 */
+	public function test_rejects_a_further_example_naming_another_operation(): void {
+		$this->expectException( InvalidArgumentException::class );
+		$this->makeDefinition(
+			[
+				'moreExamples' => [
+					[
+						'operation' => 'system-integrations',
+						'arguments' => [],
+					],
+				],
+			]
+		);
+	}
+
+	public function test_rejects_an_empty_further_example(): void {
+		$this->expectException( InvalidArgumentException::class );
+		$this->makeDefinition( [ 'moreExamples' => [ [] ] ] );
+	}
+
+	/**
+	 * The primary example stays first: it is the one a client reads if it reads
+	 * only one, so the simplest call has to be the one at the top.
+	 */
+	public function test_examples_lists_the_primary_one_first(): void {
+		$further    = [
+			'operation' => 'system-environment',
+			'arguments' => [ 'verbose' => true ],
+		];
+		$definition = $this->makeDefinition( [ 'moreExamples' => [ $further ] ] );
+
+		$this->assertSame(
+			[
+				[
+					'operation' => 'system-environment',
+					'arguments' => [],
+				],
+				$further,
+			],
+			$definition->examples()
+		);
+	}
+
+	/**
+	 * An operation that declares no further examples still answers with a list,
+	 * so the catalog never has to special-case the single-example entry.
+	 */
+	public function test_examples_answers_a_list_of_one_by_default(): void {
+		$this->assertCount( 1, $this->makeDefinition()->examples() );
+	}
+
 	public function test_valid_write_definition_reports_write_dispatcher(): void {
 		$definition = $this->makeDefinition(
 			[
