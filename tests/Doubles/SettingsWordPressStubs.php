@@ -65,6 +65,41 @@ trait SettingsWordPressStubs {
 	private array $cacheDeletes = [];
 
 	/**
+	 * Theme modification name => the stored value.
+	 *
+	 * THE SECOND STORE, doubled the same way the first one is: set_theme_mod()
+	 * mutates it and get_theme_mod() reads it back, so a logo write and the
+	 * read-back that judges it meet over one piece of state.
+	 *
+	 * @var array<string, mixed>
+	 */
+	private array $themeMods = [];
+
+	/**
+	 * Every theme-modification write, in order, as [ name, value ]; a removal
+	 * records null.
+	 *
+	 * @var array<int, array{0: string, 1: mixed}>
+	 */
+	private array $themeModWrites = [];
+
+	/**
+	 * Theme feature => whether the doubled theme declares it.
+	 *
+	 * @var array<string, bool>
+	 */
+	private array $themeSupports = [
+		'custom-logo' => true,
+	];
+
+	/**
+	 * Attachment identifier => its image metadata, for the ids that are images.
+	 *
+	 * @var array<int, array<string, mixed>>
+	 */
+	private array $settingsImages = [];
+
+	/**
 	 * Post identifier => the page `get_post()` answers with.
 	 *
 	 * @var array<int, WP_Post>
@@ -80,6 +115,7 @@ trait SettingsWordPressStubs {
 		$this->options = [
 			'blogname'               => 'Example Site',
 			'blogdescription'        => 'Just another site',
+			'site_icon'              => '0',
 			'timezone_string'        => 'UTC',
 			'date_format'            => 'F j, Y',
 			'time_format'            => 'g:i a',
@@ -124,6 +160,40 @@ trait SettingsWordPressStubs {
 			fn( $post_id ) => $this->settingsPages[ (int) $post_id ] ?? null
 		);
 
+		Functions\when( 'get_theme_mod' )->alias(
+			fn( $name, $default_value = false ) => $this->themeMods[ (string) $name ] ?? $default_value
+		);
+
+		Functions\when( 'set_theme_mod' )->alias(
+			function ( $name, $value ): void {
+				$name                             = (string) $name;
+				$this->themeModWrites[]   = [ $name, $value ];
+				$this->themeMods[ $name ] = $value;
+			}
+		);
+
+		Functions\when( 'remove_theme_mod' )->alias(
+			function ( $name ): void {
+				$name                   = (string) $name;
+				$this->themeModWrites[] = [ $name, null ];
+				unset( $this->themeMods[ $name ] );
+			}
+		);
+
+		Functions\when( 'get_stylesheet' )->justReturn( 'doubled-theme' );
+
+		Functions\when( 'current_theme_supports' )->alias(
+			fn( $feature ) => $this->themeSupports[ (string) $feature ] ?? false
+		);
+
+		Functions\when( 'wp_attachment_is_image' )->alias(
+			fn( $attachment_id ) => isset( $this->settingsImages[ (int) $attachment_id ] )
+		);
+
+		Functions\when( 'wp_get_attachment_metadata' )->alias(
+			fn( $attachment_id ) => $this->settingsImages[ (int) $attachment_id ] ?? false
+		);
+
 		Functions\when( 'flush_rewrite_rules' )->alias(
 			function ( $hard = true ): void {
 				$this->rewriteFlushes[] = (bool) $hard;
@@ -137,6 +207,23 @@ trait SettingsWordPressStubs {
 				return true;
 			}
 		);
+	}
+
+	/**
+	 * Seeds one image the media library will answer for.
+	 *
+	 * Square and 512 across by default, which is the smallest a site icon may
+	 * be, so a test that cares about size has to say so.
+	 *
+	 * @param int $attachment_id The attachment identifier.
+	 * @param int $width         The image width in pixels.
+	 * @param int $height        The image height in pixels.
+	 */
+	private function seedSettingsImage( int $attachment_id, int $width = 512, int $height = 512 ): void {
+		$this->settingsImages[ $attachment_id ] = [
+			'width'  => $width,
+			'height' => $height,
+		];
 	}
 
 	/**

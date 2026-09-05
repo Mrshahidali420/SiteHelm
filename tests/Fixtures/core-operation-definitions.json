@@ -1881,6 +1881,16 @@
                         "maxLength": 250,
                         "description": "The site tagline. An empty string clears it."
                     },
+                    "siteIcon": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "The media library image used as the browser tab icon and app icon, or 0 to remove it. It must be at least 512 by 512 pixels, because WordPress generates every smaller size from it, and square or it is cropped."
+                    },
+                    "siteLogo": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "The media library image the theme shows as the site logo, or 0 to remove it. Only themes that declare logo support show one; this is refused on a theme that does not."
+                    },
                     "timezone": {
                         "type": "string",
                         "maxLength": 64,
@@ -2109,6 +2119,12 @@
                             "tagline": {
                                 "type": "string"
                             },
+                            "siteIcon": {
+                                "type": "integer"
+                            },
+                            "siteLogo": {
+                                "type": "integer"
+                            },
                             "timezone": {
                                 "type": "string"
                             },
@@ -2158,6 +2174,8 @@
                         "required": [
                             "title",
                             "tagline",
+                            "siteIcon",
+                            "siteLogo",
                             "timezone",
                             "dateFormat",
                             "timeFormat",
