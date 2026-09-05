@@ -43,6 +43,16 @@ an operation behaves.
   property names it accepts.
 
 ### Added
+- **A theme's own files can be read before anything replaces them.** SiteHelm could install a
+  theme and switch to one, but it could not tell you what the theme you were about to change
+  currently does, and theme file names are not guessable: the same header is `header.php` in one
+  theme generation and `template-parts/header/site-header.php` in the next. `system-theme-file-list`
+  lists what a theme ships, with each file's size and when it was last written, and
+  `system-theme-file-read` returns one of them. Both read only, both open to anyone who may
+  administer the site. A path that walks out of the theme is refused twice over — once on how it
+  is written and once on where it actually lands, so a symlink pointing somewhere else on the
+  server reads nothing. Long listings are capped and say so; a file over 256 KB and a file that
+  is not text are refused outright rather than returned half-complete or mangled.
 - **A plugin or theme can be installed from a zip you already uploaded.** Until now the only
   source was WordPress.org by slug, so a theme you had built yourself — a child theme being
   worked on, a plugin that is not in the directory — had to go up through wp-admin by hand,

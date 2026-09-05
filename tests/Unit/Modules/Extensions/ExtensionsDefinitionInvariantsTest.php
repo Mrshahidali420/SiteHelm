@@ -61,6 +61,8 @@ final class ExtensionsDefinitionInvariantsTest extends TestCase {
 	private const OPERATION_IDS = [
 		'system-plugin-list',
 		'system-theme-list',
+		'system-theme-file-list',
+		'system-theme-file-read',
 	];
 
 	/**
@@ -139,8 +141,8 @@ final class ExtensionsDefinitionInvariantsTest extends TestCase {
 		}
 	}
 
-	public function test_the_module_contributes_two_reads_and_no_writes(): void {
-		$this->assertCount( 2, $this->registryWithExtensionsModule()->forDispatcher( self::OWN_DISPATCHER ) );
+	public function test_the_module_contributes_four_reads_and_no_writes(): void {
+		$this->assertCount( 4, $this->registryWithExtensionsModule()->forDispatcher( self::OWN_DISPATCHER ) );
 	}
 
 	// ---------------------------------------------------- definition invariants
@@ -234,19 +236,52 @@ final class ExtensionsDefinitionInvariantsTest extends TestCase {
 	}
 
 	/**
-	 * Neither operation takes an argument.
+	 * Neither inventory listing takes an argument.
 	 *
 	 * The whole inventory is the answer, and an input that let a caller filter it
 	 * would be a filter applied after the capability check rather than a
 	 * narrowing of what the caller may see — no safer, and one more surface.
+	 *
+	 * THE TWO THEME-FILE READS ARE DELIBERATELY NOT IN THIS LIST. They name a
+	 * theme and a path because there is no whole answer for them to give: a theme
+	 * is a directory of files, and reading it means saying which one.
 	 */
-	public function test_neither_operation_accepts_an_argument(): void {
+	public function test_neither_inventory_listing_accepts_an_argument(): void {
+		$inventory = [ 'system-plugin-list', 'system-theme-list' ];
+
 		foreach ( $this->registeredDefinitions() as $definition ) {
+			if ( ! in_array( $definition->id, $inventory, true ) ) {
+				continue;
+			}
+
 			$this->assertEquals(
 				new \stdClass(),
 				$definition->inputSchema['properties'] ?? null,
 				"Operation '{$definition->id}' must take no arguments."
 			);
+		}
+	}
+
+	/**
+	 * The theme-file reads accept a path and nothing that could become one.
+	 *
+	 * A read that took a `root`, a `directory` or an absolute `file` would move
+	 * the containment check's starting point out of the operation and into the
+	 * caller's hands, which is the whole thing the gate exists to prevent. The
+	 * property names are pinned so that surface cannot be widened quietly.
+	 */
+	public function test_the_theme_file_reads_expose_no_property_that_could_move_the_theme_root(): void {
+		$forbidden = [ 'root', 'directory', 'dir', 'file', 'absolute', 'base', 'realpath' ];
+
+		foreach ( $this->registeredDefinitions() as $definition ) {
+			if ( ! str_starts_with( $definition->id, 'system-theme-file-' ) ) {
+				continue;
+			}
+
+			$properties = array_keys( (array) ( $definition->inputSchema['properties'] ?? [] ) );
+
+			$this->assertSame( [], array_intersect( $forbidden, $properties ) );
+			$this->assertSame( [], array_diff( $properties, [ 'theme', 'path' ] ) );
 		}
 	}
 

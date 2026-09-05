@@ -1,6 +1,6 @@
 # Operations reference
 
-SiteHelm exposes **105 operations** through **11 MCP tools**, called dispatchers. Every operation is
+SiteHelm exposes **107 operations** through **11 MCP tools**, called dispatchers. Every operation is
 declared once, in code, with a strict input schema (`additionalProperties: false`), a required
 capability, a risk level, and preview, snapshot, and rollback policies. That declaration is the
 contract the gateway enforces and the catalogue an agent discovers.
@@ -428,7 +428,7 @@ what is actually in the database, so a restore puts back what was really there.
 
 ## System
 
-### `system-read` — 9 operations
+### `system-read` — 11 operations
 
 | Operation | Does | Capability |
 |---|---|---|
@@ -441,6 +441,8 @@ what is actually in the database, so a restore puts back what was really there.
 | `audit-list` | Reads the change ledger: what changed, when, by whom, and what can be rolled back | `manage_options` |
 | `system-plugin-list` | Lists every plugin installed on this site with its version, whether it is active, whether the network activated it, and whether an update is waiting | `manage_options` |
 | `system-theme-list` | Lists every theme installed on this site with its version, which one is live, and whether an update is waiting | `manage_options` |
+| `system-theme-file-list` | Lists the files inside an installed theme, with the size and last-modified time of each, so a template can be found before it is read or replaced | `manage_options` |
+| `system-theme-file-read` | Reads one text file out of an installed theme; refuses a file over 256 KB and a file that is not text rather than returning part of it or a corrupted copy | `manage_options` |
 
 Start every session with `system-connection`, then `system-integrations`. It costs one call and
 tells an agent what is actually available before it plans anything.
