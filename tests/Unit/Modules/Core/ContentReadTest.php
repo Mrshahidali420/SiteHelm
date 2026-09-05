@@ -35,6 +35,11 @@ final class ContentReadTest extends TestCase {
 		// Every content read now asks for the page template, which lives in
 		// protected meta rather than in a post column.
 		Functions\when( 'get_post_meta' )->justReturn( '' );
+
+		// And for the fields a theme or plugin registered on the type, which the
+		// record reports beside the writable ones. A site with no registrations
+		// is the ordinary case these tests describe.
+		Functions\when( 'get_registered_meta_keys' )->justReturn( [] );
 	}
 
 	private function makeContext(): OperationContext {

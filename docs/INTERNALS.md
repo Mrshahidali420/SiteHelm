@@ -4050,3 +4050,45 @@ failing the whole read, because the rules from every other sheet still stand.
 `ContentStyleCheck::MAX_RULES` (100) bounds how many matching rules are listed. The winners are
 computed over **all** matches before that truncation, so a capped list never changes the answer
 to "what wins" — and `matchCount` reports the real total beside `rulesTruncated`.
+
+
+## 69. Four ways an error told the operator the wrong thing
+
+Each of these was found by using the plugin, not by reading it. They share a shape: the
+software behaved as written, and what it said about itself sent the operator somewhere else.
+
+**A target that does not exist is not a permissions problem.** `PolicyEngine::authorize()`
+evaluates a declared meta-capability against `arguments['id']`, and `map_meta_cap` resolves a
+meta-capability against a missing post to `do_not_allow`. So an administrator who mistyped an
+id got `forbidden` naming a capability they hold, which sends them to audit roles. The
+operations declaring the governing primitive instead — `content-get` declares `edit_posts` —
+always answered the same mistake with `target_not_found` from the handler, so which diagnosis
+an operator received depended on nothing but which capability the operation happened to
+declare, and twenty-three operations declare the meta form. When the precise check fails *and*
+`get_post()` returns null, the gate now falls back to the primitive exactly as the target-less
+branch does, and lets the handler give the real answer. Nothing is loosened: a caller without
+the primitive is still refused, and every handler re-asks the precise question before it
+reveals anything. The probe sits on the refusal path only, so an authorized call still costs
+one check.
+
+**`retryable` says whether these bytes work next time.** It was true for `invalid_input` and
+`stale_plan`, both of which are cleared by sending a *different* request. A session returned
+`invalid_input` with `retryable: true` beside "identical input always fails identically". Both
+are false now; the "you can fix this" meaning belongs to `remediation`, where it already was.
+Interpretation I9.
+
+**A call with the envelope nested one level too deep is not a catalog request.** `Dispatcher`
+lists the catalog when `operation` is absent. A client that sent `{arguments: {operation: …,
+arguments: …}}` got the whole catalog back and no hint of the mistake. When no operation is
+named but `arguments` contains an `operation` key, that is now `invalid_input` naming the
+nesting — nothing legitimate has that shape, because with no operation named there is no
+schema a nested `operation` key could belong to.
+
+**`content-get` reported an empty `meta` on a post covered in custom fields.** `meta` holds
+only what an administrator has allowed SiteHelm to write, which is the right list for
+`content-meta-update` and the wrong answer to "what is on this post". A sibling member,
+`registeredMeta`, reports fields the theme or a plugin registered with `show_in_rest` and
+their values — readable, not writable, with the status screen's allowlist named as what makes
+one writable. It is built in `ContentFields::publicRecord()` and deliberately **not** in
+`read()`: `read()` feeds snapshots, and a snapshot capturing a key the write path refuses
+would record state no restore could put back.

@@ -139,3 +139,19 @@ The amendment is also out of order against the contract's own Change Policy, whi
 **Recorded in the contract (2026-09-05).** The stable-error-code table gains two rows marked with the date they were added, the count above it changes, and the document's Status carries a dated amendment line, following the shape of the 2026-07-26 amendment so an auditor reading the contract alone sees the change in place. The frozen literal list in `tests/Unit/Contracts/EnumsTest.php` is extended in the same commit, because that test is the thing that would otherwise put the codes back.
 
 **Reversibility.** Cheap in one direction only. Removing either code would break a client that had learned to branch on it, but nothing forces a client to learn them, and the meaning of every previously existing code is untouched.
+
+---
+
+## I9. A flag said retry and the message beside it said never
+
+**Contract says.** The error envelope carries `retryable`, described as an indicator of whether retrying can help.
+
+**Why it needed a ruling.** A real session returned `invalid_input` with `retryable: true` and, in the very next field, the remediation "identical input always fails identically". `stale_plan` carried the same contradiction. The two readings of "can retrying help" had quietly diverged: one asks whether these bytes sent again may work, the other asks whether the caller can do anything about it. Under the second reading almost every refusal is retryable, which makes the flag say nothing; and a client that branches on the flag rather than reading the prose loops on a call that can never succeed.
+
+**Ruling.** `retryable` means the first reading only: whether sending this request again unchanged can succeed later. `invalid_input` and `stale_plan` become false. Correcting arguments is a different request, and approving a fresh plan token is a different request. Three codes remain true: `conflict`, `execution_failed`, `upstream_unavailable`.
+
+**Rationale.** The second reading already has a field. `remediation` is where "here is what you can do about this" lives, it is present on both codes, and it says the right thing in words — so the flag was not carrying information the caller lacked, only contradicting it. Narrowing costs a well-behaved client nothing, because a client following the remediation was never relying on the flag; it costs a naive client one wasted retry it used to make and now does not. The alternative, widening the documented meaning to match the shipped booleans, would have made the flag true for eight of thirteen codes and useless to branch on.
+
+**Recorded in the contract (2026-09-06).** The `retryable` field row and the two affected Retryability cells are rewritten, and the Status carries a dated amendment line. `tests/Unit/Contracts/EnumsTest.php` pins both codes as false in a test naming the session that produced the contradiction, because that test is the thing that would otherwise put the old values back.
+
+**Reversibility.** Cheap. Nothing on the wire is renamed and no code changes meaning; only two booleans move, and they move toward what the prose beside them already said.
