@@ -423,6 +423,18 @@ chosen for a reason:
 3. **Existence** — `null === get_post( $post_id )` → `TargetNotFound`. Last,
    because it is the only step needing a query.
 
+**Three codes, not one, for "not available" (2026-09-05).** Step 2's
+`IntegrationUnavailable` means what it says here — a dependency this site does not have
+active — and nothing else. Two siblings carry the cases it used to absorb.
+`IntegrationUnlicensed` is a Pro operation on a site with no active Pro licence: the
+`Dispatcher`'s `ProCatalogue` branch and the add-on's `Licence::gate()` are the only two
+places that raise it. `UpstreamUnavailable` is a service *outside* this WordPress install
+that did not answer — the loopback fetch in `ContentRenderedRead`, and the add-on's
+WordPress.org package lookup — and it is the **only one of the three that
+`ErrorCode::isRetryable()` reports true**, because it is the only one the caller clears by
+waiting rather than by doing something. Sixty of the sixty-four raise sites were left
+alone; four moved. The contract amendment and the reasoning are interpretation I8.
+
 ---
 
 ## 8. WPCS conventions
@@ -1479,7 +1491,7 @@ edit the same option.
   refuses a switched-off operation with the **same `InvalidInput` message as an unknown
   operation**, so a client cannot tell the two apart. One deliberate exception sits before
   both: an operation the registry does not hold whose id is a key of
-  `Admin\ProCatalogue::OPERATIONS` refuses with `IntegrationUnavailable`, naming SiteHelm
+  `Admin\ProCatalogue::OPERATIONS` refuses with `IntegrationUnlicensed`, naming SiteHelm
   Pro and pointing the remediation at `ProCatalogue::PRICING_URL`. The ids are this
   plugin's own published constants, so nothing untrusted is echoed; a **registered** Pro
   operation the operator switched off still gets the generic answer, because the add-on is
@@ -1733,7 +1745,7 @@ the test bootstrap includes the file. `tools/build-plugin-zip.php` packs the SDK
 **add-on** (id `37704`, parent `37703`): its `sitehelm_pro_fs()` waits for
 `sitehelm_fs_loaded` (or finds the parent already active), and `Licence::gate()` is now
 `function_exists( 'sitehelm_pro_fs' ) && sitehelm_pro_fs()->can_use_premium_code()`, throwing
-the same `OperationException(IntegrationUnavailable, …)` when it is false. Licence entry,
+the same `OperationException(IntegrationUnlicensed, …)` when it is false. Licence entry,
 activation and renewals are Freemius screens; the Health tab keeps a read-only Pro section
 that states the licence state and links there. **The Account page is not in the menu**, and
 the Add-Ons page is not either. SiteHelm is installed on sites its buyer does not own, and
@@ -3314,7 +3326,8 @@ beats none.
 `MAX_HTML_BYTES` (64 KiB) bounds the markup echoed back and sets `htmlTruncated`;
 `RenderedPage::MAX_HEADINGS` (100) bounds the outline, but `h1Count` counts every H1 past it,
 because "is there exactly one H1" is the question that figure answers and a cap must not hide
-the second one. A transport failure is `IntegrationUnavailable` and never repeats the
+the second one. A transport failure is `UpstreamUnavailable` — retryable, because the site's own front end
+being briefly unreachable is a wait, not a misconfiguration — and it never repeats the
 transport's own message, which carries host names and occasionally proxy credentials.
 
 ## 54. The ceiling on an Elementor document read (REQ-0112)

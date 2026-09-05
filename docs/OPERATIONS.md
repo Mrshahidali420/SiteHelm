@@ -65,7 +65,7 @@ free operation may declare it — the test suite refuses one that tries.
 
 ## Error codes
 
-Exactly eleven, closed set. A refusal always carries an operator-facing message and, where one
+Exactly thirteen, closed set. A refusal always carries an operator-facing message and, where one
 exists, a remedy. It never carries a stack trace, filesystem path, SQL fragment, database error
 string, authorization header, or resolved IP address.
 
@@ -73,7 +73,9 @@ string, authorization header, or resolved IP address.
 |---|---|---|
 | `AuthenticationFailed` | No authenticated WordPress user | Check the Application Password and that it is sent over HTTPS |
 | `Forbidden` | The user lacks the capability for this object | Use an account with the required role |
-| `IntegrationUnavailable` | The required plugin is not active | Activate Elementor, ACF, or Meta Box |
+| `IntegrationUnavailable` | The plugin or module this operation needs is not active on the site | Activate Elementor, ACF, or Meta Box |
+| `IntegrationUnlicensed` | The operation is part of SiteHelm Pro and this site has no active Pro licence | Buy or activate a Pro licence |
+| `UpstreamUnavailable` | A service outside this site did not answer — WordPress.org, or the site fetching its own front end | Wait and try the same call again; this is the one refusal that clears on its own |
 | `UnsupportedVersion` | The plugin is present but below its floor | Update the plugin |
 | `InvalidInput` | Arguments failed the input schema or a validation rule | Correct the arguments; the message names the offending key |
 | `TargetNotFound` | The addressed object does not exist | Re-read to get a current identifier |

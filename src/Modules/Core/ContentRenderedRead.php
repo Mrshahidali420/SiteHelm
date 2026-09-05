@@ -350,7 +350,7 @@ final class ContentRenderedRead {
 		// and none of that belongs in an answer sent back over the wire.
 		if ( is_wp_error( $response ) || ! is_array( $response ) ) {
 			throw new OperationException(
-				ErrorCode::IntegrationUnavailable,
+				ErrorCode::UpstreamUnavailable,
 				'This site could not fetch its own front end from the server it runs on.',
 				'Run the loopback request check in Tools then Site Health; a host firewall or a server-level password usually explains it.'
 			);
