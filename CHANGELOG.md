@@ -40,6 +40,18 @@ an operation behaves.
   subjects and invites a call with no operation to list what this site publishes on it.
 
 ### Fixed
+- **Writing a custom field was refused on every site.** `content-meta-update` writes only the
+  fields a site has named, and there was nowhere to name them: the list it read was an option
+  nothing ever wrote, so the operation listed itself as available and then refused every
+  request it was given. The Status screen now has a box for those field names, one per line,
+  and a theme or plugin can add its own through the `sitehelm_meta_allowlist` filter. Both go
+  through the same rules, so a name SiteHelm would never write — anything starting with an
+  underscore, anything with a space in it — is refused as it is typed rather than sitting in
+  the list looking like it works.
+- **A number or a yes/no value was refused as a custom field.** Fields holding a price, a
+  count or a switch had to be sent as text or they were turned away. They can now be sent as
+  what they are; WordPress stores custom fields as text, so the preview says exactly what will
+  be stored — `1.0` becomes `1`, and true and false become `1` and `0`.
 - **"View details" answered "Plugin not found".** Both routes into the plugin details panel
   — the link beside the version on the Plugins screen, and "View version X details" in the
   update row — asked the WordPress.org directory about a plugin that has never been in it.

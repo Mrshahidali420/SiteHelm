@@ -216,23 +216,38 @@ final class ContentFields {
 	 * builder payloads, edit locks, and attachment internals through an
 	 * allowlist intended for ordinary custom fields.
 	 *
+	 * THERE ARE TWO WAYS ONTO THIS LIST AND ONE WAY THROUGH IT. An administrator
+	 * saves keys on the SiteHelm status screen, and a theme or plugin may add its
+	 * own through the filter below. Both sources are then validated by the same
+	 * loop, so the filter is a way to name a field, not a way around the rules
+	 * about which fields may be named: a filter that returns `_edit_lock` gets
+	 * the same refusal a person typing it into the screen would get.
+	 *
 	 * @return string[] The permitted meta keys in ascending order.
 	 */
 	public function allowlist(): array {
 		$stored = get_option( self::META_ALLOWLIST_OPTION, [] );
 		if ( ! is_array( $stored ) ) {
-			return [];
+			$stored = [];
+		}
+
+		/**
+		 * Filters the custom fields SiteHelm is allowed to write.
+		 *
+		 * A theme or plugin that ships its own fields can declare them here
+		 * instead of asking the site owner to type them in. Every key is still
+		 * validated afterwards, and protected keys are still refused.
+		 *
+		 * @param string[] $stored The keys saved on the SiteHelm status screen.
+		 */
+		$declared = apply_filters( 'sitehelm_meta_allowlist', $stored );
+		if ( ! is_array( $declared ) ) {
+			$declared = $stored;
 		}
 
 		$keys = [];
-		foreach ( $stored as $key ) {
-			if ( ! is_string( $key ) || '' === $key || str_starts_with( $key, '_' ) ) {
-				continue;
-			}
-			if ( strlen( $key ) > self::MAX_META_KEY_LENGTH ) {
-				continue;
-			}
-			if ( 1 !== preg_match( '/^[A-Za-z0-9_-]+$/', $key ) ) {
+		foreach ( $declared as $key ) {
+			if ( ! is_string( $key ) || ! self::is_writable_field_name( $key ) ) {
 				continue;
 			}
 			$keys[] = $key;
@@ -242,6 +257,29 @@ final class ContentFields {
 		sort( $keys, SORT_STRING );
 
 		return $keys;
+	}
+
+	/**
+	 * Whether a name is one SiteHelm is willing to write at all.
+	 *
+	 * THE ANSWER LIVES HERE BECAUSE MORE THAN ONE PLACE ASKS IT. The status
+	 * screen asks before saving a name so an owner is told at once that a name
+	 * will not work, and {@see self::allowlist()} asks again before any write,
+	 * because a name can also arrive through a filter that never went near the
+	 * screen. Two copies of this rule would drift, and the copy that drifted
+	 * would be the one nobody was looking at.
+	 *
+	 * @param string $key The field name to judge.
+	 */
+	public static function is_writable_field_name( string $key ): bool {
+		if ( '' === $key || str_starts_with( $key, '_' ) ) {
+			return false;
+		}
+		if ( strlen( $key ) > self::MAX_META_KEY_LENGTH ) {
+			return false;
+		}
+
+		return 1 === preg_match( '/^[A-Za-z0-9_-]+$/', $key );
 	}
 
 	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid

@@ -549,7 +549,7 @@ final class ContentMetaUpdateTest extends TestCase {
 	 * accepted, promised as an integer, and compared against the string the read
 	 * path projects.
 	 */
-	public function test_an_entry_whose_value_is_not_a_string_is_invalid_input(): void {
+	public function test_an_entry_whose_value_is_not_a_scalar_is_invalid_input(): void {
 		$this->assertRefusedWithoutWriting(
 			$this->planAndApply(
 				[
@@ -557,14 +557,60 @@ final class ContentMetaUpdateTest extends TestCase {
 					'meta' => [
 						[
 							'key'   => 'subtitle',
-							'value' => 7,
+							'value' => [ 'a list' ],
 						],
 					],
 				]
 			),
 			ErrorCode::InvalidInput,
-			'Every metadata entry must name a key and a text value.'
+			'A custom field value must be text, a number, or true or false.'
 		);
+	}
+
+	/**
+	 * A NUMBER IS A NUMBER UNTIL WORDPRESS STORES IT, and then it is text. The
+	 * promise has to be the text, because that is what a later read projects
+	 * back and what verification compares against; promising 321 and reading
+	 * "321" would fail a write that had done exactly what was asked.
+	 *
+	 * @dataProvider scalarValues
+	 *
+	 * @param mixed  $sent   The value as a caller sends it.
+	 * @param string $stored The text SiteHelm promises and writes.
+	 */
+	public function test_a_number_or_a_true_false_value_is_promised_as_the_text_wordpress_will_hold( mixed $sent, string $stored ): void {
+		$planned = $this->operation->planChange(
+			$this->currentState(),
+			[
+				'id'   => 42,
+				'meta' => [
+					[
+						'key'   => 'subtitle',
+						'value' => $sent,
+					],
+				],
+			],
+			$this->makeContext()
+		);
+
+		$this->assertSame( [ 'meta' => [ 'subtitle' => $stored ] ], $planned->payload );
+		$this->assertSame( $stored, $planned->afterFields['meta']['subtitle'] );
+	}
+
+	/**
+	 * What a caller may send, and the text it becomes.
+	 *
+	 * @return array<string, array{mixed, string}>
+	 */
+	public static function scalarValues(): array {
+		return [
+			'a whole number'      => [ 321, '321' ],
+			'a number with a dot' => [ 1.5, '1.5' ],
+			'a round float'       => [ 1.0, '1' ],
+			'true'                => [ true, '1' ],
+			'false'               => [ false, '0' ],
+			'text as before'      => [ 'A revised standfirst', 'A revised standfirst' ],
+		];
 	}
 
 	/**
@@ -587,7 +633,7 @@ final class ContentMetaUpdateTest extends TestCase {
 				]
 			),
 			ErrorCode::InvalidInput,
-			'Every metadata entry must name a key and a text value.'
+			'Every metadata entry must name a key.'
 		);
 	}
 
