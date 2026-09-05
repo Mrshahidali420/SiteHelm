@@ -72,6 +72,9 @@
                     "parent": {
                         "type": "integer"
                     },
+                    "menuOrder": {
+                        "type": "integer"
+                    },
                     "modifiedGmt": {
                         "type": "string"
                     },
@@ -160,6 +163,9 @@
                                 },
                                 "parent": {
                                     "type": "integer"
+                                },
+                                "menuOrder": {
+                                    "type": "integer"
                                 }
                             },
                             "required": [
@@ -169,7 +175,8 @@
                                 "title",
                                 "slug",
                                 "modifiedGmt",
-                                "parent"
+                                "parent",
+                                "menuOrder"
                             ],
                             "additionalProperties": false
                         }
@@ -805,6 +812,10 @@
                         "type": "string",
                         "maxLength": 5000,
                         "description": "Replacement excerpt."
+                    },
+                    "menuOrder": {
+                        "type": "integer",
+                        "description": "Where this item sits when its content type is ordered by hand rather than by date. Lower numbers come first, and 0 is the default every item starts at. Only content types registered with page-attribute support, and archives a theme sorts by it, take any notice."
                     }
                 },
                 "required": [
@@ -892,6 +903,10 @@
                             "publish"
                         ],
                         "description": "Initial status. Requesting publish additionally requires the publish capability."
+                    },
+                    "menuOrder": {
+                        "type": "integer",
+                        "description": "Where this item sits when its content type is ordered by hand rather than by date. Lower numbers come first, and 0 is the default every item starts at. Only content types registered with page-attribute support, and archives a theme sorts by it, take any notice."
                     }
                 },
                 "required": [

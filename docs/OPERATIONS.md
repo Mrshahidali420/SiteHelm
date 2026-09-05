@@ -130,8 +130,8 @@ links are listed per item, and `truncated` says when a page held more.
 
 | Operation | Does | Capability | Risk | Rollback |
 |---|---|---|---|---|
-| `content-create` | Creates a post, page, or custom post type item | `edit_posts` | medium | supported |
-| `content-update` | Updates title, content, excerpt, slug | `edit_post` | medium | supported |
+| `content-create` | Creates a post, page, or custom post type item, optionally at a chosen position in a hand-ordered type | `edit_posts` | medium | supported |
+| `content-update` | Updates title, content, excerpt, slug, or hand-ordered position | `edit_post` | medium | supported |
 | `content-status-set` | Publishes, drafts, schedules, or privatises | `edit_post` | medium | supported |
 | `content-featured-media-set` | Sets or clears the featured image | `edit_post` | medium | supported |
 | `content-meta-update` | Writes the custom fields a site administrator has named on the SiteHelm status screen | `edit_post` | high | supported |

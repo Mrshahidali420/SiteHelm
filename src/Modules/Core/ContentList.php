@@ -120,8 +120,9 @@ final class ContentList {
 								'slug'        => [ 'type' => 'string' ],
 								'modifiedGmt' => [ 'type' => 'string' ],
 								'parent'      => [ 'type' => 'integer' ],
+								'menuOrder'   => [ 'type' => 'integer' ],
 							],
-							'required'             => [ 'id', 'type', 'status', 'title', 'slug', 'modifiedGmt', 'parent' ],
+							'required'             => [ 'id', 'type', 'status', 'title', 'slug', 'modifiedGmt', 'parent', 'menuOrder' ],
 							'additionalProperties' => false,
 						],
 					],
@@ -322,7 +323,7 @@ final class ContentList {
 	/**
 	 * Projects the matches the caller may edit into client-facing summaries.
 	 *
-	 * The projection is exactly seven fields, sharing ContentFields'
+	 * The projection is exactly eight fields, sharing ContentFields'
 	 * publicRecord() names for the same values so a client sees one vocabulary.
 	 * Body, excerpt, terms, and meta are absent on purpose: a page of full
 	 * records is bulk the caller discards, and content-get already returns one
@@ -353,6 +354,7 @@ final class ContentList {
 				'slug'        => (string) $post->post_name,
 				'modifiedGmt' => (string) $post->post_modified_gmt,
 				'parent'      => (int) $post->post_parent,
+				'menuOrder'   => (int) ( $post->menu_order ?? 0 ),
 			];
 		}
 

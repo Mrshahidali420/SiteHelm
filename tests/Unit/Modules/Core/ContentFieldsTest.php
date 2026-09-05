@@ -41,6 +41,7 @@ final class ContentFieldsTest extends TestCase {
 		$post->post_content      = '<p>Original body.</p>';
 		$post->post_excerpt      = 'Original excerpt.';
 		$post->post_parent       = 0;
+		$post->menu_order        = 4;
 		$post->post_modified_gmt = '2026-07-26 10:00:00';
 
 		return $post;
@@ -206,6 +207,9 @@ final class ContentFieldsTest extends TestCase {
 		);
 		$this->assertSame( 7, $fields['featured_media'] );
 		$this->assertSame( 0, $fields['post_parent'] );
+		// An int, because that is what the column holds and what every promise
+		// about a position is compared against.
+		$this->assertSame( 4, $fields['menu_order'] );
 	}
 
 	public function test_public_record_maps_every_field_and_objectifies_empty_maps(): void {
@@ -224,6 +228,7 @@ final class ContentFieldsTest extends TestCase {
 		$this->assertSame( '<p>Original body.</p>', $record['content'] );
 		$this->assertSame( 'Original excerpt.', $record['excerpt'] );
 		$this->assertSame( 0, $record['parent'] );
+		$this->assertSame( 4, $record['menuOrder'] );
 		$this->assertSame( '2026-07-26 10:00:00', $record['modifiedGmt'] );
 		$this->assertSame( 0, $record['featuredMedia'] );
 		$this->assertInstanceOf( stdClass::class, $record['terms'] );

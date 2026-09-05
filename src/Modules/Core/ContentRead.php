@@ -66,6 +66,7 @@ final class ContentRead {
 					'content'       => [ 'type' => 'string' ],
 					'excerpt'       => [ 'type' => 'string' ],
 					'parent'        => [ 'type' => 'integer' ],
+					'menuOrder'     => [ 'type' => 'integer' ],
 					'modifiedGmt'   => [ 'type' => 'string' ],
 					'featuredMedia' => [ 'type' => 'integer' ],
 					'terms'         => [ 'type' => 'object' ],

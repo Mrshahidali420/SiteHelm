@@ -280,15 +280,15 @@ final class ContentRollbackApply implements WriteOperation {
 				$promised[ $field ] = (string) $state[ $field ];
 			}
 		}
-		// RESTORABLE_MEDIA_FIELDS values are not post columns and are recorded
-		// as integers, so they are promised as integers: a string here would make
-		// the promise disagree with the read-back, which reports featured_media
-		// as an int, and a correct rollback would verify as adjusted.
+		// The two lists below are recorded as integers, so they are promised as
+		// integers: a string here would make the promise disagree with the
+		// read-back, which reports featured_media and menu_order as ints, and a
+		// correct rollback would verify as adjusted.
 		// is_numeric() as well as array_key_exists(), because `(int) null` is 0 and
 		// a recorded 0 MEANS "restore to no featured image": promising a null as 0
 		// would have the rollback offer to delete a live featured image. A
 		// non-numeric recorded value is not something this restore may act on.
-		foreach ( ContentTarget::RESTORABLE_MEDIA_FIELDS as $field ) {
+		foreach ( array_merge( ContentTarget::RESTORABLE_MEDIA_FIELDS, ContentTarget::RESTORABLE_ORDER_FIELDS ) as $field ) {
 			if ( array_key_exists( $field, $state ) && is_numeric( $state[ $field ] ) ) {
 				$promised[ $field ] = (int) $state[ $field ];
 			}
@@ -558,13 +558,13 @@ final class ContentRollbackApply implements WriteOperation {
 			}
 		}
 
-		foreach ( ContentTarget::RESTORABLE_MEDIA_FIELDS as $field ) {
+		foreach ( array_merge( ContentTarget::RESTORABLE_MEDIA_FIELDS, ContentTarget::RESTORABLE_ORDER_FIELDS ) as $field ) {
 			if ( array_key_exists( $field, $planned->afterFields ) && is_numeric( $planned->afterFields[ $field ] ) ) {
 				$restore_state[ $field ] = (int) $planned->afterFields[ $field ];
 			}
 		}
 
-		// One loop where planChange() needed two, because both lists are copied
+		// One loop where planChange() needed two, because these lists are copied
 		// through unchanged — the shape work already happened when the promise was
 		// built. planChange() is deliberately NOT simplified to match: there the
 		// two loops differ in nothing today and would differ the moment either

@@ -769,6 +769,7 @@ final class ContentRollbackApplyTest extends TestCase {
 		$this->assertSame(
 			[
 				'featured_media' => 0,
+				'menu_order'     => 0,
 				'meta'           => [],
 				'post_content'   => '<p>Edited body.</p>',
 				'post_excerpt'   => 'Edited excerpt.',
@@ -1679,6 +1680,7 @@ final class ContentRollbackApplyTest extends TestCase {
 		$this->assertSame(
 			[
 				'featured_media' => 0,
+				'menu_order'     => 0,
 				'meta'           => [
 					'byline'   => 'Ada',
 					'subtitle' => 'Sub',

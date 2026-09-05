@@ -257,6 +257,9 @@ final class ContentTrashTest extends TestCase {
 
 		$this->assertSame(
 			[
+				// An integer, not a string, and the whole reason the order column
+				// is recorded through its own list.
+				'menu_order'   => 0,
 				'post_content' => '<p>Original body.</p>',
 				// Deliberately empty, and legal: most posts have no excerpt. It is
 				// what separates array_key_exists from isset or ! empty() in

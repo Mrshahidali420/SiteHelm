@@ -278,6 +278,67 @@ final class ContentUpdateTest extends TestCase {
 		$this->assertSame( "  Padded excerpt \n", $planned->afterFields['post_excerpt'] );
 	}
 
+	/**
+	 * A POSITION IS PROMISED AS A NUMBER, NOT AS THE TEXT OF ONE. Routed through
+	 * the text map it would be sanitized and promised as '3', and the read-back,
+	 * which projects the column as an int, would disagree with a write that had
+	 * landed exactly as asked. The operator would be told to undo a correct edit.
+	 */
+	public function test_a_position_is_promised_as_a_whole_number(): void {
+		$current = $this->operation->resolveTarget( [ 'id' => 42 ], $this->makeContext() );
+		$planned = $this->operation->planChange(
+			$current,
+			[
+				'id'        => 42,
+				'menuOrder' => 3,
+			],
+			$this->makeContext()
+		);
+
+		$this->assertSame( [ 'menu_order' => 3 ], $planned->afterFields );
+		$this->assertSame( [ 'menu_order' => 3 ], $planned->payload );
+	}
+
+	/**
+	 * Moving an item to the front of a hand ordering is a real edit, and 0 is
+	 * where it goes. An empty check rather than array_key_exists would read that
+	 * request as nothing having been asked for and refuse it.
+	 */
+	public function test_moving_an_item_to_the_front_is_a_change_rather_than_an_empty_request(): void {
+		$current = $this->operation->resolveTarget( [ 'id' => 42 ], $this->makeContext() );
+		$planned = $this->operation->planChange(
+			$current,
+			[
+				'id'        => 42,
+				'menuOrder' => 0,
+			],
+			$this->makeContext()
+		);
+
+		$this->assertSame( [ 'menu_order' => 0 ], $planned->payload );
+	}
+
+	public function test_a_position_is_promised_alongside_the_words_when_both_are_supplied(): void {
+		$current = $this->operation->resolveTarget( [ 'id' => 42 ], $this->makeContext() );
+		$planned = $this->operation->planChange(
+			$current,
+			[
+				'id'        => 42,
+				'title'     => 'Edited title',
+				'menuOrder' => 2,
+			],
+			$this->makeContext()
+		);
+
+		$this->assertSame(
+			[
+				'menu_order' => 2,
+				'post_title' => 'Edited title',
+			],
+			$planned->payload
+		);
+	}
+
 	public function test_plan_change_requires_at_least_one_changeable_field(): void {
 		$current = $this->operation->resolveTarget( [ 'id' => 42 ], $this->makeContext() );
 
@@ -286,6 +347,7 @@ final class ContentUpdateTest extends TestCase {
 			$this->fail( 'Expected OperationException' );
 		} catch ( OperationException $e ) {
 			$this->assertSame( ErrorCode::InvalidInput, $e->errorCode );
+			$this->assertStringContainsString( 'menuOrder', $e->getMessage(), 'The refusal names everything the caller could have sent.' );
 		}
 	}
 
@@ -302,6 +364,9 @@ final class ContentUpdateTest extends TestCase {
 
 		$this->assertSame(
 			[
+				// An integer, not a string, and the whole reason the order column
+				// is recorded through its own list.
+				'menu_order'   => 0,
 				'post_content' => '<p>Original body.</p>',
 				'post_excerpt' => 'Original excerpt.',
 				'post_id'      => 42,
