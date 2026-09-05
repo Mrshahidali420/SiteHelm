@@ -60,6 +60,7 @@ final class ContentReadTest extends TestCase {
 		$post->post_content      = '<p>Original body.</p>';
 		$post->post_excerpt      = '';
 		$post->post_parent       = 0;
+		$post->menu_order        = 4;
 		$post->post_modified_gmt = '2026-07-26 10:00:00';
 
 		Functions\when( 'get_post' )->justReturn( $post );

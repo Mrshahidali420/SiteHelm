@@ -56,29 +56,33 @@ final class ContentUpdate implements WriteOperation {
 			id: 'content-update',
 			domain: Domain::Content,
 			mode: Mode::Write,
-			description: 'Revise the title, body, or excerpt of one existing content item, keeping the prior revision available.',
+			description: 'Revise the title, body, excerpt, or hand-ordered position of one existing content item, keeping the prior revision available.',
 			inputSchema: [
 				'type'                 => 'object',
 				'properties'           => [
-					'id'      => [
+					'id'        => [
 						'type'        => 'integer',
 						'minimum'     => 1,
 						'description' => 'Identifier of the content item to revise.',
 					],
-					'title'   => [
+					'title'     => [
 						'type'        => 'string',
 						'maxLength'   => 255,
 						'description' => 'Replacement title.',
 					],
-					'content' => [
+					'content'   => [
 						'type'        => 'string',
 						'maxLength'   => 500000,
 						'description' => 'Replacement body.',
 					],
-					'excerpt' => [
+					'excerpt'   => [
 						'type'        => 'string',
 						'maxLength'   => 5000,
 						'description' => 'Replacement excerpt.',
+					],
+					'menuOrder' => [
+						'type'        => 'integer',
+						'description' => 'Where this item sits when its content type is ordered by hand rather than by date. Lower numbers come first, and 0 is the default every item starts at. Only content types registered with page-attribute support, and archives a theme sorts by it, take any notice.',
 					],
 				],
 				'required'             => [ 'id' ],
@@ -117,6 +121,20 @@ final class ContentUpdate implements WriteOperation {
 		'title'   => 'post_title',
 		'content' => 'post_content',
 		'excerpt' => 'post_excerpt',
+	];
+
+	/**
+	 * The one changeable property that is a whole number rather than text.
+	 *
+	 * SEPARATE FROM CHANGEABLE BECAUSE THE TWO ARE WRITTEN DIFFERENTLY. Every
+	 * property in that map is cast to a string and handed to the field
+	 * sanitizer, which is the right treatment for words and the wrong one for a
+	 * position: `menu_order` is projected as an integer on the way back out, so
+	 * a promise holding the string '3' would disagree with a read-back holding
+	 * 3, and a correct write would verify as adjusted.
+	 */
+	private const CHANGEABLE_ORDER = [
+		'menuOrder' => 'menu_order',
 	];
 
 	/**
@@ -174,10 +192,16 @@ final class ContentUpdate implements WriteOperation {
 			);
 		}
 
+		foreach ( self::CHANGEABLE_ORDER as $property => $field ) {
+			if ( array_key_exists( $property, $input ) ) {
+				$promised[ $field ] = (int) $input[ $property ];
+			}
+		}
+
 		if ( [] === $promised ) {
 			throw new OperationException(
 				ErrorCode::InvalidInput,
-				'Supply at least one of title, content, or excerpt to revise.',
+				'Supply at least one of title, content, excerpt, or menuOrder to revise.',
 				'Add one changeable property and request a fresh preview.'
 			);
 		}

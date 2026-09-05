@@ -3491,3 +3491,40 @@ already refused `perPage` when the property is `count`, but it refused with noth
 so a caller guessed again. When any violation is an unknown property, the validator appends
 the accepted property names for that object. One change, and every operation in the catalogue
 answers a wrong property name the same way.
+## 59. A position is a column, but never a string
+
+WordPress keeps two orders for content: the date order most archives use, and the hand order
+held in the `menu_order` column. Pages use the second one, and so does any content type
+registered with page attributes. SiteHelm could write every other column on a post and not
+that one, so an agent could build a set of pages and then had to hand the site back to a
+person to drag them into sequence.
+
+`content-create` and `content-update` now take `menuOrder`. `ContentFields` projects
+`menu_order` as part of the field map, `content-get` returns it as `menuOrder`, and
+`content-list` carries it in every summary — the summary went from seven fields to eight —
+so the order that was asked for can be checked without reading each item back one at a time.
+
+The column is an integer, and that decides almost every other choice here.
+
+`ContentUpdate` keeps it in its own map, `CHANGEABLE_ORDER`, rather than adding it to
+`CHANGEABLE`. Every property in that map is cast to a string and handed to the field
+sanitizer, which is right for words and wrong for a number: a position promised as `'3'`
+would not equal the `3` the read-back projects, and a write that landed exactly as asked
+would be reported as adjusted. `ContentCreate` promises the position on every creation, the
+way it already promises an empty excerpt, because WordPress stores 0 either way and a promise
+that omitted the column would not match a read-back that reports it.
+
+`ContentTarget` gains a fifth restorable list, `RESTORABLE_ORDER_FIELDS`, for the same
+reason. It is the only one of the five that is not a separate write mechanism: `menu_order`
+is a post column and rides the same `wp_update_post()` call as the other five, which is why
+it is merged into that call's array rather than written on its own. It counts towards the
+`count( $update ) > 1` guard, so a rollback of a position-only edit still issues a write
+instead of reporting itself done having changed nothing.
+
+The restore is gated on `is_numeric()`, exactly as the featured-media restore is, and for the
+same reason: `(int) null` is 0, and 0 is a real position — the front of the ordering. Casting
+a null recorded under the key would silently move an item nobody asked to move.
+
+`content-list` deliberately did not gain an `orderBy` argument. The order that matters here is
+the one visitors see, which the theme decides from the column; SiteHelm's own listing is a
+tool for finding things, and giving it a second ordering would invite the two to be confused.

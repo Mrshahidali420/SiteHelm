@@ -27,6 +27,13 @@ an operation behaves.
 - **`content-list` accepts `private` and `any` as a status.** `private` lists items published
   for logged-in readers only, and `any` lists everything except items in the trash, spelled
   the way WordPress spells it.
+- **Content can be put in a chosen order.** Pages, and any content type whose order is kept by
+  hand rather than by date, have a position WordPress calls the menu order; nothing in SiteHelm
+  could set it, so an agent could build a set of pages and then had to ask someone to open
+  WordPress and drag them into sequence. `content-create` and `content-update` now take
+  `menuOrder`, reading it back reports it, and listing content carries it for every item, so
+  the order that was asked for can be checked without opening each page. A rollback puts the
+  old position back with everything else it restores.
 - **Snippets can be stored in WPCode or Code Snippets, in Pro.** If a site already runs one
   of those plugins, that is where its code belongs, and SiteHelm now writes into it: name
   `wpcode` or `code-snippets` as the host on `code-snippet-write`, `code-css-write` or

@@ -1058,6 +1058,96 @@ final class ContentTargetRestoreTest extends TestCase {
 		);
 	}
 
+	/**
+	 * A RECORDED POSITION GOES BACK AS A WHOLE NUMBER, ON THE SAME CALL AS THE
+	 * WORDS. `menu_order` is a post column, so a second wp_update_post() for it
+	 * would be a second revision of the same item for no reason. And it goes in
+	 * as an integer: every loop over RESTORABLE_FIELDS casts to string, and the
+	 * read-back projects the position as an int, so a '3' restored here would be
+	 * reported as an adjusted rollback each time it worked perfectly.
+	 */
+	public function test_a_recorded_position_rides_the_column_write_as_an_integer(): void {
+		$saved = null;
+		Functions\when( 'wp_update_post' )->alias(
+			function ( $postarr, $wp_error = false ) use ( &$saved ) {
+				$this->callOrder[] = 'wp_update_post';
+				$saved             = $postarr;
+
+				return 42;
+			}
+		);
+
+		list( $key, $why ) = $this->restoreOutcome(
+			[
+				'post_id'    => 42,
+				'post_title' => 'Original title',
+				'menu_order' => 3,
+			]
+		);
+
+		$this->assertSame( 'post:42', $key, $why );
+		$this->assertSame( [ 'wp_update_post' ], $this->callOrder, 'One call, not two.' );
+		$this->assertSame( 3, $saved['menu_order'] );
+		$this->assertSame( 'Original title', $saved['post_title'] );
+	}
+
+	/**
+	 * A snapshot holding nothing but a position still restores it. Without the
+	 * order list counting towards the `count( $update ) > 1` guard, a rollback of
+	 * a position-only edit would issue no write at all and report itself done.
+	 */
+	public function test_a_position_is_enough_on_its_own_to_issue_the_column_write(): void {
+		$saved = null;
+		Functions\when( 'wp_update_post' )->alias(
+			function ( $postarr, $wp_error = false ) use ( &$saved ) {
+				$this->callOrder[] = 'wp_update_post';
+				$saved             = $postarr;
+
+				return 42;
+			}
+		);
+
+		list( $key, $why ) = $this->restoreOutcome(
+			[
+				'post_id'    => 42,
+				'menu_order' => 0,
+			]
+		);
+
+		$this->assertSame( 'post:42', $key, $why );
+		$this->assertSame( [ 'wp_update_post' ], $this->callOrder );
+		$this->assertSame( [ 'ID', 'menu_order' ], array_keys( $saved ) );
+		$this->assertSame( 0, $saved['menu_order'], 'Zero is a position, not an absent value.' );
+	}
+
+	/**
+	 * The is_numeric() gate, stated as the failure it prevents: a null recorded
+	 * under the key would cast to 0 and quietly move the item to the front of a
+	 * hand ordering nobody asked to change.
+	 */
+	public function test_a_position_that_is_not_a_number_is_left_alone_rather_than_read_as_zero(): void {
+		$saved = null;
+		Functions\when( 'wp_update_post' )->alias(
+			function ( $postarr, $wp_error = false ) use ( &$saved ) {
+				$this->callOrder[] = 'wp_update_post';
+				$saved             = $postarr;
+
+				return 42;
+			}
+		);
+
+		list( $key, $why ) = $this->restoreOutcome(
+			[
+				'post_id'    => 42,
+				'post_title' => 'Original title',
+				'menu_order' => null,
+			]
+		);
+
+		$this->assertSame( 'post:42', $key, $why );
+		$this->assertArrayNotHasKey( 'menu_order', $saved );
+	}
+
 	public function test_malformed_inner_entries_are_skipped_rather_than_written(): void {
 		list( $key, $why ) = $this->restoreOutcome(
 			[

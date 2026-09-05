@@ -74,6 +74,7 @@ final class ContentListTest extends TestCase {
 		$row->post_title        = 'Item ' . $id;
 		$row->post_name         = 'item-' . $id;
 		$row->post_parent       = 0;
+		$row->menu_order        = 4;
 		$row->post_modified_gmt = '2026-07-26 10:00:00';
 
 		return $row;
@@ -214,11 +215,11 @@ final class ContentListTest extends TestCase {
 		return FakeWpQuery::$calls[0];
 	}
 
-	public function test_the_summary_carries_exactly_the_seven_declared_fields(): void {
+	public function test_the_summary_carries_exactly_the_eight_declared_fields(): void {
 		$result = $this->list( [ 'type' => 'post' ] );
 
 		$this->assertSame(
-			[ 'id', 'type', 'status', 'title', 'slug', 'modifiedGmt', 'parent' ],
+			[ 'id', 'type', 'status', 'title', 'slug', 'modifiedGmt', 'parent', 'menuOrder' ],
 			array_keys( $result['items'][0] )
 		);
 	}
@@ -246,6 +247,9 @@ final class ContentListTest extends TestCase {
 		$this->assertSame( 'item-42', $entry['slug'] );
 		$this->assertSame( '2026-07-26 10:00:00', $entry['modifiedGmt'] );
 		$this->assertSame( 0, $entry['parent'] );
+		// Carried in the summary so an author can see the ordering they set
+		// without reading each item back one at a time.
+		$this->assertSame( 4, $entry['menuOrder'] );
 	}
 
 	/**

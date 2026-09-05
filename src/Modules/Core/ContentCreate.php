@@ -58,34 +58,38 @@ final class ContentCreate implements WriteOperation {
 			id: 'content-create',
 			domain: Domain::Content,
 			mode: Mode::Write,
-			description: 'Create one new content item with a title, body, excerpt, and initial status.',
+			description: 'Create one new content item with a title, body, excerpt, initial status, and optionally its place in a hand-ordered content type.',
 			inputSchema: [
 				'type'                 => 'object',
 				'properties'           => [
-					'type'    => [
+					'type'      => [
 						'type'        => 'string',
 						'maxLength'   => 32,
 						'description' => 'A public content type this site registers, for example post or page.',
 					],
-					'title'   => [
+					'title'     => [
 						'type'        => 'string',
 						'maxLength'   => 255,
 						'description' => 'Title of the new content item.',
 					],
-					'content' => [
+					'content'   => [
 						'type'        => 'string',
 						'maxLength'   => 500000,
 						'description' => 'Body of the new content item.',
 					],
-					'excerpt' => [
+					'excerpt'   => [
 						'type'        => 'string',
 						'maxLength'   => 5000,
 						'description' => 'Excerpt of the new content item.',
 					],
-					'status'  => [
+					'status'    => [
 						'type'        => 'string',
 						'enum'        => [ 'draft', 'pending', 'private', 'publish' ],
 						'description' => 'Initial status. Requesting publish additionally requires the publish capability.',
+					],
+					'menuOrder' => [
+						'type'        => 'integer',
+						'description' => 'Where this item sits when its content type is ordered by hand rather than by date. Lower numbers come first, and 0 is the default every item starts at. Only content types registered with page-attribute support, and archives a theme sorts by it, take any notice.',
 					],
 				],
 				'required'             => [ 'type', 'title', 'status' ],
@@ -190,6 +194,7 @@ final class ContentCreate implements WriteOperation {
 			'post_title'   => $this->fields->sanitizeForSave( 'post_title', (string) ( $input['title'] ?? '' ), $context->userId ),
 			'post_content' => $this->fields->sanitizeForSave( 'post_content', (string) ( $input['content'] ?? '' ), $context->userId ),
 			'post_excerpt' => $this->fields->sanitizeForSave( 'post_excerpt', (string) ( $input['excerpt'] ?? '' ), $context->userId ),
+			'menu_order'   => (int) ( $input['menuOrder'] ?? 0 ),
 		];
 		ksort( $promised, SORT_STRING );
 

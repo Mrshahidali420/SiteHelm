@@ -116,6 +116,24 @@ final class ContentTarget {
 	public const RESTORABLE_TAXONOMY_FIELDS = [ 'terms' ];
 
 	/**
+	 * The restorable post column a content write can change that is a whole
+	 * number rather than text.
+	 *
+	 * A FIFTH list but not a fifth write mechanism, and it is the only one of
+	 * the five that is not. `menu_order` is a post column like the five in
+	 * RESTORABLE_FIELDS and rides the same wp_update_post() call; it is kept
+	 * apart because every loop over that list casts its values to string, and a
+	 * position recorded as 3 and promised as '3' would not equal the 3 the
+	 * read-back projects. A correct rollback would then report itself adjusted,
+	 * every time.
+	 *
+	 * Values in this list are integers, not strings.
+	 *
+	 * @var string[]
+	 */
+	public const RESTORABLE_ORDER_FIELDS = [ 'menu_order' ];
+
+	/**
 	 * Resolves one existing content item.
 	 *
 	 * @param int $postId The post identifier.
@@ -197,8 +215,10 @@ final class ContentTarget {
 	 *
 	 * Every column a content write can change is captured, and nothing else,
 	 * per the design's requirement that a snapshot store the minimum state
-	 * required for restoration. The list is `RESTORABLE_FIELDS`, so widening it
-	 * widens the capture and the restore together rather than one of the two.
+	 * required for restoration. The lists are `RESTORABLE_FIELDS` and
+	 * `RESTORABLE_ORDER_FIELDS`, so widening one widens the capture and the
+	 * restore together rather than one of the two. The order column is recorded
+	 * as an integer because that is how the read-back projects it.
 	 *
 	 * @param TargetState $current The resolved current state.
 	 *
@@ -219,6 +239,11 @@ final class ContentTarget {
 		foreach ( self::RESTORABLE_FIELDS as $field ) {
 			$snapshot[ $field ] = (string) ( $current->fields[ $field ] ?? '' );
 		}
+
+		foreach ( self::RESTORABLE_ORDER_FIELDS as $field ) {
+			$snapshot[ $field ] = (int) ( $current->fields[ $field ] ?? 0 );
+		}
+
 		ksort( $snapshot, SORT_STRING );
 
 		return $snapshot;
@@ -234,9 +259,10 @@ final class ContentTarget {
 	 * it, and the contract is to restore the state the snapshot recorded — not
 	 * to invent a value for a column it never observed.
 	 *
-	 * Four write mechanisms are used, one per field list, because only
-	 * RESTORABLE_FIELDS holds post columns: one wp_update_post() call for
-	 * whichever RESTORABLE_FIELDS columns the state recorded,
+	 * Four write mechanisms are used across five field lists, because only
+	 * RESTORABLE_FIELDS and RESTORABLE_ORDER_FIELDS hold post columns and they
+	 * share a call: one wp_update_post() for whichever of those columns the
+	 * state recorded,
 	 * set_post_thumbnail() / delete_post_thumbnail() for a recorded
 	 * featured-media id, a loop of update_post_meta() calls for a recorded
 	 * RESTORABLE_CUSTOM_FIELDS map, and one wp_set_object_terms() call per
@@ -292,6 +318,17 @@ final class ContentTarget {
 		foreach ( self::RESTORABLE_FIELDS as $field ) {
 			if ( array_key_exists( $field, $restoreState ) ) {
 				$update[ $field ] = (string) $restoreState[ $field ];
+			}
+		}
+
+		// The same wp_update_post() call, and deliberately so: a position is a
+		// post column. is_numeric() for the reason the featured-media loop gives
+		// — a recorded 0 means "put this item back at the front of the hand
+		// ordering", so a null present under the key must be skipped rather than
+		// cast to that instruction.
+		foreach ( self::RESTORABLE_ORDER_FIELDS as $field ) {
+			if ( array_key_exists( $field, $restoreState ) && is_numeric( $restoreState[ $field ] ) ) {
+				$update[ $field ] = (int) $restoreState[ $field ];
 			}
 		}
 

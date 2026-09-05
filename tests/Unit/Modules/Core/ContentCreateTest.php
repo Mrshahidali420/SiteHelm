@@ -154,6 +154,10 @@ final class ContentCreateTest extends TestCase {
 
 		$this->assertSame(
 			[
+				// Promised even when the caller said nothing about it, exactly as
+				// the excerpt is: WordPress stores 0 either way, and a promise that
+				// omitted the column would not match the read-back that reports it.
+				'menu_order'   => 0,
 				'post_content' => '<p>Body.</p>',
 				'post_excerpt' => '',
 				'post_status'  => 'draft',
@@ -162,6 +166,26 @@ final class ContentCreateTest extends TestCase {
 			],
 			$planned->afterFields
 		);
+	}
+
+	/**
+	 * A POSITION IS PROMISED AS A NUMBER, NOT AS THE TEXT OF ONE, and reaches
+	 * wp_insert_post() the same way. Sanitized as text it would be promised as
+	 * '3' while the read-back projects the column as 3, and a creation that
+	 * landed exactly as asked would be reported as adjusted.
+	 */
+	public function test_a_requested_position_is_promised_and_written_as_a_whole_number(): void {
+		$input              = $this->input();
+		$input['menuOrder'] = 3;
+
+		$current = $this->operation->resolveTarget( $input, $this->makeContext() );
+		$planned = $this->operation->planChange( $current, $input, $this->makeContext() );
+
+		$this->assertSame( 3, $planned->afterFields['menu_order'] );
+
+		$this->operation->applyChange( $current, $planned, $this->makeContext() );
+
+		$this->assertSame( 3, $this->writes[0]['menu_order'] );
 	}
 
 	/**
