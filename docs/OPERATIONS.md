@@ -503,7 +503,7 @@ asks the capability, the SEO plugin and the target.
 
 | Operation | Dispatcher | Does | Capability | Rollback |
 |---|---|---|---|---|
-| `seo-settings-get` | `system-read` | Reads the SEO plugin's settings at site scope (separator, knowledge-graph name and logo, default social image, breadcrumbs) or for one public post type (`postType`: title and description templates, noindex, sitemap inclusion) | `manage_options` | — |
+| `seo-settings-get` | `system-read` | Reads the SEO plugin's settings at site scope (separator, knowledge-graph name and logo, default social image, breadcrumbs) or for one public post type (`postType`: title and description templates, noindex, sitemap inclusion). Also reports `providerConfigured`: false means the plugin has not finished its own setup, so the settings are stored and nothing is using them | `manage_options` | — |
 | `seo-settings-set` | `content-write` | Writes the same allowlisted settings, one scope per change — site scope or `postType`, never both | `manage_options` | supported |
 | `seo-404-log-list` | `system-read` | Pages Rank Math's 404 monitor newest first (URI, hits, last seen, referer), at most 200 per page | `manage_options` | — |
 | `seo-redirection-list` | `system-read` | Pages Rank Math's redirections newest first (sources, destination, status code, hits, status), with SiteHelm's own redirects reported beside them under `others` | `manage_options` | — |
