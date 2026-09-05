@@ -1835,6 +1835,11 @@ capture/restore snapshot only those keys and a restore rewrites the whole option
 the owned keys put back (a key absent in the snapshot is unset, not written empty).
 Target key `SeoSettingsFields::target_key( ?string $post_type )`.
 
+The read also answers `providerConfigured`, from `SeoPresence::isConfigured()` — the
+same gate the module health uses. A plugin parked behind its own setup keeps every
+one of these options readable while writing nothing to the front end, so a read that
+reported only the values could not be told apart from a read of a working install.
+
 | Field | Yoast (`wpseo_titles`, `wpseo_social`) | Rank Math (`rank-math-options-titles`, `rank-math-options-sitemap`) |
 |---|---|---|
 | separator | `separator` — a **code** (`sc-dash`, `sc-pipe`, …); `YoastSettingsProvider::SEPARATORS` maps code ↔ character, a character outside the map is refused | `title_separator` — the literal character |
