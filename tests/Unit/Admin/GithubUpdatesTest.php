@@ -46,7 +46,7 @@ final class GithubUpdatesTest extends TestCase {
 	/**
 	 * Builds the updater over a scripted GitHub answer.
 	 *
-	 * @param array{code: int, body: string}|null $answer What the lookup returns.
+	 * @param array{code: int, body: string, headers?: array<string, string>}|null $answer What the lookup returns.
 	 * @param int                                 $calls  Receives how many requests were made.
 	 */
 	private function updates( ?array $answer, int &$calls = 0 ): GithubUpdates {
@@ -324,5 +324,108 @@ final class GithubUpdatesTest extends TestCase {
 		$this->offer( $updates );
 
 		$this->assertSame( 2, $calls );
+	}
+
+	/**
+	 * How long the failed lookup was told to rest.
+	 */
+	private static function rest(): int {
+		return AdminWordPressStubs::$transientExpirations[ GithubUpdates::TRANSIENT ] ?? -1;
+	}
+
+	/**
+	 * A refusal from the rate limiter, as GitHub sends it.
+	 *
+	 * @param array<string, string> $headers What the response says about the limit.
+	 * @param int                   $code    The status code, 403 unless stated.
+	 * @return array{code: int, body: string, headers: array<string, string>}
+	 */
+	private static function refusal( array $headers, int $code = 403 ): array {
+		return [
+			'code'    => $code,
+			'body'    => '{"message":"API rate limit exceeded"}',
+			'headers' => $headers,
+		];
+	}
+
+	public function testARateLimitedLookupRestsUntilTheWindowReopens(): void {
+		$this->offer(
+			$this->updates(
+				self::refusal(
+					[
+						'x-ratelimit-remaining' => '0',
+						'x-ratelimit-reset'     => (string) ( time() + 240 ),
+					]
+				)
+			)
+		);
+
+		// Four minutes, not the flat hour: a release must not stay invisible
+		// for fifty-six minutes after the limit has already lifted.
+		$this->assertGreaterThanOrEqual( 235, self::rest() );
+		$this->assertLessThanOrEqual( 240, self::rest() );
+	}
+
+	public function testASecondaryLimitIsRestedForTheSecondsItAsksFor(): void {
+		$this->offer( $this->updates( self::refusal( [ 'retry-after' => '90' ], 429 ) ) );
+
+		$this->assertSame( 90, self::rest() );
+	}
+
+	public function testAResetThatHasAlreadyPassedStillRestsTheFloor(): void {
+		$this->offer(
+			$this->updates(
+				self::refusal(
+					[
+						'x-ratelimit-remaining' => '0',
+						'x-ratelimit-reset'     => (string) ( time() - 50 ),
+					]
+				)
+			)
+		);
+
+		// Zero seconds would put the request back on the very next admin load.
+		$this->assertSame( GithubUpdates::MISS_TTL_MIN, self::rest() );
+	}
+
+	public function testAResetFarInTheFutureIsCapped(): void {
+		$this->offer(
+			$this->updates(
+				self::refusal(
+					[
+						'x-ratelimit-remaining' => '0',
+						'x-ratelimit-reset'     => (string) ( time() + 999999 ),
+					]
+				)
+			)
+		);
+
+		// The header is somebody else's claim; it cannot switch update
+		// checking off for a week.
+		$this->assertSame( GithubUpdates::MISS_TTL_MAX, self::rest() );
+	}
+
+	public function testARefusalThatIsNotTheRateLimiterRestsTheFlatHour(): void {
+		$this->offer( $this->updates( self::refusal( [ 'x-ratelimit-remaining' => '55' ] ) ) );
+
+		$this->assertSame( GithubUpdates::MISS_TTL, self::rest() );
+	}
+
+	public function testAnOutageRestsTheFlatHour(): void {
+		$this->offer( $this->updates( null ) );
+
+		$this->assertSame( GithubUpdates::MISS_TTL, self::rest() );
+	}
+
+	public function testAResponseWithNoHeadersAtAllIsStillHandled(): void {
+		$this->offer( $this->updates( [ 'code' => 500, 'body' => 'gateway is unwell' ] ) );
+
+		$this->assertSame( GithubUpdates::MISS_TTL, self::rest() );
+	}
+
+	public function testAFoundReleaseIsStillCachedForItsFullLifetime(): void {
+		$this->offer( $this->updates( [ 'code' => 200, 'body' => self::release( '9.9.9' ) ] ) );
+
+		$this->assertSame( GithubUpdates::TTL, AdminWordPressStubs::$transientExpirations[ GithubUpdates::TRANSIENT ] ?? -1 );
 	}
 }

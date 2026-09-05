@@ -21,7 +21,11 @@ an operation behaves.
   once an update has finished so it can never describe a version that is no longer
   installed. The note is also kept for four hours rather than twelve, so it can no longer
   fall into step with WordPress's own twelve-hour checking cycle and hide a release for
-  another half a day.
+  another half a day. And when the check is refused because GitHub's hourly limit is
+  spent — which happens on shared hosting, where every site on the address draws on
+  the same allowance — SiteHelm now waits only until that limit lifts instead of
+  standing down for a full hour, so a new version stops being hidden long after it
+  could have been offered.
 
 ## [0.13.0] — 2026-09-05
 
