@@ -22,7 +22,7 @@ use SiteHelm\Contracts\RollbackPolicy;
 use SiteHelm\Contracts\SnapshotPolicy;
 
 /**
- * Reads the thirteen allowlisted site settings, all of them, every call.
+ * Reads the fifteen allowlisted site settings, all of them, every call.
  *
  * REGISTERED UNDER `system-read`, beside `user-list` and `audit-list`, because
  * how a site presents itself — its title, its front page, its permalink shape —
@@ -31,7 +31,7 @@ use SiteHelm\Contracts\SnapshotPolicy;
  * with no `system-write`, so `SiteSettingsSet` rides `content-write` and both
  * files record the split, the same way the user pair does.
  *
- * NO PARTIAL READ. Thirteen values fit in one envelope, and the write refuses
+ * NO PARTIAL READ. Fifteen values fit in one envelope, and the write refuses
  * anything outside the same list — answering everything on every call turns
  * "read, then write" into two calls, with the read doubling as the discovery
  * of what the write can touch.
@@ -64,6 +64,8 @@ final class SiteSettingsRead {
 						'properties'           => [
 							'title'                  => [ 'type' => 'string' ],
 							'tagline'                => [ 'type' => 'string' ],
+							'siteIcon'               => [ 'type' => 'integer' ],
+							'siteLogo'               => [ 'type' => 'integer' ],
 							'timezone'               => [ 'type' => 'string' ],
 							'dateFormat'             => [ 'type' => 'string' ],
 							'timeFormat'             => [ 'type' => 'string' ],
