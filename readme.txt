@@ -4,7 +4,7 @@ Tags: mcp, ai agent, automation, elementor, rest api
 Requires at least: 6.6
 Tested up to: 7.1
 Requires PHP: 8.1
-Stable tag: 0.12.0
+Stable tag: 0.13.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -88,6 +88,21 @@ The refusal names which error code applies and what to do about it, and says how
 
 The full changelog for every release is maintained at
 https://github.com/Mrshahidali420/SiteHelm/blob/main/CHANGELOG.md
+
+= 0.13.0 =
+* A plugin, a theme or a file on your own computer can be handed to the site in the same conversation, instead of being uploaded by hand first.
+* A plugin or theme can be installed from a zip the site already holds, and a theme's own files can be read before anything replaces them.
+* Why a page looks the way it does can be answered without opening a browser: give a page, a selector and a screen width and get back the rules that actually apply.
+* Menus can be created, the site icon and site logo can be set, content can be put in a chosen order, and pages can be given an address, a parent and a template.
+* Custom fields can be named and can hold numbers or yes/no values; both were refused before.
+* Content types with no public face can be listed, a dormant SEO plugin is reported as a caveat instead of as healthy, and a refusal now says which of three problems it is.
+* A write that fails unexpectedly records what went wrong on its own entry in Activity, instead of pointing at a server log most hosts never hand over.
+
+= 0.12.0 =
+* Activating a licence works from a page that opens; both routes led to a refusal before.
+* The activity log names the app that made each change, and names plugins and themes rather than their file paths.
+* The licensing account page is no longer printed into the admin menu of every site a licence covers.
+* View details answers about this plugin instead of reporting it as not found.
 
 = 0.11.0 =
 * Apps can sign in to the site themselves instead of being handed a password: an app registers, sends you to a page in your own dashboard that names it and asks whether to allow it, and holds its own credential. Application passwords keep working; this is a second way in.

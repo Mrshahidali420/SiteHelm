@@ -11,67 +11,16 @@ an operation behaves.
 
 ## [Unreleased]
 
-### Changed
-- **A write that fails for an unforeseen reason now says what happened, somewhere you can read
-  it.** The message said the details had been logged on the server, and they had been written
-  to PHP's error log — a file most shared hosts do not hand over, and some never write at all.
-  So a failed write could leave nobody able to find out why. The failure is now recorded on the
-  write's own entry in SiteHelm > Activity, naming what went wrong and where, and the message
-  points at that screen instead of at one that never existed. The note stays on the site: the
-  agent that made the call gets the same short refusal it always did.
-- **The plugin list now tells you which plugins have never been set up.** Installing a plugin
-  and switching it on stops one step short of a plugin that does anything: Rank Math, Yoast,
-  WooCommerce and plenty of others park behind their own setup wizard and produce nothing at
-  all until somebody walks through it, and every column in the list reported such a plugin as
-  perfectly healthy. `system-plugin-list` now carries an `onboarding` column: "pending" for a
-  plugin that is switched on and still parked, "complete" once its own wizard is finished, and
-  nothing at all for a plugin SiteHelm ships no recipe for. It will not guess — a plugin whose
-  flags this version has never read is reported as unknown rather than as finished, because
-  saying "finished" would be a claim about somebody else's database.
-- **Redirects now show you what the other plugin is holding.** If a site runs SiteHelm's
-  redirects and Rank Math's redirections at the same time, both can hold a rule for the same
-  address and nothing decides which one the visitor gets — it comes down to which plugin
-  happens to run first. Both rules stay stored and both read back as stored, so there was no
-  way to see it. `redirect-list` now returns the other plugin's rules beside its own, tagged
-  with who owns them, and `redirect-set` warns in its preview when the path you are about to
-  claim is already answered by one of them. It is a warning, not a refusal: writing over the
-  old plugin's rules is exactly what you do when you move a site across. A rule stored as a
-  regular expression is shown to you rather than run, and reported as a possible match rather
-  than a certain one.
-- **The Pro redirections listing now shows both halves too.** `seo-redirection-list` returns
-  SiteHelm's own redirects alongside Rank Math's, tagged with who owns them, so either listing
-  answers what the site actually serves rather than what one plugin happens to hold.
-- **A refusal now says which of three problems it is.** "This is not available" used to cover a
-  plugin the site has not installed, a feature the site has no Pro licence for, and a service
-  outside the site that did not answer. Those need three different responses — install
-  something, buy something, or just try again — and only the last one fixes itself. There are
-  now three codes instead of one: `integration_unavailable` still means a dependency this site
-  does not have active, `integration_unlicensed` means the operation is part of Pro, and
-  `upstream_unavailable` means something outside the site was slow or down and the same call is
-  worth repeating. Nothing that already worked changed its answer.
+## [0.13.0] — 2026-09-05
 
-### Fixed
-- **A working SEO plugin could be doing nothing, and SiteHelm called it healthy.** Rank Math
-  stops putting anything on your public pages until you have been through its setup wizard. It
-  still stores everything written to it, so every title, description and social card SiteHelm
-  wrote was saved, read back correctly, and reported as done — while visitors and Facebook got
-  a page with none of it. Health now has a fourth answer for this. The module still works and
-  every operation still runs; the modules screen marks the card "Setup unfinished" and the
-  integration report says in a sentence that nothing the plugin holds is reaching the pages
-  people are served.
-
-- **Content types that are not public could not be listed.** `content-list` asked whether a
-  content type was visible to visitors, so an enquiry log, a testimonial store, or any of the
-  custom types a plugin registers for the admin screens only were refused as though they did
-  not exist. It now asks whether the type has an editing screen and whether the account may
-  edit it, which is the question that was meant all along. Reading one of those items already
-  worked, so listing and reading now work together.
-- **A wrong property name was refused without saying what the right one is.** Sending
-  `perPage` instead of `count`, or any other near-miss, produced a refusal that named the
-  property that was wrong and left the caller to guess again. Every operation now lists the
-  property names it accepts.
+The gap this release closes is that an agent could only ever hand the site things the site
+could already reach. A plugin, a theme or an image sitting on your own computer had no route
+in, and the answer was always "upload it yourself first". It can now be handed over in the
+same conversation. The rest is a long list of things that were refused, mis-reported, or
+silently wrong.
 
 ### Added
+
 - **Why a page looks wrong can now be answered without opening a browser.** SiteHelm could
   show you what a page rendered, but not why it renders that way. If a menu button is still
   showing on a phone, the question is whether the rule you wrote actually applies at that
@@ -169,6 +118,45 @@ an operation behaves.
   behind. Only a client connected with full permission can call them.
 
 ### Changed
+
+- **A write that fails for an unforeseen reason now says what happened, somewhere you can read
+  it.** The message said the details had been logged on the server, and they had been written
+  to PHP's error log — a file most shared hosts do not hand over, and some never write at all.
+  So a failed write could leave nobody able to find out why. The failure is now recorded on the
+  write's own entry in SiteHelm > Activity, naming what went wrong and where, and the message
+  points at that screen instead of at one that never existed. The note stays on the site: the
+  agent that made the call gets the same short refusal it always did.
+- **The plugin list now tells you which plugins have never been set up.** Installing a plugin
+  and switching it on stops one step short of a plugin that does anything: Rank Math, Yoast,
+  WooCommerce and plenty of others park behind their own setup wizard and produce nothing at
+  all until somebody walks through it, and every column in the list reported such a plugin as
+  perfectly healthy. `system-plugin-list` now carries an `onboarding` column: "pending" for a
+  plugin that is switched on and still parked, "complete" once its own wizard is finished, and
+  nothing at all for a plugin SiteHelm ships no recipe for. It will not guess — a plugin whose
+  flags this version has never read is reported as unknown rather than as finished, because
+  saying "finished" would be a claim about somebody else's database.
+- **Redirects now show you what the other plugin is holding.** If a site runs SiteHelm's
+  redirects and Rank Math's redirections at the same time, both can hold a rule for the same
+  address and nothing decides which one the visitor gets — it comes down to which plugin
+  happens to run first. Both rules stay stored and both read back as stored, so there was no
+  way to see it. `redirect-list` now returns the other plugin's rules beside its own, tagged
+  with who owns them, and `redirect-set` warns in its preview when the path you are about to
+  claim is already answered by one of them. It is a warning, not a refusal: writing over the
+  old plugin's rules is exactly what you do when you move a site across. A rule stored as a
+  regular expression is shown to you rather than run, and reported as a possible match rather
+  than a certain one.
+- **The Pro redirections listing now shows both halves too.** `seo-redirection-list` returns
+  SiteHelm's own redirects alongside Rank Math's, tagged with who owns them, so either listing
+  answers what the site actually serves rather than what one plugin happens to hold.
+- **A refusal now says which of three problems it is.** "This is not available" used to cover a
+  plugin the site has not installed, a feature the site has no Pro licence for, and a service
+  outside the site that did not answer. Those need three different responses — install
+  something, buy something, or just try again — and only the last one fixes itself. There are
+  now three codes instead of one: `integration_unavailable` still means a dependency this site
+  does not have active, `integration_unlicensed` means the operation is part of Pro, and
+  `upstream_unavailable` means something outside the site was slow or down and the same call is
+  worth repeating. Nothing that already worked changed its answer.
+
 - **Every tool now says what it is for, and says its list is complete.** An agent that
   connected some time ago was working from the tool list it saw then, and had no way to tell
   whether newer operations existed. The eleven tools never change; only the operations behind
@@ -176,6 +164,27 @@ an operation behaves.
   subjects and invites a call with no operation to list what this site publishes on it.
 
 ### Fixed
+
+- **A working SEO plugin could be doing nothing, and SiteHelm called it healthy.** Rank Math
+  stops putting anything on your public pages until you have been through its setup wizard. It
+  still stores everything written to it, so every title, description and social card SiteHelm
+  wrote was saved, read back correctly, and reported as done — while visitors and Facebook got
+  a page with none of it. Health now has a fourth answer for this. The module still works and
+  every operation still runs; the modules screen marks the card "Setup unfinished" and the
+  integration report says in a sentence that nothing the plugin holds is reaching the pages
+  people are served.
+
+- **Content types that are not public could not be listed.** `content-list` asked whether a
+  content type was visible to visitors, so an enquiry log, a testimonial store, or any of the
+  custom types a plugin registers for the admin screens only were refused as though they did
+  not exist. It now asks whether the type has an editing screen and whether the account may
+  edit it, which is the question that was meant all along. Reading one of those items already
+  worked, so listing and reading now work together.
+- **A wrong property name was refused without saying what the right one is.** Sending
+  `perPage` instead of `count`, or any other near-miss, produced a refusal that named the
+  property that was wrong and left the caller to guess again. Every operation now lists the
+  property names it accepts.
+
 - **Writing a custom field was refused on every site.** `content-meta-update` writes only the
   fields a site has named, and there was nowhere to name them: the list it read was an option
   nothing ever wrote, so the operation listed itself as available and then refused every
@@ -1284,6 +1293,8 @@ out of scope by design and will not be added. Code ships only through the Pro Co
 guard, and nothing SiteHelm stores ever executes during its own request. See
 [ROADMAP.md](ROADMAP.md).
 
+[0.13.0]: https://github.com/Mrshahidali420/SiteHelm/releases/tag/v0.13.0
+[0.12.0]: https://github.com/Mrshahidali420/SiteHelm/releases/tag/v0.12.0
 [0.11.0]: https://github.com/Mrshahidali420/SiteHelm/releases/tag/v0.11.0
 [0.10.0]: https://github.com/Mrshahidali420/SiteHelm/releases/tag/v0.10.0
 [0.9.0]: https://github.com/Mrshahidali420/SiteHelm/releases/tag/v0.9.0
