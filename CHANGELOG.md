@@ -11,6 +11,18 @@ an operation behaves.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Check again now finds a new version.** SiteHelm keeps its own note of what the
+  newest release is, and WordPress could not see that note, so pressing Check again on
+  the Updates screen cleared WordPress's list and left SiteHelm's untouched — the plugin
+  went on answering from the old note and reported no update on a release that had
+  already shipped. Check again now clears SiteHelm's note too, and the note is dropped
+  once an update has finished so it can never describe a version that is no longer
+  installed. The note is also kept for four hours rather than twelve, so it can no longer
+  fall into step with WordPress's own twelve-hour checking cycle and hide a release for
+  another half a day.
+
 ## [0.13.0] — 2026-09-05
 
 The gap this release closes is that an agent could only ever hand the site things the site
