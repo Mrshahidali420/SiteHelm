@@ -243,4 +243,39 @@ final class AuditRedactorTest extends TestCase {
 		$this->assertSame( 1, $decoded['metrics']['ping_status']['before'] );
 		$this->assertSame( 1, $decoded['metrics']['ping_status']['after'] );
 	}
+
+	/**
+	 * A failure note is carried through exactly as given. It describes a
+	 * throwable rather than a field, it is formed by EngineLog, and it is
+	 * already free of values and of directory paths by the time it arrives, so
+	 * measuring or trimming it here would only make it say less.
+	 */
+	public function test_a_failure_note_is_carried_into_the_summary_unchanged(): void {
+		$note = 'TypeError: bad argument (MediaSideload.php:141)';
+
+		$decoded = json_decode(
+			$this->redactor->summarize( [ 'a' => 1 ], [ 'a' => 2 ], $note ),
+			true
+		);
+
+		$this->assertSame( $note, $decoded['failure'] );
+		$this->assertSame( [ 'a' ], $decoded['changed'] );
+	}
+
+	/**
+	 * Every ordinary write goes through this method too, and a `failure` key
+	 * sitting on a summary that succeeded would make the Activity screen report
+	 * a fault where there was none.
+	 */
+	public function test_a_summary_without_a_note_carries_no_failure_key_at_all(): void {
+		$decoded = json_decode( $this->redactor->summarize( [ 'a' => 1 ], [ 'a' => 2 ] ), true );
+
+		$this->assertArrayNotHasKey( 'failure', $decoded );
+	}
+
+	public function test_an_empty_note_is_treated_as_no_note(): void {
+		$decoded = json_decode( $this->redactor->summarize( [ 'a' => 1 ], [ 'a' => 2 ], '' ), true );
+
+		$this->assertArrayNotHasKey( 'failure', $decoded );
+	}
 }

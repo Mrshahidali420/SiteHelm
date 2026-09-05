@@ -147,6 +147,8 @@ final class AuditRecorder {
 	 * @param string               $targetKey    The concrete target key.
 	 * @param array<string, mixed> $beforeFields The resolved before-state.
 	 * @param array<string, mixed> $afterFields  The promised after-state.
+	 * @param string|null          $failure      What went wrong, when the write failed in
+	 *                                           a way nothing predicted.
 	 *
 	 * @return bool True when the record was updated.
 	 *
@@ -159,7 +161,8 @@ final class AuditRecorder {
 		?string $rollbackRef,
 		string $targetKey,
 		array $beforeFields,
-		array $afterFields
+		array $afterFields,
+		?string $failure = null
 	): bool {
 		return $this->store->finish(
 			$auditId,
@@ -167,7 +170,7 @@ final class AuditRecorder {
 			$snapshotId,
 			$rollbackRef,
 			$targetKey,
-			$this->redactor->summarize( $beforeFields, $afterFields ),
+			$this->redactor->summarize( $beforeFields, $afterFields, $failure ),
 			$this->elapsed( $auditId )
 		);
 	}

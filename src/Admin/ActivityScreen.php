@@ -598,6 +598,14 @@ final class ActivityScreen {
 	 * measure the same, the sizes carry no information at all and the field is
 	 * simply reported as changed.
 	 *
+	 * A write that failed in a way nothing predicted carries a `failure` note
+	 * instead of a measurement, and that note is shown FIRST and alone. It is
+	 * the reason this screen is worth opening after a failure: the response the
+	 * client received says only that the write failed, and this row is where
+	 * the site's owner finds out what actually went wrong. The changed-field
+	 * list is suppressed there because it describes a change that never
+	 * happened, and reading it beside the fault invites the wrong conclusion.
+	 *
 	 * Anything that does not parse is shown verbatim, because an unreadable
 	 * summary is a fact about the record worth seeing rather than hiding.
 	 *
@@ -612,6 +620,14 @@ final class ActivityScreen {
 
 		if ( ! is_array( $decoded ) || ! isset( $decoded['changed'] ) || ! is_array( $decoded['changed'] ) ) {
 			return $summary;
+		}
+
+		if ( isset( $decoded['failure'] ) && is_string( $decoded['failure'] ) && '' !== $decoded['failure'] ) {
+			return sprintf(
+				/* translators: %s: a one-line description of what went wrong. */
+				__( 'Failed: %s', 'sitehelm' ),
+				$decoded['failure']
+			);
 		}
 
 		$changed = array_values( array_filter( $decoded['changed'], 'is_string' ) );

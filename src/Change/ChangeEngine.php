@@ -355,8 +355,13 @@ final class ChangeEngine {
 				$compensation
 			);
 		} catch ( Throwable $unexpected ) {
-			// An unexpected throwable carries nothing safe to disclose, so it is
-			// logged server-side and surfaces as a generic execution_failed.
+			// An unexpected throwable carries nothing safe to disclose, so it
+			// surfaces as a generic execution_failed. What it was is written
+			// down twice: to the server log, and onto this write's own audit
+			// row, where the Activity screen shows it. Only the log used to be
+			// written, which made the sentence below a dead end on any host
+			// whose error log the site owner cannot read.
+			$note = EngineLog::note( $unexpected );
 			EngineLog::unexpected( $unexpected );
 
 			$compensation = $this->compensate_and_finalize(
@@ -366,13 +371,14 @@ final class ChangeEngine {
 				$snapshot,
 				$current,
 				$planned,
-				$context
+				$context,
+				$note
 			);
 
 			throw new OperationException(
 				ErrorCode::ExecutionFailed,
-				'The write failed unexpectedly. The details were logged on the server.',
-				'Generate a fresh preview and retry; check SiteHelm diagnostics if it recurs.',
+				'The write failed unexpectedly. What went wrong was recorded on this site.',
+				'Open SiteHelm > Activity in the WordPress admin: the failed entry names the fault. Then generate a fresh preview and retry.',
 				[],
 				$compensation
 			);
@@ -419,6 +425,10 @@ final class ChangeEngine {
 	 * @param TargetState               $current   The state before the write.
 	 * @param PlannedChange             $planned   The promised change.
 	 * @param OperationContext          $context   The request context.
+	 * @param string|null               $failure   What went wrong, when the failure was one
+	 *                                             nothing predicted. An operation that named
+	 *                                             its own failure passes null: its message is
+	 *                                             already in the caller's hands.
 	 *
 	 * @return string One of 'restored', 'failed', or 'not-attempted'.
 	 *
@@ -432,7 +442,8 @@ final class ChangeEngine {
 		array $snapshot,
 		TargetState $current,
 		PlannedChange $planned,
-		OperationContext $context
+		OperationContext $context,
+		?string $failure = null
 	): string {
 		$compensation = $this->lifecycle->compensate( $operation, $restore, $context );
 
@@ -443,7 +454,8 @@ final class ChangeEngine {
 			$snapshot['reference'],
 			$current->targetKey,
 			$current->fields,
-			$planned->afterFields
+			$planned->afterFields,
+			$failure
 		);
 
 		return $compensation;

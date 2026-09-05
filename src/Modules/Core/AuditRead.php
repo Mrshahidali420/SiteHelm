@@ -228,6 +228,15 @@ final class AuditRead {
 	/**
 	 * Projects one stored row into a client-facing entry.
 	 *
+	 * THE FAILURE NOTE IS HELD BACK. A write that fails in a way nothing
+	 * predicted records what the throwable said onto its audit row, and that
+	 * text is not redacted — it can carry a query, a path, or whatever a third
+	 * party's exception put in it. The engine deliberately refuses to hand that
+	 * to the client that made the call, so handing it over here, one read
+	 * later, would undo the same guarantee by a longer route. It is written for
+	 * the person administering the site, and the Activity screen in wp-admin is
+	 * where they read it.
+	 *
 	 * @param array<string, mixed> $row The stored audit row.
 	 *
 	 * @return array<string, mixed> The entry.
@@ -235,6 +244,10 @@ final class AuditRead {
 	private function entry( array $row ): array {
 		$summary   = json_decode( (string) ( $row['summary'] ?? '' ), true );
 		$reference = $row['rollback_ref'] ?? null;
+
+		if ( is_array( $summary ) ) {
+			unset( $summary['failure'] );
+		}
 
 		return [
 			'auditRef'        => AuditRecorder::reference( (int) $row['id'] ),

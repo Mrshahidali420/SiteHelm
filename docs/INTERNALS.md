@@ -1086,6 +1086,26 @@ the same integer. `ActivityScreen::change_text()` therefore renders the pair bar
 same the pair says nothing, and the field is reported as "changed". A summary that
 does not parse is shown **verbatim**: an unreadable record is a fact worth seeing.
 
+**The one exception to "a size, never a value" is the failure note, and it never
+goes over the wire.** When `applyChange()` throws something that is not an
+`OperationException`, `ChangeEngine` has nothing safe to tell the caller, so the
+envelope gets a fixed generic `execution_failed`. That used to be the end of it:
+`EngineLog::unexpected()` wrote the detail to PHP's `error_log` and nowhere else,
+which on most shared hosting is a file the site's owner cannot open and on some
+hosts is never written — so the plugin said "the details were logged on the
+server" and pointed at nothing anybody could read. `EngineLog::note()` now forms
+that detail once (short class, message, `basename:line`, capped at
+`MAX_NOTE_LENGTH`, directory paths in the message reduced to file names), the
+engine passes it through `compensate_and_finalize()` → `AuditRecorder::finish()`
+→ `AuditRedactor::summarize()`, and it is stored as a `failure` member of the
+existing `summary` column — **no schema change, so no migration.**
+`ActivityScreen::change_text()` shows it alone ("Failed: …") and suppresses the
+changed-field list, which describes a change that never happened. The note is
+**not** redacted, so `AuditRead::entry()` **unsets it** before projecting a row:
+handing that text back through `audit-list` would give the same client the
+detail the engine deliberately withheld, one read later. An operation that raised
+its own `OperationException` passes no note — it already said what was wrong.
+
 **The preview path is the half that needed fixing, not the audit path.** The
 plan for the Code module recorded the audit log as the place a snippet's API key
 would leak. It was wrong, and the reason is worth keeping: `AuditRedactor` has

@@ -450,6 +450,36 @@ final class ActivityScreenTest extends TestCase {
 		$this->assertStringNotContainsString( '1 → 1', $html );
 	}
 
+	/**
+	 * This screen is the answer to "the write failed, where do I look". The
+	 * response the client received says only that something went wrong; the
+	 * row here is the one place on the site that names the fault. Before this,
+	 * the detail went to PHP's error log alone, which most shared hosting does
+	 * not expose, so on a great many sites the answer existed nowhere at all.
+	 */
+	public function testAFailedWriteShowsWhatWentWrong(): void {
+		$summary = '{"changed":["post_title"],"metrics":{},"failure":"TypeError: wp_insert_attachment(): Argument #2 must be of type string (MediaSideload.php:141)"}';
+
+		$html = $this->render( 1, [ $this->row( [ 'summary' => $summary ] ) ] );
+
+		$this->assertStringContainsString( 'TypeError', $html );
+		$this->assertStringContainsString( 'MediaSideload.php:141', $html );
+	}
+
+	/**
+	 * The changed-field list beside the fault would describe a change that
+	 * never happened, and reading the two together invites the conclusion that
+	 * the write partly landed. It did not: this is the path where applyChange()
+	 * threw and the after-state was never measured.
+	 */
+	public function testAFailedWriteDoesNotAlsoListFieldsItNeverChanged(): void {
+		$summary = '{"changed":["post_title"],"metrics":{"post_title":{"before":21,"after":36}},"failure":"TypeError: bad argument (MediaSideload.php:141)"}';
+
+		$html = $this->render( 1, [ $this->row( [ 'summary' => $summary ] ) ] );
+
+		$this->assertStringNotContainsString( 'post title 21 → 36', $html );
+	}
+
 	public function testAChangeWithNoRecordedFieldsAddsNoSubLine(): void {
 		$html = $this->render( 1, [ $this->row( [ 'summary' => '{"changed":[],"metrics":{}}' ] ) ] );
 

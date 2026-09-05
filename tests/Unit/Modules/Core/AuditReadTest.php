@@ -171,6 +171,31 @@ final class AuditReadTest extends TestCase {
 		);
 	}
 
+	/**
+	 * A write that failed unexpectedly records what the throwable said onto its
+	 * audit row so the site's administrator can read it in wp-admin. That text
+	 * is not redacted — it is whatever the failure carried — and the change
+	 * engine deliberately keeps it out of the response it hands the caller.
+	 * Relaying it here would hand the same client the same text one read later,
+	 * which is the leak by a longer route.
+	 *
+	 * The rest of the summary still comes through: the note is removed, not the
+	 * record.
+	 */
+	public function test_the_failure_note_on_a_failed_row_is_not_relayed_to_the_client(): void {
+		$row                     = $this->row();
+		$row['outcome']          = 'execution_failed';
+		$row['summary']          = '{"changed":["post_title"],"metrics":{},"failure":"RuntimeException: wpdb::query() failed, secret-token abc123 (Foo.php:12)"}';
+		$this->wpdb->resultQueue = [ [ $row ] ];
+		$this->wpdb->varQueue    = [ 1 ];
+
+		$entry = $this->handler->handle( [], $this->makeContext() )['entries'][0];
+
+		$this->assertArrayNotHasKey( 'failure', $entry['summary'] );
+		$this->assertStringNotContainsString( 'abc123', (string) wp_json_encode( $entry ) );
+		$this->assertSame( [ 'post_title' ], $entry['summary']['changed'] );
+	}
+
 	public function test_a_row_without_a_snapshot_offers_no_rollback_reference(): void {
 		$row                     = $this->row();
 		$row['snapshot_id']      = null;
