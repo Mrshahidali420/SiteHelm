@@ -3664,3 +3664,62 @@ when that menu is already gone, and refuses with `RollbackUnavailable` rather th
 guess when more than one menu appeared and nothing says which is ours. The deletion is
 verified by re-reading, because a `delete_term` handler can leave the term standing
 after a call that reported success.
+
+## 62. Where a page sits, what it is called, and how it is rendered
+
+A content write could set every word on a page and none of the three things that decide where
+it lives: the address it is reached at, the item it sits under, and the template the theme
+renders it through. An agent could build a page and still have to hand the site back to a
+person to finish it in the editor.
+
+`content-create` and `content-update` now take `slug`, `parent` and `template`. The three are
+answered by one collaborator, `ContentPlacement`, rather than by each operation separately: a
+slug resolved one way at creation and another way on a later revision, or a template accepted
+by one operation and refused by the other, is a difference no caller can see and none would
+expect.
+
+**The slug is previewed as the one that will actually be stored.** WordPress does not refuse a
+slug already in use, it suffixes it — `about` saved beside an existing `about` becomes
+`about-2`. So the resolution runs twice during planning: `sanitize_title()` answers what the
+requested words become, and `wp_unique_post_slug()` answers what is left after the site's
+existing content has had its say. The preview reports both, under `requestedSlug` and
+`storedSlug`, with a sentence naming the difference when there is one. A page template binds
+to a page by slug and by nothing else, so a caller told `about` while `about-2` was written
+has been handed the one fact that makes the rest of their work wrong.
+
+On an update the slug is resolved against the parent the revision will *leave* the item under,
+not the one it sits under now. A slug is only unique within its branch, so moving and renaming
+in one call is one question, not two.
+
+A slug that sanitizes to nothing is refused rather than promised. An empty slug is not a slug:
+WordPress would derive one from the title instead, so the write would succeed while the
+address the caller asked for never existed. A slug nobody asked for is not promised at all,
+for the mirror reason — there is no honest way to promise a value this operation did not
+choose.
+
+**The refusals happen during planning, which is the point.** WordPress would take most of
+these values and quietly do something else with them: store a parent a flat content type never
+renders, drop a looping parent back to 0 and save, fall back to the theme's ordinary rendering
+when handed a template file it does not offer. Each of those is a write that reports success
+and renders wrong. `ContentPlacement` refuses them while the caller is still deciding, and the
+template refusal names the filenames the theme does offer, because they are not guessable.
+
+**The template is meta, and that changes how it is restored.** `_wp_page_template` looks like a
+post column because `wp_insert_post()` accepts a `page_template` key, but the accepting is
+conditional — core ignores an empty one outright. An item that had no template of its own
+records `''` in the snapshot, so restoring it through that call would leave the written
+template in place and report the rollback done. `ContentTarget` gains a sixth restorable list,
+`RESTORABLE_TEMPLATE_FIELDS`, and a fifth write mechanism: the meta key is written directly,
+where `''` means delete, and the write is verified by re-reading, because `update_post_meta()`
+answers false when the value already matches and so is not a usable success signal. The
+restore is gated on `is_string()` for the reason the media restore is gated on `is_numeric()`
+— a snapshot taken before the template was recorded must not be read as "this item had no
+template".
+
+`post_parent` joins `RESTORABLE_ORDER_FIELDS` instead, because it is a genuine post column and
+rides the same `wp_update_post()` call `menu_order` does.
+
+`page_template` also joins the read map. A field promised in `afterFields` that the read-back
+cannot see fails verification, so `ContentFields::read()` reads it under its own name and
+`content-get` returns it as `template`. It stays outside the custom-field allowlist, which
+covers unprotected meta only, so `meta` on a content record never carries it.

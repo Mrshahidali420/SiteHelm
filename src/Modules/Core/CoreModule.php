@@ -161,10 +161,11 @@ final class CoreModule implements IntegrationModule {
 		// set — there is no system-write.
 		$registry->register( SiteSettingsRead::definition(), [ new SiteSettingsRead(), 'handle' ] );
 
-		$targets = new ContentTarget( $fields );
+		$targets   = new ContentTarget( $fields );
+		$placement = new ContentPlacement( $fields );
 
-		$registry->registerWrite( ContentUpdate::definition(), new ContentUpdate( $fields, $targets ) );
-		$registry->registerWrite( ContentCreate::definition(), new ContentCreate( $fields, $targets ) );
+		$registry->registerWrite( ContentUpdate::definition(), new ContentUpdate( $fields, $targets, $placement ) );
+		$registry->registerWrite( ContentCreate::definition(), new ContentCreate( $fields, $targets, $placement ) );
 		$registry->registerWrite(
 			ContentRollbackApply::definition(),
 			new ContentRollbackApply(

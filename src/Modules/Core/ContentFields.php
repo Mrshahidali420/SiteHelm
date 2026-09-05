@@ -42,6 +42,7 @@ final class ContentFields {
 		'post_excerpt',
 		'post_parent',
 		'menu_order',
+		'page_template',
 		'post_modified_gmt',
 		'featured_media',
 		'terms',
@@ -67,6 +68,27 @@ final class ContentFields {
 	 * copy that drifts is the one nobody is looking at.
 	 */
 	public const DRAFT_LIKE_STATUSES = [ 'draft', 'pending' ];
+
+	/**
+	 * Where WordPress keeps the page template a content item renders through.
+	 *
+	 * It is protected meta, so it is deliberately outside the custom-field
+	 * allowlist: `meta` on a content record never carries it, and it is read
+	 * and written here under its own name instead. A theme resolves the file
+	 * from this value, so an item that looks right in the editor and wrong on
+	 * the front end is usually this key disagreeing with the layout.
+	 */
+	public const TEMPLATE_META_KEY = '_wp_page_template';
+
+	/**
+	 * The template value that means "no template of its own".
+	 *
+	 * WordPress stores the literal string rather than an empty value, and
+	 * wp_insert_post() ignores an empty `page_template` entirely, so going
+	 * back to the theme's ordinary rendering is asking for this word and not
+	 * for nothing.
+	 */
+	public const DEFAULT_TEMPLATE = 'default';
 
 	/**
 	 * The target-key prefix for a post-shaped target.
@@ -207,6 +229,65 @@ final class ContentFields {
 		};
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+	/**
+	 * The slug WordPress will actually store for a requested one.
+	 *
+	 * TWO STEPS, AND THE SECOND IS THE POINT. sanitize_title() answers what the
+	 * requested words become; wp_unique_post_slug() answers what is left after
+	 * the site's existing content has had its say, because a slug already taken
+	 * is silently suffixed — `about` saved beside an existing `about` becomes
+	 * `about-2`. Both run here so a preview can name the stored value rather
+	 * than the asked-for one. A page template binds to a page by slug and by
+	 * nothing else, so a caller told `about` while `about-2` was written has
+	 * been handed the one fact that makes the rest of their work wrong.
+	 *
+	 * @param string $requested The slug as asked for.
+	 * @param int    $postId    The item being written, or 0 for a new one.
+	 * @param string $status    The status the item will hold.
+	 * @param string $type      The content type.
+	 * @param int    $parentId  The parent the item will sit under.
+	 *
+	 * @return string The slug as WordPress will store it.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+	 */
+	public function resolveSlug( string $requested, int $postId, string $status, string $type, int $parentId ): string {
+		$sanitized = (string) sanitize_title( $requested );
+
+		if ( '' === $sanitized ) {
+			return '';
+		}
+
+		return (string) wp_unique_post_slug( $sanitized, $postId, $status, $type, $parentId );
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+
+	/**
+	 * The page templates this site's active theme offers for a content type.
+	 *
+	 * @param string $type The content type.
+	 *
+	 * @return string[] The template filenames, ascending.
+	 */
+	public function templateChoices( string $type ): array {
+		$theme = wp_get_theme();
+		if ( ! is_object( $theme ) || ! method_exists( $theme, 'get_page_templates' ) ) {
+			return [];
+		}
+
+		$templates = $theme->get_page_templates( null, $type );
+		if ( ! is_array( $templates ) ) {
+			return [];
+		}
+
+		$files = array_map( 'strval', array_keys( $templates ) );
+		sort( $files, SORT_STRING );
+
+		return $files;
+	}
 	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 
 	/**
@@ -352,6 +433,10 @@ final class ContentFields {
 
 		$post_type = (string) $post->post_type;
 
+		// A page template is a filename or nothing. Anything else stored under the
+		// key is not one, and reading it as a string would only invent a value.
+		$template = get_post_meta( $postId, self::TEMPLATE_META_KEY, true );
+
 		return [
 			'post_type'         => $post_type,
 			'post_status'       => (string) $post->post_status,
@@ -361,6 +446,7 @@ final class ContentFields {
 			'post_excerpt'      => (string) $post->post_excerpt,
 			'post_parent'       => (int) $post->post_parent,
 			'menu_order'        => (int) ( $post->menu_order ?? 0 ),
+			'page_template'     => is_string( $template ) ? $template : '',
 			'post_modified_gmt' => (string) $post->post_modified_gmt,
 			'featured_media'    => (int) get_post_thumbnail_id( $postId ),
 			'terms'             => $this->terms( $postId, $post_type ),
@@ -394,6 +480,7 @@ final class ContentFields {
 			'excerpt'       => $fields['post_excerpt'] ?? '',
 			'parent'        => $fields['post_parent'] ?? 0,
 			'menuOrder'     => $fields['menu_order'] ?? 0,
+			'template'      => $fields['page_template'] ?? '',
 			'modifiedGmt'   => $fields['post_modified_gmt'] ?? '',
 			'featuredMedia' => $fields['featured_media'] ?? 0,
 			'terms'         => [] === ( $fields['terms'] ?? [] ) ? new stdClass() : $fields['terms'],

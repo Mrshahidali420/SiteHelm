@@ -116,22 +116,40 @@ final class ContentTarget {
 	public const RESTORABLE_TAXONOMY_FIELDS = [ 'terms' ];
 
 	/**
-	 * The restorable post column a content write can change that is a whole
-	 * number rather than text.
+	 * The restorable post columns a content write can change that are whole
+	 * numbers rather than text.
 	 *
 	 * A FIFTH list but not a fifth write mechanism, and it is the only one of
-	 * the five that is not. `menu_order` is a post column like the five in
-	 * RESTORABLE_FIELDS and rides the same wp_update_post() call; it is kept
-	 * apart because every loop over that list casts its values to string, and a
-	 * position recorded as 3 and promised as '3' would not equal the 3 the
-	 * read-back projects. A correct rollback would then report itself adjusted,
-	 * every time.
+	 * the five that is not. Both are post columns like the five in
+	 * RESTORABLE_FIELDS and both ride the same wp_update_post() call; they are
+	 * kept apart because every loop over that list casts its values to string,
+	 * and a position recorded as 3 and promised as '3' would not equal the 3
+	 * the read-back projects. A correct rollback would then report itself
+	 * adjusted, every time. `post_parent` joins for the same reason and shares
+	 * the same treatment.
 	 *
 	 * Values in this list are integers, not strings.
 	 *
 	 * @var string[]
 	 */
-	public const RESTORABLE_ORDER_FIELDS = [ 'menu_order' ];
+	public const RESTORABLE_ORDER_FIELDS = [ 'menu_order', 'post_parent' ];
+
+	/**
+	 * The restorable value a content write can change that lives in protected
+	 * post meta.
+	 *
+	 * A SIXTH list and a fifth write mechanism, for the reason the media list
+	 * gives for being the second: one list cannot serve two write mechanisms.
+	 * `page_template` looks like a post column because wp_update_post() accepts
+	 * it, but it is meta, and the accepting is conditional — core ignores an
+	 * empty `page_template` outright. An item that had no template of its own
+	 * records '' here, so restoring it through that call would quietly leave the
+	 * written template in place and report the rollback done. It is written
+	 * directly against its meta key instead, where '' means delete.
+	 *
+	 * @var string[]
+	 */
+	public const RESTORABLE_TEMPLATE_FIELDS = [ 'page_template' ];
 
 	/**
 	 * Resolves one existing content item.
@@ -242,6 +260,10 @@ final class ContentTarget {
 
 		foreach ( self::RESTORABLE_ORDER_FIELDS as $field ) {
 			$snapshot[ $field ] = (int) ( $current->fields[ $field ] ?? 0 );
+		}
+
+		foreach ( self::RESTORABLE_TEMPLATE_FIELDS as $field ) {
+			$snapshot[ $field ] = (string) ( $current->fields[ $field ] ?? '' );
 		}
 
 		ksort( $snapshot, SORT_STRING );
@@ -404,12 +426,73 @@ final class ContentTarget {
 			}
 		}
 
+		// is_string() for the reason the media loop uses is_numeric(): a recorded
+		// '' means "this item had no template of its own", which is a deletion
+		// and not a skip, so a key present holding null must not be cast into
+		// that instruction by accident.
+		$template_restored = false;
+		foreach ( self::RESTORABLE_TEMPLATE_FIELDS as $field ) {
+			if ( array_key_exists( $field, $restoreState ) && is_string( $restoreState[ $field ] ) ) {
+				$this->restore_template( $post_id, $restoreState[ $field ], $completed );
+				$template_restored = true;
+			}
+		}
+
+		if ( $template_restored ) {
+			$completed[] = 'page template restored';
+		}
+
 		clean_post_cache( $post_id );
 
 		return $this->fields->targetKey( $post_id );
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
 	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+
+	/**
+	 * Restores the recorded page template, verifying by measurement.
+	 *
+	 * The return value of update_post_meta() is NOT usable as a success signal,
+	 * for the reason the featured-media restore gives: it answers false when the
+	 * stored value already equals the requested one, which means the recorded
+	 * state already holds. So the stored value is re-read and compared instead.
+	 *
+	 * A recorded '' means the item rendered through the theme's ordinary
+	 * template, and restoring that is a deletion of the key rather than a write
+	 * of an empty string — a stored '' and an absent key read back the same
+	 * through get_post_meta(), but only the deletion leaves the row as the
+	 * snapshot found it.
+	 *
+	 * @param int      $post_id   The post identifier.
+	 * @param string   $template  The recorded template, or '' for none.
+	 * @param string[] $completed The restore steps that have already succeeded.
+	 *
+	 * @throws OperationException With ErrorCode::ExecutionFailed when the stored
+	 *                           template does not match the recorded one.
+	 *
+	 * phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+	 */
+	private function restore_template( int $post_id, string $template, array $completed ): void {
+		if ( '' === $template ) {
+			delete_post_meta( $post_id, ContentFields::TEMPLATE_META_KEY );
+		} else {
+			update_post_meta( $post_id, ContentFields::TEMPLATE_META_KEY, $template );
+		}
+
+		// Read back exactly as the field map does: anything that is not a string
+		// is not a template, and treating it as one would report a match that the
+		// site does not have.
+		$stored = get_post_meta( $post_id, ContentFields::TEMPLATE_META_KEY, true );
+		if ( ! is_string( $stored ) || $stored !== $template ) {
+			throw new OperationException(
+				ErrorCode::ExecutionFailed,
+				'WordPress did not store the recorded page template.',
+				'Set the template from the WordPress editor instead.',
+				$completed
+			);
+		}
+	}
 	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 
 	/**
