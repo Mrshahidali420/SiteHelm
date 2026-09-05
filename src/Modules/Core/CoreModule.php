@@ -146,11 +146,17 @@ final class CoreModule implements IntegrationModule {
 			[ new ContentLinksCheck( $fields, new ContentLinks( $redirects ) ), 'handle' ]
 		);
 
-		// The one read that looks at the site's own front end rather than its
-		// database, so an agent can see what its write actually rendered.
+		// The two reads that look at the site's own front end rather than its
+		// database, so an agent can see what its write actually rendered, and
+		// then why it looks the way it does.
 		$registry->register(
 			ContentRenderedRead::definition(),
 			[ new ContentRenderedRead( $fields, new ContentLinks( $redirects ), new RenderedPage() ), 'handle' ]
+		);
+
+		$registry->register(
+			ContentStyleCheck::definition(),
+			[ new ContentStyleCheck( new FrontEndPage( $fields ), new StyleSheets(), new StyleQuery() ), 'handle' ]
 		);
 
 		$registry->register( CommentList::definition(), [ new CommentList(), 'handle' ] );

@@ -1,6 +1,6 @@
 # Operations reference
 
-SiteHelm exposes **108 operations** through **11 MCP tools**, called dispatchers. Every operation is
+SiteHelm exposes **109 operations** through **11 MCP tools**, called dispatchers. Every operation is
 declared once, in code, with a strict input schema (`additionalProperties: false`), a required
 capability, a risk level, and preview, snapshot, and rollback policies. That declaration is the
 contract the gateway enforces and the catalogue an agent discovers.
@@ -91,7 +91,7 @@ string, authorization header, or resolved IP address.
 
 Posts, pages, custom post types, and taxonomies.
 
-### `content-read` — 16 operations
+### `content-read` — 17 operations
 
 | Operation | Does | Capability |
 |---|---|---|
@@ -103,6 +103,7 @@ Posts, pages, custom post types, and taxonomies.
 | `redirect-list` | Lists every redirect this site serves, with the table's size and capacity, and the rules another redirect plugin holds | `manage_options` |
 | `content-links-check` | Reports the links in one item, resolving this site's own against its posts and redirects | `edit_post` |
 | `content-rendered-get` | Fetches one published item's own front-end address and reports what it actually rendered — status, redirect, title, meta description, canonical, robots, social tags, heading outline, images missing alt text, link split and word count, and the markup itself on request | `edit_post` |
+| `content-style-check` | Reads the stylesheets one published page links on this site and reports the CSS rules written for a selector, which of them apply at a given viewport width, and which declaration wins. Answers whether a breakpoint, a hover rule or an override actually holds without opening a browser. Reads stylesheets only: it does not lay the page out, run scripts, or resolve inherited values, and a media condition it cannot evaluate is reported as unevaluated rather than guessed | `edit_post` |
 | `comment-list` | Lists comments by status, post, or search term, newest first | `moderate_comments` |
 | `content-seo-get` | Reads one item's search-engine metadata from whichever SEO plugin the site runs | `edit_post` |
 | `content-seo-score-get` | Reads one item's SEO and readability scores as the SEO plugin stored them, with the findings SiteHelm derives | `edit_post` |
