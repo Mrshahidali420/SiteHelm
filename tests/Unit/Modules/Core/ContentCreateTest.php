@@ -16,6 +16,7 @@ use SiteHelm\Contracts\OperationException;
 use SiteHelm\Contracts\PermissionMode;
 use SiteHelm\Modules\Core\ContentCreate;
 use SiteHelm\Modules\Core\ContentFields;
+use SiteHelm\Modules\Core\ContentPlacement;
 use SiteHelm\Modules\Core\ContentTarget;
 use SiteHelm\Modules\Core\CoreModule;
 use SiteHelm\Registry\CapabilityRegistry;
@@ -32,10 +33,19 @@ final class ContentCreateTest extends TestCase {
 	/** @var array<int, array<string, mixed>> */
 	private array $writes = [];
 
+	/** The page template currently stored against the post under test. */
+	private string $template = '';
+
+	/** Whether the content type under test takes parents. */
+	private bool $hierarchical = false;
+
+	/** @var string[] The page templates the active theme offers. */
+	private array $offeredTemplates = [ 'templates/full-width.php', 'templates/landing.php' ];
+
 	protected function setUp(): void {
 		parent::setUp();
 		$fields          = new ContentFields();
-		$this->operation = new ContentCreate( $fields, new ContentTarget( $fields ) );
+		$this->operation = new ContentCreate( $fields, new ContentTarget( $fields ), new ContentPlacement( $fields ) );
 		$this->writes    = [];
 
 		// Grants the generic 'post' type's own capability (which, for the
@@ -63,6 +73,35 @@ final class ContentCreateTest extends TestCase {
 				return 77;
 			}
 		);
+
+
+		// The page template lives in protected meta, and every content read now
+		// asks for it, so the doubles carry a one-value store rather than a
+		// constant: a restore that deletes the key has to be visible.
+		Functions\when( 'get_post_meta' )->alias( fn() => $this->template );
+		Functions\when( 'update_post_meta' )->alias(
+			function ( int $post_id, string $key, $value ): bool {
+				$this->template = (string) $value;
+
+				return true;
+			}
+		);
+		Functions\when( 'delete_post_meta' )->alias(
+			function (): bool {
+				$this->template = '';
+
+				return true;
+			}
+		);
+		Functions\when( 'sanitize_title' )->alias(
+			static fn( string $value ): string => trim( (string) preg_replace( '/[^a-z0-9]+/', '-', strtolower( $value ) ), '-' )
+		);
+		// Answers what WordPress answers for a free slug. Collision behaviour is
+		// exercised where it matters by overriding this stub in the test itself.
+		Functions\when( 'wp_unique_post_slug' )->alias( static fn( string $slug ): string => $slug );
+		Functions\when( 'is_post_type_hierarchical' )->alias( fn(): bool => $this->hierarchical );
+		Functions\when( 'wp_check_post_hierarchy_for_loops' )->alias( static fn( int $parent ): int => $parent );
+		Functions\when( 'wp_get_theme' )->alias( fn() => $this->themeObject() );
 
 		$this->stubCreatedPost();
 	}
@@ -160,6 +199,10 @@ final class ContentCreateTest extends TestCase {
 				'menu_order'   => 0,
 				'post_content' => '<p>Body.</p>',
 				'post_excerpt' => '',
+				// Promised for the same reason menu_order is: WordPress stores 0
+				// either way, and a promise that left the column out would not
+				// match the read-back that reports it.
+				'post_parent'  => 0,
 				'post_status'  => 'draft',
 				'post_title'   => 'Brand new page',
 				'post_type'    => 'post',
@@ -529,4 +572,117 @@ final class ContentCreateTest extends TestCase {
 			$registry->definition( 'content-create' )->outputSchema
 		);
 	}
+
+	/**
+	 * THE FINDING'S OWN TEST, AT THE OPERATION. Two pages asked for the same
+	 * slug: WordPress silently suffixes the second, and a preview reporting the
+	 * requested slug rather than the stored one is exactly the quiet lie
+	 * preview-then-apply exists to prevent.
+	 */
+	public function test_a_taken_slug_is_previewed_as_the_suffixed_one_that_will_be_stored(): void {
+		Functions\when( 'wp_unique_post_slug' )->alias(
+			static fn( string $slug ): string => 'about' === $slug ? 'about-2' : $slug
+		);
+
+		$input         = $this->input();
+		$input['slug'] = 'About';
+
+		$current = $this->operation->resolveTarget( $input, $this->makeContext() );
+		$planned = $this->operation->planChange( $current, $input, $this->makeContext() );
+
+		$this->assertSame( 'about-2', $planned->afterFields['post_name'] );
+		$this->assertSame( 'About', $planned->previewDetail['requestedSlug'] );
+		$this->assertSame( 'about-2', $planned->previewDetail['storedSlug'] );
+		$this->assertStringContainsString( 'about-2', $planned->previewDetail['slugNote'] );
+
+		$this->operation->applyChange( $current, $planned, $this->makeContext() );
+
+		$this->assertSame( 'about-2', $this->writes[0]['post_name'] );
+	}
+
+	/**
+	 * Left out, the slug is not promised at all. WordPress derives one from the
+	 * title, and there is no honest way to promise a value this operation did
+	 * not choose.
+	 */
+	public function test_a_slug_nobody_asked_for_is_neither_promised_nor_written(): void {
+		$current = $this->operation->resolveTarget( $this->input(), $this->makeContext() );
+		$planned = $this->operation->planChange( $current, $this->input(), $this->makeContext() );
+
+		$this->assertArrayNotHasKey( 'post_name', $planned->afterFields );
+		$this->assertSame( [], $planned->previewDetail );
+	}
+
+	public function test_a_requested_template_is_promised_and_written(): void {
+		$input             = $this->input();
+		$input['template'] = 'templates/landing.php';
+
+		$current = $this->operation->resolveTarget( $input, $this->makeContext() );
+		$planned = $this->operation->planChange( $current, $input, $this->makeContext() );
+
+		$this->assertSame( 'templates/landing.php', $planned->afterFields['page_template'] );
+
+		$this->operation->applyChange( $current, $planned, $this->makeContext() );
+
+		$this->assertSame( 'templates/landing.php', $this->writes[0]['page_template'] );
+	}
+
+	/**
+	 * Refused while the caller is still deciding. Core would fall back to the
+	 * theme's ordinary rendering and save, so the page would report created and
+	 * render as though the template had never been asked for.
+	 */
+	public function test_a_template_the_theme_does_not_offer_is_refused(): void {
+		$input             = $this->input();
+		$input['template'] = 'templates/invented.php';
+
+		$current = $this->operation->resolveTarget( $input, $this->makeContext() );
+
+		try {
+			$this->operation->planChange( $current, $input, $this->makeContext() );
+			$this->fail( 'Expected a refusal.' );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::InvalidInput, $e->errorCode );
+			$this->assertStringContainsString( 'templates/landing.php', (string) $e->remediation );
+		}
+	}
+
+	/**
+	 * 'post' is flat. WordPress would store the parent column anyway and never
+	 * render it, so the creation would verify green and the item would sit
+	 * nowhere the caller meant.
+	 */
+	public function test_a_parent_on_a_flat_content_type_is_refused(): void {
+		$input           = $this->input();
+		$input['parent'] = 12;
+
+		$current = $this->operation->resolveTarget( $input, $this->makeContext() );
+
+		$this->expectException( OperationException::class );
+		$this->operation->planChange( $current, $input, $this->makeContext() );
+	}
+
+	/**
+	 * A theme double shaped like WP_Theme for the one method read here.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+	 */
+	private function themeObject(): object {
+		return new class( $this->offeredTemplates ) {
+			/**
+			 * @param string[] $files The offered template filenames.
+			 */
+			public function __construct( private readonly array $files ) {
+			}
+
+			/**
+			 * @return array<string, string> Filename to human label.
+			 */
+			public function get_page_templates( $post = null, $post_type = 'page' ): array {
+				return array_fill_keys( $this->files, 'Label' );
+			}
+		};
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+
 }

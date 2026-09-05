@@ -84,6 +84,21 @@ final class ContentUpdate implements WriteOperation {
 						'type'        => 'integer',
 						'description' => 'Where this item sits when its content type is ordered by hand rather than by date. Lower numbers come first, and 0 is the default every item starts at. Only content types registered with page-attribute support, and archives a theme sorts by it, take any notice.',
 					],
+					'slug'      => [
+						'type'        => 'string',
+						'maxLength'   => 200,
+						'description' => 'Replacement address. A slug already in use is silently suffixed, so the preview reports the slug that will actually be stored rather than the one asked for. Changing it changes every link to this item.',
+					],
+					'parent'    => [
+						'type'        => 'integer',
+						'minimum'     => 0,
+						'description' => 'The item this one sits under, or 0 for none. Only hierarchical content types take any notice.',
+					],
+					'template'  => [
+						'type'        => 'string',
+						'maxLength'   => 255,
+						'description' => 'The page template the active theme renders this item through, given as its filename. Send "default" for the theme\'s ordinary rendering. A filename the theme does not offer is refused in the preview, naming the ones it does.',
+					],
 				],
 				'required'             => [ 'id' ],
 				'additionalProperties' => false,
@@ -135,17 +150,20 @@ final class ContentUpdate implements WriteOperation {
 	 */
 	private const CHANGEABLE_ORDER = [
 		'menuOrder' => 'menu_order',
+		'parent'    => 'post_parent',
 	];
 
 	/**
 	 * Constructs the operation.
 	 *
-	 * @param ContentFields $fields  The normalized field map.
-	 * @param ContentTarget $targets Shared target resolution.
+	 * @param ContentFields    $fields    The normalized field map.
+	 * @param ContentTarget    $targets   Shared target resolution.
+	 * @param ContentPlacement $placement Shared placement checks.
 	 */
 	public function __construct(
 		private readonly ContentFields $fields,
 		private readonly ContentTarget $targets,
+		private readonly ContentPlacement $placement,
 	) {
 	}
 
@@ -192,23 +210,48 @@ final class ContentUpdate implements WriteOperation {
 			);
 		}
 
+		$post_id = $this->fields->postIdFromTargetKey( $current->targetKey );
+		$type    = (string) ( $current->fields['post_type'] ?? '' );
+		$status  = (string) ( $current->fields['post_status'] ?? '' );
+
 		foreach ( self::CHANGEABLE_ORDER as $property => $field ) {
 			if ( array_key_exists( $property, $input ) ) {
 				$promised[ $field ] = (int) $input[ $property ];
 			}
 		}
 
+		if ( array_key_exists( 'post_parent', $promised ) ) {
+			$this->placement->requireParent( $promised['post_parent'], $type, $post_id );
+		}
+
+		$detail = [];
+
+		// Resolved against the parent this revision will leave the item under,
+		// not the one it sits under now: a slug is only unique within its branch,
+		// so moving and renaming in one call has to be answered as one question.
+		if ( array_key_exists( 'slug', $input ) ) {
+			$requested             = (string) $input['slug'];
+			$parent                = (int) ( $promised['post_parent'] ?? $current->fields['post_parent'] ?? 0 );
+			$resolved              = $this->placement->requireSlug( $requested, $post_id, $status, $type, $parent );
+			$promised['post_name'] = $resolved;
+			$detail                = $this->placement->slugDetail( $requested, $resolved );
+		}
+
+		if ( array_key_exists( 'template', $input ) ) {
+			$promised['page_template'] = $this->placement->requireTemplate( (string) $input['template'], $type );
+		}
+
 		if ( [] === $promised ) {
 			throw new OperationException(
 				ErrorCode::InvalidInput,
-				'Supply at least one of title, content, excerpt, or menuOrder to revise.',
+				'Supply at least one of title, content, excerpt, menuOrder, slug, parent, or template to revise.',
 				'Add one changeable property and request a fresh preview.'
 			);
 		}
 
 		ksort( $promised, SORT_STRING );
 
-		return new PlannedChange( $promised, $promised, ContentFields::FIELD_ORDER );
+		return new PlannedChange( $promised, $promised, ContentFields::FIELD_ORDER, [], $detail );
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped

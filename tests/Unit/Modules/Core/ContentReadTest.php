@@ -31,6 +31,10 @@ final class ContentReadTest extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();
 		$this->handler = new ContentRead( new ContentFields() );
+
+		// Every content read now asks for the page template, which lives in
+		// protected meta rather than in a post column.
+		Functions\when( 'get_post_meta' )->justReturn( '' );
 	}
 
 	private function makeContext(): OperationContext {

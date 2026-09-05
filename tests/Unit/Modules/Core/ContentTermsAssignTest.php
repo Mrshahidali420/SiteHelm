@@ -224,6 +224,11 @@ final class ContentTermsAssignTest extends TestCase {
 		Functions\when( 'is_wp_error' )->justReturn( false );
 		Functions\when( 'clean_post_cache' )->justReturn( null );
 		Functions\when( 'get_post_thumbnail_id' )->justReturn( 0 );
+		// The field map always reads the page-template meta key; a post that
+		// never had one answers with an empty string.
+		Functions\when( 'get_post_meta' )->alias(
+			static fn( int $id, string $key = '', bool $single = false ) => $single ? '' : []
+		);
 		Functions\when( 'get_option' )->justReturn( [] );
 		Functions\when( 'wp_update_post' )->alias( static fn( array $postarr ): int => (int) $postarr['ID'] );
 

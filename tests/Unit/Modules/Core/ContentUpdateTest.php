@@ -16,6 +16,7 @@ use SiteHelm\Contracts\OperationContext;
 use SiteHelm\Contracts\OperationException;
 use SiteHelm\Contracts\PermissionMode;
 use SiteHelm\Modules\Core\ContentFields;
+use SiteHelm\Modules\Core\ContentPlacement;
 use SiteHelm\Modules\Core\ContentTarget;
 use SiteHelm\Modules\Core\ContentUpdate;
 use SiteHelm\Modules\Core\CoreModule;
@@ -38,10 +39,19 @@ final class ContentUpdateTest extends TestCase {
 
 	private int $thumbnailId = 0;
 
+	/** The page template currently stored against the post under test. */
+	private string $template = '';
+
+	/** Whether the content type under test takes parents. */
+	private bool $hierarchical = false;
+
+	/** @var string[] The page templates the active theme offers. */
+	private array $offeredTemplates = [ 'templates/full-width.php', 'templates/landing.php' ];
+
 	protected function setUp(): void {
 		parent::setUp();
 		$fields                = new ContentFields();
-		$this->operation       = new ContentUpdate( $fields, new ContentTarget( $fields ) );
+		$this->operation       = new ContentUpdate( $fields, new ContentTarget( $fields ), new ContentPlacement( $fields ) );
 		$this->writes          = [];
 		$this->thumbnailWrites = [];
 		$this->thumbnailId     = 0;
@@ -85,6 +95,35 @@ final class ContentUpdateTest extends TestCase {
 				return (int) $postarr['ID'];
 			}
 		);
+
+		// The page template lives in protected meta, and every content read now
+		// asks for it, so the doubles carry a one-value store rather than a
+		// constant: a restore that deletes the key has to be visible.
+		Functions\when( 'get_post_meta' )->alias( fn() => $this->template );
+		Functions\when( 'update_post_meta' )->alias(
+			function ( int $post_id, string $key, $value ): bool {
+				$this->template = (string) $value;
+
+				return true;
+			}
+		);
+		Functions\when( 'delete_post_meta' )->alias(
+			function (): bool {
+				$this->template = '';
+
+				return true;
+			}
+		);
+		Functions\when( 'sanitize_title' )->alias(
+			static fn( string $value ): string => trim( (string) preg_replace( '/[^a-z0-9]+/', '-', strtolower( $value ) ), '-' )
+		);
+		// Answers what WordPress answers for a free slug. Collision behaviour is
+		// exercised where it matters by overriding this stub in the test itself.
+		Functions\when( 'wp_unique_post_slug' )->alias( static fn( string $slug ): string => $slug );
+		Functions\when( 'is_post_type_hierarchical' )->alias( fn(): bool => $this->hierarchical );
+		Functions\when( 'wp_check_post_hierarchy_for_loops' )->alias( static fn( int $parent ): int => $parent );
+		Functions\when( 'wp_get_theme' )->alias( fn() => $this->themeObject() );
+
 		$this->stubPost();
 	}
 
@@ -366,13 +405,21 @@ final class ContentUpdateTest extends TestCase {
 			[
 				// An integer, not a string, and the whole reason the order column
 				// is recorded through its own list.
-				'menu_order'   => 0,
-				'post_content' => '<p>Original body.</p>',
-				'post_excerpt' => 'Original excerpt.',
-				'post_id'      => 42,
-				'post_name'    => 'original-title',
-				'post_status'  => 'draft',
-				'post_title'   => 'Original title',
+				'menu_order'    => 0,
+				// Recorded because an update can now change it. '' is the value an
+				// item with no template of its own holds, and restoring it means
+				// deleting the meta key rather than skipping the field.
+				'page_template' => '',
+				'post_content'  => '<p>Original body.</p>',
+				'post_excerpt'  => 'Original excerpt.',
+				'post_id'       => 42,
+				'post_name'     => 'original-title',
+				// Recorded for the same reason menu_order is: an update can move an
+				// item, and a rollback that leaves it under its new parent has not
+				// undone the change.
+				'post_parent'   => 0,
+				'post_status'   => 'draft',
+				'post_title'    => 'Original title',
 			],
 			$snapshot
 		);
@@ -786,4 +833,127 @@ final class ContentUpdateTest extends TestCase {
 			)
 		);
 	}
+
+	/**
+	 * A SLUG IS ONLY UNIQUE WITHIN ITS BRANCH, so a call that moves an item and
+	 * renames it in one go has to be answered as one question: the slug is
+	 * resolved against the parent this revision will LEAVE the item under, not
+	 * the one it sits under now.
+	 */
+	public function test_a_slug_is_resolved_against_the_parent_the_revision_moves_to(): void {
+		$this->hierarchical = true;
+		$seen               = [];
+		Functions\when( 'wp_unique_post_slug' )->alias(
+			static function ( string $slug, $post_id, $status, $type, $parent ) use ( &$seen ): string {
+				$seen[] = $parent;
+
+				return $slug;
+			}
+		);
+
+		$input   = [
+			'id'     => 42,
+			'slug'   => 'About Us',
+			'parent' => 9,
+		];
+		$current = $this->operation->resolveTarget( $input, $this->makeContext() );
+		$planned = $this->operation->planChange( $current, $input, $this->makeContext() );
+
+		$this->assertSame( [ 9 ], $seen );
+		$this->assertSame( 'about-us', $planned->afterFields['post_name'] );
+		$this->assertSame( 9, $planned->afterFields['post_parent'] );
+	}
+
+	public function test_a_requested_template_is_promised_and_written(): void {
+		$input   = [
+			'id'       => 42,
+			'template' => 'templates/landing.php',
+		];
+		$current = $this->operation->resolveTarget( $input, $this->makeContext() );
+		$planned = $this->operation->planChange( $current, $input, $this->makeContext() );
+
+		$this->assertSame( 'templates/landing.php', $planned->afterFields['page_template'] );
+
+		$this->operation->applyChange( $current, $planned, $this->makeContext() );
+
+		$this->assertSame( 'templates/landing.php', $this->writes[0]['page_template'] );
+	}
+
+	/**
+	 * A RECORDED '' IS A DELETION, NOT A SKIP. An item that had no template of
+	 * its own records '' in the snapshot, and wp_update_post() ignores an empty
+	 * `page_template` outright — so restoring through that call would leave the
+	 * written template in place and report the rollback done. The meta key is
+	 * written directly instead, where '' means delete.
+	 */
+	public function test_restore_deletes_the_template_of_an_item_that_never_had_one(): void {
+		$this->template = 'templates/landing.php';
+
+		$this->operation->restore(
+			[
+				'post_id'       => 42,
+				'page_template' => '',
+			],
+			$this->makeContext()
+		);
+
+		$this->assertSame( '', $this->template );
+	}
+
+	public function test_restore_puts_back_the_template_the_item_had(): void {
+		$this->template = 'templates/full-width.php';
+
+		$this->operation->restore(
+			[
+				'post_id'       => 42,
+				'page_template' => 'templates/landing.php',
+			],
+			$this->makeContext()
+		);
+
+		$this->assertSame( 'templates/landing.php', $this->template );
+	}
+
+	/**
+	 * Backward compatibility with rows already in a live database, the same
+	 * reason the post columns have it: a snapshot taken before the template was
+	 * recorded must not be read as "this item had no template".
+	 */
+	public function test_restore_leaves_the_template_alone_when_an_older_snapshot_never_recorded_it(): void {
+		$this->template = 'templates/landing.php';
+
+		$this->operation->restore(
+			[
+				'post_id'    => 42,
+				'post_title' => 'Original title',
+			],
+			$this->makeContext()
+		);
+
+		$this->assertSame( 'templates/landing.php', $this->template );
+	}
+
+	/**
+	 * A theme double shaped like WP_Theme for the one method read here.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+	 */
+	private function themeObject(): object {
+		return new class( $this->offeredTemplates ) {
+			/**
+			 * @param string[] $files The offered template filenames.
+			 */
+			public function __construct( private readonly array $files ) {
+			}
+
+			/**
+			 * @return array<string, string> Filename to human label.
+			 */
+			public function get_page_templates( $post = null, $post_type = 'page' ): array {
+				return array_fill_keys( $this->files, 'Label' );
+			}
+		};
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+
 }

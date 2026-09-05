@@ -68,8 +68,15 @@ final class ContentBlockUpdateTest extends TestCase {
 		Functions\when( 'clean_post_cache' )->justReturn( null );
 		Functions\when( 'get_object_taxonomies' )->justReturn( [] );
 		Functions\when( 'get_option' )->justReturn( [] );
-		Functions\when( 'get_post_meta' )->justReturn( [] );
+		// The field map always reads the page-template meta key singly; every
+		// other read here is the whole-post map.
+		Functions\when( 'get_post_meta' )->alias(
+			static fn( int $id, string $key = '', bool $single = false ) => $single ? '' : []
+		);
 		Functions\when( 'get_post_thumbnail_id' )->justReturn( 0 );
+		// A restore that recorded no page template deletes the key; the field map
+		// above then reads back the empty string that verification expects.
+		Functions\when( 'delete_post_meta' )->justReturn( true );
 		Functions\when( 'wp_update_post' )->alias(
 			function ( array $postarr ): int {
 				$this->writes[] = $postarr;

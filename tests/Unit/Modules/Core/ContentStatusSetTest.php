@@ -95,6 +95,11 @@ final class ContentStatusSetTest extends TestCase {
 		Functions\when( 'is_wp_error' )->justReturn( false );
 		Functions\when( 'clean_post_cache' )->justReturn( null );
 		Functions\when( 'get_post_thumbnail_id' )->justReturn( 0 );
+		// The field map always reads the page-template meta key; a post that
+		// never had one answers with an empty string.
+		Functions\when( 'get_post_meta' )->alias(
+			static fn( int $id, string $key = '', bool $single = false ) => $single ? '' : []
+		);
 		Functions\when( 'get_object_taxonomies' )->justReturn( [] );
 		Functions\when( 'get_option' )->justReturn( [] );
 
@@ -428,16 +433,20 @@ final class ContentStatusSetTest extends TestCase {
 			[
 				// An integer, not a string, and the whole reason the order column
 				// is recorded through its own list.
-				'menu_order'   => 0,
-				'post_content' => '<p>Original body.</p>',
+				'menu_order'    => 0,
+				// Restored through a meta write of its own, because core ignores an
+				// empty page_template and a restore to none would be a silent no-op.
+				'page_template' => '',
+				'post_content'  => '<p>Original body.</p>',
 				// Deliberately empty, and legal: most posts have no excerpt. It is
 				// what separates array_key_exists from isset or ! empty() in
 				// ContentTarget's restore loop.
-				'post_excerpt' => '',
-				'post_id'      => 42,
-				'post_name'    => 'original-title',
-				'post_status'  => 'publish',
-				'post_title'   => 'Original title',
+				'post_excerpt'  => '',
+				'post_id'       => 42,
+				'post_name'     => 'original-title',
+				'post_parent'   => 0,
+				'post_status'   => 'publish',
+				'post_title'    => 'Original title',
 			],
 			$this->operation->captureSnapshot( $current, $this->makeContext() )
 		);

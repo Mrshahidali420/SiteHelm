@@ -185,7 +185,13 @@ final class ContentFieldsTest extends TestCase {
 		);
 		Functions\when( 'get_option' )->justReturn( [ 'zeta', 'alpha' ] );
 		Functions\when( 'get_post_meta' )->alias(
-			static fn( int $id, string $key ): string => 'alpha' === $key ? 'A' : 'Z'
+			static function ( int $id, string $key ): string {
+				if ( ContentFields::TEMPLATE_META_KEY === $key ) {
+					return 'templates/landing.php';
+				}
+
+				return 'alpha' === $key ? 'A' : 'Z';
+			}
 		);
 
 		$fields = $this->fields->read( 42 );
@@ -205,6 +211,11 @@ final class ContentFieldsTest extends TestCase {
 			],
 			$fields['meta']
 		);
+		// The template is read under its own name and never through `meta`: it
+		// is protected, so the allowlist above cannot reach it, and a caller
+		// reading a record has no other way to learn how the page renders.
+		$this->assertSame( 'templates/landing.php', $fields['page_template'] );
+		$this->assertArrayNotHasKey( ContentFields::TEMPLATE_META_KEY, $fields['meta'] );
 		$this->assertSame( 7, $fields['featured_media'] );
 		$this->assertSame( 0, $fields['post_parent'] );
 		// An int, because that is what the column holds and what every promise
@@ -217,6 +228,7 @@ final class ContentFieldsTest extends TestCase {
 		Functions\when( 'get_post_thumbnail_id' )->justReturn( 0 );
 		Functions\when( 'get_object_taxonomies' )->justReturn( [] );
 		Functions\when( 'get_option' )->justReturn( [] );
+		Functions\when( 'get_post_meta' )->justReturn( 'templates/landing.php' );
 
 		$record = $this->fields->publicRecord( 42, (array) $this->fields->read( 42 ) );
 
@@ -229,6 +241,7 @@ final class ContentFieldsTest extends TestCase {
 		$this->assertSame( 'Original excerpt.', $record['excerpt'] );
 		$this->assertSame( 0, $record['parent'] );
 		$this->assertSame( 4, $record['menuOrder'] );
+		$this->assertSame( 'templates/landing.php', $record['template'] );
 		$this->assertSame( '2026-07-26 10:00:00', $record['modifiedGmt'] );
 		$this->assertSame( 0, $record['featuredMedia'] );
 		$this->assertInstanceOf( stdClass::class, $record['terms'] );

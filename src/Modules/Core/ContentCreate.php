@@ -91,6 +91,21 @@ final class ContentCreate implements WriteOperation {
 						'type'        => 'integer',
 						'description' => 'Where this item sits when its content type is ordered by hand rather than by date. Lower numbers come first, and 0 is the default every item starts at. Only content types registered with page-attribute support, and archives a theme sorts by it, take any notice.',
 					],
+					'slug'      => [
+						'type'        => 'string',
+						'maxLength'   => 200,
+						'description' => 'The address this item is reached at. Left out, WordPress derives one from the title. A slug already in use is silently suffixed, so the preview reports the slug that will actually be stored rather than the one asked for.',
+					],
+					'parent'    => [
+						'type'        => 'integer',
+						'minimum'     => 0,
+						'description' => 'The item this one sits under, or 0 for none. Only hierarchical content types take any notice.',
+					],
+					'template'  => [
+						'type'        => 'string',
+						'maxLength'   => 255,
+						'description' => 'The page template the active theme renders this item through, given as its filename. Send "default" for the theme\'s ordinary rendering. A filename the theme does not offer is refused in the preview, naming the ones it does.',
+					],
 				],
 				'required'             => [ 'type', 'title', 'status' ],
 				'additionalProperties' => false,
@@ -121,12 +136,14 @@ final class ContentCreate implements WriteOperation {
 	/**
 	 * Constructs the operation.
 	 *
-	 * @param ContentFields $fields  The normalized field map.
-	 * @param ContentTarget $targets Shared target resolution.
+	 * @param ContentFields    $fields    The normalized field map.
+	 * @param ContentTarget    $targets   Shared target resolution.
+	 * @param ContentPlacement $placement Shared placement checks.
 	 */
 	public function __construct(
 		private readonly ContentFields $fields,
 		private readonly ContentTarget $targets,
+		private readonly ContentPlacement $placement,
 	) {
 	}
 
@@ -188,6 +205,9 @@ final class ContentCreate implements WriteOperation {
 			);
 		}
 
+		$parent = (int) ( $input['parent'] ?? 0 );
+		$this->placement->requireParent( $parent, $type );
+
 		$promised = [
 			'post_type'    => $type,
 			'post_status'  => $status,
@@ -195,10 +215,28 @@ final class ContentCreate implements WriteOperation {
 			'post_content' => $this->fields->sanitizeForSave( 'post_content', (string) ( $input['content'] ?? '' ), $context->userId ),
 			'post_excerpt' => $this->fields->sanitizeForSave( 'post_excerpt', (string) ( $input['excerpt'] ?? '' ), $context->userId ),
 			'menu_order'   => (int) ( $input['menuOrder'] ?? 0 ),
+			'post_parent'  => $parent,
 		];
+
+		$detail = [];
+
+		// Only when it was asked for. Left out, WordPress derives the slug from
+		// the title, and there is no honest way to promise a value this operation
+		// did not choose.
+		if ( array_key_exists( 'slug', $input ) ) {
+			$requested             = (string) $input['slug'];
+			$resolved              = $this->placement->requireSlug( $requested, 0, $status, $type, $parent );
+			$promised['post_name'] = $resolved;
+			$detail                = $this->placement->slugDetail( $requested, $resolved );
+		}
+
+		if ( array_key_exists( 'template', $input ) ) {
+			$promised['page_template'] = $this->placement->requireTemplate( (string) $input['template'], $type );
+		}
+
 		ksort( $promised, SORT_STRING );
 
-		return new PlannedChange( $promised, $promised, ContentFields::FIELD_ORDER );
+		return new PlannedChange( $promised, $promised, ContentFields::FIELD_ORDER, [], $detail );
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped

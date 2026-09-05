@@ -84,6 +84,11 @@ final class ContentFeaturedMediaSetTest extends TestCase {
 		Functions\when( 'get_post_thumbnail_id' )->alias(
 			fn() => 0 === $this->thumbnailId ? false : $this->thumbnailId
 		);
+		// The field map always reads the page-template meta key; a post that
+		// never had one answers with an empty string.
+		Functions\when( 'get_post_meta' )->alias(
+			static fn( int $id, string $key = '', bool $single = false ) => $single ? '' : []
+		);
 		Functions\when( 'set_post_thumbnail' )->alias(
 			function ( int $post_id, int $media_id ): bool {
 				$this->thumbnailWrites[] = [ 'set', $post_id, $media_id ];

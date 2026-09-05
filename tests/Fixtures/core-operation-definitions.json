@@ -75,6 +75,9 @@
                     "menuOrder": {
                         "type": "integer"
                     },
+                    "template": {
+                        "type": "string"
+                    },
                     "modifiedGmt": {
                         "type": "string"
                     },
@@ -816,6 +819,21 @@
                     "menuOrder": {
                         "type": "integer",
                         "description": "Where this item sits when its content type is ordered by hand rather than by date. Lower numbers come first, and 0 is the default every item starts at. Only content types registered with page-attribute support, and archives a theme sorts by it, take any notice."
+                    },
+                    "slug": {
+                        "type": "string",
+                        "maxLength": 200,
+                        "description": "Replacement address. A slug already in use is silently suffixed, so the preview reports the slug that will actually be stored rather than the one asked for. Changing it changes every link to this item."
+                    },
+                    "parent": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "The item this one sits under, or 0 for none. Only hierarchical content types take any notice."
+                    },
+                    "template": {
+                        "type": "string",
+                        "maxLength": 255,
+                        "description": "The page template the active theme renders this item through, given as its filename. Send \"default\" for the theme's ordinary rendering. A filename the theme does not offer is refused in the preview, naming the ones it does."
                     }
                 },
                 "required": [
@@ -907,6 +925,21 @@
                     "menuOrder": {
                         "type": "integer",
                         "description": "Where this item sits when its content type is ordered by hand rather than by date. Lower numbers come first, and 0 is the default every item starts at. Only content types registered with page-attribute support, and archives a theme sorts by it, take any notice."
+                    },
+                    "slug": {
+                        "type": "string",
+                        "maxLength": 200,
+                        "description": "The address this item is reached at. Left out, WordPress derives one from the title. A slug already in use is silently suffixed, so the preview reports the slug that will actually be stored rather than the one asked for."
+                    },
+                    "parent": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "The item this one sits under, or 0 for none. Only hierarchical content types take any notice."
+                    },
+                    "template": {
+                        "type": "string",
+                        "maxLength": 255,
+                        "description": "The page template the active theme renders this item through, given as its filename. Send \"default\" for the theme's ordinary rendering. A filename the theme does not offer is refused in the preview, naming the ones it does."
                     }
                 },
                 "required": [

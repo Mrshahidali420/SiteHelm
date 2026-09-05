@@ -118,6 +118,14 @@ final class ContentRollbackApplyTest extends TestCase {
 		Functions\when( 'get_post_thumbnail_id' )->alias(
 			fn() => 0 === $this->thumbnailId ? false : $this->thumbnailId
 		);
+		// A restore that recorded no page template deletes the key; the field map
+		// above then reads back the empty string that verification expects.
+		Functions\when( 'delete_post_meta' )->justReturn( true );
+		// The field map always reads the page-template meta key; a post that
+		// never had one answers with an empty string.
+		Functions\when( 'get_post_meta' )->alias(
+			static fn( int $id, string $key = '', bool $single = false ) => $single ? '' : []
+		);
 		Functions\when( 'set_post_thumbnail' )->alias(
 			function ( int $post_id, int $media_id ): bool {
 				$this->thumbnailWrites[] = [ 'set', $post_id, $media_id ];
@@ -794,10 +802,12 @@ final class ContentRollbackApplyTest extends TestCase {
 				'featured_media' => 0,
 				'menu_order'     => 0,
 				'meta'           => [],
+				'page_template'  => '',
 				'post_content'   => '<p>Edited body.</p>',
 				'post_excerpt'   => 'Edited excerpt.',
 				'post_id'        => 42,
 				'post_name'      => 'original-title',
+				'post_parent'    => 0,
 				'post_status'    => 'draft',
 				'post_title'     => 'Edited title',
 				'terms'          => [],
@@ -1708,10 +1718,12 @@ final class ContentRollbackApplyTest extends TestCase {
 					'byline'   => 'Ada',
 					'subtitle' => 'Sub',
 				],
+				'page_template'  => '',
 				'post_content'   => '<p>Edited body.</p>',
 				'post_excerpt'   => 'Edited excerpt.',
 				'post_id'        => 42,
 				'post_name'      => 'original-title',
+				'post_parent'    => 0,
 				'post_status'    => 'draft',
 				'post_title'     => 'Edited title',
 				'terms'          => [ 'category' => [ 3, 5 ] ],
