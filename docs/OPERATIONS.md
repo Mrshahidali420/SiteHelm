@@ -1,6 +1,6 @@
 # Operations reference
 
-SiteHelm exposes **109 operations** through **11 MCP tools**, called dispatchers. Every operation is
+SiteHelm exposes **110 operations** through **11 MCP tools**, called dispatchers. Every operation is
 declared once, in code, with a strict input schema (`additionalProperties: false`), a required
 capability, a risk level, and preview, snapshot, and rollback policies. That declaration is the
 contract the gateway enforces and the catalogue an agent discovers.
@@ -330,7 +330,7 @@ links are listed per item, and `truncated` says when a page held more.
 | `menu-list` | Lists menus with their theme location assignments | `edit_theme_options` |
 | `menu-get` | Reads one menu's full item tree | `edit_theme_options` |
 
-### `menu-write` — 5 operations
+### `menu-write` — 6 operations
 
 | Operation | Does | Capability | Risk | Rollback |
 |---|---|---|---|---|
@@ -339,6 +339,7 @@ links are listed per item, and `truncated` says when a page held more.
 | `menu-item-update` | Updates an item's label, target, or attributes | `edit_theme_options` | medium | supported |
 | `menu-items-reorder` | Reorders and re-parents a menu tree | `edit_theme_options` | medium | supported |
 | `menu-location-assign` | Assigns a menu to a theme location | `edit_theme_options` | medium | supported |
+| `menu-item-delete` | Removes one item from a menu | `edit_theme_options` | high | required |
 
 ## Elementor
 

@@ -4092,3 +4092,46 @@ their values — readable, not writable, with the status screen's allowlist name
 one writable. It is built in `ContentFields::publicRecord()` and deliberately **not** in
 `read()`: `read()` feeds snapshots, and a snapshot capturing a key the write path refuses
 would record state no restore could put back.
+---
+
+## 70. Taking a menu item back out
+
+The menus module could add an item, repoint it, reorder the tree and assign the menu to a
+theme location. It could not remove an item. A launch-week navigation edit is rarely
+additive — the placeholder anchors written before the inner pages existed have to go
+somewhere — so a menu that needed to end up shorter than it started could not be finished
+through this dispatcher at all.
+
+`MenuItemDelete` (src/Modules/Menus/MenuItemDelete.php) removes one item.
+
+**The deletion is forced, not trashed.** A trashed `nav_menu_item` keeps its term
+relationship, so the menu would still hold an item the operation had reported as removed.
+`menu-item-create`'s own reversal already force-deletes, and Appearance then Menus does the
+same.
+
+**An item with children is refused, not deleted.** Every child stores its parent as that
+item's post identifier, and the restore below puts the item back under a *new* identifier —
+so a deletion that took a parent with it would leave children pointing at a row that no
+longer exists and a rollback that could not reunite them. The refusal is an
+`ErrorCode::Conflict` at plan time, in both phases, and it names the children's identifiers
+so the caller can remove them or repoint them with `menu-item-update`. The child walk reads
+the menu's own item list rather than querying `_menu_item_menu_item_parent`, so an item in a
+*different* menu that happens to store the same parent identifier does not block anything.
+
+**The promised after-state is `exists: false` and nothing else.** A removal has no field
+values afterwards. Promising a title would ask `WriteVerifier` to compare values against a
+row that is meant to be gone, and that comparison passes most convincingly in exactly the
+case where the deletion silently did not happen. `readBack()` therefore does not reuse
+`MenuTarget::verifyRead()`, which throws when the item is absent — the state this operation
+exists to produce.
+
+**The restore re-creates; it does not revive.** `MenuTarget::recreateItem()` exists because
+`wp_update_nav_menu_item()` hands the identifier it is given straight to
+`wp_update_post()`, which refuses a row that is gone. The replay drops `menu-item-db-id`, inserts, and
+answers the key of what it actually created — a new identifier, reported honestly rather
+than papered over.
+
+**And that is why the class implements `RollbackDelegate`.** A `menu-item:` reference is not
+`post:`-prefixed, so `ContentRollbackApply` selects this class by the snapshot's recorded
+operation id. Its own `resolveTarget()` could not serve: that method refuses an identifier
+naming no item, which is precisely the state a rollback of this operation starts from.

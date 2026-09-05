@@ -5,10 +5,11 @@
         "menu-create",
         "menu-item-create",
         "menu-item-update",
+        "menu-item-delete",
         "menu-items-reorder",
         "menu-location-assign"
     ],
-    "operationCount": 7,
+    "operationCount": 8,
     "definitions": {
         "menu-list": {
             "inputSchema": {
@@ -447,6 +448,68 @@
                         "type": "string",
                         "maxLength": 65535,
                         "description": "The XFN relationship value recorded on the link."
+                    }
+                },
+                "required": [
+                    "item"
+                ],
+                "additionalProperties": false
+            },
+            "outputSchema": {
+                "type": "object",
+                "oneOf": [
+                    {
+                        "title": "Plan phase",
+                        "type": "object",
+                        "properties": {
+                            "plan": {
+                                "type": "object",
+                                "description": "The change plan to approve, including its plan token."
+                            }
+                        },
+                        "required": [
+                            "plan"
+                        ],
+                        "additionalProperties": false
+                    },
+                    {
+                        "title": "Apply phase",
+                        "type": "object",
+                        "properties": {
+                            "target": {
+                                "type": "string",
+                                "description": "The concrete target that was written."
+                            },
+                            "changed": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                },
+                                "description": "The fields the approved plan changed."
+                            },
+                            "state": {
+                                "type": "object",
+                                "description": "The verified persisted state of the target."
+                            }
+                        },
+                        "required": [
+                            "target",
+                            "changed",
+                            "state"
+                        ],
+                        "additionalProperties": false
+                    }
+                ]
+            }
+        },
+        "menu-item-delete": {
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "item": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "Identifier of the menu item to remove."
                     }
                 },
                 "required": [
