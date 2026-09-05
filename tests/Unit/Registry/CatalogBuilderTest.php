@@ -126,7 +126,7 @@ final class CatalogBuilderTest extends TestCase {
 		$this->assertSame( 1, $entry['schemaVersion'] );
 		$this->assertSame( [ 'manage_options' ], $entry['requiredCapabilities'] );
 		$this->assertSame( 'low', $entry['risk'] );
-		$this->assertNotEmpty( $entry['example'] );
+		$this->assertNotEmpty( $entry['examples'] );
 	}
 
 	public function test_inactive_module_operation_stays_listed_with_reason(): void {
@@ -295,10 +295,80 @@ final class CatalogBuilderTest extends TestCase {
 
 		$this->assertSame(
 			[
+				[
+					'operation' => 'content-update',
+					'arguments' => [ 'id' => 42 ],
+				],
+			],
+			$catalog['operations'][0]['examples']
+		);
+	}
+
+	/**
+	 * An operation with genuinely distinct modes publishes one example per mode.
+	 *
+	 * The catalog is what a client reads before its first call, so a single
+	 * example makes the simplest path the only documented one and teaches a shape
+	 * that is wrong for every other mode. The empty argument list on the second
+	 * example is deliberate: it has to serialize as an object here too, or the
+	 * same operation is described two ways by the same entry.
+	 */
+	public function test_catalog_publishes_every_example_an_operation_declares(): void {
+		$this->registry->registerWrite(
+			$this->makeMultiExampleDefinition(),
+			new StubWriteOperation()
+		);
+		$this->allowCapabilities( [ 'edit_posts', 'publish_posts' ] );
+
+		$catalog = $this->builder->build( 'content-write', $this->makeContext() );
+		$entry   = $catalog['operations'][0];
+
+		$this->assertCount( 2, $entry['examples'] );
+		$this->assertSame( [ 'id' => 42 ], $entry['examples'][0]['arguments'] );
+		$this->assertStringContainsString( '"arguments":{}', (string) json_encode( $entry ) );
+		$this->assertStringNotContainsString( '"arguments":[]', (string) json_encode( $entry ) );
+	}
+
+	/**
+	 * The write above, with a second example covering its other mode.
+	 */
+	private function makeMultiExampleDefinition(): OperationDefinition {
+		return new OperationDefinition(
+			id: 'content-update',
+			domain: Domain::Content,
+			mode: Mode::Write,
+			description: 'Update one content item.',
+			inputSchema: [
+				'type'                 => 'object',
+				'properties'           => [ 'id' => [ 'type' => 'integer' ] ],
+				'additionalProperties' => false,
+			],
+			outputSchema: [
+				'type'                 => 'object',
+				'properties'           => [ 'id' => [ 'type' => 'integer' ] ],
+				'additionalProperties' => false,
+			],
+			schemaVersion: 1,
+			requiredCapabilities: [ 'edit_posts', 'publish_posts' ],
+			risk: Risk::Medium,
+			isReadOnly: false,
+			isDestructive: false,
+			isIdempotent: true,
+			previewPolicy: PreviewPolicy::Required,
+			snapshotPolicy: SnapshotPolicy::Required,
+			rollbackPolicy: RollbackPolicy::Supported,
+			module: ModuleId::Core,
+			supportedVersions: [ 'wordpress' => '>=6.6' ],
+			example: [
 				'operation' => 'content-update',
 				'arguments' => [ 'id' => 42 ],
 			],
-			$catalog['operations'][0]['example']
+			moreExamples: [
+				[
+					'operation' => 'content-update',
+					'arguments' => [],
+				],
+			],
 		);
 	}
 

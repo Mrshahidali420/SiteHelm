@@ -3723,3 +3723,35 @@ rides the same `wp_update_post()` call `menu_order` does.
 cannot see fails verification, so `ContentFields::read()` reads it under its own name and
 `content-get` returns it as `template`. It stays outside the custom-field allowlist, which
 covers unprotected meta only, so `meta` on a content record never carries it.
+
+## 63. More than one example per operation
+
+The catalog is the discovery surface. It is what a client reads before its first
+call, and until now each entry carried exactly one usage example. That makes the
+simplest path the only documented one. `menu-item-create` showed a custom link
+typed by hand, so a client that wanted a menu item pointing at a page copied the
+shape it had been given and wrote a hand-typed URL instead — a link that goes
+stale the moment the page moves, produced by an operation that would have done
+the right thing if the entry had shown how to ask.
+
+`OperationDefinition` now takes an optional `moreExamples` alongside the required
+`example`, and `examples()` returns the list with the primary one first. The
+catalog and `system-operation-schema` publish `examples` in place of `example`.
+The list replaces the single key rather than sitting beside it: the catalog costs
+a client context on every call, and the finding this answers is about that
+surface being too thin, not about it being too small.
+
+Only operations with genuinely distinct modes declare a further example, and a
+test enforces that the shapes differ — a second example naming the same arguments
+lengthens the entry and teaches nothing. Two further rules are enforced across
+every definition the plugin registers: an example names its own operation, and
+its arguments are accepted by its own input schema. Both failures are invisible
+in review and land on somebody's first call, blamed on the operation rather than
+on the entry that described it.
+
+`SchemaShape` had to learn the list. An example with no arguments has to
+serialize as `{}`, and it reached that rule by sitting under the key `example`;
+inside a list its key is a number. The members of an `examples` list are now
+flagged as examples in their own right, or the same operation would be described
+two ways by the same catalog. Three operations that worked around the old rule by
+constructing a `stdClass` by hand now write an empty array like everything else.

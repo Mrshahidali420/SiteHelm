@@ -255,6 +255,31 @@ final class MenuItemCreate implements WriteOperation {
 					'url'   => 'https://example.com/contact',
 				],
 			],
+			moreExamples: [
+				// A page item carries no url and no title of its own: it
+				// follows the page, so a link typed by hand would go stale the
+				// moment the page moved.
+				[
+					'operation' => 'menu-item-create',
+					'arguments' => [
+						'menu'     => 'primary',
+						'type'     => 'page',
+						'objectId' => 42,
+					],
+				],
+				// A term archive names the taxonomy through "object", because
+				// "category" and "tag" are the only two that can be named on
+				// their own.
+				[
+					'operation' => 'menu-item-create',
+					'arguments' => [
+						'menu'     => 'primary',
+						'type'     => 'taxonomy',
+						'object'   => 'product_cat',
+						'objectId' => 17,
+					],
+				],
+			],
 		);
 	}
 

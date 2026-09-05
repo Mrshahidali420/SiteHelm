@@ -129,7 +129,7 @@ final class PluginList {
 			supportedVersions: ExtensionsPresence::supportedVersions(),
 			example: [
 				'operation' => 'system-plugin-list',
-				'arguments' => new \stdClass(),
+				'arguments' => [],
 			],
 		);
 	}

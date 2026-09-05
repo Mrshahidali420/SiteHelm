@@ -128,7 +128,7 @@ final class ThemeList {
 			supportedVersions: ExtensionsPresence::supportedVersions(),
 			example: [
 				'operation' => 'system-theme-list',
-				'arguments' => new \stdClass(),
+				'arguments' => [],
 			],
 		);
 	}
