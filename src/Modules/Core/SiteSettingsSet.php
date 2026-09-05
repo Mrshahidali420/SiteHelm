@@ -26,7 +26,7 @@ use SiteHelm\Contracts\RollbackPolicy;
 use SiteHelm\Contracts\SnapshotPolicy;
 
 /**
- * Writes any subset of the thirteen allowlisted site settings in one plan.
+ * Writes any subset of the fifteen allowlisted site settings in one plan.
  *
  * REGISTERED UNDER `content-write` while its read sits under `system-read`,
  * for the reason `UserRoleSet` and `RedirectSet` record: the eleven
@@ -44,7 +44,7 @@ use SiteHelm\Contracts\SnapshotPolicy;
  * THE SNAPSHOT IS THE WHOLE ALLOWLIST, not the fields being changed.
  * `captureSnapshot()` runs before the plan is known at preview time, and a
  * settings rollback that restored only some fields would leave the site in a
- * state nobody ever previewed. Thirteen scalars cost nothing to record, and a
+ * state nobody ever previewed. Fifteen scalars cost nothing to record, and a
  * rollback that puts the whole surface back is the honest reading of "restore
  * the settings".
  *
@@ -69,7 +69,7 @@ final class SiteSettingsSet implements RollbackDelegate {
 			id: 'site-settings-set',
 			domain: Domain::Content,
 			mode: Mode::Write,
-			description: 'Change any of the allowlisted site settings: title, tagline, timezone, date and time formats, posts per page, front page, permalink structure, default comment settings, search-engine visibility. Nothing outside the allowlist is reachable.',
+			description: 'Change any of the allowlisted site settings: title, tagline, site icon, site logo, timezone, date and time formats, posts per page, front page, permalink structure, default comment settings, search-engine visibility. Nothing outside the allowlist is reachable.',
 			inputSchema: [
 				'type'                 => 'object',
 				'properties'           => [
@@ -82,6 +82,16 @@ final class SiteSettingsSet implements RollbackDelegate {
 						'type'        => 'string',
 						'maxLength'   => SiteSettings::TEXT_MAX_LENGTH,
 						'description' => 'The site tagline. An empty string clears it.',
+					],
+					'siteIcon'               => [
+						'type'        => 'integer',
+						'minimum'     => 0,
+						'description' => 'The media library image used as the browser tab icon and app icon, or 0 to remove it. It must be at least 512 by 512 pixels, because WordPress generates every smaller size from it, and square or it is cropped.',
+					],
+					'siteLogo'               => [
+						'type'        => 'integer',
+						'minimum'     => 0,
+						'description' => 'The media library image the theme shows as the site logo, or 0 to remove it. Only themes that declare logo support show one; this is refused on a theme that does not.',
 					],
 					'timezone'               => [
 						'type'        => 'string',
@@ -224,6 +234,7 @@ final class SiteSettingsSet implements RollbackDelegate {
 		}
 
 		$this->assertFrontPageGeometry( $current->fields, $after );
+		$this->assertUsableImages( $after );
 
 		return new PlannedChange(
 			$payload,
@@ -276,7 +287,7 @@ final class SiteSettingsSet implements RollbackDelegate {
 	public function applyChange( TargetState $current, PlannedChange $planned, OperationContext $context ): string {
 		foreach ( SiteSettings::FIELD_ORDER as $field ) {
 			if ( array_key_exists( $field, $planned->payload ) ) {
-				update_option( SiteSettings::OPTION_MAP[ $field ], $planned->payload[ $field ] );
+				SiteSettings::writeStored( $field, $planned->payload[ $field ] );
 			}
 		}
 
@@ -290,9 +301,10 @@ final class SiteSettingsSet implements RollbackDelegate {
 	/**
 	 * Re-reads the allowlist for verification, through cleared caches.
 	 *
-	 * All thirteen options autoload, so on a site with a persistent object
+	 * All fourteen options autoload, so on a site with a persistent object
 	 * cache the fresh read would otherwise be answered from the pre-write
-	 * `alloptions` blob and report a correct write as unapplied.
+	 * `alloptions` blob and report a correct write as unapplied. The logo is
+	 * not an option and is cleared from its own row for the same reason.
 	 *
 	 * @param string           $targetKey The written target key.
 	 * @param OperationContext $context   The request context.
@@ -353,7 +365,7 @@ final class SiteSettingsSet implements RollbackDelegate {
 					!== SiteSettings::projectValue( $field, $settings[ $field ] );
 			}
 
-			update_option( SiteSettings::OPTION_MAP[ $field ], $settings[ $field ] );
+			SiteSettings::writeStored( $field, $settings[ $field ] );
 		}
 
 		if ( $permalink_changes ) {
@@ -442,6 +454,106 @@ final class SiteSettingsSet implements RollbackDelegate {
 		return $promise;
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+
+	/**
+	 * Refuses a plan naming an image that would not actually appear.
+	 *
+	 * WordPress accepts any attachment id in either row and then renders
+	 * nothing when the id is wrong, which is this plugin's worst failure
+	 * shape: a write that verifies green and changes nothing a visitor sees.
+	 * So each id is checked to be an image that exists, the icon is held to
+	 * the size WordPress's own settings screen demands, and the logo is
+	 * refused outright on a theme that does not declare logo support -- on
+	 * such a theme the row can be written and nothing will ever read it.
+	 *
+	 * 0 is always allowed: it is how both fields say "remove it".
+	 *
+	 * @param array<string, mixed> $after The promised fields.
+	 *
+	 * @throws OperationException With ErrorCode::Conflict.
+	 *
+	// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped, WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+	 */
+	private function assertUsableImages( array $after ): void {
+		if ( ! empty( $after['siteLogo'] ) && ! current_theme_supports( 'custom-logo' ) ) {
+			throw new OperationException(
+				ErrorCode::Conflict,
+				'The active theme does not show a site logo.',
+				'Set the logo in the theme\'s own options, or switch to a theme that declares custom-logo support. Writing it here would store a value nothing on the site reads.'
+			);
+		}
+
+		foreach ( [ 'siteIcon', 'siteLogo' ] as $field ) {
+			if ( empty( $after[ $field ] ) ) {
+				continue;
+			}
+
+			$this->assertImageAttachment( (int) $after[ $field ], $field );
+		}
+
+		if ( ! empty( $after['siteIcon'] ) ) {
+			$this->assertIconIsLargeEnough( (int) $after['siteIcon'] );
+		}
+	}
+	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped, WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+
+	/**
+	 * Refuses an id that is not an image in the media library.
+	 *
+	 * @param int    $attachment_id The id named.
+	 * @param string $field         The field that named it.
+	 *
+	 * @throws OperationException With ErrorCode::Conflict.
+	 *
+	// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped, WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+	 */
+	private function assertImageAttachment( int $attachment_id, string $field ): void {
+		if ( ! wp_attachment_is_image( $attachment_id ) ) {
+			throw new OperationException(
+				ErrorCode::Conflict,
+				sprintf( 'The id named by %s is not an image in the media library.', $field ),
+				'Call media-list to see the images this site holds, or media-upload to add one, and name the id it returns.'
+			);
+		}
+	}
+	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped, WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+
+	/**
+	 * Refuses a site icon smaller than WordPress can generate its sizes from.
+	 *
+	 * An image whose dimensions cannot be read is allowed through rather than
+	 * refused: the metadata is missing on plenty of working attachments, and
+	 * refusing on an absent measurement would block a perfectly good icon.
+	 *
+	 * @param int $attachment_id The image named.
+	 *
+	 * @throws OperationException With ErrorCode::Conflict.
+	 *
+	// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped, WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+	 */
+	private function assertIconIsLargeEnough( int $attachment_id ): void {
+		$meta = wp_get_attachment_metadata( $attachment_id );
+
+		if ( ! is_array( $meta ) || empty( $meta['width'] ) || empty( $meta['height'] ) ) {
+			return;
+		}
+
+		if ( (int) $meta['width'] < SiteSettings::MIN_SITE_ICON_SIZE
+			|| (int) $meta['height'] < SiteSettings::MIN_SITE_ICON_SIZE ) {
+			throw new OperationException(
+				ErrorCode::Conflict,
+				sprintf(
+					'The image named by siteIcon is %d by %d pixels, and a site icon must be at least %d by %d.',
+					(int) $meta['width'],
+					(int) $meta['height'],
+					SiteSettings::MIN_SITE_ICON_SIZE,
+					SiteSettings::MIN_SITE_ICON_SIZE
+				),
+				'Upload a square image of at least 512 by 512 pixels with media-upload and name the id it returns.'
+			);
+		}
+	}
+	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped, WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 
 	/**
 	 * Refuses a plan whose resulting front-page geometry is broken.
@@ -546,6 +658,15 @@ final class SiteSettingsSet implements RollbackDelegate {
 			&& false === $after['searchEngineVisibility']
 			&& true === ( $current['searchEngineVisibility'] ?? true ) ) {
 			$warnings[] = 'This asks search engines not to index the site. Rankings lost while it is off are not guaranteed to return when it is turned back on.';
+		}
+
+		if ( ! empty( $after['siteIcon'] ) ) {
+			$meta = wp_get_attachment_metadata( (int) $after['siteIcon'] );
+
+			if ( is_array( $meta ) && ! empty( $meta['width'] ) && ! empty( $meta['height'] )
+				&& (int) $meta['width'] !== (int) $meta['height'] ) {
+				$warnings[] = 'The site icon is not square, so WordPress crops it to a square from the middle. Anything near an edge is cut off.';
+			}
 		}
 
 		foreach ( [ 'showOnFront', 'frontPageId' ] as $field ) {

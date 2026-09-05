@@ -381,7 +381,12 @@ final class SiteSettingsSetTest extends TestCase {
 		$this->assertContains( 'options:alloptions', $this->cacheDeletes );
 		$this->assertContains( 'options:notoptions', $this->cacheDeletes );
 		$this->assertContains( 'options:blogname', $this->cacheDeletes );
-		$this->assertCount( 2 + count( SiteSettings::OPTION_MAP ), $this->cacheDeletes );
+		$this->assertContains(
+			'options:theme_mods_doubled-theme',
+			$this->cacheDeletes,
+			'The logo lives in the theme modifications, not in an option of its own.'
+		);
+		$this->assertCount( 3 + count( SiteSettings::OPTION_MAP ), $this->cacheDeletes );
 	}
 
 	public function test_the_snapshot_records_the_whole_allowlist_in_stored_values(): void {
@@ -501,5 +506,199 @@ final class SiteSettingsSetTest extends TestCase {
 
 		$this->assertSame( [], $this->operation->promiseRollback( [ 'settings' => [ 'title' => [ 'not', 'scalar' ] ] ], $state, $this->context() ) );
 		$this->assertSame( [], $this->operation->promiseRollback( [], $state, $this->context() ) );
+	}
+	/**
+	 * THE ICON IS AN OPTION AND THE LOGO IS NOT, and the write must not let
+	 * that difference show anywhere but in the row each one lands in.
+	 */
+	public function test_the_icon_lands_in_an_option_and_the_logo_in_the_themes_modifications(): void {
+		$this->seedSettingsImage( 44 );
+		$this->seedSettingsImage( 55 );
+
+		$this->apply( [
+			'siteIcon' => 44,
+			'siteLogo' => 55,
+		] );
+
+		$this->assertSame( '44', $this->options['site_icon'] );
+		$this->assertSame( [ [ 'custom_logo', 55 ] ], $this->themeModWrites );
+		$this->assertArrayNotHasKey( 'custom_logo', $this->options, 'A theme modification is not an option row.' );
+	}
+
+	/**
+	 * A MODIFICATION HOLDING 0 IS NOT THE SAME AS NO MODIFICATION: WordPress
+	 * would answer has_custom_logo() with yes and then render nothing.
+	 */
+	public function test_removing_the_logo_deletes_the_modification_rather_than_storing_zero(): void {
+		$this->themeMods['custom_logo'] = 55;
+
+		$this->apply( [ 'siteLogo' => 0 ] );
+
+		$this->assertSame( [ [ 'custom_logo', null ] ], $this->themeModWrites );
+		$this->assertArrayNotHasKey( 'custom_logo', $this->themeMods );
+		$this->assertSame( 0, $this->read()['siteLogo'] );
+	}
+
+	public function test_the_promise_equals_the_read_back_for_both_images(): void {
+		$this->seedSettingsImage( 44 );
+		$this->seedSettingsImage( 55 );
+
+		$planned = $this->apply( [
+			'siteIcon' => 44,
+			'siteLogo' => 55,
+		] );
+		$after   = $this->read();
+
+		$this->assertSame( 44, $planned->afterFields['siteIcon'] );
+		$this->assertSame( 55, $planned->afterFields['siteLogo'] );
+		$this->assertSame( 44, $after['siteIcon'] );
+		$this->assertSame( 55, $after['siteLogo'] );
+	}
+
+	/**
+	 * THE FAILURE THIS WHOLE VALIDATION EXISTS FOR: WordPress accepts any id
+	 * in either row and renders nothing, so the write would verify green and
+	 * change nothing a visitor sees.
+	 */
+	public function test_an_id_that_is_not_an_image_is_refused_before_anything_is_written(): void {
+		foreach ( [ 'siteIcon', 'siteLogo' ] as $field ) {
+			try {
+				$this->plan( [ $field => 99 ] );
+				$this->fail( 'Expected an id that is not an image to be refused: ' . $field );
+			} catch ( OperationException $refused ) {
+				$this->assertSame( ErrorCode::Conflict, $refused->errorCode );
+				$this->assertStringContainsString( $field, $refused->getMessage() );
+			}
+		}
+
+		$this->assertSame( [], $this->optionWrites );
+		$this->assertSame( [], $this->themeModWrites );
+	}
+
+	public function test_an_icon_smaller_than_wordpress_can_use_is_refused(): void {
+		$this->seedSettingsImage( 44, 300, 300 );
+
+		try {
+			$this->plan( [ 'siteIcon' => 44 ] );
+			$this->fail( 'Expected an undersized icon to be refused.' );
+		} catch ( OperationException $refused ) {
+			$this->assertSame( ErrorCode::Conflict, $refused->errorCode );
+			$this->assertStringContainsString( '300 by 300', $refused->getMessage() );
+			$this->assertStringContainsString( '512', $refused->getMessage() );
+		}
+	}
+
+	/**
+	 * An absent measurement is not evidence of a bad image, and plenty of
+	 * working attachments have none.
+	 */
+	public function test_an_icon_whose_size_cannot_be_read_is_allowed_rather_than_refused(): void {
+		$this->settingsImages[44] = [];
+
+		$planned = $this->plan( [ 'siteIcon' => 44 ] );
+
+		$this->assertSame( 44, $planned->afterFields['siteIcon'] );
+		$this->assertSame( [], $planned->warnings );
+	}
+
+	public function test_a_non_square_icon_is_warned_about_rather_than_refused(): void {
+		$this->seedSettingsImage( 44, 1024, 512 );
+
+		$planned = $this->plan( [ 'siteIcon' => 44 ] );
+
+		$this->assertSame( 44, $planned->afterFields['siteIcon'] );
+		$this->assertStringContainsString( 'crops it to a square', implode( ' ', $planned->warnings ) );
+	}
+
+	/**
+	 * A theme with no logo support would take the write and show nothing, so
+	 * the refusal names the theme rather than letting the row be written.
+	 */
+	public function test_a_logo_is_refused_on_a_theme_that_does_not_show_one(): void {
+		$this->seedSettingsImage( 55 );
+		$this->themeSupports['custom-logo'] = false;
+
+		try {
+			$this->plan( [ 'siteLogo' => 55 ] );
+			$this->fail( 'Expected a logo on an unsupporting theme to be refused.' );
+		} catch ( OperationException $refused ) {
+			$this->assertSame( ErrorCode::Conflict, $refused->errorCode );
+			$this->assertStringContainsString( 'does not show a site logo', $refused->getMessage() );
+		}
+
+		$this->assertSame( [], $this->themeModWrites );
+	}
+
+	/**
+	 * Removing a logo left behind by an earlier theme must stay possible on a
+	 * theme that does not support one; that is exactly when it is needed.
+	 */
+	public function test_removing_a_logo_is_allowed_on_a_theme_that_does_not_show_one(): void {
+		$this->themeMods['custom_logo']     = 55;
+		$this->themeSupports['custom-logo'] = false;
+
+		$this->apply( [ 'siteLogo' => 0 ] );
+
+		$this->assertSame( [ [ 'custom_logo', null ] ], $this->themeModWrites );
+	}
+
+	public function test_a_rollback_puts_both_images_back_in_their_own_stores(): void {
+		$this->seedSettingsImage( 44 );
+		$this->seedSettingsImage( 55 );
+		$this->options['site_icon']     = '44';
+		$this->themeMods['custom_logo'] = 55;
+
+		$snapshot = $this->operation->captureSnapshot(
+			$this->operation->resolveTarget( [], $this->context() ),
+			$this->context()
+		);
+
+		$this->apply( [ 'siteIcon' => 0 ] );
+		$this->themeMods['custom_logo'] = 77;
+
+		$this->operation->restore( $snapshot, $this->context() );
+
+		$this->assertSame( '44', $this->options['site_icon'] );
+		$this->assertSame( 55, $this->themeMods['custom_logo'] );
+	}
+
+	/**
+	 * Plans one change and returns it.
+	 *
+	 * @param array<string, mixed> $input The arguments.
+	 *
+	 * @return \SiteHelm\Contracts\PlannedChange The plan.
+	 */
+	private function plan( array $input ) {
+		return $this->operation->planChange(
+			$this->operation->resolveTarget( $input, $this->context() ),
+			$input,
+			$this->context()
+		);
+	}
+
+	/**
+	 * Plans one change and applies it.
+	 *
+	 * @param array<string, mixed> $input The arguments.
+	 *
+	 * @return \SiteHelm\Contracts\PlannedChange The plan that was applied.
+	 */
+	private function apply( array $input ) {
+		$current = $this->operation->resolveTarget( $input, $this->context() );
+		$planned = $this->operation->planChange( $current, $input, $this->context() );
+
+		$this->operation->applyChange( $current, $planned, $this->context() );
+
+		return $planned;
+	}
+
+	/**
+	 * The settings as a read-back reports them.
+	 *
+	 * @return array<string, mixed> The projection.
+	 */
+	private function read(): array {
+		return $this->operation->readBack( 'site-settings', $this->context() )->fields;
 	}
 }

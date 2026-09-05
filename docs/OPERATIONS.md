@@ -148,7 +148,7 @@ links are listed per item, and `truncated` says when a page held more.
 | `content-seo-audit-fix` | Takes the same page `content-seo-audit` would (type, status, limit ≤ 50, offset, minScore) and fixes the chosen findings on every post that carries one as one previewed, reversible change — `missing-description` from the post's excerpt or text (a post whose text yields fewer than 70 characters is reported under `unfixable`), `description-too-long` and `title-too-long` trimmed at a word boundary, `noindex` set to false | `edit_post` on every post | medium | supported |
 | `content-term-seo-set` | Writes one category's or tag's search-engine metadata into whichever SEO plugin the site runs | `edit_posts` + the taxonomy's edit capability | medium | supported |
 | `user-role-set` | Replaces one user's roles with a single registered role | `promote_users` | high | supported |
-| `site-settings-set` | Changes site settings from a strict thirteen-field allowlist — title, tagline, timezone, date and time formats, posts per page, front page geometry, permalink structure, default comment and ping status, search-engine visibility | `manage_options` | medium | supported |
+| `site-settings-set` | Changes site settings from a strict fifteen-field allowlist — title, tagline, site icon, site logo, timezone, date and time formats, posts per page, front page geometry, permalink structure, default comment and ping status, search-engine visibility | `manage_options` | medium | supported |
 
 > **`content-seo-audit-fix` offers only the four findings with a mechanical fix.**
 > A missing focus keyword, a low score and a too-short description need a person, and
@@ -434,7 +434,7 @@ what is actually in the database, so a restore puts back what was really there.
 | `system-integrations` | Health of every optional integration: `Active`, `Inactive`, `VersionBlocked` | `manage_options` |
 | `system-operation-schema` | Returns one named operation's full input and output schema, so an agent fetches only the schema it is about to use | `read` |
 | `user-list` | Lists user accounts by role or search term, newest registration first, with the role slugs this site has registered | `list_users` |
-| `site-settings-read` | Reads the whole site-settings allowlist, typed, in one call — the same thirteen fields `site-settings-set` can change, and nothing else | `manage_options` |
+| `site-settings-read` | Reads the whole site-settings allowlist, typed, in one call — the same fifteen fields `site-settings-set` can change, and nothing else | `manage_options` |
 | `audit-list` | Reads the change ledger: what changed, when, by whom, and what can be rolled back | `manage_options` |
 | `system-plugin-list` | Lists every plugin installed on this site with its version, whether it is active, whether the network activated it, and whether an update is waiting | `manage_options` |
 | `system-theme-list` | Lists every theme installed on this site with its version, which one is live, and whether an update is waiting | `manage_options` |

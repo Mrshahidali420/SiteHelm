@@ -1822,9 +1822,10 @@ this repository's `tests/Doubles/FakeWpdb.php` via `$GLOBALS['wpdb']` with `varQ
 ## 32. Site settings — the allowlist
 
 `SiteSettings` (src/Modules/Core/SiteSettings.php) is the single authority for the
-thirteen-field allowlist: `OPTION_MAP` maps API field names to option names, and
-`FIELD_ORDER` fixes the order every projection, snapshot, and schema uses. Nothing
-outside the map is readable or writable — the read projects exactly the map, and the
+fifteen-field allowlist: `OPTION_MAP` maps API field names to option names,
+`THEME_MOD_MAP` maps the one field that is not an option, and `FIELD_ORDER` fixes the
+order every projection, snapshot, and schema uses. Nothing outside the two maps is
+readable or writable — the read projects exactly the map, and the
 write's input schema (`additionalProperties: false`) plus `normalize()`'s
 default-throws switch refuse anything else twice over.
 
@@ -1851,8 +1852,9 @@ refuses (Conflict) `show_on_front: page` with no front page, front page == posts
 and any referenced page that is not a published page — checked only for fields the
 change touches.
 
-**Caches and flushes.** All thirteen options autoload, so `readBack()` deletes the
-`alloptions` and `notoptions` cache rows plus each per-option row before re-reading.
+**Caches and flushes.** All fourteen options autoload, so `readBack()` deletes the
+`alloptions` and `notoptions` cache rows plus each per-option row before re-reading, and
+the `theme_mods_{stylesheet}` row alongside them for the logo.
 `flush_rewrite_rules(false)` runs only when the applied payload contains
 `permalinkStructure` — and on restore, only when the snapshot's structure differs from
 what is stored at restore time.
@@ -3528,3 +3530,41 @@ a null recorded under the key would silently move an item nobody asked to move.
 `content-list` deliberately did not gain an `orderBy` argument. The order that matters here is
 the one visitors see, which the theme decides from the column; SiteHelm's own listing is a
 tool for finding things, and giving it a second ordering would invite the two to be confused.
+
+---
+
+## 60. The site icon and the logo, and why one of them is not an option
+
+Two of the things every new site needs — the icon in the browser tab, and the logo in
+the header — could not be set through SiteHelm. An agent could build the whole site and
+still had to hand it back for those two.
+
+They look like one feature and they are not. `site_icon` is an option holding an
+attachment id, and it drops straight into the existing allowlist. `custom_logo` is a
+theme modification: a different row, a different reader, a different writer, and scoped
+to whichever theme is active rather than to the site. Writing it with `update_option()`
+would have created a row nothing reads, and reported success.
+
+So `SiteSettings` grew a second map, `THEME_MOD_MAP`, and a pair of routers —
+`readStored()` and `writeStored()` — that every caller now goes through. `project()`,
+`applyChange()` and `restore()` are unchanged in shape: they still walk `FIELD_ORDER`
+in field names, and the store each field lives in is settled in one place. A logo is
+REMOVED rather than set to 0, because a modification holding 0 makes
+`has_custom_logo()` answer yes and then render nothing.
+
+Both fields are validated against the failure this plugin cares most about — a write
+that verifies green and changes nothing a visitor sees. WordPress accepts any id in
+either row. So `assertUsableImages()` refuses an id that is not an image, refuses a
+logo outright on a theme that does not declare `custom-logo` support, and holds the
+icon to the 512-pixel minimum WordPress's own settings screen demands. A non-square
+icon is warned about rather than refused, because WordPress crops it and the result is
+a real icon. An icon whose dimensions cannot be read is allowed: the metadata is
+missing on plenty of working attachments, and an absent measurement is not evidence of
+a bad image.
+
+Removing a logo stays possible on a theme that does not support one. That is precisely
+when it is needed — a logo left behind by the previous theme.
+
+`readBack()` clears the `theme_mods_{stylesheet}` cache row as well as the option rows.
+Without it a logo write would be verified against the modifications blob as it stood
+before the write.

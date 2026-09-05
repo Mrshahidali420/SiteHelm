@@ -24,6 +24,13 @@ an operation behaves.
   property names it accepts.
 
 ### Added
+- **The site icon and the site logo can be set.** Two of the first things any new site needs
+  — the icon in the browser tab and the logo in the header — had to be set by hand in
+  WordPress after everything else was built. `site-settings-set` now takes `siteIcon` and
+  `siteLogo`, reading the settings reports both, and 0 removes either one. Naming an id that
+  is not an image is refused, an icon smaller than the 512 pixels WordPress needs is refused
+  with its actual size, and a logo is refused on a theme that does not show one rather than
+  being written where nothing would read it.
 - **`content-list` accepts `private` and `any` as a status.** `private` lists items published
   for logged-in readers only, and `any` lists everything except items in the trash, spelled
   the way WordPress spells it.

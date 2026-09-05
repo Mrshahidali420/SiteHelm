@@ -18,11 +18,19 @@ use SiteHelm\Contracts\OperationException;
  * THE ALLOWLIST IS THE FEATURE. WordPress options are a flat namespace holding
  * everything from the site title to `active_plugins` and `siteurl`, and a raw
  * option write is a remote shell wearing a different hat — ROADMAP records that
- * exact request as declined. What ships instead is this closed map: thirteen
+ * exact request as declined. What ships instead is this closed map: fifteen
  * named settings, each with its own type, its own validation, and its own
  * projection, and NOTHING outside the map is reachable through either
  * operation. The map is a constant rather than a filter so no site, plugin, or
  * later change of mood can widen it without a code change that review sees.
+ *
+ * TWO STORES BEHIND ONE VOCABULARY. Fourteen of the fifteen are option rows.
+ * The site logo is not: WordPress keeps it as a theme modification, which is a
+ * different row, a different reader and a different writer, and one that is
+ * scoped to whichever theme is active. Rather than let that difference leak
+ * into every loop, both stores are reached through readStored() and
+ * writeStored() here, and the rest of the plugin keeps working in field names
+ * exactly as it did when there was only one store.
  *
  * ONE VOCABULARY ON BOTH SIDES. The read projects, the write promises, and the
  * verifier compares in the SAME camelCase field names, mapped here — once — to
@@ -54,6 +62,7 @@ final class SiteSettings {
 	 * Field name to the option row it reads and writes. THE CLOSED ALLOWLIST.
 	 */
 	public const OPTION_MAP = [
+		'siteIcon'               => 'site_icon',
 		'title'                  => 'blogname',
 		'tagline'                => 'blogdescription',
 		'timezone'               => 'timezone_string',
@@ -75,6 +84,8 @@ final class SiteSettings {
 	public const FIELD_ORDER = [
 		'title',
 		'tagline',
+		'siteIcon',
+		'siteLogo',
 		'timezone',
 		'dateFormat',
 		'timeFormat',
@@ -87,6 +98,30 @@ final class SiteSettings {
 		'defaultPingStatus',
 		'searchEngineVisibility',
 	];
+
+	/**
+	 * Field name to the theme modification it reads and writes.
+	 *
+	 * THE SECOND STORE, AND THE REASON IT IS SEPARATE. `custom_logo` is not an
+	 * option: WordPress keeps it in the active theme's modifications, so it is
+	 * read with get_theme_mod(), written with set_theme_mod(), cleared with
+	 * remove_theme_mod(), and belongs to one theme rather than to the site.
+	 * Writing it through update_option() would create a row nothing reads and
+	 * report success for a change no visitor would ever see.
+	 *
+	 * A field named here is NOT in OPTION_MAP, and nothing may be in both.
+	 */
+	public const THEME_MOD_MAP = [
+		'siteLogo' => 'custom_logo',
+	];
+
+	/**
+	 * The smallest square a site icon may be, in pixels.
+	 *
+	 * WordPress's own settings screen refuses anything smaller, because it
+	 * generates every favicon and app-icon size down from this one image.
+	 */
+	public const MIN_SITE_ICON_SIZE = 512;
 
 	/**
 	 * Length cap on the free-text settings and the permalink structure.
@@ -129,7 +164,7 @@ final class SiteSettings {
 		$fields = [];
 
 		foreach ( self::FIELD_ORDER as $field ) {
-			$fields[ $field ] = self::projectValue( $field, get_option( self::OPTION_MAP[ $field ] ) );
+			$fields[ $field ] = self::projectValue( $field, self::readStored( $field ) );
 		}
 
 		return $fields;
@@ -156,6 +191,8 @@ final class SiteSettings {
 			case 'postsPerPage':
 			case 'frontPageId':
 			case 'postsPageId':
+			case 'siteIcon':
+			case 'siteLogo':
 				return is_scalar( $stored ) ? (int) $stored : 0;
 			case 'searchEngineVisibility':
 				return is_scalar( $stored ) && 1 === (int) $stored;
@@ -190,6 +227,53 @@ final class SiteSettings {
 		}
 
 		return $projected;
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+
+	/**
+	 * Reads one allowlisted field from whichever store holds it.
+	 *
+	 * @param string $field The allowlisted field name.
+	 *
+	 * @return mixed The raw stored value.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+	 */
+	public static function readStored( string $field ) {
+		if ( isset( self::THEME_MOD_MAP[ $field ] ) ) {
+			return get_theme_mod( self::THEME_MOD_MAP[ $field ], 0 );
+		}
+
+		return get_option( self::OPTION_MAP[ $field ] );
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+
+	/**
+	 * Writes one allowlisted field to whichever store holds it.
+	 *
+	 * A theme modification is REMOVED rather than set to 0, because that is
+	 * how WordPress records "this theme has no logo": a modification holding 0
+	 * makes `has_custom_logo()` answer yes and then renders nothing.
+	 *
+	 * @param string $field The allowlisted field name.
+	 * @param mixed  $value The value to store.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+	 */
+	public static function writeStored( string $field, $value ): void {
+		if ( ! isset( self::THEME_MOD_MAP[ $field ] ) ) {
+			update_option( self::OPTION_MAP[ $field ], $value );
+
+			return;
+		}
+
+		if ( empty( $value ) ) {
+			remove_theme_mod( self::THEME_MOD_MAP[ $field ] );
+
+			return;
+		}
+
+		set_theme_mod( self::THEME_MOD_MAP[ $field ], (int) $value );
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 
@@ -252,6 +336,13 @@ final class SiteSettings {
 			case 'postsPageId':
 				if ( ! is_int( $value ) || $value < 0 ) {
 					throw self::invalid( $field, 'a page identifier, or 0 to unset it' );
+				}
+
+				return $value;
+			case 'siteIcon':
+			case 'siteLogo':
+				if ( ! is_int( $value ) || $value < 0 ) {
+					throw self::invalid( $field, 'the id of an image in the media library, or 0 to remove it' );
 				}
 
 				return $value;
@@ -362,6 +453,11 @@ final class SiteSettings {
 		foreach ( self::OPTION_MAP as $option ) {
 			wp_cache_delete( $option, 'options' );
 		}
+
+		// The theme modifications all live in one option row of their own, and
+		// a logo write that did not clear it would be verified against the
+		// blob as it stood before the write.
+		wp_cache_delete( 'theme_mods_' . get_stylesheet(), 'options' );
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 
