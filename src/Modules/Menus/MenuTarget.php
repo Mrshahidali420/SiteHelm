@@ -487,6 +487,78 @@ final class MenuTarget {
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
 	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- The contract's own camelCase name.
+	// phpcs:disable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase -- $restoreState matches the WriteOperation contract.
+	// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The messages are literals written for end users.
+	/**
+	 * Builds a NEW menu item from a recorded field set.
+	 *
+	 * The sibling of restoreItem(), for the one case that method cannot serve: the
+	 * item's row is gone. `wp_update_nav_menu_item()` hands a dead identifier
+	 * straight to `wp_update_post()`, which refuses it, so replaying a deleted
+	 * item's state has to be an insert — and an insert answers a NEW identifier.
+	 * The caller is told that plainly by the returned key rather than being handed
+	 * back the identifier it asked about.
+	 *
+	 * `menu-item-db-id` is dropped from the replayed set for the same reason. It
+	 * records the identifier the item used to hold, and carrying a dead one into a
+	 * fresh insert would put a stale number in the row's own arguments.
+	 *
+	 * The data is slashed on the way in, because wp_update_nav_menu_item()
+	 * forwards to wp_insert_post(), which unslashes before storing.
+	 *
+	 * @param array<string, mixed> $restoreState The recorded restore state.
+	 *
+	 * @return string The re-created item's target key.
+	 *
+	 * @throws OperationException With ErrorCode::RollbackUnavailable when the
+	 *                           state names no item and menu or describes no
+	 *                           fields, or ErrorCode::ExecutionFailed when
+	 *                           WordPress refuses the insert.
+	 */
+	public function recreateItem( array $restoreState ): string {
+		$item_id = is_numeric( $restoreState['item_id'] ?? null ) ? (int) $restoreState['item_id'] : 0;
+		$menu_id = is_numeric( $restoreState['menu_id'] ?? null ) ? (int) $restoreState['menu_id'] : 0;
+
+		if ( $item_id <= 0 || $menu_id <= 0 ) {
+			throw new OperationException(
+				ErrorCode::RollbackUnavailable,
+				'The recorded snapshot does not identify a menu item and its menu, so it cannot be put back.',
+				'Add the item again under Appearance then Menus in the WordPress administration screens instead.'
+			);
+		}
+
+		$data = $this->restorable_fields( $restoreState );
+		unset( $data['menu-item-db-id'] );
+
+		if ( [] === $data ) {
+			throw new OperationException(
+				ErrorCode::RollbackUnavailable,
+				'The recorded snapshot describes none of the menu item\'s fields, so there is nothing to put back.',
+				'Add the item again under Appearance then Menus in the WordPress administration screens instead.'
+			);
+		}
+
+		$created = wp_update_nav_menu_item( $menu_id, 0, wp_slash( $data ) );
+
+		if ( is_wp_error( $created ) || 0 === (int) $created ) {
+			throw new OperationException(
+				ErrorCode::ExecutionFailed,
+				'WordPress refused to put the recorded menu item back.',
+				'Add the item again under Appearance then Menus in the WordPress administration screens instead.'
+			);
+		}
+
+		self::correctAppendedPosition( (int) $created, $data );
+
+		clean_post_cache( (int) $created );
+
+		return self::itemTargetKey( (int) $created );
+	}
+	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+
 	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- The menus module's shared vocabulary is camelCase across every class.
 	/**
 	 * Puts `menu_order` back to 0 after a write that asked for position 0.
