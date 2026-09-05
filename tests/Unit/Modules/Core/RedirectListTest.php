@@ -11,8 +11,10 @@ use SiteHelm\Contracts\OperationException;
 use SiteHelm\Contracts\PreviewPolicy;
 use SiteHelm\Contracts\RollbackPolicy;
 use SiteHelm\Contracts\SnapshotPolicy;
+use SiteHelm\Modules\Core\ForeignRedirects;
 use SiteHelm\Modules\Core\RedirectList;
 use SiteHelm\Modules\Core\RedirectStore;
+use SiteHelm\Tests\Doubles\FakeRedirectionsDb;
 
 /**
  * REQ-0079: the stored redirect table, read back.
@@ -26,7 +28,7 @@ final class RedirectListTest extends RedirectTestCase {
 	protected function setUp(): void {
 		parent::setUp();
 
-		$this->operation = new RedirectList( $this->store );
+		$this->operation = new RedirectList( $this->store, new ForeignRedirects( $this->store ) );
 	}
 
 	public function test_the_definition_is_a_content_read(): void {
@@ -107,6 +109,34 @@ final class RedirectListTest extends RedirectTestCase {
 
 			throw $e;
 		}
+	}
+
+	public function test_another_plugin_s_rules_are_reported_beside_the_site_s_own(): void {
+		// A client that read only SiteHelm's table would see a site with no
+		// redirect for a path that redirects, decide the path is free, and write
+		// a second answer for one address.
+		$this->seed( [ $this->row( '/ours', '/new' ) ] );
+		$this->seedForeignRedirects( [ FakeRedirectionsDb::row( [ [ '/theirs', 'exact' ] ], '/their-page', 302 ) ] );
+
+		$payload = $this->operation->handle( [], $this->makeContext() );
+
+		$this->assertSame( [ '/ours' ], array_column( $payload['redirects'], 'source' ) );
+		$this->assertSame( 1, $payload['total'], 'The count stays this table\'s own; the others are not its rows.' );
+		$this->assertCount( 1, $payload['others']['rules'] );
+		$this->assertSame( 'rank-math', $payload['others']['rules'][0]['owner'] );
+		$this->assertSame( '/theirs', $payload['others']['rules'][0]['pattern'] );
+		$this->assertSame( '/their-page', $payload['others']['rules'][0]['target'] );
+		$this->assertSame( 302, $payload['others']['rules'][0]['status'] );
+		$this->assertFalse( $payload['others']['truncated'] );
+	}
+
+	public function test_a_site_with_no_other_redirect_plugin_reports_an_empty_listing(): void {
+		$this->seed( [ $this->row( '/old', '/new' ) ] );
+
+		$payload = $this->operation->handle( [], $this->makeContext() );
+
+		$this->assertSame( [], $payload['others']['rules'] );
+		$this->assertFalse( $payload['others']['truncated'] );
 	}
 
 	public function test_reading_the_table_writes_nothing(): void {

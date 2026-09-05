@@ -13,8 +13,10 @@ use SiteHelm\Contracts\PreviewPolicy;
 use SiteHelm\Contracts\Risk;
 use SiteHelm\Contracts\RollbackPolicy;
 use SiteHelm\Contracts\SnapshotPolicy;
+use SiteHelm\Modules\Core\ForeignRedirects;
 use SiteHelm\Modules\Core\RedirectSet;
 use SiteHelm\Modules\Core\RedirectStore;
+use SiteHelm\Tests\Doubles\FakeRedirectionsDb;
 
 /**
  * REQ-0079: pointing a retired URL at its successor.
@@ -32,7 +34,7 @@ final class RedirectSetTest extends RedirectTestCase {
 	protected function setUp(): void {
 		parent::setUp();
 
-		$this->operation = new RedirectSet( $this->store );
+		$this->operation = new RedirectSet( $this->store, new ForeignRedirects( $this->store ) );
 	}
 
 	public function test_the_definition_is_a_content_write(): void {
@@ -387,6 +389,54 @@ final class RedirectSetTest extends RedirectTestCase {
 
 			throw $e;
 		}
+	}
+
+	public function test_a_path_another_plugin_already_redirects_is_named_in_the_preview(): void {
+		// The finding this answers: a client reads SiteHelm's table, finds the
+		// path free, writes a redirect, and the site now has two answers for one
+		// address settled by whichever hook happens to run first.
+		$this->seedForeignRedirects( [ FakeRedirectionsDb::row( [ [ '/old', 'exact' ] ], '/their-page' ) ] );
+
+		$warnings = $this->plan( [ 'source' => '/old', 'target' => '/new', 'status' => 301 ] )->warnings;
+
+		$this->assertCount( 1, $warnings );
+		$this->assertStringContainsString( 'Rank Math', $warnings[0] );
+		$this->assertStringContainsString( '/old', $warnings[0] );
+	}
+
+	public function test_the_conflict_is_a_warning_and_the_write_still_goes_through(): void {
+		// An operator moving a site off another plugin's redirections writes over
+		// them on purpose, and a refusal would make that impossible.
+		$this->seedForeignRedirects( [ FakeRedirectionsDb::row( [ [ '/old', 'exact' ] ] ) ] );
+
+		$context = $this->makeContext();
+		$input   = [ 'source' => '/old', 'target' => '/new', 'status' => 301 ];
+		$current = $this->operation->resolveTarget( $input, $context );
+
+		$this->operation->applyChange( $current, $this->operation->planChange( $current, $input, $context ), $context );
+
+		$this->assertSame( '/new', $this->store->all()['/old']['target'] );
+	}
+
+	public function test_a_path_no_other_plugin_claims_previews_without_a_warning(): void {
+		$this->seedForeignRedirects( [ FakeRedirectionsDb::row( [ [ '/somewhere-else', 'exact' ] ] ) ] );
+
+		$this->assertSame( [], $this->plan( [ 'source' => '/old', 'target' => '/new', 'status' => 301 ] )->warnings );
+	}
+
+	public function test_a_path_several_of_their_rules_reach_is_named_at_most_three_times(): void {
+		// A site whose SEO plugin holds ten rules matching one path has one
+		// problem, not ten, and a preview that scrolled would bury the change it
+		// exists to show.
+		$rows = [];
+
+		for ( $index = 0; $index < 10; $index++ ) {
+			$rows[] = FakeRedirectionsDb::row( [ [ 'old', 'contains' ] ], '/target-' . $index );
+		}
+
+		$this->seedForeignRedirects( $rows );
+
+		$this->assertCount( 3, $this->plan( [ 'source' => '/old', 'target' => '/new', 'status' => 301 ] )->warnings );
 	}
 
 	public function test_no_refusal_names_the_capability_the_caller_lacks(): void {

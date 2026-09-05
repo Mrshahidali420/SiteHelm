@@ -1845,7 +1845,11 @@ Target key `SeoSettingsFields::target_key( ?string $post_type )`.
 | noindex | `noindex-{type}` bool | **two keys**: `pt_{type}_custom_robots` `'on'` + `'noindex'` in the `pt_{type}_robots` list; reading is noindex only when both hold; writing `true` sets both, `false` removes `noindex` from the list and leaves `custom_robots` alone |
 | inSitemap | no switch: reads `!noindex`, **refused as a write** | `rank-math-options-sitemap.pt_{type}_sitemap` `'on'`/`'off'` |
 
-**Rank Math tables (`seo-404-log-list`, `seo-redirection-list`).** Both extend
+**Rank Math tables (`seo-404-log-list`, `seo-redirection-list`).** The redirection listing
+also returns an `others` member holding SiteHelm's own redirect table, tagged
+`owner: sitehelm`, because both stores answer the same question and neither of them decides
+which one a visitor gets — see section 66. The 404 log has no such member and asserts it: only
+the base class's `alongside()` hook adds one, and nothing else keeps a 404 log. Both extend
 `RankMathTableList`: `DEFAULT_LIMIT` 50, `MAX_LIMIT` 200, offset clamped to ≥ 0. A Yoast
 site is refused "Only Rank Math keeps these"; then `SHOW TABLES LIKE` with
 `$wpdb->esc_like( $wpdb->prefix . 'rank_math_…' )` (underscores escaped — tests expect
@@ -3880,3 +3884,49 @@ lives in Pro.
 `MediaUpload::definition()`, because the outcome is identical — a file the operator chose is
 now in the library — and the Activity screen already knows how to render that id. The
 ticket's own row is the previewed, logged record that permission was granted.
+
+## 66. Two plugins, one path, and nobody holding the answer
+
+A site can run SiteHelm's redirect table and Rank Math's redirections module at the same
+time, and both can hold a rule for `/old-pricing/`. Which one the visitor gets is decided by
+whichever redirect fires on `template_redirect` first. That is hook order. Neither plugin
+documents it as a contract, neither reports it, and it can change when a plugin updates.
+
+The failure this produces is quiet, which is what makes it worth code. A client reads Rank
+Math's redirections through `seo-redirection-list`, sees nothing for the path, decides the
+path is free, and writes a SiteHelm redirect. Every step of that is correct and the result is
+a site with two answers for one address — and the losing rule is still stored, still reported
+as stored, and still listed back as stored, so nothing the client can read afterwards shows
+the problem.
+
+`ForeignRedirects` is the lookup that closes it. `redirect-list` calls `all()` and returns
+the other plugin's rules in an `others` object beside the site's own, so one read answers
+"what redirects does this site serve" rather than "what redirects does this plugin hold".
+`redirect-set` calls `matching()` during preview and turns each hit into a warning naming the
+owner, the stored pattern and how it compares. Preview is the place for it: it is the one
+moment the caller is still deciding.
+
+**It warns and never refuses.** An operator moving a site off another plugin's redirections
+writes over them deliberately, and that is the one case a refusal would make impossible.
+Warnings travel through `ChangeEngine` and `WriteSettlement` and are not part of the plan
+token's hash, so a rule appearing between preview and apply does not turn the write into a
+`stale_plan`.
+
+**A regex is quoted, never run.** Rank Math's sources carry a comparison — exact, contains,
+start, end, regex — and only the first four can be settled by comparing two strings. A regex
+source is reported as a possible match with its pattern quoted. Evaluating a pattern out of
+somebody else's table would be running their engine on our guess of its dialect, and one that
+fails to compile would turn a preview warning into a fatal error.
+
+**The table is read whole, not narrowed in SQL.** A rule that answers `/shop/old-page` need
+not contain that text: a `contains` source of `old-page` catches it and a `start` source of
+`shop` catches it. A `WHERE sources LIKE` clause would drop exactly those rows — the ones a
+human is least likely to spot by hand — and drop them as a confident "no conflict". Four
+small columns of a table bounded at 200 rows is a cheap read, and the first version of this
+class had the LIKE clause and the tests caught it.
+
+**Only Rank Math is read.** Its schema is the one this codebase already reads, in the Pro
+module behind `seo-redirection-list`. A store whose column names were guessed at would answer
+"no conflict" for every site that has one, which is worse than saying nothing at all. The
+lookup is written per owner so another can be added when its shape is known rather than
+assumed.

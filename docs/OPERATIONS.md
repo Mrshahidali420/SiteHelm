@@ -100,7 +100,7 @@ Posts, pages, custom post types, and taxonomies.
 | `content-list` | Lists items of any content type this account can edit, public or not, with filtering and pagination | `edit_posts` |
 | `taxonomy-list` | Lists registered taxonomies and their terms | `edit_posts` |
 | `content-blocks-get` | Returns the block outline of one item, or one addressed block in full | `edit_post` |
-| `redirect-list` | Lists every redirect this site serves, with the table's size and capacity | `manage_options` |
+| `redirect-list` | Lists every redirect this site serves, with the table's size and capacity, and the rules another redirect plugin holds | `manage_options` |
 | `content-links-check` | Reports the links in one item, resolving this site's own against its posts and redirects | `edit_post` |
 | `content-rendered-get` | Fetches one published item's own front-end address and reports what it actually rendered — status, redirect, title, meta description, canonical, robots, social tags, heading outline, images missing alt text, link split and word count, and the markup itself on request | `edit_post` |
 | `comment-list` | Lists comments by status, post, or search term, newest first | `moderate_comments` |
@@ -213,6 +213,17 @@ links are listed per item, and `truncated` says when a page held more.
 > bound is visible before a write refuses. Redirects are served on
 > `template_redirect`, ahead of the front-end request, and never on an
 > administration, cron, or REST request.
+
+> **Another plugin's redirects are reported beside SiteHelm's own, and warned about
+> before a write.** Nothing decides which plugin answers a path both of them hold a
+> rule for; it falls out of hook order, which neither of them promises. So
+> `redirect-list` returns an `others` object holding the rules Rank Math's
+> redirections module has, tagged with their owner, and `redirect-set` names any of
+> them that could answer the path being claimed as a preview warning. It is a
+> warning and not a refusal: moving a site off another plugin's redirections means
+> writing over them on purpose. A pattern stored as a regular expression is quoted
+> in the warning, never run, and reported as a possible match rather than a certain
+> one.
 
 > **A block write rewrites the whole document, so it refuses one it cannot reproduce.**
 > `post_content` is a single column: changing one block means writing the document
@@ -495,7 +506,7 @@ asks the capability, the SEO plugin and the target.
 | `seo-settings-get` | `system-read` | Reads the SEO plugin's settings at site scope (separator, knowledge-graph name and logo, default social image, breadcrumbs) or for one public post type (`postType`: title and description templates, noindex, sitemap inclusion) | `manage_options` | — |
 | `seo-settings-set` | `content-write` | Writes the same allowlisted settings, one scope per change — site scope or `postType`, never both | `manage_options` | supported |
 | `seo-404-log-list` | `system-read` | Pages Rank Math's 404 monitor newest first (URI, hits, last seen, referer), at most 200 per page | `manage_options` | — |
-| `seo-redirection-list` | `system-read` | Pages Rank Math's redirections newest first (sources, destination, status code, hits, status) | `manage_options` | — |
+| `seo-redirection-list` | `system-read` | Pages Rank Math's redirections newest first (sources, destination, status code, hits, status), with SiteHelm's own redirects reported beside them under `others` | `manage_options` | — |
 | `content-seo-schema-get` | `content-read` | Reads one post's primary schema type (Schema.org spelling, `null` when the plugin's default applies), the plugin's stored fields for it, and the type names the plugin accepts on write | `edit_post` | — |
 | `content-seo-schema-set` | `content-write` | Sets one post's schema `type` and optional `fields` as a previewed, reversible change; `null` clears it back to the plugin's default and drops the stored fields; an unknown type is refused naming `content-seo-schema-get` for the list | `edit_post` | supported |
 

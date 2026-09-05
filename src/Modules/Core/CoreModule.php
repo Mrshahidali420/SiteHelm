@@ -124,6 +124,11 @@ final class CoreModule implements IntegrationModule {
 		// matched by are the same code and cannot drift apart.
 		$redirects = new RedirectStore();
 
+		// The lookup for other plugins' redirects is shared by the read that
+		// reports them and the write that warns about them, so a client is
+		// warned about exactly the rules the listing showed it.
+		$foreign = new ForeignRedirects( $redirects );
+
 		$registry->register( ContentRead::definition(), [ new ContentRead( $fields ), 'handle' ] );
 		$registry->register( ContentList::definition(), [ new ContentList(), 'handle' ] );
 		$registry->register( ContentSearch::definition(), [ new ContentSearch(), 'handle' ] );
@@ -134,7 +139,7 @@ final class CoreModule implements IntegrationModule {
 		);
 		$registry->register(
 			RedirectList::definition(),
-			[ new RedirectList( $redirects ), 'handle' ]
+			[ new RedirectList( $redirects, $foreign ), 'handle' ]
 		);
 		$registry->register(
 			ContentLinksCheck::definition(),
@@ -211,7 +216,7 @@ final class CoreModule implements IntegrationModule {
 		// each other, because they are the only pair in this module that share a
 		// snapshot: both rewrite one option holding the whole redirect table, and
 		// RedirectSnapshot is the half they have in common.
-		$registry->registerWrite( RedirectSet::definition(), new RedirectSet( $redirects ) );
+		$registry->registerWrite( RedirectSet::definition(), new RedirectSet( $redirects, $foreign ) );
 		$registry->registerWrite( RedirectDelete::definition(), new RedirectDelete( $redirects ) );
 
 		// Both comment writes share one target resolver, for the same reason the

@@ -495,12 +495,70 @@
                     "capacity": {
                         "type": "integer",
                         "description": "The greatest number of redirects this site will store."
+                    },
+                    "others": {
+                        "type": "object",
+                        "description": "The redirects another plugin on this site holds, which SiteHelm does not own and cannot change.",
+                        "properties": {
+                            "rules": {
+                                "type": "array",
+                                "description": "Each rule another plugin holds, with the plugin that owns it.",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "owner": {
+                                            "type": "string",
+                                            "description": "The plugin that holds this rule."
+                                        },
+                                        "pattern": {
+                                            "type": "string",
+                                            "description": "The source the owning plugin matches on, in that plugin's own spelling."
+                                        },
+                                        "comparison": {
+                                            "type": "string",
+                                            "description": "How the owning plugin matches that source: exact, contains, start, end, or regex."
+                                        },
+                                        "target": {
+                                            "type": "string",
+                                            "description": "Where the owning plugin sends the visitor."
+                                        },
+                                        "status": {
+                                            "type": "integer",
+                                            "description": "The HTTP status the owning plugin answers with."
+                                        },
+                                        "active": {
+                                            "type": "boolean",
+                                            "description": "Whether the owning plugin has that rule switched on."
+                                        }
+                                    },
+                                    "required": [
+                                        "owner",
+                                        "pattern",
+                                        "comparison",
+                                        "target",
+                                        "status",
+                                        "active"
+                                    ],
+                                    "additionalProperties": false
+                                }
+                            },
+                            "truncated": {
+                                "type": "boolean",
+                                "description": "Whether the other plugin holds more rules than this listing reported."
+                            }
+                        },
+                        "required": [
+                            "rules",
+                            "truncated"
+                        ],
+                        "additionalProperties": false
                     }
                 },
                 "required": [
                     "redirects",
                     "total",
-                    "capacity"
+                    "capacity",
+                    "others"
                 ],
                 "additionalProperties": false
             }
