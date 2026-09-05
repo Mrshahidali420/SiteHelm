@@ -3930,3 +3930,46 @@ module behind `seo-redirection-list`. A store whose column names were guessed at
 "no conflict" for every site that has one, which is worse than saying nothing at all. The
 lookup is written per owner so another can be added when its shape is known rather than
 assumed.
+
+## 67. Installed, switched on, and still doing nothing
+
+Activating a plugin is two thirds of the job. Rank Math, Yoast, WooCommerce and plenty of
+others park behind a setup wizard on first activation and register no output at all until
+somebody walks through it. The plugin is present, its version constant is defined, its options
+read and write faithfully, and none of it reaches a page. SiteHelm had no word for that state:
+`plugin-activate` reported success identically whether the plugin was working or inert, and a
+caller found out an hour later when the thing it had just switched on turned out to change
+nothing.
+
+`SiteHelm\Modules\Extensions\PluginOnboarding` is the vocabulary. It ships a recipe per known
+plugin: the single option that records the wizard as finished, and the writes that finish it.
+`system-plugin-list` grew an `onboarding` column off it — `pending` for a plugin that is
+switched on and still parked, `complete` once the flag says the wizard is done, and `null` for
+a plugin no recipe covers.
+
+**Null is not "complete", and that is the whole design.** A plugin this version has never read
+the flags of cannot be pronounced set up, because saying so is a claim about somebody else's
+database. Every recipe here was read out of the plugin it belongs to rather than inferred from
+its behaviour, and a plugin without one is refused by name. A guessed flag is a write to a
+schema nobody checked.
+
+**Completion is one flag; the steps are several, and they are kept apart on purpose.** Somebody
+who finished a wizard by hand has the completion flag set and may well not have the other
+options at the values a recipe would write — an owner who connected a Rank Math account rather
+than skipping the prompt is fully configured with `rank_math_registration_skip` unset. Reading
+every step back and calling the site unconfigured unless all of them matched would report a
+working site as broken, which is the more expensive of the two mistakes.
+
+**The flag is compared as a truth, not as a type.** WordPress hands a stored boolean back as
+the string `"1"`, and an identity comparison against `true` would report a configured site as
+parked. Both sides are cast before they meet.
+
+**The allowlist is derived from the recipes rather than declared beside them.** `writableOptions()`
+is the option names the steps mention, deduplicated, and it is what the Pro `plugin-option-set`
+gates on. An option therefore cannot become writable without a recipe naming it and saying in
+words what it is for, and this is not a general `update_option` bridge: a test walks every
+recipe and fails if one reaches for `siteurl`, `home`, `active_plugins`, `users_can_register`,
+`admin_email`, `template` or `stylesheet`.
+
+The registry and the read are free; the two writes, `plugin-onboarding-complete` and
+`plugin-option-set`, are the add-on's, which is the split the Extensions module already had.
