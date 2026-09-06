@@ -1,6 +1,6 @@
 # Operations reference
 
-SiteHelm exposes **110 operations** through **11 MCP tools**, called dispatchers. Every operation is
+SiteHelm exposes **111 operations** through **11 MCP tools**, called dispatchers. Every operation is
 declared once, in code, with a strict input schema (`additionalProperties: false`), a required
 capability, a risk level, and preview, snapshot, and rollback policies. That declaration is the
 contract the gateway enforces and the catalogue an agent discovers.
@@ -39,8 +39,10 @@ on demand for the dispatcher actually in use.
 
 | Call | Returns |
 |---|---|
-| `tools/list` | The 11 dispatchers |
+| `tools/list` | The 11 dispatchers, each naming the operations this site publishes on it |
 | Any dispatcher with no `operation` | That dispatcher's catalogue: operation ids, summaries, capabilities, policies |
+| `system-read` → `system-operation-find` | The operations that match a plain description of what you want to do, wherever they live, each with a runnable example call |
+| An operation name this site does not have | A refusal that names the closest operations it does have |
 | `system-read` → `system-environment` | WordPress and PHP versions, active theme, registered post types and taxonomies |
 | `system-read` → `system-integrations` | Which optional integrations are `Active`, `Inactive`, `VersionBlocked`, or `Unconfigured` |
 | `elementor-read` → `elementor-control-schema` | The control schema for a widget or container, so an agent can construct valid settings |
@@ -460,7 +462,7 @@ what is actually in the database, so a restore puts back what was really there.
 
 ## System
 
-### `system-read` — 11 operations
+### `system-read` — 12 operations
 
 | Operation | Does | Capability |
 |---|---|---|
@@ -468,6 +470,7 @@ what is actually in the database, so a restore puts back what was really there.
 | `system-environment` | WordPress and PHP versions, theme, post types, taxonomies | `manage_options` |
 | `system-integrations` | Health of every optional integration: `Active`, `Inactive`, `VersionBlocked`, `Unconfigured` | `manage_options` |
 | `system-operation-schema` | Returns one named operation's full input and output schema, so an agent fetches only the schema it is about to use | `read` |
+| `system-operation-find` | Searches every dispatcher for the operation that does a thing, from the words you would use for it, and names the ones the add-on carries as well as the ones this site has | `read` |
 | `user-list` | Lists user accounts by role or search term, newest registration first, with the role slugs this site has registered | `list_users` |
 | `site-settings-read` | Reads the whole site-settings allowlist, typed, in one call — the same fifteen fields `site-settings-set` can change, and nothing else | `manage_options` |
 | `audit-list` | Reads the change ledger: what changed, when, by whom, and what can be rolled back | `manage_options` |

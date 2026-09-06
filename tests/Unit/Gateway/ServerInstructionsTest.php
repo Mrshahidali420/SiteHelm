@@ -48,8 +48,15 @@ final class ServerInstructionsTest extends TestCase {
 	 * the route that works. Naming both sources costs about sixty characters and
 	 * removes a false statement; leaving the ceiling where it was would have
 	 * meant cutting a true one somewhere else to pay for it.
+	 *
+	 * Raised again, 1920 -> 2070, to name `system-operation-find`. The clause
+	 * around it exists because a client that cannot place an operation stops
+	 * looking, and telling it the tool list is complete answers where the
+	 * operation is not. The search answers where it is, in one call, and a client
+	 * that is never told it exists will not go looking for a search either. This
+	 * is the cheapest place to say so, and it is said in one sentence.
 	 */
-	private const MAX_LENGTH = 1920;
+	private const MAX_LENGTH = 2070;
 
 	/**
 	 * Test that the instructions text is not empty.

@@ -289,5 +289,62 @@ final class DiagnosticsModule implements IntegrationModule {
 			),
 			[ new OperationSchema( $registry ), 'handle' ]
 		);
+
+		$registry->register(
+			new OperationDefinition(
+				id: 'system-operation-find',
+				domain: Domain::System,
+				mode: Mode::Read,
+				description: 'Find the operations that do a thing, from the words you would use to describe it. Searches every dispatcher at once, so use it before concluding this site cannot do something.',
+				inputSchema: [
+					'type'                 => 'object',
+					'properties'           => [
+						'query' => [
+							'type'        => 'string',
+							'minLength'   => 1,
+							'maxLength'   => 200,
+							'description' => 'What you are trying to do, in plain words, as in "install a plugin from a zip file".',
+						],
+						'limit' => [
+							'type'        => 'integer',
+							'minimum'     => 1,
+							'maximum'     => 50,
+							'description' => 'How many matches to return. Defaults to 10.',
+						],
+					],
+					'required'             => [ 'query' ],
+					'additionalProperties' => false,
+				],
+				outputSchema: [
+					'type'                 => 'object',
+					'properties'           => [
+						'query'   => [ 'type' => 'string' ],
+						'matches' => [
+							'type'  => 'array',
+							'items' => [ 'type' => 'object' ],
+						],
+						'note'    => [ 'type' => 'string' ],
+					],
+					'required'             => [ 'query', 'matches', 'note' ],
+					'additionalProperties' => false,
+				],
+				schemaVersion: 1,
+				requiredCapabilities: [ 'read' ],
+				risk: Risk::Low,
+				isReadOnly: true,
+				isDestructive: false,
+				isIdempotent: true,
+				previewPolicy: PreviewPolicy::NotApplicable,
+				snapshotPolicy: SnapshotPolicy::NotApplicable,
+				rollbackPolicy: RollbackPolicy::NotApplicable,
+				module: ModuleId::Diagnostics,
+				supportedVersions: [ 'wordpress' => '>=' . SITEHELM_MIN_WP ],
+				example: [
+					'operation' => 'system-operation-find',
+					'arguments' => [ 'query' => 'install a plugin from a zip file' ],
+				],
+			),
+			[ new OperationFind( $registry ), 'handle' ]
+		);
 	}
 }

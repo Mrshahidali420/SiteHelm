@@ -69,10 +69,17 @@ final class McpServer {
 	 *
 	 * These are a map, not the inventory. What a site can actually do depends on
 	 * which integrations are present, whether the add-on is licensed, and which
-	 * operations the operator has switched off, so every description sends the
-	 * client to the catalog for the answer. A subject named here that this site
-	 * cannot serve is a catalog that will not list it, which is the honest
-	 * outcome; a subject NOT named here is an ability the client never looks for.
+	 * operations the operator has switched off. The inventory is added to each
+	 * description at request time, from the same filter the catalog uses, so a
+	 * subject named here that this site cannot serve carries no identifiers for
+	 * it; a subject NOT named here is an ability the client never looks for.
+	 *
+	 * Naming the subjects was not enough on its own. A subject is prose, and a
+	 * client matching prose against a request still guesses: "install a plugin
+	 * from a zip I already uploaded" does not obviously land on a sentence about
+	 * writing content, and the operation that does it went unfound a second time.
+	 * The identifiers end the guessing, and system-operation-find answers the
+	 * question in words for anything the identifiers alone do not settle.
 	 *
 	 * @var array<string, string>
 	 */
@@ -87,7 +94,7 @@ final class McpServer {
 		'elementor-write' => 'Builds and edits Elementor documents: adding, updating, moving and removing elements, page settings, global colours, typography and classes, templates, popups and theme templates.',
 		'fields-read'     => 'Reads Advanced Custom Fields and Meta Box field groups, definitions and values.',
 		'fields-write'    => 'Writes Advanced Custom Fields and Meta Box field values.',
-		'system-read'     => 'Reads this connection, the site environment, integration health, users, site settings, the audit log, installed plugins and themes, operation schemas, SEO settings and logs, and code snippets.',
+		'system-read'     => 'Reads this connection, the site environment, integration health, users, site settings, the audit log, installed plugins and themes, operation schemas, SEO settings and logs, and code snippets. Its system-operation-find searches every dispatcher for the operation that does a thing, from the words you would use for it.',
 	];
 
 	/**
@@ -151,7 +158,7 @@ final class McpServer {
 				'initialize'                => $this->result( $id, $this->initializeResult( $message['params'] ?? null ) ),
 				'notifications/initialized' => null,
 				'ping'                      => $this->result( $id, [] ),
-				'tools/list'                => $this->result( $id, [ 'tools' => $this->toolList() ] ),
+				'tools/list'                => $this->result( $id, [ 'tools' => $this->toolList( $clientId ) ] ),
 				default                     => $this->error( $id, -32601, 'Method not found.' ),
 			};
 		} catch ( Throwable $e ) {
@@ -219,17 +226,23 @@ final class McpServer {
 	/**
 	 * Lists all available tools (dispatchers).
 	 *
+	 * @param string $clientId The client identifier, used to resolve the caller.
+	 *
 	 * @return list<array<string, mixed>> Tool definitions.
 	 *
 	 * phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
 	 */
-	private function toolList(): array {
+	private function toolList( string $clientId = 'unknown-client' ): array {
+		$published = $this->publishedOperations( $clientId );
+
 		return array_map(
-			static fn( string $dispatcher ): array => [
+			fn( string $dispatcher ): array => [
 				'name'        => $dispatcher,
 				'description' => sprintf(
-					'%s Call without an operation to list the operations this site publishes on it.',
-					self::DISPATCHER_SUBJECTS[ $dispatcher ]
+					'%s Call without an operation to list the operations this site publishes on it.%s',
+					self::DISPATCHER_SUBJECTS[ $dispatcher ],
+					$this->operationSentence( $published[ $dispatcher ] ?? [] )
 				),
 				'inputSchema' => [
 					'type'                 => 'object',
@@ -261,6 +274,73 @@ final class McpServer {
 			],
 			CapabilityRegistry::DISPATCHERS
 		);
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+
+	/**
+	 * The operation identifiers each dispatcher publishes to this caller.
+	 *
+	 * ONE FAILURE HERE MUST NOT COST THE CLIENT ITS TOOLS. Resolving the caller
+	 * can throw — an unauthenticated request has no user to resolve — and a
+	 * tool list that failed instead of answering leaves the client with no way
+	 * to reach the site at all. The ids are an improvement on the description,
+	 * not a precondition for having one, so a failure drops back to the subject
+	 * sentence every client got before.
+	 *
+	 * @param string $clientId The client identifier.
+	 *
+	 * @return array<string, list<string>> Identifiers keyed by dispatcher.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+	 */
+	private function publishedOperations( string $clientId ): array {
+		try {
+			$context = $this->contextFactory->create( $this->moduleHealth, $clientId );
+		} catch ( Throwable ) {
+			return [];
+		}
+
+		$published = [];
+
+		foreach ( CapabilityRegistry::DISPATCHERS as $dispatcher ) {
+			try {
+				$published[ $dispatcher ] = $this->dispatcher->publishedOperationIds( $dispatcher, $context );
+			} catch ( Throwable ) {
+				$published[ $dispatcher ] = [];
+			}
+		}
+
+		return $published;
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+
+	/**
+	 * The sentence naming one dispatcher's operations, or nothing when it has none.
+	 *
+	 * A dispatcher with no operations for this caller says nothing extra rather
+	 * than announcing an empty list: the subject sentence plus the invitation to
+	 * list the catalog is the honest answer there, and "Operations: none" reads
+	 * as a broken site rather than an integration that is not installed.
+	 *
+	 * @param string[] $operations The identifiers to name. Sequential; `string[]`
+	 *                             rather than `list<string>` because WPCS's
+	 *                             IncorrectTypeHint sniff does not understand generics.
+	 *
+	 * @return string The sentence, empty when there is nothing to say.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+	 */
+	private function operationSentence( array $operations ): string {
+		if ( [] === $operations ) {
+			return '';
+		}
+
+		return sprintf( ' Operations: %s.', implode( ', ', $operations ) );
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 

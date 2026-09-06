@@ -80,14 +80,7 @@ final class CatalogBuilder {
 	 * @return array<string, mixed> The catalog payload.
 	 */
 	public function build( string $dispatcher, OperationContext $context ): array {
-		// An operation the operator switched off is simply absent, the same way
-		// one the module never registered would be.
-		$switches  = $this->switches ?? OperationSwitches::none();
-		$permitted = array_filter(
-			$this->registry->forDispatcher( $dispatcher ),
-			static fn( OperationDefinition $d ): bool => $switches->isEnabled( $d->id )
-				&& PolicyEngine::isVisibleWithoutTarget( $d, $context )
-		);
+		$permitted = $this->permitted( $dispatcher, $context );
 
 		$catalog = [
 			'dispatcher' => $dispatcher,
@@ -117,6 +110,60 @@ final class CatalogBuilder {
 		}
 
 		return $catalog;
+	}
+
+	/**
+	 * The identifiers this dispatcher publishes to this caller, in registration order.
+	 *
+	 * The tool list every MCP client loads at connect names eleven dispatchers
+	 * and eleven sentences about what they cover. A client that cannot see the
+	 * ability it was asked for in those sentences concludes the site does not
+	 * have it, and never calls the catalog that would have proved otherwise —
+	 * `theme-install` sitting unread in the `content-write` listing was exactly
+	 * that. Naming the identifiers in the description puts the whole surface in
+	 * front of the client before it decides anything.
+	 *
+	 * Identifiers only, and drawn from the same filter the catalog uses, so the
+	 * tool list can never advertise an operation the catalog would hide or the
+	 * dispatcher would refuse. What each one takes stays where it was: the
+	 * catalog describes it, and system-operation-schema gives the schema.
+	 *
+	 * @param string           $dispatcher The dispatcher name.
+	 * @param OperationContext $context    The request context.
+	 *
+	 * @return list<string> The operation identifiers.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+	 */
+	public function publishedOperationIds( string $dispatcher, OperationContext $context ): array {
+		return array_values(
+			array_map(
+				static fn( OperationDefinition $d ): string => $d->id,
+				$this->permitted( $dispatcher, $context )
+			)
+		);
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+
+	/**
+	 * The operations on this dispatcher this caller is permitted to see.
+	 *
+	 * An operation the operator switched off is simply absent, the same way one
+	 * the module never registered would be.
+	 *
+	 * @param string           $dispatcher The dispatcher name.
+	 * @param OperationContext $context    The request context.
+	 *
+	 * @return array<int, OperationDefinition> The visible definitions.
+	 */
+	private function permitted( string $dispatcher, OperationContext $context ): array {
+		$switches = $this->switches ?? OperationSwitches::none();
+
+		return array_filter(
+			$this->registry->forDispatcher( $dispatcher ),
+			static fn( OperationDefinition $d ): bool => $switches->isEnabled( $d->id )
+				&& PolicyEngine::isVisibleWithoutTarget( $d, $context )
+		);
 	}
 
 	/**
