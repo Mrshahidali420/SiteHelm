@@ -11,7 +11,9 @@ an operation behaves.
 
 ## [Unreleased]
 
-The second round of gaps a real build found (REQ-0122).
+## [0.13.1] — 2026-09-06
+
+The second round of gaps a real build found (REQ-0122), and one that stopped every file reaching the media library.
 
 ### Added
 
@@ -1353,6 +1355,7 @@ out of scope by design and will not be added. Code ships only through the Pro Co
 guard, and nothing SiteHelm stores ever executes during its own request. See
 [ROADMAP.md](ROADMAP.md).
 
+[0.13.1]: https://github.com/Mrshahidali420/SiteHelm/releases/tag/v0.13.1
 [0.13.0]: https://github.com/Mrshahidali420/SiteHelm/releases/tag/v0.13.0
 [0.12.0]: https://github.com/Mrshahidali420/SiteHelm/releases/tag/v0.12.0
 [0.11.0]: https://github.com/Mrshahidali420/SiteHelm/releases/tag/v0.11.0
