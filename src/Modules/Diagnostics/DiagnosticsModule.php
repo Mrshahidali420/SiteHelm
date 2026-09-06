@@ -199,9 +199,10 @@ final class DiagnosticsModule implements IntegrationModule {
 					'properties'           => [
 						'user'                => [ 'type' => 'object' ],
 						'transport'           => [ 'type' => 'object' ],
+						'catalog'             => [ 'type' => 'object' ],
 						'applicationPassword' => [ 'type' => 'object' ],
 					],
-					'required'             => [ 'user', 'transport', 'applicationPassword' ],
+					'required'             => [ 'user', 'transport', 'catalog', 'applicationPassword' ],
 					'additionalProperties' => false,
 				],
 				schemaVersion: 1,
@@ -220,7 +221,7 @@ final class DiagnosticsModule implements IntegrationModule {
 					'arguments' => [],
 				],
 			),
-			[ new ConnectionCheck(), 'handle' ]
+			[ new ConnectionCheck( $registry ), 'handle' ]
 		);
 
 		$registry->register(
