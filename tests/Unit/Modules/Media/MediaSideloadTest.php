@@ -212,4 +212,28 @@ final class MediaSideloadTest extends MediaUploadTestCase {
 		$this->assertSame( [], $this->sideloads, 'Nothing may be sideloaded when the bytes never landed.' );
 		$this->assertSame( [ $unwritable ], $this->deleted, 'The cleanup still runs for a path that was claimed.' );
 	}
+
+	/**
+	 * A doubled wp_handle_sideload() takes its file array by value, so no test
+	 * that calls it can see the one thing core insists on: the real function
+	 * declares that parameter by reference, and PHP 8 raises an Error the moment
+	 * a literal is handed to it. That Error is not an OperationException, so the
+	 * upload failed with nothing useful to say on the dispatcher and killed the
+	 * request outright on the ticket route. The call site is read here because
+	 * nothing else in the suite can reach it.
+	 */
+	public function test_the_file_array_reaches_core_as_a_variable_not_a_literal(): void {
+		$source = (string) file_get_contents( dirname( __DIR__, 4 ) . '/src/Modules/Media/MediaSideload.php' );
+
+		$this->assertDoesNotMatchRegularExpression(
+			'/wp_handle_sideload\(\s*\[/',
+			$source,
+			'An array literal cannot be passed to a by-reference parameter.'
+		);
+		$this->assertStringContainsString(
+			'wp_handle_sideload( $file, $overrides )',
+			$source,
+			'wp_handle_sideload() takes its first argument by reference; a literal is a fatal.'
+		);
+	}
 }

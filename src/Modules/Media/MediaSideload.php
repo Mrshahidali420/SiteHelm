@@ -108,16 +108,21 @@ final class MediaSideload {
 				$overrides['mimes'] = $mimes;
 			}
 
-			$sideload = wp_handle_sideload(
-				[
-					'name'     => (string) $payload['filename'],
-					'type'     => (string) $payload['mimeType'],
-					'tmp_name' => $temp,
-					'error'    => 0,
-					'size'     => (int) $payload['byteLength'],
-				],
-				$overrides
-			);
+			// The array is a named variable, not a literal, because
+			// wp_handle_sideload() declares its first parameter by reference.
+			// PHP 8 raises an Error — not an exception the operation layer knows
+			// how to describe — the moment a literal is passed to it, so on the
+			// dispatcher the upload failed with no useful reason and on the
+			// upload-ticket route the request died outright.
+			$file = [
+				'name'     => (string) $payload['filename'],
+				'type'     => (string) $payload['mimeType'],
+				'tmp_name' => $temp,
+				'error'    => 0,
+				'size'     => (int) $payload['byteLength'],
+			];
+
+			$sideload = wp_handle_sideload( $file, $overrides );
 
 			if ( ! is_array( $sideload ) || isset( $sideload['error'] ) || ! isset( $sideload['file'] ) ) {
 				error_log(

@@ -315,6 +315,38 @@ final class UploadReceiverTest extends MediaUploadTestCase {
 		$this->assertSame( [], $this->sideloads );
 	}
 
+	/**
+	 * Storing a file can fail in ways that are not an OperationException — a PHP
+	 * Error out of core, an exhausted memory limit. This route promises every
+	 * caller one readable shape, and it holds an audit row open until it answers,
+	 * so an Error escaping it would answer an HTTP client with WordPress's HTML
+	 * error page and leave that row STARTED for good.
+	 */
+	public function test_a_fatal_while_storing_is_still_a_refusal_and_still_closes_the_audit_row(): void {
+		$this->queueTicket();
+		$this->wpdb->queryRowsQueue = [ 1 ];
+		$this->sideloadRaisesError  = true;
+
+		$response = $this->receiver->handleRequest( $this->post( $this->bytes() ) );
+		$data     = $response->get_data();
+
+		$this->assertSame( 500, $response->get_status() );
+		$this->assertFalse( $data['ok'] );
+
+		$outcomes = [];
+		foreach ( $this->wpdb->updates as $update ) {
+			if ( isset( $update['data']['outcome'] ) ) {
+				$outcomes[] = $update['data']['outcome'];
+			}
+		}
+
+		$this->assertContains( 'execution-failed', $outcomes, 'The audit row may not be left open.' );
+
+		$said = (string) json_encode( $data );
+		$this->assertStringNotContainsString( 'by reference', $said, 'The words core used are not an answer.' );
+		$this->assertStringNotContainsString( 'wp_handle_sideload', $said );
+	}
+
 	public function test_the_route_is_registered_as_a_post_with_the_ticket_as_its_credential(): void {
 		$routes = [];
 		Functions\when( 'register_rest_route' )->alias(
