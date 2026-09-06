@@ -30,3 +30,6 @@ docs/superpowers/
 .impeccable/
 
 HANDOFF-*.md
+
+# Scratch files for commit and PR text
+*.tmp
