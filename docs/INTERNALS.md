@@ -4195,3 +4195,55 @@ than papered over.
 `post:`-prefixed, so `ContentRollbackApply` selects this class by the snapshot's recorded
 operation id. Its own `resolveTarget()` could not serve: that method refuses an identifier
 naming no item, which is precisely the state a rollback of this operation starts from.
+
+## 71. The catalogue export (REQ-0123)
+
+`CatalogExport` (src/Registry/CatalogExport.php) exists because a dispatcher's own catalogue
+answers "what is on this tool", and a caller choosing between operations needs "what are all
+the ways to do this" instead — nobody calls all eleven dispatchers with no arguments and reads
+them side by side. It walks the same two filters a dispatcher catalogue walks, the operator's
+`OperationSwitches` and the caller's capabilities, so it can never name an operation a listing
+would have withheld, and it adds the Pro operations this site does not have — named, not
+hidden — so "the add-on does that" stays a possible answer.
+
+**`system-catalog-export`** (`system-read`, free, `read`) renders the same rows two ways.
+Markdown by default: a padded table, grouped by module, with a `preview` / `rollback` /
+`destructive` / risk flag string per row — cheap per operation and readable by anything that
+opens the saved file. `format: 'json'` returns the rows as data for a client that renders its
+own view. `detail: 'full'` adds each operation's input and output schema, at roughly two and a
+half times the size; `module` restricts the export to one subject.
+
+**The `sitehelm://catalog` MCP resource** publishes the same document without a tool call — a
+client that reads resources at connection time gets the whole surface for free. Its listing
+carries `listChanged: false`, declared once in `McpServer::initializeResult()` alongside the
+tools capability, because nothing here pushes an update: the surface only ever moves in
+response to a switch flip or a Pro (de)activation, both of which already require a fresh
+connection to take effect, so there is nothing an unsolicited notification would tell a client
+that its next read would not.
+
+**`catalogVersion` is a digest of the rows, not of what might change them.** The definition is
+
+```
+substr( hash( 'sha256', (string) wp_json_encode( $this->rows( $context ) ) ), 0, 12 )
+```
+
+over the compact rows themselves — twelve hex characters, computed in `CatalogExport::version()`.
+Stamping the plugin version, the add-on version and the switch option instead would miss
+whatever the next release adds without touching any of the three; hashing the rows cannot,
+because anything that changes the answer is *in* the answer. It follows that free code never
+has to read the add-on's version to know whether Pro moved the surface. Nothing from the
+request goes in — no timestamp, no site id, no user id — which is why the stamp is stable
+across calls and identical for every caller who can see the same rows, rather than a fresh
+value on every request or a value that differs per site. `system-connection`'s `catalog.version`
+member reports the same stamp, so a client holds a saved export until that number moves and
+re-exports only then, instead of re-fetching the whole document on a schedule. The module
+filter plays no part in the digest on purpose: an agent that exported one module still needs
+to learn when the rest of the surface moved.
+
+**`ModuleId::label()` and `ModulesScreen::module_label()` stay two functions on purpose.**
+`ModulesScreen::module_label()` runs every name through `__()`, because it is admin copy and an
+operator reads their own dashboard in their own language. `ModuleId::label()` is deliberately
+*not* translated, because it is a heading in a document an agent saves and greps, sitting
+alongside untranslated operation identifiers — localising it would translate half a protocol
+artifact and leave the half that actually matters, the operation ids, in English. Sharing one
+function between them would force a choice neither caller wants.

@@ -156,15 +156,16 @@ final class EnvironmentDiscoveryTest extends TestCase {
 	 * the identifiers in registration order also fails when a third operation
 	 * arrives unannounced, which is what makes this a net rather than a pair of
 	 * existence checks — as it did when `system-connection` arrived and again
-	 * when `system-operation-schema` did, and again when `system-operation-find`
-	 * did, which is why the list below names five.
+	 * when `system-operation-schema` did, again when `system-operation-find`
+	 * did, and again when `system-catalog-export` did, which is why the list
+	 * below names six.
 	 */
 	public function test_module_registers_its_system_reads_and_nothing_else(): void {
 		$registry = new CapabilityRegistry();
 		( new DiagnosticsModule() )->register( $registry );
 
 		$this->assertSame(
-			[ 'system-environment', 'system-integrations', 'system-connection', 'system-operation-schema', 'system-operation-find' ],
+			[ 'system-environment', 'system-integrations', 'system-connection', 'system-operation-schema', 'system-operation-find', 'system-catalog-export' ],
 			array_map(
 				static fn( OperationDefinition $d ): string => $d->id,
 				$registry->forDispatcher( 'system-read' )

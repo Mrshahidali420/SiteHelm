@@ -67,4 +67,31 @@ enum ModuleId: string {
 	 * same reason.
 	 */
 	case Code = 'code';
+
+	/**
+	 * The module's name in English, for the catalogue export.
+	 *
+	 * DELIBERATELY NOT TRANSLATED, and deliberately not shared with
+	 * ModulesScreen::module_label(). That one is admin copy: it runs through
+	 * __() so an operator reads their own language in their own dashboard. This
+	 * one is a heading in a document an agent saves and greps, alongside
+	 * untranslated operation identifiers. Localising it would translate half a
+	 * protocol artifact and leave the half that matters in English.
+	 */
+	public function label(): string {
+		return match ( $this ) {
+			self::Core        => 'Core content',
+			self::Diagnostics => 'Diagnostics',
+			self::Media       => 'Media',
+			self::Menus       => 'Menus',
+			self::Elementor   => 'Elementor',
+			self::Acf         => 'Advanced Custom Fields',
+			self::Metabox     => 'Meta Box',
+			self::Seo         => 'SEO metadata',
+			self::Forms       => 'Forms',
+			self::Extensions  => 'Plugins & themes',
+			self::Woocommerce => 'WooCommerce',
+			self::Code        => 'Code snippets',
+		};
+	}
 }

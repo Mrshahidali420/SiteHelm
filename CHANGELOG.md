@@ -47,6 +47,20 @@ file reaching the media library.
   their values. They are readable, not writable, and the response says how to make one
   writable.
 
+- **The whole operation surface can now be saved as one document.** A dispatcher's catalogue
+  only ever answered "what is on this tool", and nothing answered "what are all the ways to
+  do this" — a client would have had to call eleven dispatchers with no arguments and read
+  them side by side. `system-catalog-export` returns every operation this site publishes in
+  one Markdown or JSON document, grouped by subject, with the risk and rollback flags a
+  choice turns on, and it names the ones the add-on carries the same way it names the ones
+  this site has. Each export carries a `catalogVersion` stamp that only changes when the
+  surface itself does, so a saved copy knows it is stale by comparing that stamp against
+  `system-connection` rather than re-exporting on a schedule.
+
+- **The catalogue is also published as an MCP resource**, `sitehelm://catalog`, so a client
+  that reads resources at connection time gets the same document without spending a tool
+  call on it.
+
 ### Changed
 
 - **Naming an operation this site does not have now points at the ones it does.** A call

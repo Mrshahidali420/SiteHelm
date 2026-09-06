@@ -55,8 +55,15 @@ final class ServerInstructionsTest extends TestCase {
 	 * operation is not. The search answers where it is, in one call, and a client
 	 * that is never told it exists will not go looking for a search either. This
 	 * is the cheapest place to say so, and it is said in one sentence.
+	 *
+	 * Raised again, 2070 -> 2200, to name `system-catalog-export`. The search
+	 * answers one question at a time; the export puts the whole surface side by
+	 * side with the facts a choice turns on, and an export nobody is told about
+	 * is an export nobody uses - the same failure the dispatcher clause above
+	 * exists for. The sentence also says how a client checks a saved copy is
+	 * stale, which is what makes keeping one worth doing at all.
 	 */
-	private const MAX_LENGTH = 2070;
+	private const MAX_LENGTH = 2200;
 
 	/**
 	 * Test that the instructions text is not empty.
@@ -174,6 +181,16 @@ final class ServerInstructionsTest extends TestCase {
 		$this->assertStringContainsString( 'container padding', $point, 'The point must name the setting a caller has to send.' );
 		$this->assertStringContainsString( '0', $point, 'The point must name the value a full-bleed section needs.' );
 		$this->assertStringContainsStringIgnoringCase( 'full-bleed', $point, 'The point must name the outcome it is advice about.' );
+	}
+
+	/**
+	 * Test that the text names the catalogue export and how to tell it is stale.
+	 */
+	public function test_it_names_the_catalogue_export_and_how_to_tell_it_is_stale(): void {
+		$text = ServerInstructions::text();
+
+		$this->assertStringContainsString( 'system-catalog-export', $text );
+		$this->assertStringContainsString( 'catalog version', $text );
 	}
 
 	/**

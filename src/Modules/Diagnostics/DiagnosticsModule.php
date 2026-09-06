@@ -20,6 +20,7 @@ use SiteHelm\Contracts\Risk;
 use SiteHelm\Contracts\RollbackPolicy;
 use SiteHelm\Contracts\SnapshotPolicy;
 use SiteHelm\Registry\CapabilityRegistry;
+use SiteHelm\Registry\CatalogExport;
 
 /**
  * System discovery and diagnostics. Depends only on WordPress core,
@@ -198,9 +199,10 @@ final class DiagnosticsModule implements IntegrationModule {
 					'properties'           => [
 						'user'                => [ 'type' => 'object' ],
 						'transport'           => [ 'type' => 'object' ],
+						'catalog'             => [ 'type' => 'object' ],
 						'applicationPassword' => [ 'type' => 'object' ],
 					],
-					'required'             => [ 'user', 'transport', 'applicationPassword' ],
+					'required'             => [ 'user', 'transport', 'catalog', 'applicationPassword' ],
 					'additionalProperties' => false,
 				],
 				schemaVersion: 1,
@@ -219,7 +221,7 @@ final class DiagnosticsModule implements IntegrationModule {
 					'arguments' => [],
 				],
 			),
-			[ new ConnectionCheck(), 'handle' ]
+			[ new ConnectionCheck( $registry ), 'handle' ]
 		);
 
 		$registry->register(
@@ -345,6 +347,64 @@ final class DiagnosticsModule implements IntegrationModule {
 				],
 			),
 			[ new OperationFind( $registry ), 'handle' ]
+		);
+
+		$registry->register(
+			new OperationDefinition(
+				id: 'system-catalog-export',
+				domain: Domain::System,
+				mode: Mode::Read,
+				description: 'Return every operation this site publishes in one document, grouped by subject, with the risk and rollback flags a choice turns on. Save it and re-export when system-connection reports a different catalog version.',
+				inputSchema: [
+					'type'                 => 'object',
+					'properties'           => [
+						'format' => [
+							'type'        => 'string',
+							'enum'        => [ 'markdown', 'json' ],
+							'description' => 'markdown to save and grep, json to render. Defaults to markdown.',
+						],
+						'detail' => [
+							'type'        => 'string',
+							'enum'        => [ 'compact', 'full' ],
+							'description' => 'compact is identifiers, descriptions and flags. full adds every input and output schema, and is roughly two and a half times the size. Defaults to compact.',
+						],
+						'module' => [
+							'type'        => 'string',
+							'enum'        => [ 'core', 'diagnostics', 'media', 'menus', 'elementor', 'acf', 'metabox', 'seo', 'forms', 'extensions', 'woocommerce', 'code' ],
+							'description' => 'Export one subject group instead of all of them.',
+						],
+					],
+					'additionalProperties' => false,
+				],
+				outputSchema: [
+					'type'                 => 'object',
+					'properties'           => [
+						'catalogVersion' => [ 'type' => 'string' ],
+						'operationCount' => [ 'type' => 'integer' ],
+						'format'         => [ 'type' => 'string' ],
+						'catalog'        => [ 'type' => 'string' ],
+						'catalogData'    => [ 'type' => 'object' ],
+					],
+					'required'             => [ 'catalogVersion', 'operationCount', 'format', 'catalog', 'catalogData' ],
+					'additionalProperties' => false,
+				],
+				schemaVersion: 1,
+				requiredCapabilities: [ 'read' ],
+				risk: Risk::Low,
+				isReadOnly: true,
+				isDestructive: false,
+				isIdempotent: true,
+				previewPolicy: PreviewPolicy::NotApplicable,
+				snapshotPolicy: SnapshotPolicy::NotApplicable,
+				rollbackPolicy: RollbackPolicy::NotApplicable,
+				module: ModuleId::Diagnostics,
+				supportedVersions: [ 'wordpress' => '>=' . SITEHELM_MIN_WP ],
+				example: [
+					'operation' => 'system-catalog-export',
+					'arguments' => [],
+				],
+			),
+			[ new CatalogExportOperation( new CatalogExport( $registry ) ), 'handle' ]
 		);
 	}
 }

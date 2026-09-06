@@ -24,6 +24,7 @@ use SiteHelm\Gateway\ContextFactory;
 use SiteHelm\Gateway\Dispatcher;
 use SiteHelm\Gateway\McpServer;
 use SiteHelm\Gateway\ServerInstructions;
+use SiteHelm\Policy\OperationSwitches;
 use SiteHelm\Policy\PolicyEngine;
 use SiteHelm\Registry\CapabilityRegistry;
 use SiteHelm\Registry\CatalogBuilder;
@@ -67,11 +68,12 @@ final class McpServerTest extends TestCase {
 	 * once the gateway has already built its context — including raising a
 	 * failure the gateway did not anticipate.
 	 *
-	 * @param callable $handler The handler backing `system-environment`.
+	 * @param callable               $handler  The handler backing `system-environment`.
+	 * @param OperationSwitches|null $switches The operator's per-operation switches; null means all on.
 	 *
 	 * @return McpServer The configured server.
 	 */
-	private function serverRunning( callable $handler ): McpServer {
+	private function serverRunning( callable $handler, ?OperationSwitches $switches = null ): McpServer {
 		$registry = new CapabilityRegistry();
 		$registry->register(
 			new OperationDefinition(
@@ -108,8 +110,47 @@ final class McpServerTest extends TestCase {
 			$handler
 		);
 
+		// Registered so `resourceRead()`'s gate has a real operation to check:
+		// the catalogue resource is `system-catalog-export`'s output by another
+		// door, and the gate must see the same `read` capability and the same
+		// operator switch that operation itself carries.
+		$registry->register(
+			new OperationDefinition(
+				id: 'system-catalog-export',
+				domain: Domain::System,
+				mode: Mode::Read,
+				description: 'Return every operation this site publishes in one document.',
+				inputSchema: [
+					'type'                 => 'object',
+					'properties'           => [],
+					'additionalProperties' => false,
+				],
+				outputSchema: [
+					'type'                 => 'object',
+					'properties'           => [],
+					'additionalProperties' => false,
+				],
+				schemaVersion: 1,
+				requiredCapabilities: [ 'read' ],
+				risk: Risk::Low,
+				isReadOnly: true,
+				isDestructive: false,
+				isIdempotent: true,
+				previewPolicy: PreviewPolicy::NotApplicable,
+				snapshotPolicy: SnapshotPolicy::NotApplicable,
+				rollbackPolicy: RollbackPolicy::NotApplicable,
+				module: ModuleId::Diagnostics,
+				supportedVersions: [ 'wordpress' => '>=6.6' ],
+				example: [
+					'operation' => 'system-catalog-export',
+					'arguments' => [],
+				],
+			),
+			static fn(): array => []
+		);
+
 		return new McpServer(
-			new Dispatcher( $registry, new CatalogBuilder( $registry ), new PolicyEngine(), new SchemaValidator(), ChangeEngine::create() ),
+			new Dispatcher( $registry, new CatalogBuilder( $registry, $switches ), new PolicyEngine(), new SchemaValidator(), ChangeEngine::create(), $switches ),
 			new ContextFactory(),
 			[
 				'diagnostics' => [
@@ -296,7 +337,7 @@ final class McpServerTest extends TestCase {
 	public function test_the_tool_list_names_the_operations_each_dispatcher_publishes(): void {
 		$descriptions = $this->toolDescriptions();
 
-		$this->assertStringContainsString( 'Operations: system-environment.', $descriptions['system-read'] );
+		$this->assertStringContainsString( 'Operations: system-environment, system-catalog-export.', $descriptions['system-read'] );
 	}
 
 	/**
@@ -438,7 +479,7 @@ final class McpServerTest extends TestCase {
 			[
 				'jsonrpc' => '2.0',
 				'id'      => 6,
-				'method'  => 'resources/list',
+				'method'  => 'prompts/list',
 			]
 		);
 		$this->assertSame( -32601, $response['error']['code'] );
@@ -908,5 +949,178 @@ final class McpServerTest extends TestCase {
 		);
 
 		return $response['result']['protocolVersion'];
+	}
+
+	/**
+	 * The transport is request and response with no held-open stream, so the
+	 * server cannot push notifications/resources/list_changed. Declaring a push
+	 * we cannot make would leave a client waiting for a message that never
+	 * arrives, which is worse than telling it to poll.
+	 */
+	public function test_it_never_claims_a_resource_push_it_cannot_make(): void {
+		$result = $this->server->handle(
+			[
+				'jsonrpc' => '2.0',
+				'id'      => 1,
+				'method'  => 'initialize',
+				'params'  => [],
+			]
+		);
+
+		$this->assertFalse( $result['result']['capabilities']['resources']['listChanged'] );
+		$this->assertFalse( $result['result']['capabilities']['resources']['subscribe'] );
+	}
+
+	public function test_it_publishes_one_catalogue_resource_stamped_with_its_version(): void {
+		$result = $this->server->handle(
+			[
+				'jsonrpc' => '2.0',
+				'id'      => 2,
+				'method'  => 'resources/list',
+			]
+		);
+
+		$resources = $result['result']['resources'];
+
+		$this->assertCount( 1, $resources );
+		$this->assertSame( 'sitehelm://catalog', $resources[0]['uri'] );
+		$this->assertSame( 'text/markdown', $resources[0]['mimeType'] );
+		$this->assertMatchesRegularExpression( '/catalogVersion [0-9a-f]{12}/', $resources[0]['description'] );
+	}
+
+	public function test_reading_the_catalogue_resource_answers_the_document(): void {
+		$result = $this->server->handle(
+			[
+				'jsonrpc' => '2.0',
+				'id'      => 3,
+				'method'  => 'resources/read',
+				'params'  => [ 'uri' => 'sitehelm://catalog' ],
+			]
+		);
+
+		$contents = $result['result']['contents'];
+
+		$this->assertCount( 1, $contents );
+		$this->assertSame( 'sitehelm://catalog', $contents[0]['uri'] );
+		$this->assertSame( 'text/markdown', $contents[0]['mimeType'] );
+		$this->assertStringStartsWith( '# SiteHelm operations', $contents[0]['text'] );
+		// Positive control: an authorized caller's document names the operation
+		// the "hides" test below asserts is absent for an unauthorized one. Without
+		// this, that absence assertion would pass just as well against an empty
+		// catalogue.
+		$this->assertStringContainsString( 'system-environment', $contents[0]['text'] );
+	}
+
+	/**
+	 * An unknown uri is an error, not an empty result. Answering "here is
+	 * nothing" to a resource this server does not have reads as an empty
+	 * catalogue rather than a wrong address.
+	 */
+	public function test_an_unknown_resource_uri_is_an_error(): void {
+		$result = $this->server->handle(
+			[
+				'jsonrpc' => '2.0',
+				'id'      => 4,
+				'method'  => 'resources/read',
+				'params'  => [ 'uri' => 'sitehelm://not-a-thing' ],
+			]
+		);
+
+		$this->assertArrayHasKey( 'error', $result );
+		$this->assertArrayNotHasKey( 'result', $result );
+	}
+
+	/**
+	 * A resource read must never disclose what a tool call would hide. The
+	 * catalogue resource is `system-catalog-export`'s own output by another
+	 * door, and that operation refuses a caller with no `read` capability
+	 * before it ever runs. A caller failing that same gate here must get the
+	 * identical refusal an unknown resource gets, not a filtered-but-present
+	 * document -- disclosing that the resource exists but is forbidden is
+	 * itself the disclosure this gate exists to prevent.
+	 */
+	public function test_reading_the_resource_refuses_a_caller_without_read_capability(): void {
+		Functions\when( 'user_can' )->justReturn( false );
+
+		$result = $this->server->handle(
+			[
+				'jsonrpc' => '2.0',
+				'id'      => 5,
+				'method'  => 'resources/read',
+				'params'  => [ 'uri' => 'sitehelm://catalog' ],
+			]
+		);
+
+		$this->assertArrayHasKey( 'error', $result );
+		$this->assertArrayNotHasKey( 'result', $result );
+	}
+
+	/**
+	 * The operator's switch for `system-catalog-export` is a control the site
+	 * owner deliberately set. A resource read that ignored it would make the
+	 * switch a lie: the operation would be off everywhere else, yet its
+	 * document would still answer through the resource door.
+	 */
+	public function test_reading_the_resource_refuses_when_the_operation_is_switched_off(): void {
+		$switches = new OperationSwitches( static fn(): array => [ 'system-catalog-export' ] );
+		$server   = $this->serverRunning(
+			static fn(): array => [ 'wordpress' => '6.8.1' ],
+			$switches
+		);
+
+		$result = $server->handle(
+			[
+				'jsonrpc' => '2.0',
+				'id'      => 6,
+				'method'  => 'resources/read',
+				'params'  => [ 'uri' => 'sitehelm://catalog' ],
+			]
+		);
+
+		$this->assertArrayHasKey( 'error', $result );
+		$this->assertArrayNotHasKey( 'result', $result );
+	}
+
+	/**
+	 * The listing has to answer the same gate the read answers. Its description
+	 * carries the operation count and the catalogue stamp, so a listing that
+	 * ignored the operator's switch would hand a caller two facts about a
+	 * surface the owner switched off, and the read that followed would tell the
+	 * same caller the resource does not exist.
+	 */
+	public function test_listing_resources_hides_the_catalogue_when_the_operation_is_switched_off(): void {
+		$switches = new OperationSwitches( static fn(): array => [ 'system-catalog-export' ] );
+		$server   = $this->serverRunning(
+			static fn(): array => [ 'wordpress' => '6.8.1' ],
+			$switches
+		);
+
+		$result = $server->handle(
+			[
+				'jsonrpc' => '2.0',
+				'id'      => 7,
+				'method'  => 'resources/list',
+			]
+		);
+
+		$this->assertSame( [], $result['result']['resources'] );
+	}
+
+	/**
+	 * A caller with no `read` capability is refused the document, so the listing
+	 * must not advertise it to them either.
+	 */
+	public function test_listing_resources_hides_the_catalogue_from_a_caller_without_read_capability(): void {
+		Functions\when( 'user_can' )->justReturn( false );
+
+		$result = $this->server->handle(
+			[
+				'jsonrpc' => '2.0',
+				'id'      => 8,
+				'method'  => 'resources/list',
+			]
+		);
+
+		$this->assertSame( [], $result['result']['resources'] );
 	}
 }

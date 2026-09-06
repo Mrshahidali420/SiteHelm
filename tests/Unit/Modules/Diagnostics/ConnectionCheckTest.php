@@ -16,7 +16,9 @@ use SiteHelm\Contracts\OperationException;
 use SiteHelm\Contracts\PermissionMode;
 use SiteHelm\Modules\Diagnostics\ConnectionCheck;
 use SiteHelm\Modules\Diagnostics\DiagnosticsModule;
+use SiteHelm\Policy\OperationSwitches;
 use SiteHelm\Registry\CapabilityRegistry;
+use SiteHelm\Registry\CatalogExport;
 use SiteHelm\Tests\TestCase;
 
 /**
@@ -109,7 +111,7 @@ final class ConnectionCheckTest extends TestCase {
 		Functions\when( 'user_can' )->justReturn( true );
 		$this->stubUser( 7, 'editor-jane', 'Jane' );
 
-		$data = ( new ConnectionCheck() )->handle( [], $this->makeContext() );
+		$data = ( new ConnectionCheck( new CapabilityRegistry() ) )->handle( [], $this->makeContext() );
 
 		$this->assertFalse( $data['applicationPassword']['available'] );
 		$this->assertFalse( $data['applicationPassword']['inUse'] );
@@ -124,7 +126,7 @@ final class ConnectionCheckTest extends TestCase {
 		$this->stubUser( 7, 'editor-jane', 'Jane' );
 		$this->stubApplicationPasswordApi( false, null );
 
-		$data = ( new ConnectionCheck() )->handle( [], $this->makeContext() );
+		$data = ( new ConnectionCheck( new CapabilityRegistry() ) )->handle( [], $this->makeContext() );
 
 		$this->assertSame( 7, $data['user']['id'] );
 		$this->assertSame( 'editor-jane', $data['user']['username'] );
@@ -156,7 +158,7 @@ final class ConnectionCheckTest extends TestCase {
 			}
 		);
 
-		( new ConnectionCheck() )->handle( [], $this->makeContext() );
+		( new ConnectionCheck( new CapabilityRegistry() ) )->handle( [], $this->makeContext() );
 
 		$this->assertSame( [ 7 ], $asked );
 	}
@@ -171,7 +173,7 @@ final class ConnectionCheckTest extends TestCase {
 		$this->stubUser( 7, 'editor-jane', 'Jane' );
 		$this->stubApplicationPasswordApi( false, null );
 
-		$data = ( new ConnectionCheck() )->handle( [], $this->makeContext() );
+		$data = ( new ConnectionCheck( new CapabilityRegistry() ) )->handle( [], $this->makeContext() );
 
 		$this->assertSame( 'sitehelm/v1/mcp', $data['transport']['route'] );
 		$this->assertSame( 'json-rpc-2.0', $data['transport']['protocol'] );
@@ -196,7 +198,7 @@ final class ConnectionCheckTest extends TestCase {
 		$this->stubUser( 7, 'editor-jane', 'Jane' );
 		$this->stubApplicationPasswordApi( true, 'e5f1c0de-0000-4000-8000-000000000001' );
 
-		$data = ( new ConnectionCheck() )->handle( [], $this->makeContext() );
+		$data = ( new ConnectionCheck( new CapabilityRegistry() ) )->handle( [], $this->makeContext() );
 
 		$this->assertTrue( $data['applicationPassword']['available'] );
 		$this->assertTrue( $data['applicationPassword']['inUse'] );
@@ -218,7 +220,7 @@ final class ConnectionCheckTest extends TestCase {
 		$this->stubUser( 7, 'editor-jane', 'Jane' );
 		$this->stubApplicationPasswordApi( true, null );
 
-		$data = ( new ConnectionCheck() )->handle( [], $this->makeContext() );
+		$data = ( new ConnectionCheck( new CapabilityRegistry() ) )->handle( [], $this->makeContext() );
 
 		$this->assertTrue( $data['applicationPassword']['available'] );
 		$this->assertFalse( $data['applicationPassword']['inUse'] );
@@ -238,7 +240,7 @@ final class ConnectionCheckTest extends TestCase {
 		$this->stubApplicationPasswordApi( false, null );
 
 		try {
-			( new ConnectionCheck() )->handle( [], $this->makeContext() );
+			( new ConnectionCheck( new CapabilityRegistry() ) )->handle( [], $this->makeContext() );
 		} catch ( OperationException $e ) {
 			$this->assertSame( ErrorCode::ExecutionFailed, $e->errorCode );
 
@@ -269,7 +271,7 @@ final class ConnectionCheckTest extends TestCase {
 		);
 
 		try {
-			( new ConnectionCheck() )->handle( [], $this->makeContext() );
+			( new ConnectionCheck( new CapabilityRegistry() ) )->handle( [], $this->makeContext() );
 		} catch ( OperationException $e ) {
 			$this->assertSame( ErrorCode::Forbidden, $e->errorCode );
 
@@ -297,7 +299,7 @@ final class ConnectionCheckTest extends TestCase {
 		$this->stubUser( 7, 'editor-jane', 'Jane' );
 		$this->stubApplicationPasswordApi( false, null );
 
-		( new ConnectionCheck() )->handle( [], $this->makeContext() );
+		( new ConnectionCheck( new CapabilityRegistry() ) )->handle( [], $this->makeContext() );
 
 		$this->assertSame( [ [ 7, 'read' ] ], $asked );
 	}
@@ -339,7 +341,7 @@ final class ConnectionCheckTest extends TestCase {
 		$this->stubUser( 7, 'editor-jane', 'Jane' );
 		$this->stubApplicationPasswordApi( true, 'e5f1c0de-0000-4000-8000-000000000001' );
 
-		$data = ( new ConnectionCheck() )->handle( [], $this->makeContext() );
+		$data = ( new ConnectionCheck( new CapabilityRegistry() ) )->handle( [], $this->makeContext() );
 
 		$this->assertConformsToOutputSchema( $data, $registry->definition( 'system-connection' )->outputSchema );
 	}
@@ -354,10 +356,48 @@ final class ConnectionCheckTest extends TestCase {
 		$this->stubUser( 7, 'editor-jane', 'Jane' );
 		$this->stubApplicationPasswordApi( true, 'e5f1c0de-0000-4000-8000-000000000001' );
 
-		$json = (string) wp_json_encode( ( new ConnectionCheck() )->handle( [], $this->makeContext() ) );
+		$json = (string) wp_json_encode( ( new ConnectionCheck( new CapabilityRegistry() ) )->handle( [], $this->makeContext() ) );
 
 		$this->assertDoesNotMatchRegularExpression( '/\/var\/|\/home\/|wp-content|[A-Z]:\\\\/', $json );
 		$this->assertDoesNotMatchRegularExpression( '/authorization|bearer|secret/i', $json );
 		$this->assertStringNotContainsString( PHP_VERSION, $json );
+	}
+
+	/**
+	 * The freshness check has to be cheap or nobody makes it. This is about
+	 * twenty tokens on a call a client already makes, and it is the whole reason
+	 * a saved catalogue can be trusted.
+	 */
+	public function test_it_reports_the_catalogue_stamp_and_count(): void {
+		Functions\when( 'user_can' )->justReturn( true );
+		$this->stubUser( 7, 'editor-jane', 'Jane' );
+		$this->stubApplicationPasswordApi( false, null );
+
+		$registry = new CapabilityRegistry();
+		( new DiagnosticsModule() )->register( $registry );
+
+		$result = ( new ConnectionCheck( $registry, OperationSwitches::none() ) )->handle( [], $this->makeContext() );
+
+		$this->assertArrayHasKey( 'catalog', $result );
+		$this->assertMatchesRegularExpression( '/^[0-9a-f]{12}$/', $result['catalog']['version'] );
+		$this->assertIsInt( $result['catalog']['operationCount'] );
+	}
+
+	/**
+	 * The stamp here and the stamp in the export are the same number, or the
+	 * check is decorative.
+	 */
+	public function test_the_stamp_matches_the_one_the_export_writes(): void {
+		Functions\when( 'user_can' )->justReturn( true );
+		$this->stubUser( 7, 'editor-jane', 'Jane' );
+		$this->stubApplicationPasswordApi( false, null );
+
+		$registry = new CapabilityRegistry();
+		( new DiagnosticsModule() )->register( $registry );
+
+		$export = new CatalogExport( $registry, OperationSwitches::none() );
+		$result = ( new ConnectionCheck( $registry, OperationSwitches::none() ) )->handle( [], $this->makeContext() );
+
+		$this->assertSame( $export->version( $this->makeContext() ), $result['catalog']['version'] );
 	}
 }

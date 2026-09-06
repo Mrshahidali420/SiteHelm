@@ -108,4 +108,23 @@ final class EnumsTest extends TestCase {
 		$this->assertFalse( ErrorCode::InvalidInput->isRetryable() );
 		$this->assertFalse( ErrorCode::StalePlan->isRetryable() );
 	}
+
+	/**
+	 * Every module names itself, because the catalogue export writes one heading
+	 * per module and a missing arm would print an enum value into the file.
+	 */
+	public function test_every_module_has_a_label(): void {
+		foreach ( ModuleId::cases() as $module ) {
+			$label = $module->label();
+
+			$this->assertNotSame( '', $label, $module->value . ' has no label' );
+			$this->assertNotSame( $module->value, $label, $module->value . ' falls through to its enum value' );
+		}
+	}
+
+	public function test_module_labels_are_the_names_a_person_would_use(): void {
+		$this->assertSame( 'Plugins & themes', ModuleId::Extensions->label() );
+		$this->assertSame( 'Advanced Custom Fields', ModuleId::Acf->label() );
+		$this->assertSame( 'WooCommerce', ModuleId::Woocommerce->label() );
+	}
 }

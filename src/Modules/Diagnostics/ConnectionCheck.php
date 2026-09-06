@@ -13,6 +13,9 @@ use SiteHelm\Contracts\ErrorCode;
 use SiteHelm\Contracts\OperationContext;
 use SiteHelm\Contracts\OperationException;
 use SiteHelm\Gateway\RestTransport;
+use SiteHelm\Policy\OperationSwitches;
+use SiteHelm\Registry\CapabilityRegistry;
+use SiteHelm\Registry\CatalogExport;
 
 /**
  * REQ-0004: the first call a newly configured client makes, answering the two
@@ -57,6 +60,30 @@ final class ConnectionCheck {
 	 * The wire protocol the gateway speaks, as a stable string for the client.
 	 */
 	private const PROTOCOL = 'json-rpc-2.0';
+
+	/**
+	 * Builds the check over the registry whose catalogue it stamps.
+	 *
+	 * The registry is passed rather than defaulted: there is one per request,
+	 * assembled as modules load, and a second empty one would stamp an empty
+	 * catalogue as this site's.
+	 *
+	 * @param CapabilityRegistry     $registry The capability registry.
+	 * @param OperationSwitches|null $switches The operator's switches; null reads the stored option.
+	 */
+	public function __construct(
+		CapabilityRegistry $registry,
+		?OperationSwitches $switches = null
+	) {
+		$this->export = new CatalogExport( $registry, $switches );
+	}
+
+	/**
+	 * The catalogue this stamps.
+	 *
+	 * @var CatalogExport
+	 */
+	private readonly CatalogExport $export;
 
 	// phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase, WordPress.Security.EscapeOutput.ExceptionNotEscaped -- OperationContext::$userId, $siteId, $clientId and $permissionMode are contract properties this module does not name, and every message here is a literal written for end users.
 	/**
@@ -105,6 +132,10 @@ final class ConnectionCheck {
 				'permissionMode' => $context->permissionMode->value,
 				'siteId'         => $context->siteId,
 				'clientId'       => $context->clientId,
+			],
+			'catalog'             => [
+				'version'        => $this->export->version( $context ),
+				'operationCount' => count( $this->export->rows( $context ) ),
 			],
 			'applicationPassword' => $this->applicationPassword(),
 		];
