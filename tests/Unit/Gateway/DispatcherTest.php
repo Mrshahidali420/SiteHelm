@@ -904,6 +904,134 @@ final class DispatcherTest extends TestCase {
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 
 	/**
+	 * Registers a plain read operation, for tests that need a second identifier
+	 * on the surface and do not care what it does.
+	 *
+	 * @param CapabilityRegistry $registry    The registry to register into.
+	 * @param string             $id          The operation identifier.
+	 * @param string             $description The description the search reads.
+	 */
+	private function registerRead( CapabilityRegistry $registry, string $id, string $description ): void {
+		$registry->register(
+			new OperationDefinition(
+				id: $id,
+				domain: Domain::System,
+				mode: Mode::Read,
+				description: $description,
+				inputSchema: [
+					'type'                 => 'object',
+					'properties'           => [],
+					'additionalProperties' => false,
+				],
+				outputSchema: [
+					'type'                 => 'object',
+					'properties'           => [],
+					'additionalProperties' => false,
+				],
+				schemaVersion: 1,
+				requiredCapabilities: [ 'manage_options' ],
+				risk: Risk::Low,
+				isReadOnly: true,
+				isDestructive: false,
+				isIdempotent: true,
+				previewPolicy: PreviewPolicy::NotApplicable,
+				snapshotPolicy: SnapshotPolicy::NotApplicable,
+				rollbackPolicy: RollbackPolicy::NotApplicable,
+				module: ModuleId::Diagnostics,
+				supportedVersions: [ 'wordpress' => '>=6.6' ],
+				example: [
+					'operation' => $id,
+					'arguments' => [],
+				],
+			),
+			static fn( array $input, OperationContext $context ): array => []
+		);
+	}
+
+	/**
+	 * An identifier that does not exist still says what the caller wanted. A bare
+	 * refusal sends a client off to report that the site cannot do the thing;
+	 * naming the nearest published operations turns the dead end into a shortlist.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+	 */
+	public function test_an_unknown_operation_names_the_nearest_published_ones(): void {
+		try {
+			$this->dispatcher->dispatch( 'system-read', [ 'operation' => 'system-environment-report' ], $this->makeContext() );
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			$this->assertStringContainsString( 'system-environment', (string) $e->remediation );
+		}
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+
+	/**
+	 * THE ORACLE TEST FOR THE REFUSAL PATH. The catalog hides operations whose
+	 * capabilities the caller does not hold. A suggestion drawn from anywhere
+	 * else would hand those back one guessed identifier at a time.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+	 */
+	public function test_a_refusal_never_names_an_operation_the_caller_cannot_see(): void {
+		Functions\when( 'user_can' )->justReturn( false );
+
+		try {
+			$this->dispatcher->dispatch( 'system-read', [ 'operation' => 'system-environment-report' ], $this->makeContext() );
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			$this->assertStringNotContainsString( 'system-environment', (string) $e->remediation );
+		}
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+
+	/**
+	 * The suggestions must not undo what the two mute branches protect. They are
+	 * drawn from the caller's own text and the surface it may already list, so an
+	 * operation held behind a switch and one that was never registered still get
+	 * a reply that matches word for word.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+	 */
+	public function test_a_switched_off_operation_and_an_absent_one_get_the_same_suggestions(): void {
+		$this->registerRead( $this->registry, 'system-connection', 'Report how this client is connected.' );
+
+		$switches = new OperationSwitches( static fn(): array => [ 'system-environment' ] );
+		$hidden   = new Dispatcher(
+			$this->registry,
+			new CatalogBuilder( $this->registry, $switches ),
+			new PolicyEngine(),
+			new SchemaValidator(),
+			ChangeEngine::create(),
+			$switches
+		);
+
+		$absent_registry = new CapabilityRegistry();
+		$this->registerRead( $absent_registry, 'system-connection', 'Report how this client is connected.' );
+		$absent = new Dispatcher(
+			$absent_registry,
+			new CatalogBuilder( $absent_registry ),
+			new PolicyEngine(),
+			new SchemaValidator(),
+			ChangeEngine::create()
+		);
+
+		$replies = [];
+
+		foreach ( [ $hidden, $absent ] as $dispatcher ) {
+			try {
+				$dispatcher->dispatch( 'system-read', [ 'operation' => 'system-environment' ], $this->makeContext() );
+				$this->fail( 'Expected OperationException' );
+			} catch ( OperationException $e ) {
+				$replies[] = $e->getMessage() . '|' . (string) $e->remediation;
+			}
+		}
+
+		$this->assertSame( $replies[0], $replies[1] );
+		$this->assertStringNotContainsString( 'system-environment', $replies[0] );
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+
+	/**
 	 * An operation the published Pro catalogue names, called on a site whose
 	 * registry does not hold it, is told about the add-on rather than being
 	 * refused like a typo. The identifier in the message is the catalogue's

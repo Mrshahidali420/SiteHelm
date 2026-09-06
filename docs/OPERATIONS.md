@@ -41,7 +41,8 @@ on demand for the dispatcher actually in use.
 |---|---|
 | `tools/list` | The 11 dispatchers, each naming the operations this site publishes on it |
 | Any dispatcher with no `operation` | That dispatcher's catalogue: operation ids, summaries, capabilities, policies |
-| `system-read` → `system-operation-find` | The operations that match a plain description of what you want to do, wherever they live |
+| `system-read` → `system-operation-find` | The operations that match a plain description of what you want to do, wherever they live, each with a runnable example call |
+| An operation name this site does not have | A refusal that names the closest operations it does have |
 | `system-read` → `system-environment` | WordPress and PHP versions, active theme, registered post types and taxonomies |
 | `system-read` → `system-integrations` | Which optional integrations are `Active`, `Inactive`, `VersionBlocked`, or `Unconfigured` |
 | `elementor-read` → `elementor-control-schema` | The control schema for a widget or container, so an agent can construct valid settings |

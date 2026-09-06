@@ -3231,7 +3231,21 @@ test named for that. And it merges in the `ProCatalogue` entries the registry do
 marked `available: false` with `blockedReason: 'requires_pro'`, because a free site that
 answers nothing to "install a plugin from a zip" is telling the operator the thing is
 impossible when the honest answer is that the add-on does it. At equal score an operation the
-site actually has sorts ahead of one that needs buying.
+site actually has sorts ahead of one that needs buying. Each match carries the definition's
+`example`, a complete runnable call, because a search followed by a schema read is two round
+trips to do one thing; an absent Pro entry carries `null` there, since a call it cannot run is
+not an example.
+
+**The third half is the refusal.** `Dispatcher::nearest_published()` ranks the identifier a
+caller sent against the operations it may already list, through `OperationFind::suggest()`, and
+names the closest three. This is the one moment a client is demonstrably lost and has, in the
+identifier it invented, said exactly what it wanted. Three constraints hold it together: only
+operations the site actually has are named, because an exact match against the Pro catalogue is
+already answered above and offering something unbuyable would be an upsell in place of an
+answer; the suggestions come from the caller's own text and the same filtered surface, so the
+switched-off branch and the unknown branch still answer word for word alike and neither can name
+what a listing would hide; and the search is wrapped in a `Throwable` catch, because a refusal
+that cannot be enriched is still a refusal and must not become a fatal.
 
 **`MenuFields::TARGET_SAME_TAB`** is the same problem one layer down. WordPress stores "open
 in this window" as the empty string, and an enum whose members are `""` and `"_blank"` is

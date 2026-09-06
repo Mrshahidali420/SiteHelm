@@ -188,6 +188,10 @@ final class OperationFindTest extends TestCase {
 		$this->assertFalse( $match['available'] );
 		$this->assertSame( 'requires_pro', $match['blockedReason'] );
 		$this->assertSame( 'content-write', $match['dispatcher'] );
+
+		// An operation this site does not have cannot carry a runnable example,
+		// and inventing one would be a call that fails.
+		$this->assertNull( $match['example'] );
 	}
 
 	/**
@@ -201,6 +205,23 @@ final class OperationFindTest extends TestCase {
 		$this->assertTrue( $result['matches'][0]['available'] );
 		$this->assertNull( $result['matches'][0]['blockedReason'] );
 		$this->assertSame( 'system-read', $result['matches'][0]['dispatcher'] );
+	}
+
+	/**
+	 * A match carries the call that runs it. Finding the operation is half the
+	 * job; without the example the caller still has to read a schema before it
+	 * can do anything, which is the round trip the search exists to remove.
+	 */
+	public function test_a_match_carries_a_runnable_example(): void {
+		$result = $this->find->handle( [ 'query' => 'list the plugins on this site' ], $this->context() );
+
+		// An operation that takes no arguments still serializes them as an empty
+		// JSON object, not an empty array, so the example can be sent back as it
+		// stands.
+		$this->assertSame(
+			'{"operation":"system-plugin-list","arguments":{}}',
+			(string) json_encode( $result['matches'][0]['example'] )
+		);
 	}
 
 	/**

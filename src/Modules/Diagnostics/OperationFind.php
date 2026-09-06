@@ -194,9 +194,8 @@ final class OperationFind {
 
 		$query = is_string( $input['query'] ?? null ) ? $input['query'] : '';
 		$limit = $this->limit( $input['limit'] ?? null );
-		$terms = $this->terms( $query );
 
-		if ( [] === $terms ) {
+		if ( [] === $this->terms( $query ) ) {
 			return SchemaShape::normalize(
 				[
 					'query'   => $query,
@@ -204,6 +203,42 @@ final class OperationFind {
 					'note'    => 'That query carried no word to search on. Describe the change in a few words, as in "install a plugin from a zip file".',
 				]
 			);
+		}
+
+		$matches = $this->suggest( $query, $context, $limit );
+
+		return SchemaShape::normalize(
+			[
+				'query'   => $query,
+				'matches' => $matches,
+				'note'    => [] === $matches
+					? 'No operation on this site matched those words. Call a dispatcher without an operation to read its full catalog before concluding the site cannot do it.'
+					: 'Ranked by how well the words match. Each match carries a runnable example; call system-operation-schema with an identifier for its full input and output schema.',
+			]
+		);
+	}
+
+	/**
+	 * The operations whose words best answer a piece of text.
+	 *
+	 * Public because the dispatcher asks the same question from the other end.
+	 * When a call names an operation this site does not publish, the caller has
+	 * already told us in that identifier what it was reaching for, and the
+	 * nearest published operations are the answer it needed — the same ranking,
+	 * over the same filtered surface, so a refusal can never name something a
+	 * listing would have hidden.
+	 *
+	 * @param string           $text    The words to rank against.
+	 * @param OperationContext $context The operation context.
+	 * @param int              $limit   The most entries to return.
+	 *
+	 * @return list<array<string, mixed>> The ranked entries, best first.
+	 */
+	public function suggest( string $text, OperationContext $context, int $limit ): array {
+		$terms = $this->terms( $text );
+
+		if ( [] === $terms || $limit < 1 ) {
+			return [];
 		}
 
 		$scored = [];
@@ -230,20 +265,10 @@ final class OperationFind {
 			static fn( array $a, array $b ): int => [ $b[0], $b[1]['available'] ] <=> [ $a[0], $a[1]['available'] ]
 		);
 
-		$matches = array_slice(
+		return array_slice(
 			array_map( static fn( array $row ): array => $row[1], $scored ),
 			0,
 			$limit
-		);
-
-		return SchemaShape::normalize(
-			[
-				'query'   => $query,
-				'matches' => $matches,
-				'note'    => [] === $matches
-					? 'No operation on this site matched those words. Call a dispatcher without an operation to read its full catalog before concluding the site cannot do it.'
-					: 'Ranked by how well the words match. Call system-operation-schema with one of these identifiers for its full input and output schema.',
-			]
 		);
 	}
 
@@ -277,6 +302,11 @@ final class OperationFind {
 	/**
 	 * One registered operation, described the way a catalog entry describes it.
 	 *
+	 * The example rides along because the round trip it saves is the whole point
+	 * of the search. A caller that has found the operation still has to learn how
+	 * to call it, and a definition's example is a complete, runnable call; without
+	 * it every search is followed by a schema read before anything happens.
+	 *
 	 * @param OperationDefinition $definition The operation.
 	 * @param string              $dispatcher The dispatcher it answers on.
 	 *
@@ -289,6 +319,7 @@ final class OperationFind {
 			'description'   => $definition->description,
 			'available'     => true,
 			'blockedReason' => null,
+			'example'       => $definition->example,
 		];
 	}
 
@@ -316,6 +347,7 @@ final class OperationFind {
 				'description'   => $entry['description'],
 				'available'     => false,
 				'blockedReason' => 'requires_pro',
+				'example'       => null,
 			];
 		}
 

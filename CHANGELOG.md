@@ -21,9 +21,19 @@ an operation behaves.
   `system-operation-find` takes the words and answers with the operations that match,
   wherever they live, ranked, and it names the ones the add-on carries as well as the ones
   this site has, so "the add-on does that" is a possible answer instead of silence. It
-  never names an operation the catalogue would have hidden.
+  never names an operation the catalogue would have hidden. Every match carries a runnable
+  example call, so finding the operation and calling it are one step rather than two.
 
 ### Changed
+
+- **Naming an operation this site does not have now points at the ones it does.** A call
+  for `media-image-resize` on a site that calls it `media-resize` used to get "not
+  available on this dispatcher" and nothing else, and a client one word away from the
+  answer would report that the site cannot do it. The refusal now names the closest
+  operations the site publishes. They are drawn from the same filtered surface a catalogue
+  listing shows, so a refusal still cannot name anything a listing would have hidden, and
+  an operation held behind a switch is still refused word for word like one that was never
+  registered.
 
 - **Each dispatcher now names its operations in the tool list.** The eleven descriptions a
   client reads at connection said what a dispatcher was about and left the operations to be

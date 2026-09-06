@@ -18,6 +18,7 @@ use SiteHelm\Contracts\OperationException;
 use SiteHelm\Policy\OperationSwitches;
 use SiteHelm\Contracts\OperationResult;
 use SiteHelm\Contracts\VerificationStatus;
+use SiteHelm\Modules\Diagnostics\OperationFind;
 use SiteHelm\Policy\PolicyEngine;
 use SiteHelm\Registry\CapabilityRegistry;
 use SiteHelm\Registry\CatalogBuilder;
@@ -50,6 +51,14 @@ final class Dispatcher {
 	 * A plan token's exact wire shape: 64 lowercase hexadecimal characters.
 	 */
 	private const PLAN_TOKEN_LENGTH = 64;
+
+	/**
+	 * How many near matches a refusal names.
+	 *
+	 * Three is a shortlist a client will read. A longer one is the catalog with
+	 * extra steps, and the catalog is one call away already.
+	 */
+	private const SUGGESTION_LIMIT = 3;
 
 	/**
 	 * The only members an operation call may carry.
@@ -110,6 +119,56 @@ final class Dispatcher {
 	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+
+	/**
+	 * What to tell a caller that named an operation this dispatcher cannot serve.
+	 *
+	 * AN IDENTIFIER THAT DOES NOT EXIST IS STILL A DESCRIPTION OF WHAT THE CALLER
+	 * WANTED. `media-image-resize` on a site that calls it `media-resize` is one
+	 * word away from an answer, and a bare "not available" sends the client off to
+	 * report that the site cannot do it — the failure the whole discovery surface
+	 * exists to stop. Ranking the identifier against the published operations
+	 * turns the dead end into the shortlist, at the one moment the caller is
+	 * demonstrably lost.
+	 *
+	 * The suggestions come from the same filtered surface a catalog listing would
+	 * show, so a refusal cannot name an operation the listing would have hidden,
+	 * and only operations this site actually has are named: an identifier that
+	 * matched the Pro catalog exactly has already been answered above, and
+	 * offering something unbuyable here would be an upsell in place of an answer.
+	 * A switched-off operation and an unknown one still get word-for-word the same
+	 * reply, because the suggestions are drawn from the caller's text rather than
+	 * from anything known about what it asked for.
+	 *
+	 * @param string           $operation_id The identifier the caller sent.
+	 * @param OperationContext $context      The operation context.
+	 *
+	 * @return string The remediation sentence.
+	 */
+	private function nearest_published( string $operation_id, OperationContext $context ): string {
+		$catalog = 'Call the dispatcher without an operation to list its catalog.';
+		$named   = [];
+
+		try {
+			$finder = new OperationFind( $this->registry, $this->switches ?? OperationSwitches::none() );
+
+			foreach ( $finder->suggest( $operation_id, $context, self::SUGGESTION_LIMIT ) as $match ) {
+				if ( true === ( $match['available'] ?? false ) ) {
+					$named[] = (string) $match['operation'];
+				}
+			}
+		} catch ( \Throwable $unused ) {
+			// A refusal that cannot be enriched is still a refusal. Nothing about
+			// the search is worth turning a typed error into a fatal one.
+			return $catalog;
+		}
+
+		if ( [] === $named ) {
+			return $catalog;
+		}
+
+		return sprintf( 'The closest operations this site publishes are %s. %s', implode( ', ', $named ), $catalog );
+	}
 
 	/**
 	 * Dispatches one MCP tool call through catalog-on-empty or standard routing.
@@ -201,14 +260,14 @@ final class Dispatcher {
 			throw new OperationException(
 				ErrorCode::InvalidInput,
 				'The requested operation is not available on this dispatcher.',
-				'Call the dispatcher without an operation to list its catalog.'
+				$this->nearest_published( $operation_id, $context )
 			);
 		}
 		if ( ! ( $this->switches ?? OperationSwitches::none() )->isEnabled( $operation_id ) ) {
 			throw new OperationException(
 				ErrorCode::InvalidInput,
 				'The requested operation is not available on this dispatcher.',
-				'Call the dispatcher without an operation to list its catalog.'
+				$this->nearest_published( $operation_id, $context )
 			);
 		}
 

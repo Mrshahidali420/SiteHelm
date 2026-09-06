@@ -54,8 +54,12 @@ final class ServerInstructions {
 	 * nothing, because this server's dispatcher list is a fixed constant and
 	 * `listChanged` is false. The client cannot know that unless it is told, and
 	 * the mistake costs a whole session.
+	 *
+	 * Telling a client where the operation is not is only half an answer, so this
+	 * also names the search. A client that has to open catalogs one at a time
+	 * usually opens the one it already guessed wrong and stops there.
 	 */
-	public const DISPATCHERS_ARE_FIXED = 'This tool list is complete and never changes. An operation you cannot find is in a catalog you have not asked for, not in a tool you have not got; reconnecting adds nothing.';
+	public const DISPATCHERS_ARE_FIXED = 'This tool list is complete and never changes. An operation you cannot find is in a catalog you have not asked for, not in a tool you have not got; reconnecting adds nothing. To find one from what you are trying to do, call system-operation-find on system-read; it searches every tool at once and answers with an example call.';
 
 	/**
 	 * Which subjects live on `content-write`, and the tool that does not exist.
