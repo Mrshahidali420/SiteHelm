@@ -204,4 +204,134 @@ final class CatalogExport {
 
 		return $absent;
 	}
+
+	// phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase -- OperationDefinition and OperationContext expose contract properties this class does not name.
+	/**
+	 * The catalogue as a document a client can save, grep and re-read.
+	 *
+	 * Markdown rather than JSON by default because the reader is an agent with a
+	 * file, and a padded plain-text table is both cheaper per operation and
+	 * readable by every tool that opens it.
+	 *
+	 * @param OperationContext $context The operation context.
+	 * @param string           $detail  'compact' or 'full'.
+	 * @param ModuleId|null    $module  Restrict to one module, or null for all.
+	 *
+	 * @return string The rendered catalogue.
+	 */
+	public function markdown( OperationContext $context, string $detail = 'compact', ?ModuleId $module = null ): string {
+		$rows  = $this->rows( $context, $module );
+		$lines = $this->header( $context, count( $rows ) );
+
+		foreach ( ModuleId::cases() as $candidate ) {
+			$group = array_values(
+				array_filter(
+					$rows,
+					static fn( array $row ): bool => $row['module'] === $candidate->value
+				)
+			);
+
+			if ( [] === $group ) {
+				continue;
+			}
+
+			$lines[] = '';
+			$lines[] = '## ' . $candidate->label();
+
+			$dispatcher_width = 0;
+			$id_width         = 0;
+
+			foreach ( $group as $row ) {
+				$dispatcher_width = max( $dispatcher_width, strlen( (string) $row['dispatcher'] ) );
+				$id_width         = max( $id_width, strlen( (string) $row['operation'] ) );
+			}
+
+			foreach ( $group as $row ) {
+				$lines[] = rtrim(
+					sprintf(
+						'%s  %s  %s  %s',
+						str_pad( (string) $row['dispatcher'], $dispatcher_width ),
+						str_pad( (string) $row['operation'], $id_width ),
+						(string) $row['description'],
+						$this->flags( $row )
+					)
+				);
+
+				if ( 'full' === $detail && $this->registry->has( (string) $row['operation'] ) ) {
+					$definition = $this->registry->definition( (string) $row['operation'] );
+					$lines[]    = '    input: ' . (string) wp_json_encode( $definition->inputSchema );
+					$lines[]    = '    output: ' . (string) wp_json_encode( $definition->outputSchema );
+				}
+			}
+		}
+
+		return implode( "\n", $lines ) . "\n";
+	}
+
+	/**
+	 * The four lines that say which catalogue this is and when it went stale.
+	 *
+	 * The time comes from the request, not from the clock: two renders of one
+	 * request must produce the same bytes, or a resource read and a tool call
+	 * disagree over a file that has not changed.
+	 *
+	 * @param OperationContext $context The operation context.
+	 * @param int              $count   How many operations are listed.
+	 *
+	 * @return list<string> The header lines.
+	 */
+	private function header( OperationContext $context, int $count ): array {
+		return [
+			'# SiteHelm operations - ' . $context->siteId,
+			sprintf(
+				'catalogVersion: %s · site: %s · user: %d · %s',
+				$this->version( $context ),
+				$context->siteId,
+				$context->userId,
+				gmdate( 'Y-m-d\TH:i\Z', $context->requestTime )
+			),
+			sprintf( '%d operations · SiteHelm %s', $count, SITEHELM_VERSION ),
+			'Stale check: call system-connection on system-read; if its catalog.version differs from the line above, re-export with system-catalog-export.',
+		];
+	}
+
+	/**
+	 * The short flags a caller chooses between operations on.
+	 *
+	 * These are the point of the file. "Three ways to do this, that one is
+	 * reversible and this one is not" is the material for choosing well, and it
+	 * costs about eight characters a row.
+	 *
+	 * @param array<string, mixed> $row The row.
+	 *
+	 * @return string The flags, joined, or empty when there are none.
+	 */
+	private function flags( array $row ): string {
+		$flags = [];
+
+		if ( null !== $row['previewPolicy'] && 'not-applicable' !== $row['previewPolicy'] ) {
+			$flags[] = 'preview';
+		}
+
+		if ( null !== $row['rollbackPolicy'] && 'not-applicable' !== $row['rollbackPolicy'] ) {
+			$flags[] = 'rollback';
+		} elseif ( null !== $row['previewPolicy'] && 'not-applicable' !== $row['previewPolicy'] ) {
+			$flags[] = 'no rollback';
+		}
+
+		if ( true === $row['isDestructive'] ) {
+			$flags[] = 'destructive';
+		}
+
+		if ( null !== $row['risk'] ) {
+			$flags[] = (string) $row['risk'];
+		}
+
+		if ( 'requires_pro' === $row['blockedReason'] ) {
+			$flags[] = 'Pro';
+		}
+
+		return implode( ' · ', $flags );
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 }

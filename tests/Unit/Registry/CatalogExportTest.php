@@ -314,4 +314,90 @@ final class CatalogExportTest extends TestCase {
 			( new \ReflectionMethod( CatalogExport::class, 'version' ) )->getNumberOfParameters()
 		);
 	}
+
+	public function test_the_markdown_header_carries_the_stamp_the_site_and_the_user(): void {
+		$markdown = $this->export->markdown( $this->context() );
+		$lines    = explode( "\n", $markdown );
+
+		$this->assertSame( '# SiteHelm operations - example.com', $lines[0] );
+		$this->assertStringContainsString( 'catalogVersion: ' . $this->export->version( $this->context() ), $lines[1] );
+		$this->assertStringContainsString( 'site: example.com', $lines[1] );
+		$this->assertStringContainsString( 'user: 7', $lines[1] );
+	}
+
+	/**
+	 * The header timestamp is the request's, not the clock's. Two renders of one
+	 * request must be byte-identical, or the resource read and the tool call
+	 * disagree for no reason.
+	 */
+	public function test_the_markdown_is_byte_identical_across_two_renders(): void {
+		$this->assertSame(
+			$this->export->markdown( $this->context() ),
+			$this->export->markdown( $this->context() )
+		);
+	}
+
+	public function test_the_markdown_tells_the_reader_how_to_check_for_staleness(): void {
+		$this->assertStringContainsString( 'system-catalog-export', $this->export->markdown( $this->context() ) );
+		$this->assertStringContainsString( 'system-connection', $this->export->markdown( $this->context() ) );
+	}
+
+	public function test_the_markdown_groups_operations_under_their_module_name(): void {
+		$markdown = $this->export->markdown( $this->context() );
+
+		$this->assertStringContainsString( '## Plugins & themes', $markdown );
+		$this->assertStringContainsString( '## Media', $markdown );
+	}
+
+	/**
+	 * Every row has to parse back into a dispatcher, an identifier and a
+	 * description, or the file is prose rather than a catalogue.
+	 */
+	public function test_every_row_names_a_dispatcher_an_identifier_and_a_description(): void {
+		$markdown = $this->export->markdown( $this->context(), 'compact', ModuleId::Media );
+		$rows     = [];
+
+		foreach ( explode( "\n", $markdown ) as $line ) {
+			if ( 1 === preg_match( '/^(\S+)\s{2,}(\S+)\s{2,}(\S.*)$/', $line, $matches ) ) {
+				$rows[] = $matches;
+			}
+		}
+
+		$this->assertNotSame( [], $rows );
+
+		foreach ( $rows as $row ) {
+			$this->assertContains( $row[1], CapabilityRegistry::DISPATCHERS );
+			$this->assertNotSame( '', $row[2] );
+			$this->assertNotSame( '', $row[3] );
+		}
+	}
+
+	/**
+	 * A row for an operation this site would have to buy says so, and carries no
+	 * example: an example that cannot run is a call that fails.
+	 */
+	public function test_an_absent_pro_row_is_marked_and_carries_no_example(): void {
+		$markdown = $this->export->markdown( $this->context(), 'compact', ModuleId::Woocommerce );
+
+		$this->assertStringContainsString( 'product-list', $markdown );
+		$this->assertStringContainsString( 'Pro', $markdown );
+		$this->assertStringNotContainsString( '"operation":', $markdown );
+	}
+
+	/**
+	 * A module-filtered export still carries the whole catalogue's stamp. An
+	 * agent that exported one module has to be able to tell when the rest of the
+	 * surface moved, and it can only do that if the number in its file is the
+	 * same number system-connection reports.
+	 */
+	public function test_a_module_filter_still_carries_the_header_and_the_whole_stamp(): void {
+		$markdown = $this->export->markdown( $this->context(), 'compact', ModuleId::Media );
+
+		$this->assertStringStartsWith( '# SiteHelm operations', $markdown );
+		$this->assertStringNotContainsString( 'system-plugin-list', $markdown );
+		$this->assertStringContainsString(
+			'catalogVersion: ' . $this->export->version( $this->context() ),
+			$markdown
+		);
+	}
 }
