@@ -47,6 +47,11 @@ final class CatalogExport {
 	public const URI = 'sitehelm://catalog';
 
 	/**
+	 * The length of the hex digest version() returns.
+	 */
+	public const VERSION_LENGTH = 12;
+
+	/**
 	 * The operator's switches: a switched-off operation is as unknown here as
 	 * it is to the catalogue and the dispatcher.
 	 *
@@ -105,6 +110,37 @@ final class CatalogExport {
 				static fn( array $row ): bool => $row['module'] === $module->value
 			)
 		);
+	}
+
+	/**
+	 * The stamp that says whether a saved copy of this catalogue is current.
+	 *
+	 * A CACHE VALIDATOR SHOULD BE A DIGEST OF THE THING IT VALIDATES, NOT A LIST
+	 * OF THE THINGS THAT MIGHT CHANGE IT. Stamping the plugin version, the add-on
+	 * version and the switch option would miss whatever the next release adds;
+	 * hashing the rows themselves cannot, because anything that changes the
+	 * answer is in the answer.
+	 *
+	 * It follows that free code never has to read the add-on's version. A Pro
+	 * upgrade that adds, removes or rewords an operation changes these rows, so
+	 * it changes this digest by construction.
+	 *
+	 * NOTHING FROM THE REQUEST GOES IN. No timestamp, no site, no user: those
+	 * belong in the header, where they describe the copy rather than the
+	 * catalogue. A stamp carrying any of them would differ on every call and
+	 * report every cached file as stale.
+	 *
+	 * The module filter is ignored on purpose. An agent that exported one module
+	 * still needs to learn when the rest of the surface moved.
+	 *
+	 * @param OperationContext $context The operation context.
+	 *
+	 * @return string Twelve hex characters.
+	 */
+	public function version( OperationContext $context ): string {
+		$canonical = (string) wp_json_encode( $this->rows( $context ) );
+
+		return substr( hash( 'sha256', $canonical ), 0, self::VERSION_LENGTH );
 	}
 
 	/**

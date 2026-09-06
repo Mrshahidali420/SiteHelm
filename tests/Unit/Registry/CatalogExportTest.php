@@ -229,4 +229,89 @@ final class CatalogExportTest extends TestCase {
 	public function test_a_module_with_nothing_registered_is_empty_rather_than_an_error(): void {
 		$this->assertSame( [], $this->ids( ModuleId::Metabox ) );
 	}
+
+	public function test_the_version_is_twelve_hex_characters(): void {
+		$this->assertMatchesRegularExpression( '/^[0-9a-f]{12}$/', $this->export->version( $this->context() ) );
+	}
+
+	/**
+	 * A stamp that changed on its own would make every cached copy look stale.
+	 * This is what keeps a timestamp out of the hash.
+	 */
+	public function test_the_version_is_stable_across_two_calls_with_nothing_changed(): void {
+		$this->assertSame(
+			$this->export->version( $this->context() ),
+			$this->export->version( $this->context() )
+		);
+	}
+
+	public function test_the_version_changes_when_an_operation_is_added(): void {
+		$before = $this->export->version( $this->context() );
+
+		$this->registry->register(
+			$this->definition( 'menu-list', Domain::Menu, Mode::Read, 'List the menus on this site.', [ 'read' ], ModuleId::Menus ),
+			static fn(): array => []
+		);
+
+		$this->assertNotSame( $before, $this->export->version( $this->context() ) );
+	}
+
+	/**
+	 * A reworded description is a different catalogue: it is the text the agent
+	 * chooses on, so a cached copy carrying the old words is out of date.
+	 */
+	public function test_the_version_changes_when_a_description_is_reworded(): void {
+		$before = $this->export->version( $this->context() );
+
+		$registry = new CapabilityRegistry();
+		$registry->register(
+			$this->definition( 'system-plugin-list', Domain::System, Mode::Read, 'Different words entirely.', [ 'manage_options' ], ModuleId::Extensions ),
+			static fn(): array => []
+		);
+		$registry->register(
+			$this->definition( 'media-upload', Domain::Media, Mode::Read, 'Upload one file to the media library.', [ 'upload_files' ], ModuleId::Media ),
+			static fn(): array => []
+		);
+
+		$export = new CatalogExport( $registry, OperationSwitches::none() );
+
+		$this->assertNotSame( $before, $export->version( $this->context() ) );
+	}
+
+	public function test_the_version_changes_when_the_operator_switches_an_operation_off(): void {
+		$before = $this->export->version( $this->context() );
+		$after  = ( new CatalogExport( $this->registry, new OperationSwitches( static fn(): array => [ 'media-upload' ] ) ) )->version( $this->context() );
+
+		$this->assertNotSame( $before, $after );
+	}
+
+	/**
+	 * The catalogue is capability-filtered, so the stamp is per caller. Two users
+	 * with different roles hold genuinely different catalogues, and a shared
+	 * stamp would tell one of them a stale file was fresh.
+	 */
+	public function test_two_callers_with_different_capabilities_get_different_versions(): void {
+		$full = $this->export->version( $this->context() );
+
+		$this->allowCapabilities( [ 'read' ] );
+
+		$this->assertNotSame( $full, $this->export->version( $this->context() ) );
+	}
+
+	/**
+	 * Version() takes no module argument at all, which is the structural half of
+	 * "the stamp ignores the filter". The observable half -- that a filtered
+	 * export's header carries the whole catalogue's stamp -- is pinned in the
+	 * markdown task, where a header exists to read it off.
+	 */
+	public function test_rows_shrink_under_a_filter_while_the_stamp_has_no_filter_to_take(): void {
+		$all      = $this->export->rows( $this->context() );
+		$filtered = $this->export->rows( $this->context(), ModuleId::Media );
+
+		$this->assertLessThan( count( $all ), count( $filtered ) );
+		$this->assertSame(
+			1,
+			( new \ReflectionMethod( CatalogExport::class, 'version' ) )->getNumberOfParameters()
+		);
+	}
 }
