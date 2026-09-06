@@ -373,15 +373,26 @@ final class CatalogExportTest extends TestCase {
 	}
 
 	/**
-	 * A row for an operation this site would have to buy says so, and carries no
-	 * example: an example that cannot run is a call that fails.
+	 * A row for an operation this site would have to buy says so on its own line,
+	 * and nothing is indented under it: the indented block is where a registered
+	 * operation shows the schemas a caller would write against, and showing that
+	 * for an operation this site does not hold would describe a call that cannot
+	 * run. Asked at full detail, because that is the only detail level where the
+	 * block exists to be wrongly emitted.
 	 */
 	public function test_an_absent_pro_row_is_marked_and_carries_no_example(): void {
-		$markdown = $this->export->markdown( $this->context(), 'compact', ModuleId::Woocommerce );
+		$lines = explode( "\n", $this->export->markdown( $this->context(), 'full', ModuleId::Woocommerce ) );
+		$at    = null;
 
-		$this->assertStringContainsString( 'product-list', $markdown );
-		$this->assertStringContainsString( 'Pro', $markdown );
-		$this->assertStringNotContainsString( '"operation":', $markdown );
+		foreach ( $lines as $index => $line ) {
+			if ( str_contains( $line, 'product-list' ) ) {
+				$at = $index;
+			}
+		}
+
+		$this->assertNotNull( $at, 'an absent Pro operation should still be rendered' );
+		$this->assertStringEndsWith( 'Pro', $lines[ $at ] );
+		$this->assertStringStartsNotWith( ' ', $lines[ $at + 1 ] ?? '' );
 	}
 
 	/**

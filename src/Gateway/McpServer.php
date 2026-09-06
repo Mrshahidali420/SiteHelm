@@ -361,9 +361,17 @@ final class McpServer {
 	 * freshness signal this transport can give: it is request and response, with
 	 * nothing held open to push a change down.
 	 *
-	 * A client that cannot be identified gets an entry with no stamp rather than
-	 * no entry: the resource exists either way, and a listing that vanishes
-	 * under a transient failure reads as a server that lost a feature.
+	 * Gated exactly as `resourceRead()` is, and for the same reason. The listing
+	 * carries the operation count and the stamp, so a listing that ignored the
+	 * gate would hand a caller two facts about a surface it is not allowed to
+	 * read, and then the very next read would tell it the resource does not
+	 * exist. A caller failing either gate gets no entry at all, which is the
+	 * listing that matches the answer the read arm gives.
+	 *
+	 * Deliberately does not catch: a context this server cannot build is a
+	 * failure, not a caller with fewer resources, and handle()'s outer try
+	 * already turns any throw into a -32603 with the detail logged and nothing
+	 * leaked — the same containment `resourceRead()` relies on.
 	 *
 	 * @param string $clientId Client identifier.
 	 *
@@ -372,29 +380,25 @@ final class McpServer {
 	 * phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
 	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
-	 * phpcs:disable Generic.CodeAnalysis.EmptyStatement.DetectedCatch
 	 */
 	private function resourceList( string $clientId ): array {
-		$description = 'Every operation this site publishes, grouped by subject.';
+		$context = $this->contextFactory->create( $this->moduleHealth, $clientId );
 
-		try {
-			$context = $this->contextFactory->create( $this->moduleHealth, $clientId );
-			$export  = $this->dispatcher->catalogExport();
-
-			$description = sprintf(
-				'%d operations · catalogVersion %s',
-				count( $export->rows( $context ) ),
-				$export->version( $context )
-			);
-		} catch ( Throwable ) {
-			// Fall through to the unstamped description.
+		if ( ! in_array( 'system-catalog-export', $this->dispatcher->publishedOperationIds( 'system-read', $context ), true ) ) {
+			return [];
 		}
+
+		$export = $this->dispatcher->catalogExport();
 
 		return [
 			[
 				'uri'         => CatalogExport::URI,
 				'name'        => 'SiteHelm operations',
-				'description' => $description,
+				'description' => sprintf(
+					'%d operations · catalogVersion %s',
+					count( $export->rows( $context ) ),
+					$export->version( $context )
+				),
 				'mimeType'    => 'text/markdown',
 			],
 		];
@@ -402,7 +406,6 @@ final class McpServer {
 	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
-	// phpcs:enable Generic.CodeAnalysis.EmptyStatement.DetectedCatch
 
 	/**
 	 * Reads the catalogue resource.

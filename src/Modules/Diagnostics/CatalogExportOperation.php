@@ -15,6 +15,7 @@ use SiteHelm\Contracts\OperationContext;
 use SiteHelm\Contracts\OperationException;
 use SiteHelm\Registry\CatalogExport;
 use SiteHelm\Registry\SchemaShape;
+use stdClass;
 
 /**
  * REQ-0111: publish the catalogue as something a client can keep.
@@ -66,7 +67,11 @@ final class CatalogExportOperation {
 		$detail = 'full' === ( $input['detail'] ?? 'compact' ) ? 'full' : 'compact';
 		$module = is_string( $input['module'] ?? null ) ? ModuleId::tryFrom( $input['module'] ) : null;
 
-		$data     = 'json' === $format ? $this->export->json( $context, $detail, $module ) : [];
+		// An empty object, not an empty array: `catalogData` is advertised as an
+		// object and listed as required, and PHP cannot tell `[]` apart from `{}`
+		// on the way out. A client validating against the schema we published
+		// would reject the default answer.
+		$data     = 'json' === $format ? $this->export->json( $context, $detail, $module ) : new stdClass();
 		$markdown = 'json' === $format ? '' : $this->export->markdown( $context, $detail, $module );
 
 		return SchemaShape::normalize(

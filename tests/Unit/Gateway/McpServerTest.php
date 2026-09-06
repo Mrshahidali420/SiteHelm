@@ -1080,4 +1080,47 @@ final class McpServerTest extends TestCase {
 		$this->assertArrayHasKey( 'error', $result );
 		$this->assertArrayNotHasKey( 'result', $result );
 	}
+
+	/**
+	 * The listing has to answer the same gate the read answers. Its description
+	 * carries the operation count and the catalogue stamp, so a listing that
+	 * ignored the operator's switch would hand a caller two facts about a
+	 * surface the owner switched off, and the read that followed would tell the
+	 * same caller the resource does not exist.
+	 */
+	public function test_listing_resources_hides_the_catalogue_when_the_operation_is_switched_off(): void {
+		$switches = new OperationSwitches( static fn(): array => [ 'system-catalog-export' ] );
+		$server   = $this->serverRunning(
+			static fn(): array => [ 'wordpress' => '6.8.1' ],
+			$switches
+		);
+
+		$result = $server->handle(
+			[
+				'jsonrpc' => '2.0',
+				'id'      => 7,
+				'method'  => 'resources/list',
+			]
+		);
+
+		$this->assertSame( [], $result['result']['resources'] );
+	}
+
+	/**
+	 * A caller with no `read` capability is refused the document, so the listing
+	 * must not advertise it to them either.
+	 */
+	public function test_listing_resources_hides_the_catalogue_from_a_caller_without_read_capability(): void {
+		Functions\when( 'user_can' )->justReturn( false );
+
+		$result = $this->server->handle(
+			[
+				'jsonrpc' => '2.0',
+				'id'      => 8,
+				'method'  => 'resources/list',
+			]
+		);
+
+		$this->assertSame( [], $result['result']['resources'] );
+	}
 }

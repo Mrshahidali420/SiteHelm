@@ -27,6 +27,7 @@ use SiteHelm\Policy\OperationSwitches;
 use SiteHelm\Registry\CapabilityRegistry;
 use SiteHelm\Registry\CatalogExport;
 use SiteHelm\Tests\TestCase;
+use stdClass;
 
 /**
  * The operation that hands a client the whole surface at once.
@@ -103,7 +104,8 @@ final class CatalogExportOperationTest extends TestCase {
 
 		$this->assertSame( 'markdown', $result['format'] );
 		$this->assertStringStartsWith( '# SiteHelm operations', $result['catalog'] );
-		$this->assertSame( [], $result['catalogData'] );
+		$this->assertInstanceOf( stdClass::class, $result['catalogData'] );
+		$this->assertSame( '{}', json_encode( $result['catalogData'] ) );
 	}
 
 	public function test_it_answers_data_when_asked_for_json(): void {

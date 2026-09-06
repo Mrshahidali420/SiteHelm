@@ -4224,7 +4224,7 @@ that its next read would not.
 **`catalogVersion` is a digest of the rows, not of what might change them.** The definition is
 
 ```
-substr( hash( 'sha256', canonical_json( rows ) ), 0, 12 )
+substr( hash( 'sha256', (string) wp_json_encode( $this->rows( $context ) ) ), 0, 12 )
 ```
 
 over the compact rows themselves — twelve hex characters, computed in `CatalogExport::version()`.
