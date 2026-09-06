@@ -11,7 +11,14 @@ an operation behaves.
 
 ## [Unreleased]
 
+## [0.14.0] — 2026-09-06
+
+An agent can now find an operation from a plain description of what it wants to do, plus
+the second round of gaps a real build found (REQ-0122) and the fault that stopped every
+file reaching the media library.
+
 ### Added
+
 
 - **An agent can now find an operation from a plain description of what it wants to do.**
   A client reads the eleven dispatcher names once when it connects and, unless it opens a
@@ -23,6 +30,22 @@ an operation behaves.
   this site has, so "the add-on does that" is a possible answer instead of silence. It
   never names an operation the catalogue would have hidden. Every match carries a runnable
   example call, so finding the operation and calling it are one step rather than two.
+
+
+- **A menu item can now be removed.** The menu dispatcher could create a menu, add items to
+  it, relabel them, reorder them and assign the menu to a theme location — and it could not
+  take an item away, so a menu that needed to end up shorter than it started could not be
+  finished without opening Appearance then Menus. `menu-item-delete` removes one item. It is
+  destructive, so it previews, snapshots and reverses like every other destructive write, and
+  putting one back adds it again under a new identifier — which the result says plainly. An
+  item that has items beneath it is refused, naming them, rather than leaving them pointing at
+  a parent that is gone.
+- **A read of a page now shows the custom fields that are actually on it.** `content-get`
+  reported an empty `meta` on posts covered in custom fields, because that member only ever
+  listed the keys an administrator had allowed SiteHelm to write. A second member,
+  `registeredMeta`, now reports the fields a theme or plugin registered on the post type and
+  their values. They are readable, not writable, and the response says how to make one
+  writable.
 
 ### Changed
 
@@ -41,28 +64,6 @@ an operation behaves.
   the same way the catalogue filters them, so the surface is visible from the first thing a
   client reads.
 
-## [0.13.1] — 2026-09-06
-
-The second round of gaps a real build found (REQ-0122), and one that stopped every file reaching the media library.
-
-### Added
-
-- **A menu item can now be removed.** The menu dispatcher could create a menu, add items to
-  it, relabel them, reorder them and assign the menu to a theme location — and it could not
-  take an item away, so a menu that needed to end up shorter than it started could not be
-  finished without opening Appearance then Menus. `menu-item-delete` removes one item. It is
-  destructive, so it previews, snapshots and reverses like every other destructive write, and
-  putting one back adds it again under a new identifier — which the result says plainly. An
-  item that has items beneath it is refused, naming them, rather than leaving them pointing at
-  a parent that is gone.
-- **A read of a page now shows the custom fields that are actually on it.** `content-get`
-  reported an empty `meta` on posts covered in custom fields, because that member only ever
-  listed the keys an administrator had allowed SiteHelm to write. A second member,
-  `registeredMeta`, now reports the fields a theme or plugin registered on the post type and
-  their values. They are readable, not writable, and the response says how to make one
-  writable.
-
-### Changed
 
 - **A mistyped id no longer looks like a permissions problem.** Asking for a post that does
   not exist could come back as "your WordPress user lacks the 'edit_post' capability" — on an
@@ -1385,7 +1386,7 @@ out of scope by design and will not be added. Code ships only through the Pro Co
 guard, and nothing SiteHelm stores ever executes during its own request. See
 [ROADMAP.md](ROADMAP.md).
 
-[0.13.1]: https://github.com/Mrshahidali420/SiteHelm/releases/tag/v0.13.1
+[0.14.0]: https://github.com/Mrshahidali420/SiteHelm/releases/tag/v0.14.0
 [0.13.0]: https://github.com/Mrshahidali420/SiteHelm/releases/tag/v0.13.0
 [0.12.0]: https://github.com/Mrshahidali420/SiteHelm/releases/tag/v0.12.0
 [0.11.0]: https://github.com/Mrshahidali420/SiteHelm/releases/tag/v0.11.0

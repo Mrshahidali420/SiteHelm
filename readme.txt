@@ -4,7 +4,7 @@ Tags: mcp, ai agent, automation, elementor, rest api
 Requires at least: 6.6
 Tested up to: 7.1
 Requires PHP: 8.1
-Stable tag: 0.13.1
+Stable tag: 0.14.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -89,7 +89,10 @@ The refusal names which error code applies and what to do about it, and says how
 The full changelog for every release is maintained at
 https://github.com/Mrshahidali420/SiteHelm/blob/main/CHANGELOG.md
 
-= 0.13.1 =
+= 0.14.0 =
+* An agent can find an operation from a plain description of what it wants to do, wherever that operation lives, and every match comes back with a call it can run.
+* Naming an operation the site does not have now points at the closest ones it does, instead of answering that it is not available and nothing else.
+* Each dispatcher lists its own operations in the tool list, so the surface is visible from the first thing a client reads.
 * Uploading a file works again: every route into the media library failed on PHP 8, and the upload ticket answered the failure with a server error page instead of a refusal.
 * A menu item can be removed, and a read of a page shows the custom fields a theme or plugin registered on it, not only the ones SiteHelm may write.
 * A mistyped id reads as a missing target rather than a permissions problem, and an error only says it can be retried when retrying it can work.
