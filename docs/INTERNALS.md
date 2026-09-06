@@ -3207,6 +3207,32 @@ why `CapabilityRegistry`'s list carries a frozen docblock and a test that fails 
 and why `ServerInstructions` states in words that the tool list is complete and only the
 operations behind it grow.
 
+**Naming the subjects was not enough on its own.** A subject is prose, and a client that has
+read eleven sentences has read eleven sentences: it still has to guess which one carries the
+operation it wants, and a wrong guess is reported to the operator as "the site cannot do
+that". It happened twice with `plugin-install-upload` and `theme-install`, which live on
+`content-write` and share no word with it. So each description now ends with the identifiers
+that dispatcher publishes. They are not a second list to keep in step with the catalogue:
+`CatalogBuilder::publishedOperationIds()` and `CatalogBuilder::build()` both run the same
+private `permitted()` filter — `OperationSwitches::isEnabled()` and
+`PolicyEngine::isVisibleWithoutTarget()` — so the tool list and the catalogue cannot disagree
+about what this site publishes. The identifiers cost around six hundred tokens across all
+eleven tools, once, in something every client already reads. A caller the context factory
+cannot be built for gets the subjects alone rather than an error.
+
+**`system-operation-find` is the other half.** Identifiers make the surface visible; the
+finder turns words into the right call. It scores each candidate on the caller's terms,
+weighting the identifier four times the description, and matches on a shared prefix of four
+characters or more so "installing" reaches `install`. Its stop-word list is grammar only —
+`page`, `site` and `menu` are exactly the words a caller searches on. Two properties matter
+more than ranking. It applies the same two filters the catalogue applies, or it would be an
+oracle handing back, one query at a time, precisely what the catalogue withholds; there is a
+test named for that. And it merges in the `ProCatalogue` entries the registry does not carry,
+marked `available: false` with `blockedReason: 'requires_pro'`, because a free site that
+answers nothing to "install a plugin from a zip" is telling the operator the thing is
+impossible when the honest answer is that the add-on does it. At equal score an operation the
+site actually has sorts ahead of one that needs buying.
+
 **`MenuFields::TARGET_SAME_TAB`** is the same problem one layer down. WordPress stores "open
 in this window" as the empty string, and an enum whose members are `""` and `"_blank"` is
 refused by the same validators, so the field could not be set at all by a client running

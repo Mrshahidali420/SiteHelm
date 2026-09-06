@@ -284,6 +284,86 @@ final class McpServerTest extends TestCase {
 	}
 
 	/**
+	 * Test that each dispatcher description names the operations it publishes.
+	 *
+	 * Naming the subjects was the first half of the fix and it was not enough.
+	 * A subject is prose, and a client matching prose against a request is still
+	 * guessing: "install a plugin from a zip I already uploaded" does not land on
+	 * a sentence about writing content, and the operation went unfound a second
+	 * time. The identifiers end the guessing, because the client now holds the
+	 * whole surface before it decides anything.
+	 */
+	public function test_the_tool_list_names_the_operations_each_dispatcher_publishes(): void {
+		$descriptions = $this->toolDescriptions();
+
+		$this->assertStringContainsString( 'Operations: system-environment.', $descriptions['system-read'] );
+	}
+
+	/**
+	 * Test that a dispatcher with nothing to offer this caller names nothing.
+	 *
+	 * "Operations: none" reads as a broken site rather than as an integration
+	 * that is not installed, and the subject sentence plus the invitation to
+	 * list the catalog is already the honest answer there.
+	 */
+	public function test_a_dispatcher_with_no_operations_names_none(): void {
+		$descriptions = $this->toolDescriptions();
+
+		$this->assertStringNotContainsString( 'Operations:', $descriptions['media-write'] );
+	}
+
+	/**
+	 * Test that the tool list hides what the catalog would hide.
+	 *
+	 * The tool list is read by every client at connect and cached. If it named
+	 * operations the caller cannot see, it would disclose the site's surface
+	 * area to exactly the callers the catalog filters it from.
+	 */
+	public function test_the_tool_list_omits_an_operation_the_caller_cannot_see(): void {
+		Functions\when( 'user_can' )->justReturn( false );
+
+		$descriptions = $this->toolDescriptions();
+
+		$this->assertStringNotContainsString( 'system-environment', $descriptions['system-read'] );
+	}
+
+	/**
+	 * Test that the tool list still answers when the caller cannot be resolved.
+	 *
+	 * ONE FAILURE HERE MUST NOT COST THE CLIENT ITS TOOLS. Resolving the caller
+	 * throws when no WordPress user can be found, and a tool list that failed
+	 * instead of answering would leave the client with no way to reach the site
+	 * at all. The identifiers are an improvement on the description, not a
+	 * precondition for having one.
+	 */
+	public function test_the_tool_list_answers_without_ids_when_the_caller_cannot_be_resolved(): void {
+		Functions\when( 'get_current_user_id' )->justReturn( 0 );
+
+		$descriptions = $this->toolDescriptions();
+
+		$this->assertCount( 11, $descriptions );
+		$this->assertStringNotContainsString( 'Operations:', $descriptions['system-read'] );
+		$this->assertStringContainsString( 'Call without an operation', $descriptions['system-read'] );
+	}
+
+	/**
+	 * The tool descriptions from one tools/list, keyed by dispatcher.
+	 *
+	 * @return array<string, string> The descriptions.
+	 */
+	private function toolDescriptions(): array {
+		$response = $this->server->handle(
+			[
+				'jsonrpc' => '2.0',
+				'id'      => 2,
+				'method'  => 'tools/list',
+			]
+		);
+
+		return array_column( $response['result']['tools'], 'description', 'name' );
+	}
+
+	/**
 	 * Test that tools/call without operation returns catalog content.
 	 */
 	public function test_tools_call_without_operation_returns_catalog_content(): void {

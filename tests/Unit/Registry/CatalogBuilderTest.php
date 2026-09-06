@@ -777,4 +777,52 @@ final class CatalogBuilderTest extends TestCase {
 			],
 		);
 	}
+
+	/**
+	 * The identifiers the tool list names come from the same filter the catalog
+	 * uses. Two lists of what a site publishes, built two ways, drift; the tool
+	 * list is the one every client caches at connect, so its drift is the one
+	 * nobody notices.
+	 */
+	public function test_published_operation_ids_are_the_ids_the_catalog_lists(): void {
+		$context = $this->makeContext();
+
+		$this->assertSame(
+			array_column( $this->builder->build( 'system-read', $context )['operations'], 'operation' ),
+			$this->builder->publishedOperationIds( 'system-read', $context )
+		);
+	}
+
+	/**
+	 * An operation the caller cannot see is not named in the tool list either.
+	 */
+	public function test_published_operation_ids_omit_what_the_caller_cannot_see(): void {
+		$this->allowCapabilities( [] );
+
+		$this->assertSame( [], $this->builder->publishedOperationIds( 'system-read', $this->makeContext() ) );
+	}
+
+	/**
+	 * An operation the operator switched off is not named in the tool list.
+	 */
+	public function test_published_operation_ids_omit_a_switched_off_operation(): void {
+		$builder = new CatalogBuilder(
+			$this->registry,
+			new OperationSwitches( static fn(): array => [ 'system-environment' ] )
+		);
+
+		$this->assertSame( [], $builder->publishedOperationIds( 'system-read', $this->makeContext() ) );
+	}
+
+	/**
+	 * The identifiers are a JSON array, not an object keyed by position: they are
+	 * joined into a sentence, and a hole in the list would show as a gap.
+	 */
+	public function test_published_operation_ids_are_a_list(): void {
+		$this->assertSame(
+			[ 'system-environment' ],
+			$this->builder->publishedOperationIds( 'system-read', $this->makeContext() )
+		);
+	}
+
 }

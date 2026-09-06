@@ -88,6 +88,30 @@ final class Dispatcher {
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 
 	/**
+	 * The operation identifiers this dispatcher publishes to this caller.
+	 *
+	 * The gateway names these in the tool list so that a client sees the whole
+	 * surface at connect rather than eleven subject sentences it has to guess
+	 * from. Answered from the catalog builder, so the tool list and the catalog
+	 * can never disagree about what exists.
+	 *
+	 * @param string           $dispatcherName The dispatcher name.
+	 * @param OperationContext $context        The operation context.
+	 *
+	 * @return list<string> The operation identifiers.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+	 */
+	public function publishedOperationIds( string $dispatcherName, OperationContext $context ): array {
+		return $this->catalogBuilder->publishedOperationIds( $dispatcherName, $context );
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+
+	/**
 	 * Dispatches one MCP tool call through catalog-on-empty or standard routing.
 	 *
 	 * @param string               $dispatcherName The dispatcher name.
