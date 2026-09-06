@@ -47,6 +47,16 @@ The second round of gaps a real build found (REQ-0122).
 
 ### Fixed
 
+- **Uploading a file works again.** Every route that put a file into the media library
+  failed, because the array describing the file was handed to WordPress as a literal and
+  WordPress takes that argument by reference — which PHP 8 answers with a fatal, not an
+  error the plugin knows how to describe. `media-upload`, `media-import`, `media-svg-upload`
+  and the upload ticket were all affected. On the ticket route the fatal escaped altogether:
+  the caller got WordPress's own critical-error page instead of a refusal, the ticket was
+  already spent so the retry needed a new one, and the activity row stayed open at Started
+  for good. The call is fixed, and that route now answers anything that goes wrong inside it
+  with the same readable refusal and closes its activity row either way.
+
 - **Check again now finds a new version.** SiteHelm keeps its own note of what the
   newest release is, and WordPress could not see that note, so pressing Check again on
   the Updates screen cleared WordPress's list and left SiteHelm's untouched — the plugin

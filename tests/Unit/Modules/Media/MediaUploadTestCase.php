@@ -57,6 +57,15 @@ abstract class MediaUploadTestCase extends TestCase {
 	/** @var bool Whether wp_handle_sideload() should report a failure. */
 	protected bool $sideloadFails = false;
 
+	/**
+	 * @var bool Whether the sideload should raise a PHP Error rather than
+	 * report a failure. Not every way storing a file can go wrong arrives as an
+	 * OperationException: passing a literal to a by-reference parameter, a
+	 * missing admin function, an exhausted memory limit are all Errors, and a
+	 * route that catches only the exception answers those with an HTML page.
+	 */
+	protected bool $sideloadRaisesError = false;
+
 	protected function setUp(): void {
 		parent::setUp();
 
@@ -66,6 +75,7 @@ abstract class MediaUploadTestCase extends TestCase {
 		$this->deleted       = [];
 		$this->meta          = [];
 		$this->sideloadFails = false;
+		$this->sideloadRaisesError = false;
 
 		$fields          = new MediaFields();
 		$this->operation = new MediaUpload( $fields, new MediaTarget( $fields ), new MediaMimeGuard( $fields ) );
@@ -164,6 +174,10 @@ abstract class MediaUploadTestCase extends TestCase {
 
 		Functions\when( 'wp_handle_sideload' )->alias(
 			function ( array $file, array $overrides ): array {
+				if ( $this->sideloadRaisesError ) {
+					throw new \Error( 'wp_handle_sideload(): Argument #1 ($file) could not be passed by reference' );
+				}
+
 				$this->sideloads[] = [
 					'file'      => $file,
 					'overrides' => $overrides,

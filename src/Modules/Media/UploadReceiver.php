@@ -324,7 +324,7 @@ final class UploadReceiver {
 
 		try {
 			$targetKey = $this->sideload->store( $bytes, $planned->payload, $context, 'media-upload' );
-		} catch ( OperationException $failure ) {
+		} catch ( \Throwable $failure ) {
 			$this->recorder->finish(
 				$audit,
 				AuditRecorder::OUTCOME_EXECUTION_FAILED,
@@ -335,7 +335,21 @@ final class UploadReceiver {
 				[]
 			);
 
-			return $this->refuse( 500, $failure->getMessage(), $failure->remediation );
+			// Throwable, not OperationException: a PHP Error thrown inside the
+			// store — a by-reference argument, a missing function, an exhausted
+			// memory limit — would otherwise escape a route whose whole contract
+			// is that every failure comes back in one readable shape. Uncaught,
+			// it leaves this audit row STARTED for good and answers the caller
+			// with WordPress's HTML error page instead of a refusal.
+			return $this->refuse(
+				500,
+				$failure instanceof OperationException
+					? $failure->getMessage()
+					: 'This site could not store the uploaded file.',
+				$failure instanceof OperationException
+					? $failure->remediation
+					: 'Ask a site administrator to check the SiteHelm activity log, then request a fresh ticket.'
+			);
 		}
 
 		$this->recorder->finish(
