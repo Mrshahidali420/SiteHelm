@@ -128,6 +128,28 @@ final class PolicyEngine {
 				// The precise check: WordPress resolves the meta-capability
 				// against this specific post through map_meta_cap.
 				$allowed = user_can( $context->userId, $capability, $targetId );
+
+				// A TARGET THAT DOES NOT EXIST IS NOT A PERMISSIONS PROBLEM.
+				// map_meta_cap resolves a meta-capability against a missing post
+				// to do_not_allow, so the check above refuses an administrator
+				// who simply typed the wrong number, and the refusal it produces
+				// sends them to audit roles and capabilities over a typo. The
+				// operations that declare the governing primitive instead have
+				// always answered the same mistake with target_not_found, so
+				// which diagnosis an operator got depended on nothing but which
+				// capability the operation happened to declare.
+				//
+				// So when the refusal is only because there is nothing there,
+				// fall back to the primitive exactly as the target-less branch
+				// does, and let the handler give the real answer. Nothing is
+				// loosened: a caller without the primitive is still refused here,
+				// and every handler re-asks the precise question itself before it
+				// reveals anything, so what a caller can learn about an
+				// identifier they may not read is unchanged. It is asked second
+				// so the ordinary authorized call still costs one check.
+				if ( ! $allowed && null === get_post( $targetId ) ) {
+					$allowed = user_can( $context->userId, self::META_CAPABILITY_MAP[ $capability ] );
+				}
 			} elseif ( $is_meta ) {
 				// No target to check against. WordPress resolves a target-less
 				// meta-capability to do_not_allow, so asking it directly would

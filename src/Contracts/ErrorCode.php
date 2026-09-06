@@ -31,40 +31,43 @@ enum ErrorCode: string {
 	case RollbackUnavailable    = 'rollback_unavailable';
 
 	/**
-	 * Whether retrying THIS request can help, per the contract's retryability
-	 * table.
+	 * Whether SENDING THIS REQUEST AGAIN UNCHANGED can succeed later.
 	 *
-	 * True for exactly the five codes whose condition a corrected, refreshed or
-	 * simply repeated request can clear: `invalid_input` (correct the input),
-	 * `conflict` and `stale_plan` (re-read the target and approve a fresh plan),
-	 * `execution_failed` (retry with a fresh plan; an automatic retry is
-	 * appropriate only when the operation declares `isIdempotent` true), and
-	 * `upstream_unavailable`. It never means "safe to blindly repeat".
+	 * That is the whole meaning, and it is deliberately narrow, because this is
+	 * the field an automated client reads to decide whether to back off and try
+	 * again. It once meant something looser — "a corrected, refreshed or simply
+	 * repeated request can clear this" — which put `retryable: true` on
+	 * `invalid_input`, beside a message reading "identical input always fails
+	 * identically". A client obeying the flag retries the same broken call until
+	 * it gives up; the contradiction was reported from a real session. The thing
+	 * that looser reading was trying to express — you can fix this and send a
+	 * different request — is real, and it already has a field of its own:
+	 * `remediation` says what to change.
 	 *
-	 * `upstream_unavailable` IS THE ONLY ONE THAT CAN CLEAR ON ITS OWN, and it is
-	 * the reason the code exists. A remote service that was slow or briefly down
-	 * is the one refusal on this list where the caller has nothing to correct and
-	 * waiting is the whole remedy — so a caller that groups it with the site's own
-	 * missing dependencies either gives up on something that would have worked, or
-	 * hammers a WordPress installation that will never answer differently.
+	 * True for the three codes whose condition can clear on its own, with nothing
+	 * about the request altered: `upstream_unavailable` (a remote service that was
+	 * slow or briefly down), `conflict` (the state the target was in has since
+	 * moved), and `execution_failed` (a write that failed for a reason nothing
+	 * predicted; an automatic retry is appropriate only where the operation
+	 * declares `isIdempotent` true).
 	 *
-	 * False for every code whose condition can only change outside the request,
-	 * even where the contract describes a corrective action. `authentication_failed`
-	 * is the clearest case: presenting a different credential is a new
-	 * authenticated connection, not a retry of this request, so the contract
-	 * marks it "not retryable with the same credential" and the value is false.
-	 * The same reasoning covers `forbidden`, `integration_unavailable`,
-	 * `integration_unlicensed`, `unsupported_version`, `target_not_found`,
-	 * `verification_failed`, and `rollback_unavailable`, which need WordPress-side
-	 * configuration, a purchase, a different target, or operator inspection.
+	 * False for every code that answers the identical bytes identically forever.
+	 * `invalid_input` and `stale_plan` are the two that changed: both are fixed by
+	 * sending a DIFFERENT request — corrected arguments, or a fresh plan token —
+	 * and a different request is not a retry. `authentication_failed` is the same
+	 * shape: presenting another credential is a new authenticated connection. So
+	 * are `forbidden`, `integration_unavailable`, `integration_unlicensed`,
+	 * `unsupported_version`, `target_not_found`, `verification_failed` and
+	 * `rollback_unavailable`, which need WordPress-side configuration, a purchase,
+	 * a different target, or operator inspection.
 	 *
-	 * @return bool True when this request can be corrected and retried.
+	 * @return bool True when this exact request may succeed if sent again later.
 	 *
 	 * phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 	 */
 	public function isRetryable(): bool {
 		return match ( $this ) {
-			self::InvalidInput, self::Conflict, self::StalePlan, self::ExecutionFailed, self::UpstreamUnavailable => true,
+			self::Conflict, self::ExecutionFailed, self::UpstreamUnavailable => true,
 			default => false,
 		};
 	}
