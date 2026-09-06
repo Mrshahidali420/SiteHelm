@@ -13,6 +13,14 @@ an operation behaves.
 
 ### Added
 
+- **A menu item can now be removed.** The menu dispatcher could create a menu, add items to
+  it, relabel them, reorder them and assign the menu to a theme location — and it could not
+  take an item away, so a menu that needed to end up shorter than it started could not be
+  finished without opening Appearance then Menus. `menu-item-delete` removes one item. It is
+  destructive, so it previews, snapshots and reverses like every other destructive write, and
+  putting one back adds it again under a new identifier — which the result says plainly. An
+  item that has items beneath it is refused, naming them, rather than leaving them pointing at
+  a parent that is gone.
 - **A read of a page now shows the custom fields that are actually on it.** `content-get`
   reported an empty `meta` on posts covered in custom fields, because that member only ever
   listed the keys an administrator had allowed SiteHelm to write. A second member,
