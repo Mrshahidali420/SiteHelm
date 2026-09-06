@@ -400,4 +400,45 @@ final class CatalogExportTest extends TestCase {
 			$markdown
 		);
 	}
+
+	public function test_the_json_form_carries_the_stamp_and_the_rows(): void {
+		$json = $this->export->json( $this->context() );
+
+		$this->assertSame( $this->export->version( $this->context() ), $json['catalogVersion'] );
+		$this->assertSame( 'example.com', $json['site'] );
+		$this->assertSame( count( $json['operations'] ), $json['operationCount'] );
+		$this->assertContains( 'media-upload', array_column( $json['operations'], 'operation' ) );
+	}
+
+	/**
+	 * compact is the default because full is roughly two and a half times the
+	 * size, and an agent that reads the answer instead of saving it pays that
+	 * difference out of its own session.
+	 */
+	public function test_compact_omits_the_schemas_and_full_includes_them(): void {
+		$compact = $this->export->json( $this->context(), 'compact' );
+		$full    = $this->export->json( $this->context(), 'full' );
+
+		$this->assertArrayNotHasKey( 'inputSchema', $compact['operations'][0] );
+		$this->assertArrayHasKey( 'inputSchema', $full['operations'][0] );
+		$this->assertArrayHasKey( 'outputSchema', $full['operations'][0] );
+	}
+
+	/**
+	 * An absent Pro row has no schema to show even at full detail: this site does
+	 * not hold that definition.
+	 */
+	public function test_full_detail_leaves_an_absent_pro_row_without_schemas(): void {
+		$full = $this->export->json( $this->context(), 'full' );
+		$row  = null;
+
+		foreach ( $full['operations'] as $candidate ) {
+			if ( 'product-list' === $candidate['operation'] ) {
+				$row = $candidate;
+			}
+		}
+
+		$this->assertIsArray( $row );
+		$this->assertArrayNotHasKey( 'inputSchema', $row );
+	}
 }

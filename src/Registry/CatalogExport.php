@@ -269,6 +269,45 @@ final class CatalogExport {
 	}
 
 	/**
+	 * The catalogue as data, for a client that would rather render it itself.
+	 *
+	 * @param OperationContext $context The operation context.
+	 * @param string           $detail  'compact' or 'full'.
+	 * @param ModuleId|null    $module  Restrict to one module, or null for all.
+	 *
+	 * @return array<string, mixed> The catalogue.
+	 */
+	public function json( OperationContext $context, string $detail = 'compact', ?ModuleId $module = null ): array {
+		$rows = $this->rows( $context, $module );
+
+		if ( 'full' === $detail ) {
+			$rows = array_map(
+				function ( array $row ): array {
+					if ( ! $this->registry->has( (string) $row['operation'] ) ) {
+						return $row;
+					}
+
+					$definition = $this->registry->definition( (string) $row['operation'] );
+
+					$row['inputSchema']  = $definition->inputSchema;
+					$row['outputSchema'] = $definition->outputSchema;
+
+					return $row;
+				},
+				$rows
+			);
+		}
+
+		return [
+			'catalogVersion' => $this->version( $context ),
+			'site'           => $context->siteId,
+			'operationCount' => count( $rows ),
+			'pluginVersion'  => SITEHELM_VERSION,
+			'operations'     => $rows,
+		];
+	}
+
+	/**
 	 * The four lines that say which catalogue this is and when it went stale.
 	 *
 	 * The time comes from the request, not from the clock: two renders of one
