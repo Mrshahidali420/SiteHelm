@@ -102,6 +102,17 @@ final class ServerInstructions {
 	public const POINT_CSS_NAMESPACE = '4. Namespace per-section CSS. Styles injected with a section share one stylesheet with the theme and with every other section; prefix every class and custom property with a token unique to the page.';
 
 	/**
+	 * The catalogue a client can keep instead of rediscovering the surface.
+	 *
+	 * A CLIENT THAT CANNOT SEE THE ALTERNATIVES TAKES THE FIRST OPERATION IT
+	 * FINDS. The search answers one question and ranks the hits; nothing until
+	 * now put the whole surface side by side with the facts a choice turns on.
+	 * An export nobody is told about is an export nobody uses, which is the same
+	 * failure the dispatcher clause above exists for.
+	 */
+	public const CATALOG_EXPORT = "Call system-catalog-export on system-read for the whole surface; re-export only when system-connection's catalog version changes.";
+
+	/**
 	 * Builds the instructions string sent in the initialize result.
 	 *
 	 * @return string The server instructions.
@@ -112,6 +123,7 @@ final class ServerInstructions {
 			[
 				self::PREAMBLE,
 				self::DISPATCHERS_ARE_FIXED,
+				self::CATALOG_EXPORT,
 				self::CONTENT_WRITE_CARRIES,
 				'',
 				self::ELEMENTOR_HEADING,
