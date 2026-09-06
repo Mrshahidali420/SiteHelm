@@ -11,6 +11,8 @@ an operation behaves.
 
 ## [Unreleased]
 
+The second round of gaps a real build found (REQ-0122).
+
 ### Added
 
 - **A menu item can now be removed.** The menu dispatcher could create a menu, add items to
