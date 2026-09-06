@@ -14,6 +14,7 @@ use SiteHelm\Contracts\OperationContext;
 use SiteHelm\Contracts\OperationError;
 use SiteHelm\Contracts\OperationException;
 use SiteHelm\Registry\CapabilityRegistry;
+use SiteHelm\Registry\CatalogExport;
 use Throwable;
 
 /**
@@ -159,6 +160,8 @@ final class McpServer {
 				'notifications/initialized' => null,
 				'ping'                      => $this->result( $id, [] ),
 				'tools/list'                => $this->result( $id, [ 'tools' => $this->toolList( $clientId ) ] ),
+				'resources/list'            => $this->result( $id, [ 'resources' => $this->resourceList( $clientId ) ] ),
+				'resources/read'            => $this->resourceRead( $id, $message['params'] ?? [], $clientId ),
 				default                     => $this->error( $id, -32601, 'Method not found.' ),
 			};
 		} catch ( Throwable $e ) {
@@ -181,7 +184,13 @@ final class McpServer {
 	private function initializeResult( mixed $params ): array {
 		return [
 			'protocolVersion' => $this->negotiatedProtocolVersion( $params ),
-			'capabilities'    => [ 'tools' => [ 'listChanged' => false ] ],
+			'capabilities'    => [
+				'tools'     => [ 'listChanged' => false ],
+				'resources' => [
+					'subscribe'   => false,
+					'listChanged' => false,
+				],
+			],
 			'serverInfo'      => [
 				'name'    => 'SiteHelm',
 				'version' => SITEHELM_VERSION,
@@ -343,6 +352,104 @@ final class McpServer {
 		return sprintf( ' Operations: %s.', implode( ', ', $operations ) );
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+
+	/**
+	 * The one resource this server publishes.
+	 *
+	 * The stamp rides in the description so a client that lists resources learns
+	 * its saved copy is stale without reading anything. That is the only
+	 * freshness signal this transport can give: it is request and response, with
+	 * nothing held open to push a change down.
+	 *
+	 * A client that cannot be identified gets an entry with no stamp rather than
+	 * no entry: the resource exists either way, and a listing that vanishes
+	 * under a transient failure reads as a server that lost a feature.
+	 *
+	 * @param string $clientId Client identifier.
+	 *
+	 * @return list<array<string, mixed>> The resource entries.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+	 * phpcs:disable Generic.CodeAnalysis.EmptyStatement.DetectedCatch
+	 */
+	private function resourceList( string $clientId ): array {
+		$description = 'Every operation this site publishes, grouped by subject.';
+
+		try {
+			$context = $this->contextFactory->create( $this->moduleHealth, $clientId );
+			$export  = $this->dispatcher->catalogExport();
+
+			$description = sprintf(
+				'%d operations · catalogVersion %s',
+				count( $export->rows( $context ) ),
+				$export->version( $context )
+			);
+		} catch ( Throwable ) {
+			// Fall through to the unstamped description.
+		}
+
+		return [
+			[
+				'uri'         => CatalogExport::URI,
+				'name'        => 'SiteHelm operations',
+				'description' => $description,
+				'mimeType'    => 'text/markdown',
+			],
+		];
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+	// phpcs:enable Generic.CodeAnalysis.EmptyStatement.DetectedCatch
+
+	/**
+	 * Reads the catalogue resource.
+	 *
+	 * Filtered by the same context a tool call is filtered by, because a
+	 * resource read that answered more than a tool call would is the disclosure
+	 * the catalog exists to prevent, reached by a second door.
+	 *
+	 * Deliberately does not catch: handle()'s outer try already turns any throw
+	 * into a -32603 with the detail logged and nothing leaked, which is the same
+	 * containment every other method gets.
+	 *
+	 * @param mixed  $id       The JSON-RPC id.
+	 * @param mixed  $params   The request parameters.
+	 * @param string $clientId Client identifier.
+	 *
+	 * @return array<string, mixed> The response.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+	 */
+	private function resourceRead( mixed $id, mixed $params, string $clientId ): array {
+		$uri = is_array( $params ) ? ( $params['uri'] ?? null ) : null;
+
+		if ( CatalogExport::URI !== $uri ) {
+			return $this->error( $id, -32602, 'Invalid params: unknown resource. Call resources/list for the resources this server publishes.' );
+		}
+
+		$context = $this->contextFactory->create( $this->moduleHealth, $clientId );
+
+		return $this->result(
+			$id,
+			[
+				'contents' => [
+					[
+						'uri'      => CatalogExport::URI,
+						'mimeType' => 'text/markdown',
+						'text'     => $this->dispatcher->catalogExport()->markdown( $context ),
+					],
+				],
+			]
+		);
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 
 	/**
 	 * Handles a tool call request.

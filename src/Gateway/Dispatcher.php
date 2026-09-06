@@ -22,6 +22,7 @@ use SiteHelm\Modules\Diagnostics\OperationFind;
 use SiteHelm\Policy\PolicyEngine;
 use SiteHelm\Registry\CapabilityRegistry;
 use SiteHelm\Registry\CatalogBuilder;
+use SiteHelm\Registry\CatalogExport;
 use SiteHelm\Schema\SchemaValidator;
 
 /**
@@ -118,6 +119,25 @@ final class Dispatcher {
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+
+	/**
+	 * The catalogue export over this request's registry.
+	 *
+	 * The gateway needs it for the resource, and building it here is what keeps
+	 * the resource and the operation answering from the same registry and the
+	 * same switches -- a resource read must never disclose what a tool call
+	 * would hide.
+	 *
+	 * @return CatalogExport The catalogue export.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+	 */
+	public function catalogExport(): CatalogExport {
+		return new CatalogExport( $this->registry, $this->switches ?? OperationSwitches::none() );
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 
 	/**

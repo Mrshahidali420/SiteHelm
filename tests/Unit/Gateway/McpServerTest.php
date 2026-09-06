@@ -438,7 +438,7 @@ final class McpServerTest extends TestCase {
 			[
 				'jsonrpc' => '2.0',
 				'id'      => 6,
-				'method'  => 'resources/list',
+				'method'  => 'prompts/list',
 			]
 		);
 		$this->assertSame( -32601, $response['error']['code'] );
@@ -908,5 +908,98 @@ final class McpServerTest extends TestCase {
 		);
 
 		return $response['result']['protocolVersion'];
+	}
+
+	/**
+	 * The transport is request and response with no held-open stream, so the
+	 * server cannot push notifications/resources/list_changed. Declaring a push
+	 * we cannot make would leave a client waiting for a message that never
+	 * arrives, which is worse than telling it to poll.
+	 */
+	public function test_it_never_claims_a_resource_push_it_cannot_make(): void {
+		$result = $this->server->handle(
+			[
+				'jsonrpc' => '2.0',
+				'id'      => 1,
+				'method'  => 'initialize',
+				'params'  => [],
+			]
+		);
+
+		$this->assertFalse( $result['result']['capabilities']['resources']['listChanged'] );
+		$this->assertFalse( $result['result']['capabilities']['resources']['subscribe'] );
+	}
+
+	public function test_it_publishes_one_catalogue_resource_stamped_with_its_version(): void {
+		$result = $this->server->handle(
+			[
+				'jsonrpc' => '2.0',
+				'id'      => 2,
+				'method'  => 'resources/list',
+			]
+		);
+
+		$resources = $result['result']['resources'];
+
+		$this->assertCount( 1, $resources );
+		$this->assertSame( 'sitehelm://catalog', $resources[0]['uri'] );
+		$this->assertSame( 'text/markdown', $resources[0]['mimeType'] );
+		$this->assertMatchesRegularExpression( '/catalogVersion [0-9a-f]{12}/', $resources[0]['description'] );
+	}
+
+	public function test_reading_the_catalogue_resource_answers_the_document(): void {
+		$result = $this->server->handle(
+			[
+				'jsonrpc' => '2.0',
+				'id'      => 3,
+				'method'  => 'resources/read',
+				'params'  => [ 'uri' => 'sitehelm://catalog' ],
+			]
+		);
+
+		$contents = $result['result']['contents'];
+
+		$this->assertCount( 1, $contents );
+		$this->assertSame( 'sitehelm://catalog', $contents[0]['uri'] );
+		$this->assertSame( 'text/markdown', $contents[0]['mimeType'] );
+		$this->assertStringStartsWith( '# SiteHelm operations', $contents[0]['text'] );
+	}
+
+	/**
+	 * An unknown uri is an error, not an empty result. Answering "here is
+	 * nothing" to a resource this server does not have reads as an empty
+	 * catalogue rather than a wrong address.
+	 */
+	public function test_an_unknown_resource_uri_is_an_error(): void {
+		$result = $this->server->handle(
+			[
+				'jsonrpc' => '2.0',
+				'id'      => 4,
+				'method'  => 'resources/read',
+				'params'  => [ 'uri' => 'sitehelm://not-a-thing' ],
+			]
+		);
+
+		$this->assertArrayHasKey( 'error', $result );
+		$this->assertArrayNotHasKey( 'result', $result );
+	}
+
+	/**
+	 * A resource read must never disclose what a tool call would hide: both are
+	 * filtered by exactly the same context and capability rules.
+	 */
+	public function test_reading_the_resource_hides_what_a_tool_call_would_hide(): void {
+		Functions\when( 'user_can' )->justReturn( false );
+
+		$result = $this->server->handle(
+			[
+				'jsonrpc' => '2.0',
+				'id'      => 5,
+				'method'  => 'resources/read',
+				'params'  => [ 'uri' => 'sitehelm://catalog' ],
+			]
+		);
+
+		$this->assertStringNotContainsString( 'system-environment', $result['result']['contents'][0]['text'] );
 	}
 }
