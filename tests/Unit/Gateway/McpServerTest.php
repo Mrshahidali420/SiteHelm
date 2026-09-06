@@ -24,6 +24,7 @@ use SiteHelm\Gateway\ContextFactory;
 use SiteHelm\Gateway\Dispatcher;
 use SiteHelm\Gateway\McpServer;
 use SiteHelm\Gateway\ServerInstructions;
+use SiteHelm\Policy\OperationSwitches;
 use SiteHelm\Policy\PolicyEngine;
 use SiteHelm\Registry\CapabilityRegistry;
 use SiteHelm\Registry\CatalogBuilder;
@@ -67,11 +68,12 @@ final class McpServerTest extends TestCase {
 	 * once the gateway has already built its context — including raising a
 	 * failure the gateway did not anticipate.
 	 *
-	 * @param callable $handler The handler backing `system-environment`.
+	 * @param callable               $handler  The handler backing `system-environment`.
+	 * @param OperationSwitches|null $switches The operator's per-operation switches; null means all on.
 	 *
 	 * @return McpServer The configured server.
 	 */
-	private function serverRunning( callable $handler ): McpServer {
+	private function serverRunning( callable $handler, ?OperationSwitches $switches = null ): McpServer {
 		$registry = new CapabilityRegistry();
 		$registry->register(
 			new OperationDefinition(
@@ -108,8 +110,47 @@ final class McpServerTest extends TestCase {
 			$handler
 		);
 
+		// Registered so `resourceRead()`'s gate has a real operation to check:
+		// the catalogue resource is `system-catalog-export`'s output by another
+		// door, and the gate must see the same `read` capability and the same
+		// operator switch that operation itself carries.
+		$registry->register(
+			new OperationDefinition(
+				id: 'system-catalog-export',
+				domain: Domain::System,
+				mode: Mode::Read,
+				description: 'Return every operation this site publishes in one document.',
+				inputSchema: [
+					'type'                 => 'object',
+					'properties'           => [],
+					'additionalProperties' => false,
+				],
+				outputSchema: [
+					'type'                 => 'object',
+					'properties'           => [],
+					'additionalProperties' => false,
+				],
+				schemaVersion: 1,
+				requiredCapabilities: [ 'read' ],
+				risk: Risk::Low,
+				isReadOnly: true,
+				isDestructive: false,
+				isIdempotent: true,
+				previewPolicy: PreviewPolicy::NotApplicable,
+				snapshotPolicy: SnapshotPolicy::NotApplicable,
+				rollbackPolicy: RollbackPolicy::NotApplicable,
+				module: ModuleId::Diagnostics,
+				supportedVersions: [ 'wordpress' => '>=6.6' ],
+				example: [
+					'operation' => 'system-catalog-export',
+					'arguments' => [],
+				],
+			),
+			static fn(): array => []
+		);
+
 		return new McpServer(
-			new Dispatcher( $registry, new CatalogBuilder( $registry ), new PolicyEngine(), new SchemaValidator(), ChangeEngine::create() ),
+			new Dispatcher( $registry, new CatalogBuilder( $registry, $switches ), new PolicyEngine(), new SchemaValidator(), ChangeEngine::create(), $switches ),
 			new ContextFactory(),
 			[
 				'diagnostics' => [
@@ -296,7 +337,7 @@ final class McpServerTest extends TestCase {
 	public function test_the_tool_list_names_the_operations_each_dispatcher_publishes(): void {
 		$descriptions = $this->toolDescriptions();
 
-		$this->assertStringContainsString( 'Operations: system-environment.', $descriptions['system-read'] );
+		$this->assertStringContainsString( 'Operations: system-environment, system-catalog-export.', $descriptions['system-read'] );
 	}
 
 	/**
@@ -963,6 +1004,11 @@ final class McpServerTest extends TestCase {
 		$this->assertSame( 'sitehelm://catalog', $contents[0]['uri'] );
 		$this->assertSame( 'text/markdown', $contents[0]['mimeType'] );
 		$this->assertStringStartsWith( '# SiteHelm operations', $contents[0]['text'] );
+		// Positive control: an authorized caller's document names the operation
+		// the "hides" test below asserts is absent for an unauthorized one. Without
+		// this, that absence assertion would pass just as well against an empty
+		// catalogue.
+		$this->assertStringContainsString( 'system-environment', $contents[0]['text'] );
 	}
 
 	/**
@@ -985,10 +1031,15 @@ final class McpServerTest extends TestCase {
 	}
 
 	/**
-	 * A resource read must never disclose what a tool call would hide: both are
-	 * filtered by exactly the same context and capability rules.
+	 * A resource read must never disclose what a tool call would hide. The
+	 * catalogue resource is `system-catalog-export`'s own output by another
+	 * door, and that operation refuses a caller with no `read` capability
+	 * before it ever runs. A caller failing that same gate here must get the
+	 * identical refusal an unknown resource gets, not a filtered-but-present
+	 * document -- disclosing that the resource exists but is forbidden is
+	 * itself the disclosure this gate exists to prevent.
 	 */
-	public function test_reading_the_resource_hides_what_a_tool_call_would_hide(): void {
+	public function test_reading_the_resource_refuses_a_caller_without_read_capability(): void {
 		Functions\when( 'user_can' )->justReturn( false );
 
 		$result = $this->server->handle(
@@ -1000,6 +1051,33 @@ final class McpServerTest extends TestCase {
 			]
 		);
 
-		$this->assertStringNotContainsString( 'system-environment', $result['result']['contents'][0]['text'] );
+		$this->assertArrayHasKey( 'error', $result );
+		$this->assertArrayNotHasKey( 'result', $result );
+	}
+
+	/**
+	 * The operator's switch for `system-catalog-export` is a control the site
+	 * owner deliberately set. A resource read that ignored it would make the
+	 * switch a lie: the operation would be off everywhere else, yet its
+	 * document would still answer through the resource door.
+	 */
+	public function test_reading_the_resource_refuses_when_the_operation_is_switched_off(): void {
+		$switches = new OperationSwitches( static fn(): array => [ 'system-catalog-export' ] );
+		$server   = $this->serverRunning(
+			static fn(): array => [ 'wordpress' => '6.8.1' ],
+			$switches
+		);
+
+		$result = $server->handle(
+			[
+				'jsonrpc' => '2.0',
+				'id'      => 6,
+				'method'  => 'resources/read',
+				'params'  => [ 'uri' => 'sitehelm://catalog' ],
+			]
+		);
+
+		$this->assertArrayHasKey( 'error', $result );
+		$this->assertArrayNotHasKey( 'result', $result );
 	}
 }

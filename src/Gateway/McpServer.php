@@ -411,6 +411,20 @@ final class McpServer {
 	 * resource read that answered more than a tool call would is the disclosure
 	 * the catalog exists to prevent, reached by a second door.
 	 *
+	 * The uri gate alone is not enough: `system-catalog-export` is a read
+	 * operation with its own `read` capability requirement and its own operator
+	 * switch, and this resource is that operation's output by another door. A
+	 * caller with no `read` capability, or one whose operator switched the
+	 * operation off in the console, must be refused exactly as the tool call
+	 * would refuse them — the switch is a control the site owner deliberately
+	 * set, and a resource that ignores it makes the switch a lie. Both gates are
+	 * asked in one call: `publishedOperationIds()` already applies the
+	 * capability check and the switch, in the same order `system-catalog-export`
+	 * itself would be listed or hidden on `system-read`'s own catalog. A caller
+	 * failing either gate gets the identical unknown-resource answer the bad-uri
+	 * branch gives, so a forbidden resource cannot be told apart from one that
+	 * does not exist.
+	 *
 	 * Deliberately does not catch: handle()'s outer try already turns any throw
 	 * into a -32603 with the detail logged and nothing leaked, which is the same
 	 * containment every other method gets.
@@ -433,6 +447,10 @@ final class McpServer {
 		}
 
 		$context = $this->contextFactory->create( $this->moduleHealth, $clientId );
+
+		if ( ! in_array( 'system-catalog-export', $this->dispatcher->publishedOperationIds( 'system-read', $context ), true ) ) {
+			return $this->error( $id, -32602, 'Invalid params: unknown resource. Call resources/list for the resources this server publishes.' );
+		}
 
 		return $this->result(
 			$id,
