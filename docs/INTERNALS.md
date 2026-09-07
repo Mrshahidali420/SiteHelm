@@ -4219,7 +4219,11 @@ carries `listChanged: false`, declared once in `McpServer::initializeResult()` a
 tools capability, because nothing here pushes an update: the surface only ever moves in
 response to a switch flip or a Pro (de)activation, both of which already require a fresh
 connection to take effect, so there is nothing an unsolicited notification would tell a client
-that its next read would not.
+that its next read would not. The corollary is worth stating: a client caches the capability
+set from its `initialize` handshake and never re-asks, so a session that connected before
+SiteHelm was updated sees no resource at all and refuses `resources/read` locally, without
+the request ever reaching the site. The tool route is unaffected, which is why
+`system-catalog-export` stays the primary way in and the resource is a convenience.
 
 **`catalogVersion` is a digest of the rows, not of what might change them.** The definition is
 
