@@ -25,8 +25,8 @@ use SiteHelm\Tests\TestCase;
 /**
  * Pins the settings write's promises: the closed allowlist, the strict
  * validation that replaces sanitize_option()'s silent repairs, the front-page
- * geometry refusals, the whole-allowlist snapshot, and the flush that keeps a
- * permalink write meaning what its read-back says.
+ * geometry refusals, the whole-allowlist snapshot, and the cache clear that
+ * keeps a permalink write meaning what its read-back says.
  */
 final class SiteSettingsSetTest extends TestCase {
 
@@ -323,7 +323,7 @@ final class SiteSettingsSetTest extends TestCase {
 		$this->assertSame( [], $same->warnings, 'Re-asserting the current values changes nothing and warns about nothing.' );
 	}
 
-	public function test_applying_writes_the_mapped_options_and_flushes_for_permalinks(): void {
+	public function test_applying_writes_the_mapped_options_and_clears_the_address_cache_for_permalinks(): void {
 		$context = $this->context();
 		$state   = $this->operation->resolveTarget( [], $context );
 		$planned = $this->operation->planChange(
@@ -340,17 +340,22 @@ final class SiteSettingsSetTest extends TestCase {
 		$this->assertSame( 'site-settings', $key );
 		$this->assertSame( 'Acme Bakery', $this->options['blogname'] );
 		$this->assertSame( '/%post_id%/', $this->options['permalink_structure'] );
-		$this->assertSame( [ false ], $this->rewriteFlushes, 'A permalink write must soft-flush the rewrite rules, exactly once.' );
+		$this->assertSame( [ 'rewrite_rules' ], $this->optionDeletes, 'A permalink write must clear the cached address rules, exactly once.' );
+		$this->assertSame(
+			[],
+			$this->rewriteFlushes,
+			'Rebuilding the rules in this request would save the ones built from the permalink structure the request booted with, which is the old one.'
+		);
 	}
 
-	public function test_applying_without_a_permalink_change_does_not_flush(): void {
+	public function test_applying_without_a_permalink_change_leaves_the_address_cache_alone(): void {
 		$context = $this->context();
 		$state   = $this->operation->resolveTarget( [], $context );
 		$planned = $this->operation->planChange( $state, [ 'title' => 'Acme' ], $context );
 
 		$this->operation->applyChange( $state, $planned, $context );
 
-		$this->assertSame( [], $this->rewriteFlushes );
+		$this->assertSame( [], $this->optionDeletes );
 	}
 
 	public function test_the_promise_equals_the_read_back_after_an_apply(): void {
@@ -400,31 +405,31 @@ final class SiteSettingsSetTest extends TestCase {
 		$this->assertSame( 10, $snapshot['settings']['postsPerPage'] );
 	}
 
-	public function test_restoring_puts_the_recorded_settings_back_and_flushes_when_urls_move(): void {
+	public function test_restoring_puts_the_recorded_settings_back_and_clears_the_cache_when_urls_move(): void {
 		$context  = $this->context();
 		$snapshot = $this->operation->captureSnapshot( $this->operation->resolveTarget( [], $context ), $context );
 
 		// The site drifts: a new title and a new permalink structure.
 		update_option( 'blogname', 'Drifted' );
 		update_option( 'permalink_structure', '/%post_id%/' );
-		$this->optionWrites   = [];
-		$this->rewriteFlushes = [];
+		$this->optionWrites  = [];
+		$this->optionDeletes = [];
 
 		$key = $this->operation->restore( $snapshot, $context );
 
 		$this->assertSame( 'site-settings', $key );
 		$this->assertSame( 'Example Site', $this->options['blogname'] );
 		$this->assertSame( '/%postname%/', $this->options['permalink_structure'] );
-		$this->assertSame( [ false ], $this->rewriteFlushes, 'A restore that moves the permalink structure must flush.' );
+		$this->assertSame( [ 'rewrite_rules' ], $this->optionDeletes, 'A restore that moves the permalink structure must clear the cached address rules.' );
 	}
 
-	public function test_restoring_an_unchanged_permalink_structure_does_not_flush(): void {
+	public function test_restoring_an_unchanged_permalink_structure_leaves_the_address_cache_alone(): void {
 		$context  = $this->context();
 		$snapshot = $this->operation->captureSnapshot( $this->operation->resolveTarget( [], $context ), $context );
 
 		$this->operation->restore( $snapshot, $context );
 
-		$this->assertSame( [], $this->rewriteFlushes );
+		$this->assertSame( [], $this->optionDeletes );
 	}
 
 	public function test_restoring_ignores_fields_outside_the_allowlist(): void {

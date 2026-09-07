@@ -11,7 +11,27 @@ an operation behaves.
 
 ## [Unreleased]
 
+### Added
+
+- **A site whose addresses stopped matching its content can be repaired.** WordPress works
+  out a site's addresses once and stores the answer, so anything that changes what addresses
+  the site should have — a plugin switched on or off, a theme registering a new archive, a
+  permalink structure edited somewhere else — leaves pages that plainly exist answering "not
+  found". Until now the only fix was to open wp-admin and re-save the permalinks screen.
+  `site-rewrite-flush` throws the stored rules away so WordPress works them out again on the
+  next visit, and the preview says so: that first visit is the slow one. There is nothing to
+  undo, because what was cleared was the out-of-date copy, so no snapshot is taken and no
+  rollback is offered.
+
 ### Fixed
+
+- **A permalink change left the old addresses live.** `site-settings-set` rebuilt the stored
+  address rules after moving the permalink structure, and rebuilding them in the same request
+  saves whatever WordPress worked out when the request started — which is the structure we had
+  just moved away from. So the setting changed, the read-back agreed, and the site kept routing
+  the old way. It now clears the rules instead and lets the next visit work them out, which is
+  the same thing `site-rewrite-flush` does and for the same reason. The restore path had the
+  same fault and is fixed with it.
 
 - **Six reads answered an empty object as an empty array, which a strict client rejects.**
   `elementor-template-get`, `elementor-page-settings-get`, `elementor-element-get`,

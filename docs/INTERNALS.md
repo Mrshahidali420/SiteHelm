@@ -1945,9 +1945,29 @@ change touches.
 **Caches and flushes.** All fourteen options autoload, so `readBack()` deletes the
 `alloptions` and `notoptions` cache rows plus each per-option row before re-reading, and
 the `theme_mods_{stylesheet}` row alongside them for the logo.
-`flush_rewrite_rules(false)` runs only when the applied payload contains
+`RewriteCache::forget()` runs only when the applied payload contains
 `permalinkStructure` — and on restore, only when the snapshot's structure differs from
 what is stored at restore time.
+
+**Why the address rules are deleted and not rebuilt.** This used to call
+`flush_rewrite_rules(false)`, and that was wrong. In a REST request `init` and `wp_loaded`
+have both already fired by the time a route callback runs, so the global `$wp_rewrite` read
+the permalink structure at the top of the request — before this write moved it. A flush
+regenerates from that object and saves the result, which means it stores the rules for the
+structure we have just left, while reporting success. Deleting the `rewrite_rules` option
+instead defers the rebuild: `wp_rewrite_rules()` regenerates whenever the stored option is
+empty, and the next request boots with the new structure. `src/Modules/Core/RewriteCache.php`
+is the single place the plugin touches that option — this write, its restore, and
+`site-rewrite-flush` all go through it. Nothing there touches `.htaccess`, which would need
+filesystem credentials this plugin refuses to hold.
+
+**`site-rewrite-flush`** is the same clear on its own, for when something outside this plugin
+moved the site's addresses: a plugin switched on or off, a theme registering an archive, a
+permalink edited in wp-admin. It takes no arguments, declares `Risk::Low` (nothing an operator
+authored is touched), previews with a warning that the next visit pays for the rebuild, and
+declares no snapshot and no rollback on purpose — recording the cache would record rules the
+operator has just called wrong, and offering them back would offer a way back to the fault.
+It is idempotent instead.
 
 ## 33. The forms module (REQ-0084) in one screen
 

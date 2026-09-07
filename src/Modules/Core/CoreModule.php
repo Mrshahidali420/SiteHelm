@@ -251,6 +251,12 @@ final class CoreModule implements IntegrationModule {
 		// system-write. Its read is registered up with the system reads.
 		$registry->registerWrite( SiteSettingsSet::definition(), new SiteSettingsSet() );
 
+		// Registered beside the settings write because it is the other half of the
+		// same problem: the settings write clears the address cache after moving
+		// the permalink structure, and this one clears it when something outside
+		// this plugin moved the site's addresses instead.
+		$registry->registerWrite( SiteRewriteFlush::definition(), new SiteRewriteFlush() );
+
 		$registry->register( AuditRead::definition(), [ new AuditRead( new AuditStore(), new Installer() ), 'handle' ] );
 	}
 }

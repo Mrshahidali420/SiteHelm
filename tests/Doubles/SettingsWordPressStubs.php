@@ -58,6 +58,13 @@ trait SettingsWordPressStubs {
 	private array $rewriteFlushes = [];
 
 	/**
+	 * Every `delete_option()` call, in order, by option name.
+	 *
+	 * @var string[]
+	 */
+	private array $optionDeletes = [];
+
+	/**
 	 * Every `wp_cache_delete()` call, in order, as "group:key".
 	 *
 	 * @var string[]
@@ -131,6 +138,18 @@ trait SettingsWordPressStubs {
 
 		Functions\when( 'get_option' )->alias(
 			fn( $name ) => $this->options[ (string) $name ] ?? false
+		);
+
+		Functions\when( 'delete_option' )->alias(
+			function ( $name ): bool {
+				$name                  = (string) $name;
+				$this->optionDeletes[] = $name;
+				$existed               = array_key_exists( $name, $this->options );
+
+				unset( $this->options[ $name ] );
+
+				return $existed;
+			}
 		);
 
 		Functions\when( 'update_option' )->alias(
