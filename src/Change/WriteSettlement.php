@@ -210,7 +210,21 @@ final class WriteSettlement {
 		try {
 			return $operation->readBack( $targetKey, $context );
 		} catch ( Throwable $unreadable ) {
-			EngineLog::unexpected( $unreadable );
+			// An operation that throws verification_failed from readBack() has
+			// LOOKED and reached a verdict: it knows what it expected to find and
+			// what it found instead. That is not the engine failing to re-read a
+			// target, and replacing its words with the generic sentence throws
+			// away the one account of the failure anybody has. A delete that
+			// WordPress reported as done, whose files are still there, says so;
+			// this keeps it saying so.
+			$verdict = $unreadable instanceof OperationException
+				&& ErrorCode::VerificationFailed === $unreadable->errorCode
+					? $unreadable
+					: null;
+
+			if ( null === $verdict ) {
+				EngineLog::unexpected( $unreadable );
+			}
 
 			// No after-state exists to record: the read that would have produced
 			// one is what failed. The promise is all there is. See the helper's
@@ -222,8 +236,11 @@ final class WriteSettlement {
 				$current,
 				$planned->afterFields,
 				$context,
-				'The write completed but the change engine could not re-read the target to verify it.',
-				[ 'applied' ]
+				null === $verdict
+					? 'The write completed but the change engine could not re-read the target to verify it.'
+					: $verdict->getMessage(),
+				[ 'applied' ],
+				null === $verdict ? null : $verdict->remediation
 			);
 		}
 	}
@@ -332,6 +349,7 @@ final class WriteSettlement {
 	 * @param OperationContext     $context        The request context.
 	 * @param string               $message        The safe, human-readable explanation.
 	 * @param string[]             $completedSteps Steps completed before this failure.
+	 * @param string|null          $remediation    The operation's own advice, when it reached a verdict of its own.
 	 *
 	 * @return OperationException The failure to throw.
 	 *
@@ -346,7 +364,8 @@ final class WriteSettlement {
 		array $recordedAfter,
 		OperationContext $context,
 		string $message,
-		array $completedSteps = []
+		array $completedSteps = [],
+		?string $remediation = null
 	): OperationException {
 		$this->audit->finish(
 			$auditId,
@@ -361,14 +380,40 @@ final class WriteSettlement {
 		return new OperationException(
 			ErrorCode::VerificationFailed,
 			$message,
-			sprintf(
-				'Ask a site administrator to review the audit entry for correlation %s and restore the recorded snapshot.',
-				$context->correlationId
-			),
+			$remediation ?? $this->recovery_advice( $snapshot, $context ),
 			$completedSteps
 		);
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+
+	/**
+	 * What an administrator should actually do about this failure.
+	 *
+	 * TELLING SOMEBODY TO RESTORE A SNAPSHOT THAT WAS NEVER TAKEN sends them
+	 * looking for something that does not exist, and reads as though the plugin
+	 * has lost track of its own state. Deletes take no snapshot by design, and so
+	 * does every operation whose snapshot policy is not-applicable, so the
+	 * no-snapshot wording is the common case rather than the odd one.
+	 *
+	 * @param array<string, mixed> $snapshot Keys 'id' and 'reference' from capture().
+	 * @param OperationContext     $context  The request context.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+	 */
+	private function recovery_advice( array $snapshot, OperationContext $context ): string {
+		if ( null === ( $snapshot['reference'] ?? null ) ) {
+			return sprintf(
+				'Ask a site administrator to review the audit entry for correlation %s and check what the site holds now. No snapshot was taken for this change, so there is nothing to restore.',
+				$context->correlationId
+			);
+		}
+
+		return sprintf(
+			'Ask a site administrator to review the audit entry for correlation %s and restore the recorded snapshot.',
+			$context->correlationId
+		);
+	}
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 
 	/**

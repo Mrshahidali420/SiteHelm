@@ -734,6 +734,67 @@ final class ChangeEngineApplyTest extends TestCase {
 	}
 
 	/**
+	 * An operation that throws verification_failed from readBack() has looked
+	 * and reached a verdict of its own. A delete says the files it removed are
+	 * still there; an update says the row it wrote reads back wrong. Replacing
+	 * that with the engine's generic sentence leaves the caller with no account
+	 * of what actually happened, and an agent reading it retries a write that
+	 * already landed.
+	 */
+	public function test_an_operations_own_verification_verdict_reaches_the_caller(): void {
+		$this->operation->readBackThrows = new OperationException(
+			ErrorCode::VerificationFailed,
+			'WordPress reported that theme as deleted but this site still holds it, so the result cannot be confirmed.',
+			'Open the WordPress themes screen to see what this site holds now.'
+		);
+
+		try {
+			$this->apply();
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::VerificationFailed, $e->errorCode );
+			$this->assertStringContainsString( 'still holds it', $e->getMessage() );
+			$this->assertSame( 'Open the WordPress themes screen to see what this site holds now.', $e->remediation );
+		}
+
+		$this->assertSame(
+			AuditRecorder::OUTCOME_VERIFICATION_FAILED,
+			$this->wpdb->updates[0]['data']['outcome']
+		);
+	}
+
+	/**
+	 * Deletes take no snapshot, and neither does any operation whose snapshot
+	 * policy is not-applicable. Telling an administrator to restore a snapshot
+	 * that was never taken sends them looking for something that does not exist.
+	 */
+	public function test_a_failure_with_no_snapshot_does_not_offer_one_to_restore(): void {
+		$this->operation->snapshot       = null;
+		$this->operation->readBackThrows = new OperationException(
+			ErrorCode::TargetNotFound,
+			'The content item could not be found.'
+		);
+
+		$this->wpdb->rowQueue       = [ $this->planRow() ];
+		$this->wpdb->queryRowsQueue = [ 1 ];
+
+		try {
+			$this->engine->apply(
+				$this->makeDefinition( SnapshotPolicy::NotApplicable ),
+				$this->operation,
+				[ 'id' => 42, 'title' => 'Edited title' ],
+				self::TOKEN,
+				$this->makeContext( 7, 1_800_000_100 )
+			);
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			$this->assertStringContainsString( 'corr-2', (string) $e->remediation );
+			$this->assertStringNotContainsString( 'restore the recorded snapshot', (string) $e->remediation );
+			$this->assertStringContainsString( 'nothing to restore', (string) $e->remediation );
+		}
+	}
+
+	/**
 	 * The audit row must carry the recovery handle from the moment it is
 	 * created, not only once finish() runs, so that a fatal inside applyChange()
 	 * cannot strand a real snapshot that nothing references. The audit row is
