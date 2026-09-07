@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace SiteHelm\Tests\Unit\Docs;
 
 use PHPUnit\Framework\TestCase;
+use SiteHelm\Admin\ProCatalogue;
 use SiteHelm\Bootstrap\AbsorbedOperations;
 use SiteHelm\Bootstrap\Plugin;
 use SiteHelm\Registry\CapabilityRegistry;
@@ -179,6 +180,13 @@ final class DocumentationClaimsTest extends TestCase {
 			}
 		}
 
+		// The README also states what the Pro add-on adds. That number is not
+		// the registry's, but it is not unverifiable either: the console renders
+		// the locked Pro entries from ProCatalogue, so this repo holds the
+		// authoritative count. Admitting it here keeps a stale Pro figure in the
+		// README failing CI rather than being reworded around the pattern.
+		$pro = count( ProCatalogue::OPERATIONS );
+
 		$root        = dirname( __DIR__, 3 );
 		$readme      = (string) file_get_contents( $root . '/README.md' );
 		$roadmap     = (string) file_get_contents( $root . '/ROADMAP.md' );
@@ -202,8 +210,8 @@ final class DocumentationClaimsTest extends TestCase {
 		foreach ( $stated[1] as $count ) {
 			$this->assertContains(
 				(int) $count,
-				[ $operations, $elementor ],
-				"README.md states {$count} operations, which is neither the {$operations} the registry registers nor the {$elementor} the Elementor dispatchers carry."
+				[ $operations, $elementor, $pro ],
+				"README.md states {$count} operations, which is none of the {$operations} the registry registers, the {$elementor} the Elementor dispatchers carry, or the {$pro} the Pro add-on adds."
 			);
 		}
 
