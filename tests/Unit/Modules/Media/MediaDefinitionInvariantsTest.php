@@ -62,6 +62,7 @@ final class MediaDefinitionInvariantsTest extends TestCase {
 		'media-import',
 		'media-svg-upload',
 		'media-resize',
+		'media-delete',
 		'media-upload-ticket',
 	];
 
@@ -73,7 +74,7 @@ final class MediaDefinitionInvariantsTest extends TestCase {
 	/**
 	 * The media module's write count. Bumped by each later write task.
 	 */
-	private const MEDIA_WRITE_COUNT = 7;
+	private const MEDIA_WRITE_COUNT = 8;
 
 	/**
 	 * A registry with the media module registered.

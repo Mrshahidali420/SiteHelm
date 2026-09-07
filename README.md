@@ -9,7 +9,7 @@
 [![PHP](https://img.shields.io/badge/PHP-%3E%3D8.1-8892BF.svg)](https://php.net)
 [![WordPress](https://img.shields.io/badge/WordPress-%3E%3D6.6-21759B.svg)](https://wordpress.org)
 [![MCP](https://img.shields.io/badge/MCP-2025--06--18-orange.svg)](https://modelcontextprotocol.io/)
-[![Operations](https://img.shields.io/badge/operations-112-blueviolet.svg)](docs/OPERATIONS.md)
+[![Operations](https://img.shields.io/badge/operations-113-blueviolet.svg)](docs/OPERATIONS.md)
 [![Tests](https://img.shields.io/badge/tests-6%2C118-brightgreen.svg)](#how-this-is-tested)
 [![Coverage](https://img.shields.io/badge/coverage-%E2%89%A580%25-brightgreen.svg)](#how-this-is-tested)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
@@ -23,7 +23,7 @@
 
 ---
 
-SiteHelm is a WordPress plugin that exposes your site to AI agents over the [Model Context Protocol](https://modelcontextprotocol.io/). Claude, Claude Code, Cursor, VS Code, or any other MCP client can read and write your content, search the whole site for a phrase, edit Elementor pages, manage media and menus, write ACF and Meta Box fields, edit SEO metadata in any of seven SEO plugins, moderate comments, manage redirects, read form entries, and see what plugins and themes are installed — through **112 typed operations**, every one of them capability-checked, previewed before it runs, snapshotted before it changes anything, and verified afterwards by reading the site back.
+SiteHelm is a WordPress plugin that exposes your site to AI agents over the [Model Context Protocol](https://modelcontextprotocol.io/). Claude, Claude Code, Cursor, VS Code, or any other MCP client can read and write your content, search the whole site for a phrase, edit Elementor pages, manage media and menus, write ACF and Meta Box fields, edit SEO metadata in any of seven SEO plugins, moderate comments, manage redirects, read form entries, and see what plugins and themes are installed — through **113 typed operations**, every one of them capability-checked, previewed before it runs, snapshotted before it changes anything, and verified afterwards by reading the site back.
 
 The reason this project exists is the gap between *an agent can change your site* and *you would let an agent change a client's site*. Plenty of tools do the first. SiteHelm is built around the second.
 
@@ -66,7 +66,7 @@ SiteHelm makes a different trade. It is smaller in surface area and much stricte
 | **Undo** | Your backup plugin | A snapshot taken by the same plan, restorable by operation |
 | **Permissions** | Often a single API key | The authenticating WordPress user's real capabilities, re-checked per operation |
 | **Errors** | Whatever PHP threw | One of thirteen typed error codes with an operator-facing remedy — never a stack trace, path, or SQL string |
-| **Surface** | 200+ loosely specified tools | 112 operations behind 11 dispatchers, each with a strict JSON Schema |
+| **Surface** | 200+ loosely specified tools | 113 operations behind 11 dispatchers, each with a strict JSON Schema |
 
 Fewer tools is deliberate. Every operation here has a written acceptance criterion, an input schema that rejects unknown properties, and a test that fails if the guard protecting it is deleted.
 
@@ -98,7 +98,7 @@ Writes that need it also record a rollback reference, so the change can be put b
 
 ## What it can do
 
-112 operations across twelve modules, reached through 11 MCP tools (dispatchers). Call any dispatcher with no `operation` argument to get its catalogue — agents discover the surface at runtime instead of memorising it. An agent can also save the whole surface as one document: `system-catalog-export` and the `sitehelm://catalog` resource both return it, grouped by subject, with the risk and rollback flags a choice turns on.
+113 operations across twelve modules, reached through 11 MCP tools (dispatchers). Call any dispatcher with no `operation` argument to get its catalogue — agents discover the surface at runtime instead of memorising it. An agent can also save the whole surface as one document: `system-catalog-export` and the `sitehelm://catalog` resource both return it, grouped by subject, with the risk and rollback flags a choice turns on.
 
 <table>
 <tr><th align="left">Dispatcher</th><th align="left">Operations</th></tr>

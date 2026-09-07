@@ -153,6 +153,11 @@ final class MediaModule implements IntegrationModule {
 			new MediaResize( $fields, $targets )
 		);
 
+		$registry->registerWrite(
+			MediaDelete::definition(),
+			new MediaDelete( $fields, $targets )
+		);
+
 		// The ticket is registered here; the route it is spent against is
 		// registered in Plugin::register alongside the other REST route, because
 		// a module registers operations and not endpoints.

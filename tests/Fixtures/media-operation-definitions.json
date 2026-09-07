@@ -9,9 +9,10 @@
         "media-import",
         "media-svg-upload",
         "media-resize",
+        "media-delete",
         "media-upload-ticket"
     ],
-    "operationCount": 10,
+    "operationCount": 11,
     "definitions": {
         "media-get": {
             "inputSchema": {
@@ -711,6 +712,68 @@
                         "minimum": 1,
                         "maximum": 10000,
                         "description": "The tallest the served image may be, in pixels. Omit to bound by width alone."
+                    }
+                },
+                "required": [
+                    "id"
+                ],
+                "additionalProperties": false
+            },
+            "outputSchema": {
+                "type": "object",
+                "oneOf": [
+                    {
+                        "title": "Plan phase",
+                        "type": "object",
+                        "properties": {
+                            "plan": {
+                                "type": "object",
+                                "description": "The change plan to approve, including its plan token."
+                            }
+                        },
+                        "required": [
+                            "plan"
+                        ],
+                        "additionalProperties": false
+                    },
+                    {
+                        "title": "Apply phase",
+                        "type": "object",
+                        "properties": {
+                            "target": {
+                                "type": "string",
+                                "description": "The concrete target that was written."
+                            },
+                            "changed": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                },
+                                "description": "The fields the approved plan changed."
+                            },
+                            "state": {
+                                "type": "object",
+                                "description": "The verified persisted state of the target."
+                            }
+                        },
+                        "required": [
+                            "target",
+                            "changed",
+                            "state"
+                        ],
+                        "additionalProperties": false
+                    }
+                ]
+            }
+        },
+        "media-delete": {
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "Identifier of the media library item to delete."
                     }
                 },
                 "required": [
