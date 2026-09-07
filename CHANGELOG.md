@@ -59,7 +59,9 @@ file reaching the media library.
 
 - **The catalogue is also published as an MCP resource**, `sitehelm://catalog`, so a client
   that reads resources at connection time gets the same document without spending a tool
-  call on it.
+  call on it. A client only learns what a server offers when it connects, so reconnect it
+  after updating SiteHelm or the resource stays invisible to that session; the
+  `system-catalog-export` operation works either way.
 
 ### Changed
 
