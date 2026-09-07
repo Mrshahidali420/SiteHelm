@@ -23,6 +23,7 @@ use SiteHelm\Contracts\OperationException;
 use SiteHelm\Contracts\PreviewPolicy;
 use SiteHelm\Contracts\Risk;
 use SiteHelm\Contracts\RollbackPolicy;
+use SiteHelm\Contracts\SideEffect;
 use SiteHelm\Contracts\SnapshotPolicy;
 
 /**
@@ -118,6 +119,7 @@ final class MediaDelete implements WriteOperation {
 				'operation' => 'media-delete',
 				'arguments' => [ 'id' => 108 ],
 			],
+			sideEffects: [ SideEffect::LeavesReferencesBehind ],
 		);
 	}
 

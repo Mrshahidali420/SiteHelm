@@ -23,6 +23,7 @@ use SiteHelm\Contracts\OperationException;
 use SiteHelm\Contracts\PreviewPolicy;
 use SiteHelm\Contracts\Risk;
 use SiteHelm\Contracts\RollbackPolicy;
+use SiteHelm\Contracts\SideEffect;
 use SiteHelm\Contracts\SnapshotPolicy;
 
 /**
@@ -127,6 +128,7 @@ final class RedirectSet implements RollbackDelegate {
 					'status' => 301,
 				],
 			],
+			sideEffects: [ SideEffect::ChangesWhatVisitorsSee ],
 		);
 	}
 

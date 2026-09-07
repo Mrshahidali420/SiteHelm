@@ -23,6 +23,7 @@ use SiteHelm\Contracts\OperationException;
 use SiteHelm\Contracts\PreviewPolicy;
 use SiteHelm\Contracts\Risk;
 use SiteHelm\Contracts\RollbackPolicy;
+use SiteHelm\Contracts\SideEffect;
 use SiteHelm\Contracts\SnapshotPolicy;
 
 /**
@@ -179,6 +180,7 @@ final class SiteSettingsSet implements RollbackDelegate {
 					'postsPerPage' => 12,
 				],
 			],
+			sideEffects: [ SideEffect::ChangesWhatVisitorsSee ],
 		);
 	}
 

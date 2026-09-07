@@ -162,6 +162,7 @@ final class OperationDefinition {
 	 * @param array<string, string>            $supportedVersions    Dependency version ranges.
 	 * @param array<string, mixed>             $example              At least one usage example.
 	 * @param array<int, array<string, mixed>> $moreExamples Further examples, one per distinct mode.
+	 * @param array<int, SideEffect>           $sideEffects  Consequences carried beyond the promised change.
 	 *
 	 * @throws InvalidArgumentException When any contract rule is violated.
 	 *
@@ -190,6 +191,7 @@ final class OperationDefinition {
 		public readonly array $supportedVersions,
 		public readonly array $example,
 		public readonly array $moreExamples = [],
+		public readonly array $sideEffects = [],
 	) {
 		if ( 1 !== preg_match( self::ID_PATTERN, $id ) ) {
 			throw new InvalidArgumentException( "Operation id '{$id}' is not lower-case kebab-case." );
@@ -207,6 +209,19 @@ final class OperationDefinition {
 			if ( ! in_array( $capability, self::ALLOWED_CAPABILITIES, true ) ) {
 				throw new InvalidArgumentException( "Operation '{$id}' uses disallowed capability '{$capability}'." );
 			}
+		}
+		// A side effect declared twice reads as two separate consequences to
+		// anything that counts them, and a bare string here would defeat the
+		// closed vocabulary the same way an unlisted capability would.
+		$seen_effects = [];
+		foreach ( $sideEffects as $effect ) {
+			if ( ! $effect instanceof SideEffect ) {
+				throw new InvalidArgumentException( "Operation '{$id}': every side effect must be a SideEffect case." );
+			}
+			if ( isset( $seen_effects[ $effect->value ] ) ) {
+				throw new InvalidArgumentException( "Operation '{$id}' declares side effect '{$effect->value}' twice." );
+			}
+			$seen_effects[ $effect->value ] = true;
 		}
 		if ( [] === $supportedVersions || ! isset( $supportedVersions['wordpress'] ) ) {
 			throw new InvalidArgumentException( "Operation '{$id}' must declare a WordPress version range." );
@@ -244,6 +259,12 @@ final class OperationDefinition {
 			if ( ! $read_shape ) {
 				throw new InvalidArgumentException( "Operation '{$id}': read operations must be read-only with not-applicable policies." );
 			}
+		}
+		// A read changes nothing, so it can carry nothing beyond the change it
+		// makes. A read that genuinely has a consequence is a write that has
+		// been declared wrongly, and this is where that shows up.
+		if ( Mode::Read === $mode && [] !== $sideEffects ) {
+			throw new InvalidArgumentException( "Operation '{$id}': read operations cannot declare side effects." );
 		}
 		if ( Mode::Write === $mode && $isReadOnly ) {
 			throw new InvalidArgumentException( "Operation '{$id}': write operations cannot be read-only." );
@@ -293,6 +314,27 @@ final class OperationDefinition {
 	 */
 	public function examples(): array {
 		return array_merge( [ $this->example ], $this->moreExamples );
+	}
+
+	/**
+	 * The declared side effects, each as a slug a client can match on and the
+	 * sentence it should show a person.
+	 *
+	 * Both catalogue surfaces publish this, and they publish it through this one
+	 * method on purpose. The wire shape written out twice is the wire shape that
+	 * drifts: the live catalog and the saved export would disagree about a field
+	 * whose entire job is to be read once and trusted afterwards.
+	 *
+	 * @return array<int, array{effect: string, sentence: string}> The rows, empty when none are declared.
+	 */
+	public function sideEffectRows(): array {
+		return array_map(
+			static fn( SideEffect $effect ): array => [
+				'effect'   => $effect->value,
+				'sentence' => $effect->sentence(),
+			],
+			array_values( $this->sideEffects )
+		);
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid

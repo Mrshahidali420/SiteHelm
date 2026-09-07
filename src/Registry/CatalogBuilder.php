@@ -234,6 +234,7 @@ final class CatalogBuilder {
 				'previewPolicy'        => $definition->previewPolicy->value,
 				'snapshotPolicy'       => $definition->snapshotPolicy->value,
 				'rollbackPolicy'       => $definition->rollbackPolicy->value,
+				'sideEffects'          => $definition->sideEffectRows(),
 				'available'            => null === $blocked_reason,
 				'blockedReason'        => $blocked_reason,
 				'examples'             => $definition->examples(),

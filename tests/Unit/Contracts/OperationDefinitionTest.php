@@ -12,6 +12,7 @@ use SiteHelm\Contracts\OperationDefinition;
 use SiteHelm\Contracts\PreviewPolicy;
 use SiteHelm\Contracts\Risk;
 use SiteHelm\Contracts\RollbackPolicy;
+use SiteHelm\Contracts\SideEffect;
 use SiteHelm\Contracts\SnapshotPolicy;
 use SiteHelm\Tests\TestCase;
 
@@ -374,5 +375,92 @@ final class OperationDefinitionTest extends TestCase {
 			]
 		);
 		$this->assertSame( 'content-write', $definition->dispatcherName() );
+	}
+
+	/**
+	 * A valid write definition, which is the only mode allowed to carry side
+	 * effects.
+	 *
+	 * @param array<string, mixed> $overrides Field overrides.
+	 */
+	private function makeWrite( array $overrides = [] ): OperationDefinition {
+		return $this->makeDefinition(
+			array_merge(
+				[
+					'id'                   => 'content-update',
+					'domain'               => Domain::Content,
+					'mode'                 => Mode::Write,
+					'isReadOnly'           => false,
+					'isDestructive'        => false,
+					'isIdempotent'         => true,
+					'previewPolicy'        => PreviewPolicy::Required,
+					'snapshotPolicy'       => SnapshotPolicy::Required,
+					'rollbackPolicy'       => RollbackPolicy::Supported,
+					'module'               => ModuleId::Core,
+					'requiredCapabilities' => [ 'edit_posts' ],
+					'example'              => [
+						'operation' => 'content-update',
+						'arguments' => [],
+					],
+				],
+				$overrides
+			)
+		);
+	}
+
+	/**
+	 * The 115 definitions written before this field existed must keep
+	 * constructing, which is the whole reason it is optional.
+	 */
+	public function test_an_operation_that_declares_no_side_effects_gets_an_empty_list(): void {
+		$definition = $this->makeWrite();
+
+		$this->assertSame( [], $definition->sideEffects );
+		$this->assertSame( [], $definition->sideEffectRows() );
+	}
+
+	public function test_a_declared_side_effect_is_published_with_the_sentence_for_it(): void {
+		$definition = $this->makeWrite( [ 'sideEffects' => [ SideEffect::RunsInstalledCode ] ] );
+
+		$this->assertSame(
+			[
+				[
+					'effect'   => 'runs-installed-code',
+					'sentence' => SideEffect::RunsInstalledCode->sentence(),
+				],
+			],
+			$definition->sideEffectRows()
+		);
+	}
+
+	/**
+	 * A bare string would defeat the closed vocabulary exactly the way an
+	 * unlisted capability would, and it would reach the catalogue looking
+	 * plausible.
+	 */
+	public function test_a_side_effect_that_is_not_one_of_the_named_cases_is_refused(): void {
+		$this->expectException( InvalidArgumentException::class );
+		$this->makeWrite( [ 'sideEffects' => [ 'runs-installed-code' ] ] );
+	}
+
+	public function test_the_same_side_effect_declared_twice_is_refused(): void {
+		$this->expectException( InvalidArgumentException::class );
+		$this->makeWrite(
+			[
+				'sideEffects' => [
+					SideEffect::RunsInstalledCode,
+					SideEffect::RunsInstalledCode,
+				],
+			]
+		);
+	}
+
+	/**
+	 * A read changes nothing, so a read carrying a consequence is a write whose
+	 * mode was declared wrongly.
+	 */
+	public function test_a_read_operation_cannot_declare_a_side_effect(): void {
+		$this->expectException( InvalidArgumentException::class );
+		$this->makeDefinition( [ 'sideEffects' => [ SideEffect::SlowsTheNextVisit ] ] );
 	}
 }
