@@ -4251,3 +4251,44 @@ operator reads their own dashboard in their own language. `ModuleId::label()` is
 alongside untranslated operation identifiers — localising it would translate half a protocol
 artifact and leave the half that actually matters, the operation ids, in English. Sharing one
 function between them would force a choice neither caller wants.
+
+## 72. A delete with no way back (REQ-0124)
+
+`MediaDelete` (src/Modules/Media/MediaDelete.php) is the first free operation whose subject
+cannot be restored by anything the plugin holds. WordPress removes the uploaded file and every
+resized copy it generated; SiteHelm keeps neither, and a database row put back without them
+would point at files that no longer exist. So `snapshotPolicy` and `rollbackPolicy` are both
+`NotApplicable` and `restore()` throws `ErrorCode::RollbackUnavailable`, rather than recording
+something that would tell an operator they had a way back when they did not.
+
+**`isDestructive` is false, and that is the contract word rather than a description.**
+`OperationDefinition` makes `isDestructive: true` force preview *and* snapshot *and* rollback
+all to `Required`, so in this codebase the flag means "destructive and reversible" — an
+operation that promises a way back. A permanent delete cannot promise one, so it declares what
+it can honour and says the rest through the description and the warnings the operator has to
+approve. The tier stays `High`: `Risk::Extreme` means the payload is a program and it gates the
+Read & edit permission level, so borrowing it here would switch a free operation off for every
+owner on that level. `ContentTrash` one module over is the mirror image: the trash really
+is recoverable, so its flag is true. The Pro add-on's `DeleteWrite` reached the same shape
+first, for the same reason.
+
+**The read-back is inverted.** Every other media write fails when the target cannot be read;
+here a target that still reads back is a delete WordPress reported as done and did not do, and
+that is the `VerificationFailed` case. The returned `TargetState` has `exists = false` and
+carries the single promised field `deleted`, which is a field the media projection does not
+otherwise have — on purpose, because every other field of a deleted attachment is gone rather
+than changed, and promising `title` or `url` would promise a value read off a row that will not
+exist to be read.
+
+**It never uses the media trash.** `wp_delete_attachment()` is always called with the force
+argument, so `MEDIA_TRASH` cannot make the outcome depend on the site: an operation whose
+declared policies say "no way back" must not leave a recoverable copy on some sites and not on
+others, because the operator approving the plan cannot see which site they are on.
+
+**The plan names what it can see and says what it cannot.** Using content is found through one
+indexed `_thumbnail_id` meta lookup, capped at twenty-one rows so the warning can say "more
+than twenty" without counting the rest. Searching every post body for the file's address would
+be an unbounded table scan that would *still* miss a page builder holding the same reference in
+a row of its own, so instead a warning of its own says plainly that any address already written
+into content stays where it is and stops loading. The operator is never left believing the list
+is the whole answer.

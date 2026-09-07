@@ -11,6 +11,20 @@ an operation behaves.
 
 ## [Unreleased]
 
+### Added
+
+- **A media item can now be deleted.** The media dispatcher could upload a file, import one
+  from a web address, rename it, resize it and attach it to a post, and it could not take one
+  away, so a build that uploaded the wrong image left it in the library for good and anyone
+  clearing up after an agent had to open the media library and do it by hand.
+  `media-delete` removes one item and the files behind it. It is the one media operation with
+  no way back: WordPress deletes the uploaded file and every resized copy it made, SiteHelm
+  keeps no copy of either, and undoing it is not offered rather than offered and refused later.
+  So it always previews, and the preview names the file that goes, how many resized copies go
+  with it, and any content using it as a featured image. It always deletes rather than using
+  the media trash, because an operator approving the plan cannot see how the site is
+  configured and the plan has to mean the same thing everywhere.
+
 ### Fixed
 
 - **A write that fails verification now says what actually went wrong, and stops offering a

@@ -1,6 +1,6 @@
 # Operations reference
 
-SiteHelm exposes **112 operations** through **11 MCP tools**, called dispatchers. Every operation is
+SiteHelm exposes **113 operations** through **11 MCP tools**, called dispatchers. Every operation is
 declared once, in code, with a strict input schema (`additionalProperties: false`), a required
 capability, a risk level, and preview, snapshot, and rollback policies. That declaration is the
 contract the gateway enforces and the catalogue an agent discovers.
@@ -269,7 +269,7 @@ links are listed per item, and `truncated` says when a page held more.
 | `media-list` | Lists the media library with filtering | `upload_files` |
 | `image-size-list` | Lists registered image sizes and their dimensions | `read` |
 
-### `media-write` — 7 operations
+### `media-write` — 8 operations
 
 | Operation | Does | Capability | Risk | Rollback |
 |---|---|---|---|---|
@@ -280,6 +280,7 @@ links are listed per item, and `truncated` says when a page held more.
 | `media-resize` | Brings an oversized image within a width and height you name, keeping the original file | `edit_post` + `upload_files` | high | supported |
 | `media-svg-upload` | Adds one SVG image, rebuilt from a safe subset before it is stored | `upload_files` + `unfiltered_html` | high | supported |
 | `media-upload-ticket` | Issues a short-lived, single-use URL to post one large file to, for content too big to send as an argument | `upload_files` | high | not applicable |
+| `media-delete` | Deletes one library item and the files behind it, for good | `delete_post` | high | not applicable |
 
 > **`media-upload-ticket` exists because an argument cannot carry a package.** Everything an
 > operation is given travels inside the request the client assembles, which for an AI client means
@@ -315,6 +316,17 @@ links are listed per item, and `truncated` says when a page held more.
 > bound to those bytes — so what is approved is what exists. It also asks for `unfiltered_html` on
 > top of `upload_files`, which puts SVG upload where WordPress puts unfiltered markup:
 > administrators and editors on a single site, super admins alone on multisite.
+
+> **`media-delete` is the one media operation with no way back.** WordPress removes the uploaded
+> file and every resized copy it generated, and SiteHelm keeps no copy of either, so there is
+> nothing a rollback could put back and none is offered. The plan an operator approves names the
+> file that goes, how many resized copies go with it, and which content items use it as their
+> featured image and will lose it. It cannot name every place the file's address appears in a
+> page's content — a scan of every post body would still miss a page builder holding the same
+> reference in a row of its own — so it says that in words instead of implying the list is
+> complete. It always deletes rather than sometimes moving the item to the trash, because a site
+> configured for a media trash and one that is not would otherwise give the same approved plan two
+> different meanings.
 
 > **`media-resize` never overwrites and never deletes.** The reduced image is written to a new file
 > beside the original; the attachment is re-pointed at it and the untouched original stays reachable
