@@ -214,7 +214,7 @@ None of these controls is reachable over MCP. An agent cannot turn its own limit
 
 The free plugin is the whole safety model: the two-phase write, snapshots, verification, the audit log, rollback, and every console control. That stays free.
 
-SiteHelm Pro is a separate add-on sold through Freemius. It adds 51 operations on surfaces the free plugin does not reach:
+SiteHelm Pro is a separate add-on sold through Freemius. It adds 53 operations on surfaces the free plugin does not reach:
 
 | Area | What Pro adds |
 |---|---|

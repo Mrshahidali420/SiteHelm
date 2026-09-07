@@ -163,6 +163,18 @@ final class ProCatalogue {
 			'read'        => false,
 			'description' => "Set one post's schema type and fields, or clear it back to the plugin's default. Previewed, reversible.",
 		],
+		'seo-sitemap-get'              => [
+			'dispatcher'  => 'system-read',
+			'module'      => ModuleId::Seo,
+			'read'        => true,
+			'description' => "Read the SEO plugin's XML sitemap: whether it is switched on, its address, how many built copies are stored, and what the site actually answers when that address is asked for.",
+		],
+		'seo-sitemap-flush'            => [
+			'dispatcher'  => 'content-write',
+			'module'      => ModuleId::Seo,
+			'read'        => false,
+			'description' => 'Clear the built XML sitemap so the SEO plugin builds a fresh one on the next request for it. Previewed; nothing to roll back.',
+		],
 		'code-host-list'               => [
 			'dispatcher'  => 'system-read',
 			'module'      => ModuleId::Code,

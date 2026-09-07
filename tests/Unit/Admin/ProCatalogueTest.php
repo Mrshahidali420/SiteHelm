@@ -114,8 +114,8 @@ final class ProCatalogueTest extends TestCase {
 		$this->assertSame(
 			[
 				'content-read'  => [ 'product-list', 'product-get', 'product-category-list', 'order-list', 'order-get', 'customer-list', 'content-seo-schema-get' ],
-				'content-write' => [ 'product-create', 'product-update', 'seo-settings-set', 'content-seo-schema-set', 'code-snippet-write', 'code-snippet-activate', 'code-snippet-confirm', 'code-snippet-deactivate', 'code-snippet-delete', 'code-css-write', 'code-js-write', 'code-safe-mode-set', 'code-quarantine-clear', 'plugin-activate', 'plugin-deactivate', 'plugin-onboarding-complete', 'plugin-option-set', 'plugin-update', 'theme-switch', 'theme-update', 'plugin-install', 'theme-install', 'plugin-delete', 'theme-delete', 'plugin-install-upload', 'theme-install-upload' ],
-				'system-read'   => [ 'seo-404-log-list', 'seo-redirection-list', 'code-host-list', 'code-snippet-list', 'code-snippet-get', 'code-safe-mode-token', 'code-quarantine-list', 'code-health-check', 'code-scaffold-widget', 'code-scaffold-block', 'code-scaffold-theme-template' ],
+				'content-write' => [ 'product-create', 'product-update', 'seo-settings-set', 'content-seo-schema-set', 'seo-sitemap-flush', 'code-snippet-write', 'code-snippet-activate', 'code-snippet-confirm', 'code-snippet-deactivate', 'code-snippet-delete', 'code-css-write', 'code-js-write', 'code-safe-mode-set', 'code-quarantine-clear', 'plugin-activate', 'plugin-deactivate', 'plugin-onboarding-complete', 'plugin-option-set', 'plugin-update', 'theme-switch', 'theme-update', 'plugin-install', 'theme-install', 'plugin-delete', 'theme-delete', 'plugin-install-upload', 'theme-install-upload' ],
+				'system-read'   => [ 'seo-404-log-list', 'seo-redirection-list', 'seo-sitemap-get', 'code-host-list', 'code-snippet-list', 'code-snippet-get', 'code-safe-mode-token', 'code-quarantine-list', 'code-health-check', 'code-scaffold-widget', 'code-scaffold-block', 'code-scaffold-theme-template' ],
 				'elementor-read'  => [ 'elementor-dynamic-tag-list', 'elementor-brand-kit-list' ],
 				'elementor-write' => [ 'elementor-popup-create', 'elementor-popup-settings-set', 'elementor-dynamic-tag-set', 'elementor-brand-kit-apply' ],
 			],
@@ -131,7 +131,7 @@ final class ProCatalogueTest extends TestCase {
 		}
 
 		$this->assertSame( [], ( new ProCatalogue() )->missing( $registry ) );
-		$this->assertSame( 51, ( new ProCatalogue() )->registered_count( $registry ) );
+		$this->assertSame( 53, ( new ProCatalogue() )->registered_count( $registry ) );
 	}
 
 	/**
