@@ -11,7 +11,7 @@ an operation behaves.
 
 ## [Unreleased]
 
-## [0.14.0] — 2026-09-06
+## [0.14.0] — 2026-09-07
 
 An agent can now find an operation from a plain description of what it wants to do, plus
 the second round of gaps a real build found (REQ-0122) and the fault that stopped every
