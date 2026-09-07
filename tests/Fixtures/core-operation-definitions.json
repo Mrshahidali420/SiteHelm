@@ -15,6 +15,7 @@
         "content-rollback-apply",
         "content-featured-media-set",
         "content-status-set",
+        "content-resave",
         "content-meta-update",
         "content-terms-assign",
         "content-trash",
@@ -30,7 +31,7 @@
         "site-settings-read",
         "audit-list"
     ],
-    "operationCount": 29,
+    "operationCount": 30,
     "definitions": {
         "content-get": {
             "inputSchema": {
@@ -1285,6 +1286,68 @@
                 "required": [
                     "id",
                     "status"
+                ],
+                "additionalProperties": false
+            },
+            "outputSchema": {
+                "type": "object",
+                "oneOf": [
+                    {
+                        "title": "Plan phase",
+                        "type": "object",
+                        "properties": {
+                            "plan": {
+                                "type": "object",
+                                "description": "The change plan to approve, including its plan token."
+                            }
+                        },
+                        "required": [
+                            "plan"
+                        ],
+                        "additionalProperties": false
+                    },
+                    {
+                        "title": "Apply phase",
+                        "type": "object",
+                        "properties": {
+                            "target": {
+                                "type": "string",
+                                "description": "The concrete target that was written."
+                            },
+                            "changed": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                },
+                                "description": "The fields the approved plan changed."
+                            },
+                            "state": {
+                                "type": "object",
+                                "description": "The verified persisted state of the target."
+                            }
+                        },
+                        "required": [
+                            "target",
+                            "changed",
+                            "state"
+                        ],
+                        "additionalProperties": false
+                    }
+                ]
+            }
+        },
+        "content-resave": {
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "Identifier of the content item to save again."
+                    }
+                },
+                "required": [
+                    "id"
                 ],
                 "additionalProperties": false
             },

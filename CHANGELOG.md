@@ -13,6 +13,16 @@ an operation behaves.
 
 ### Added
 
+- **A page can be saved again without changing it.** Much of what a site shows is not stored
+  on the page at all. It is worked out once, when the page is saved, and kept somewhere else:
+  an SEO plugin's score and its sitemap entry, a page builder's compiled CSS, a caching
+  plugin's copy, a translation index. All of them are refreshed by the same signal — the page
+  being saved — and by nothing else. So content that arrived any other way, from a backup, an
+  import, or a row edited straight in the database, leaves every one of them stale while the
+  page itself is right. `content-resave` stores the page again exactly as it is so all of that
+  works itself out. Nothing in the page changes, and the title, slug, content, excerpt, type
+  and status are read back afterwards to prove it.
+
 - **A stale XML sitemap can be read and cleared, in Pro.** Yoast and Rank Math build the
   sitemap once and keep serving that copy until something tells them to build it again. They
   do that themselves when a post is saved, and they cannot do it when the change came from

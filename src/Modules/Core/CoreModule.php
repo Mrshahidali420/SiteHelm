@@ -198,6 +198,14 @@ final class CoreModule implements IntegrationModule {
 			new ContentStatusSet( $fields, $targets )
 		);
 
+		// The re-save is registered beside the status write because it is the same
+		// shape of write — one item, resolved and snapshotted the same way — and
+		// differs only in writing nothing.
+		$registry->registerWrite(
+			ContentResave::definition(),
+			new ContentResave( $fields, $targets )
+		);
+
 		$registry->registerWrite(
 			ContentMetaUpdate::definition(),
 			new ContentMetaUpdate( $fields, $targets )
