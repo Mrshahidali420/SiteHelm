@@ -13,6 +13,16 @@ an operation behaves.
 
 ### Added
 
+- **A stale XML sitemap can be read and cleared, in Pro.** Yoast and Rank Math build the
+  sitemap once and keep serving that copy until something tells them to build it again. They
+  do that themselves when a post is saved, and they cannot do it when the change came from
+  somewhere they do not watch: an import, a restore from backup, a post type another plugin
+  registers. The sitemap then lists pages that are gone and misses pages that exist, and
+  nothing in the plugin's settings looks wrong. `seo-sitemap-get` says which plugin is in
+  charge, whether the sitemap is switched on, its address, how many built copies are stored,
+  and what the site actually answers when that address is asked for. `seo-sitemap-flush`
+  throws those copies away so the next request builds a fresh one. Both are SiteHelm Pro.
+
 - **A site whose addresses stopped matching its content can be repaired.** WordPress works
   out a site's addresses once and stores the answer, so anything that changes what addresses
   the site should have — a plugin switched on or off, a theme registering a new archive, a

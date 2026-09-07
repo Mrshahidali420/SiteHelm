@@ -16,6 +16,7 @@ namespace SiteHelm\Tests\Doubles;
 final class FakeWpdb {
 
 	public string $prefix = 'wp_';
+	public string $options = 'wp_options';
 	public int $insert_id = 0;
 	public int $rows_affected = 0;
 	public string $last_error = '';
