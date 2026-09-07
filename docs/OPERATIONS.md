@@ -366,7 +366,7 @@ generated CSS afterwards, so changes appear on the front end without opening the
 | `elementor-template-get` | Reads one saved template in full — its tree, its page settings and the Elementor version that wrote it | `edit_post` |
 | `elementor-page-settings-get` | Reads a document's Elementor page settings — the page layout and title visibility SiteHelm can change, and the whole stored settings row alongside them | `edit_post` |
 
-### `elementor-write` — 21 operations
+### `elementor-write` — 24 operations
 
 | Operation | Does | Capability | Risk | Rollback |
 |---|---|---|---|---|

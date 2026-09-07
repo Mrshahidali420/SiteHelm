@@ -10,7 +10,7 @@
 [![WordPress](https://img.shields.io/badge/WordPress-%3E%3D6.6-21759B.svg)](https://wordpress.org)
 [![MCP](https://img.shields.io/badge/MCP-2025--06--18-orange.svg)](https://modelcontextprotocol.io/)
 [![Operations](https://img.shields.io/badge/operations-112-blueviolet.svg)](docs/OPERATIONS.md)
-[![Tests](https://img.shields.io/badge/tests-2%2C814-brightgreen.svg)](#how-this-is-tested)
+[![Tests](https://img.shields.io/badge/tests-6%2C118-brightgreen.svg)](#how-this-is-tested)
 [![Coverage](https://img.shields.io/badge/coverage-%E2%89%A580%25-brightgreen.svg)](#how-this-is-tested)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
@@ -23,7 +23,7 @@
 
 ---
 
-SiteHelm is a WordPress plugin that exposes your site to AI agents over the [Model Context Protocol](https://modelcontextprotocol.io/). Claude, Claude Code, Cursor, VS Code, or any other MCP client can read your content, edit Elementor pages, manage media and menus, write ACF and Meta Box fields, and edit SEO metadata in Yoast or Rank Math — through **112 typed operations**, every one of them capability-checked, previewed before it runs, snapshotted before it changes anything, and verified afterwards by reading the site back.
+SiteHelm is a WordPress plugin that exposes your site to AI agents over the [Model Context Protocol](https://modelcontextprotocol.io/). Claude, Claude Code, Cursor, VS Code, or any other MCP client can read and write your content, search the whole site for a phrase, edit Elementor pages, manage media and menus, write ACF and Meta Box fields, edit SEO metadata in any of seven SEO plugins, moderate comments, manage redirects, read form entries, and see what plugins and themes are installed — through **112 typed operations**, every one of them capability-checked, previewed before it runs, snapshotted before it changes anything, and verified afterwards by reading the site back.
 
 The reason this project exists is the gap between *an agent can change your site* and *you would let an agent change a client's site*. Plenty of tools do the first. SiteHelm is built around the second.
 
@@ -102,17 +102,17 @@ Writes that need it also record a rollback reference, so the change can be put b
 
 <table>
 <tr><th align="left">Dispatcher</th><th align="left">Operations</th></tr>
-<tr><td><code>content-read</code></td><td>Posts, pages, custom post types, taxonomies, and the comment queue</td></tr>
-<tr><td><code>content-write</code></td><td>Create, update, set status, set featured image, assign terms, update meta, trash, roll back, moderate and reply to comments</td></tr>
+<tr><td><code>content-read</code></td><td>Posts, pages and custom post types, taxonomies, the block outline of a document, a site-wide phrase search that reaches inside Elementor data, the redirect table, a link check that resolves this site's own links against its posts and redirects, the public page a visitor is actually served, which CSS rule wins for a selector at a given viewport, the comment queue, SEO metadata and audit findings, and the forms this site holds with their entries</td></tr>
+<tr><td><code>content-write</code></td><td>Create, update, set status, set featured image, assign terms, update meta, trash, roll back, edit one block in place, set and delete redirects, moderate and reply to comments, set a user's role, change the allowlisted site settings, and write SEO metadata for a post or a term</td></tr>
 <tr><td><code>media-read</code></td><td>Attachment details, library listing, registered image sizes</td></tr>
-<tr><td><code>media-write</code></td><td>Upload, import from a URL, update alt text and captions, attach to a post</td></tr>
+<tr><td><code>media-write</code></td><td>Upload, import from a URL, sanitise and store an SVG, resize an oversized image, update alt text and captions, attach to a post, and mint a ticket for a file too big to send as an argument</td></tr>
 <tr><td><code>menu-read</code></td><td>Menus, their items, and their theme location assignments</td></tr>
 <tr><td><code>menu-write</code></td><td>Create and update items, reorder a tree, assign a menu to a location</td></tr>
-<tr><td><code>elementor-read</code></td><td>Documents, elements, element search, widget availability, control schemas, global design tokens, theme-builder templates and their display conditions</td></tr>
-<tr><td><code>elementor-write</code></td><td>Add, update, move, duplicate, remove elements; widget settings; global colours and typography; theme-template display conditions</td></tr>
+<tr><td><code>elementor-read</code></td><td>Documents, element trees, a composition summary that does not grow with the page, element search, widget availability, control schemas, global design tokens, global style classes, saved templates, page settings, theme-builder templates and their display conditions</td></tr>
+<tr><td><code>elementor-write</code></td><td>Add, update, move, duplicate, remove and reorder elements; batched element updates; per-device widget settings; navigator labels; page layout; build, clear and create documents; save, import and apply library templates; global colours, typography and style classes; theme-template display conditions</td></tr>
 <tr><td><code>fields-read</code></td><td>ACF and Meta Box field groups, fields, and values</td></tr>
 <tr><td><code>fields-write</code></td><td>ACF and Meta Box field values</td></tr>
-<tr><td><code>system-read</code></td><td>Connection check, environment discovery, integration health, the plugin and theme inventory, the change audit log, and the whole operation catalogue as one document</td></tr>
+<tr><td><code>system-read</code></td><td>Connection check, environment discovery, integration health, the schema of one named operation, a plain-language search across every dispatcher, the whole operation catalogue as one saveable document, the user list, the site settings, the plugin and theme inventory with what is waiting to update, theme file listing and reading, the snippet inventory and its safety controls, and the change audit log</td></tr>
 </table>
 
 **→ [Full operations reference](docs/OPERATIONS.md)** — every operation with its capability, risk, and rollback policy.
@@ -126,6 +126,15 @@ Elementor, ACF, and Meta Box are **optional**. Their modules register only when 
 | Elementor | 3.0.0 | `Inactive` |
 | ACF / ACF Pro | 5.9.0 | `Inactive` |
 | Meta Box | 5.3.0 | `Inactive` |
+| Yoast SEO | 14.0 | `Inactive` |
+| Rank Math | 1.0.40 | `Inactive` |
+| All in One SEO | 4.0.0 | `Inactive` |
+| SEOPress | 5.0 | `Inactive` |
+| The SEO Framework | 4.2.0 | `Inactive` |
+| Slim SEO | 3.0.0 | `Inactive` |
+| SureRank | 1.0.0 | `Inactive` |
+
+Seven SEO plugins are supported, and the SEO operations do not ask you which one you run. They resolve it themselves in a fixed precedence and write through whichever is actually installed, so the same call works on a Yoast site and a Rank Math site without the agent knowing the difference.
 
 A plugin that is present but below its floor reports `VersionBlocked` — a distinct state from absent, because the fix is different.
 
@@ -212,9 +221,26 @@ claude mcp add --transport http sitehelm-your-site-com https://your-site.com/wp-
 </details>
 
 <details>
-<summary><strong>Clients that only speak stdio (Claude Desktop today)</strong></summary>
+<summary><strong>Clients that only speak stdio (Claude Desktop)</strong></summary>
 
-A stdio bridge is the top item on the [roadmap](ROADMAP.md) (REQ-0073). Until it ships, use a client with HTTP transport, or a generic HTTP-to-stdio MCP bridge.
+The plugin ships its own bridge at `bridge/sitehelm-bridge.mjs`. It needs Node 18 or newer and has no dependencies — it comes with the plugin rather than being fetched from a package registry, so what runs on your machine is what you installed. It reads its configuration from the environment rather than the command line, because a command line is readable by every process on the machine and a child process's environment is not.
+
+```jsonc
+{
+  "mcpServers": {
+    "sitehelm": {
+      "command": "node",
+      "args": ["/path/to/wp-content/plugins/sitehelm/bridge/sitehelm-bridge.mjs"],
+      "env": {
+        "SITEHELM_ENDPOINT": "https://your-site.com/wp-json/sitehelm/v1/mcp",
+        "SITEHELM_AUTH": "Basic BASE64_OF_username:application_password"
+      }
+    }
+  }
+}
+```
+
+`SITEHELM_TIMEOUT_MS` is optional and defaults to 120000. The bridge writes the protocol to stdout and nothing else; anything it wants to tell you goes to stderr.
 </details>
 
 **Always use HTTPS.** An Application Password sent over plain HTTP is a credential sent in the clear.
@@ -299,7 +325,7 @@ Modules are self-contained under `src/Modules/`, and only a module's designated 
 
 This is the part the project actually cares about.
 
-- **2,814 unit tests** on every push, across PHP 8.1, 8.2, and 8.3.
+- **6,118 unit tests** on every push, across PHP 8.1, 8.2, and 8.3.
 - **A hard 80% line-coverage floor** enforced in CI — the build fails below it.
 - **WordPress Coding Standards** (phpcs) clean on `src/`, with suppressions scoped to individual methods and required to name a sniff that actually fires there.
 - **Golden-fixture invariants** on every operation definition, so a capability, risk level, or rollback policy cannot change without a reviewer seeing it in the diff.
@@ -317,13 +343,14 @@ The tests are written to fail. Test doubles are deliberately hostile where it ma
 | ACF / ACF Pro | 5.9.0 *(optional)* |
 | Meta Box | 5.3.0 *(optional)* |
 | WooCommerce | 8.0 *(optional, SiteHelm Pro)* |
+| Node | 18 *(optional, only for the stdio bridge)* |
 | Transport | HTTPS strongly recommended |
 
 ## Roadmap
 
-V1 is complete — all 52 requirements shipped and verified. V1.1 is in progress.
+V1 is complete — all 52 requirements shipped and verified, and a good deal has shipped since: the stdio bridge, a site-wide content search that reaches inside Elementor data, redirects, rendered-page reads, a style check that answers which CSS rule wins, comment moderation, users, site settings, seven SEO plugins, forms, code snippets, the plugin and theme inventory, theme file reads, and the whole Elementor band — global classes, the template library, page-level editing, whole-document writes and SVG upload.
 
-**Next up:** a stdio transport bridge for clients that cannot speak HTTP, published per-client configuration files, batched element updates, image resizing, and per-operation schema discovery.
+**Next up:** Elementor 4's atomic layout elements once Elementor 4 is present, breakpoint-aware writes so tablet and mobile values travel in the same call as desktop, global variables alongside global colours and classes, and an opt-in strict-schema mode for validators that insist on `required` lists and non-empty enums. Recipes — a stored trigger paired with operations SiteHelm already registers, so the site can act on its own without any new write surface — is the larger one behind those.
 
 **SiteHelm Pro** is a separate add-on for the serious solo owner and the agency alike. Its
 first operations are here: the SEO plugin's own settings read and written as one reversible
