@@ -4319,3 +4319,37 @@ be an unbounded table scan that would *still* miss a page builder holding the sa
 a row of its own, so instead a warning of its own says plainly that any address already written
 into content stays where it is and stops loading. The operator is never left believing the list
 is the whole answer.
+
+## 73. An empty map that reached the client as a list
+
+PHP cannot tell an empty map from an empty list, and `json_encode` resolves the
+ambiguity against us: `[]` goes out as `[]`. A member a schema declares
+`"type": "object"` therefore arrives at a validating client as an array, and the
+client is right to reject it.
+
+Six producers already coerced by hand with `[] === $x ? new stdClass() : $x`.
+Four did not, and one guarded the wrong half — it coerced a non-array to an
+object and let an empty array straight through. The cases that leaked were the
+ordinary ones: a page whose settings have never been touched, a widget left at
+its defaults, a page carrying no Open Graph tags.
+
+`SchemaShape` already did this for advertised schemas. `PayloadShape::map()` is
+its payload-side sibling and now the single place the rule lives, so a new
+producer inherits it instead of remembering it.
+
+The reason nobody noticed is the part worth keeping. The shared
+schema-conformance assertion in `tests/TestCase.php` read
+
+```php
+'object' => $value instanceof stdClass || is_array( $value ),
+```
+
+An empty array is an array, so every leak passed. The assertion could not see
+the one defect the codebase keeps making, and the six correct producers were
+correct because somebody read them, not because anything checked them. It now
+requires a value that actually serializes as an object, and the tightened rule
+found the leaks itself — including two the hand audit had missed.
+
+Five tests were asserting the defect. Each was named for the promise the code
+was breaking, so the names stood and only the assertions changed; they pin the
+wire form, `'{}'`, rather than a PHP value that cannot tell the two apart.

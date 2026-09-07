@@ -21,6 +21,7 @@ use SiteHelm\Contracts\PreviewPolicy;
 use SiteHelm\Contracts\Risk;
 use SiteHelm\Contracts\RollbackPolicy;
 use SiteHelm\Contracts\SnapshotPolicy;
+use SiteHelm\Registry\PayloadShape;
 
 // phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Refusal messages are literals written for the operator.
 /**
@@ -223,6 +224,9 @@ final class ContentRenderedRead {
 		];
 
 		$record += $this->reader->summarize( $body, $home, $this->links );
+
+		$record['openGraph'] = PayloadShape::map( $record['openGraph'] );
+		$record['twitter']   = PayloadShape::map( $record['twitter'] );
 
 		$record['html']          = empty( $input['includeHtml'] ) ? null : substr( $body, 0, self::MAX_HTML_BYTES );
 		$record['htmlTruncated'] = ! empty( $input['includeHtml'] ) && $bytes > self::MAX_HTML_BYTES;

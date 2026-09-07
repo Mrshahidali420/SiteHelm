@@ -397,7 +397,10 @@ final class ElementorElementGetTest extends TestCase {
 	public function test_an_element_storing_no_settings_answers_an_empty_map_rather_than_refusing(): void {
 		$this->withElementor();
 
-		$this->assertSame( [], $this->get( self::DOCUMENT_ID, 'ddd444' )['storedSettings'] );
+		$stored = $this->get( self::DOCUMENT_ID, 'ddd444' )['storedSettings'];
+
+		$this->assertEquals( new stdClass(), $stored );
+		$this->assertSame( '{}', (string) json_encode( $stored ) );
 	}
 
 	/**
@@ -423,7 +426,10 @@ final class ElementorElementGetTest extends TestCase {
 			]
 		);
 
-		$this->assertSame( [], $this->get()['storedSettings'] );
+		$stored = $this->get()['storedSettings'];
+
+		$this->assertEquals( new stdClass(), $stored );
+		$this->assertSame( '{}', (string) json_encode( $stored ) );
 	}
 
 	public function test_a_nested_setting_value_is_returned_whole_and_unflattened(): void {

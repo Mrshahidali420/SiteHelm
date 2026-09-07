@@ -9,6 +9,20 @@ Every entry names the user-visible outcome. Internal refactors, test additions, 
 documentation-only changes are not listed unless they change what an agent can do or how
 an operation behaves.
 
+## [Unreleased]
+
+### Fixed
+
+- **Six reads answered an empty object as an empty array, which a strict client rejects.**
+  `elementor-template-get`, `elementor-page-settings-get`, `elementor-element-get`,
+  `elementor-document-get`, `content-rendered-read` and `content-audit-read` each declare a
+  member as an object and each sent `[]` instead of `{}` when that member was empty. The cases
+  that broke were the ordinary ones: a page whose settings have never been touched, a widget
+  left at its defaults, a page carrying no Open Graph or Twitter tags, an audit row with
+  nothing to summarise. A client that checks the response against the schema it was given had
+  no choice but to reject it, over a state that means nothing worse than "this has not been
+  set". They now answer `{}`.
+
 ## [0.15.0] — 2026-09-07
 
 A media item can now be deleted, and two faults a real site turned up while the last

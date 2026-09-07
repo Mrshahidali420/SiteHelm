@@ -9,7 +9,7 @@ declare(strict_types=1);
 
 namespace SiteHelm\Modules\Core;
 
-use stdClass;
+use SiteHelm\Registry\PayloadShape;
 
 /**
  * The one place that decides what "the state of a content item" means.
@@ -485,9 +485,9 @@ final class ContentFields {
 			'template'       => $fields['page_template'] ?? '',
 			'modifiedGmt'    => $fields['post_modified_gmt'] ?? '',
 			'featuredMedia'  => $fields['featured_media'] ?? 0,
-			'terms'          => [] === ( $fields['terms'] ?? [] ) ? new stdClass() : $fields['terms'],
-			'meta'           => [] === ( $fields['meta'] ?? [] ) ? new stdClass() : $fields['meta'],
-			'registeredMeta' => [] === $registered ? new stdClass() : $registered,
+			'terms'          => PayloadShape::map( $fields['terms'] ?? [] ),
+			'meta'           => PayloadShape::map( $fields['meta'] ?? [] ),
+			'registeredMeta' => PayloadShape::map( $registered ),
 		];
 	}
 

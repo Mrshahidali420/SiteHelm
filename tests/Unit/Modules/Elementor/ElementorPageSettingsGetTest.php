@@ -263,7 +263,8 @@ final class ElementorPageSettingsGetTest extends TestCase {
 
 		$result = $this->get();
 
-		$this->assertSame( [], $result['storedSettings'] );
+		$this->assertEquals( new stdClass(), $result['storedSettings'] );
+		$this->assertSame( '{}', (string) json_encode( $result['storedSettings'] ) );
 		$this->assertSame( 0, $result['settingsKeyCount'] );
 	}
 

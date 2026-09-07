@@ -20,6 +20,7 @@ use SiteHelm\Contracts\PreviewPolicy;
 use SiteHelm\Contracts\Risk;
 use SiteHelm\Contracts\RollbackPolicy;
 use SiteHelm\Contracts\SnapshotPolicy;
+use SiteHelm\Registry\PayloadShape;
 
 /**
  * REQ-0103: what one page's Elementor page settings actually hold. It is the
@@ -213,7 +214,7 @@ final class ElementorPageSettingsGet {
 			'document'                                   => $summary,
 			ElementorPageSettings::FIELD_WRITABLE        => ElementorPageSettings::project( $stored, $page_template ),
 			ElementorPageSettings::FIELD_LAYOUT_SYNC     => ElementorPageSettings::layoutSync( $stored, $page_template ),
-			ElementorPageSettings::FIELD_STORED          => $stored,
+			ElementorPageSettings::FIELD_STORED          => PayloadShape::map( $stored ),
 			ElementorPageSettingsTarget::FIELD_KEY_COUNT => count( $stored ),
 		];
 	}

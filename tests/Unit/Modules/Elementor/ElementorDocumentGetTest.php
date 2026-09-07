@@ -389,7 +389,10 @@ final class ElementorDocumentGetTest extends TestCase {
 		$this->withElementor();
 		$this->settings[ self::DOCUMENT_ID ] = 'not-a-map';
 
-		$this->assertSame( [], $this->get()['pageSettings']['storedSettings'] );
+		$stored = $this->get()['pageSettings']['storedSettings'];
+
+		$this->assertEquals( new stdClass(), $stored );
+		$this->assertSame( '{}', (string) json_encode( $stored ) );
 	}
 
 	/**
