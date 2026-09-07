@@ -27,6 +27,18 @@ an operation behaves.
 
 ### Fixed
 
+- **Operations no longer disappear from the catalogue because the plugin they belong to is
+  missing.** Every operation is described to a caller who holds the capabilities it needs,
+  and some of those capabilities come from the plugin the operation talks to rather than
+  from WordPress. With that plugin gone nobody holds them, not even the site owner, so the
+  eight WooCommerce operations were listed on a site without the add-on and then vanished
+  the moment the add-on arrived. They are now listed either way, marked unavailable, with
+  the reason. The saved catalogue and the operation search had a second half of the same
+  problem: both reported every operation as available whatever state its plugin was in, so
+  an agent could read that an Elementor write was ready to call on a site with no Elementor.
+  Both now say which operations the site cannot currently run, and the exported document
+  flags those rows so they cannot be misread as callable.
+
 - **A write that fails verification now says what actually went wrong, and stops offering a
   snapshot that was never taken.** When an operation re-read what it had just written and
   did not like the answer, the engine threw its verdict away and reported the same sentence

@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace SiteHelm\Tests\Unit\Registry;
 
 use ReflectionClass;
+use SiteHelm\Policy\PolicyEngine;
 use SiteHelm\Bootstrap\Plugin;
 use SiteHelm\Contracts\ModuleId;
 use SiteHelm\Contracts\OperationDefinition;
@@ -286,6 +287,41 @@ final class ReservedCapabilityTest extends TestCase {
 				$definition->risk,
 				"Operation '{$definition->id}' is Extreme, a tier reserved for operations that store or run code."
 			);
+		}
+	}
+
+	/**
+	 * The catalogue skips a capability check it cannot answer, and the list of
+	 * capabilities it may skip has to stay a subset of the ones an operation is
+	 * allowed to declare. A capability that left the allowlist and stayed in the
+	 * skip list would silently drop a check for an operation that no longer
+	 * exists, and one that arrived from a plugin without joining the skip list
+	 * would repeat the WooCommerce defect on the next integration.
+	 */
+	public function test_the_capabilities_a_missing_plugin_defines_are_capabilities_operations_may_declare(): void {
+		$allowed = ( new ReflectionClass( OperationDefinition::class ) )->getConstant( 'ALLOWED_CAPABILITIES' );
+
+		foreach ( PolicyEngine::HOST_DEFINED_CAPABILITIES as $capability ) {
+			$this->assertContains( $capability, $allowed, sprintf( '%s is skipped for a missing plugin but no operation may declare it.', $capability ) );
+		}
+	}
+
+	/**
+	 * Everything else in the allowlist is WordPress's own, so asking about it is
+	 * always meaningful and the catalogue must keep asking.
+	 */
+	public function test_every_other_allowed_capability_is_still_asked_about(): void {
+		$allowed  = ( new ReflectionClass( OperationDefinition::class ) )->getConstant( 'ALLOWED_CAPABILITIES' );
+		$expected = [ 'edit_products', 'manage_woocommerce' ];
+
+		$this->assertSame( $expected, PolicyEngine::HOST_DEFINED_CAPABILITIES );
+
+		foreach ( $allowed as $capability ) {
+			if ( in_array( $capability, $expected, true ) ) {
+				continue;
+			}
+
+			$this->assertNotContains( $capability, PolicyEngine::HOST_DEFINED_CAPABILITIES );
 		}
 	}
 }

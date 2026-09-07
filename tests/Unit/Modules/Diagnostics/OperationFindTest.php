@@ -126,7 +126,12 @@ final class OperationFindTest extends TestCase {
 		);
 	}
 
-	private function context(): OperationContext {
+	/**
+	 * A request context, with the module's health open to the test.
+	 *
+	 * @param string $health The health the diagnostics module reports.
+	 */
+	private function context( string $health = 'active' ): OperationContext {
 		return new OperationContext(
 			siteId: 'example.com',
 			userId: 7,
@@ -136,7 +141,7 @@ final class OperationFindTest extends TestCase {
 			moduleVersions: [
 				'diagnostics' => [
 					'version' => null,
-					'health'  => 'active',
+					'health'  => $health,
 				],
 			],
 			requestTime: 1_800_000_000,
@@ -329,5 +334,47 @@ final class OperationFindTest extends TestCase {
 		$json   = (string) json_encode( $result );
 
 		$this->assertStringContainsString( '"matches":[{', $json );
+	}
+
+	/**
+	 * The search reported `available: true` for everything it had registered,
+	 * whatever state the plugin behind it was in, so an agent that found an
+	 * operation this way spent its next turn on a refusal it was promised would
+	 * not come.
+	 */
+	public function test_a_match_says_when_the_plugin_behind_it_is_missing(): void {
+		$result = $this->find->handle( [ 'query' => 'which plugins have an update waiting' ], $this->context( 'inactive' ) );
+
+		$match = $this->matchFor( $result, 'system-plugin-list' );
+
+		$this->assertFalse( $match['available'] );
+		$this->assertSame( 'integration_unavailable', $match['blockedReason'] );
+	}
+
+	public function test_a_match_is_available_when_its_module_is_working(): void {
+		$result = $this->find->handle( [ 'query' => 'which plugins have an update waiting' ], $this->context() );
+
+		$match = $this->matchFor( $result, 'system-plugin-list' );
+
+		$this->assertTrue( $match['available'] );
+		$this->assertNull( $match['blockedReason'] );
+	}
+
+	/**
+	 * The one match naming this operation.
+	 *
+	 * @param array<string, mixed> $result The search result.
+	 * @param string               $id     The operation to pick out.
+	 *
+	 * @return array<string, mixed> The match.
+	 */
+	private function matchFor( array $result, string $id ): array {
+		foreach ( $result['matches'] as $match ) {
+			if ( $id === $match['operation'] ) {
+				return $match;
+			}
+		}
+
+		$this->fail( sprintf( 'The search did not name %s at all.', $id ) );
 	}
 }
