@@ -4,7 +4,7 @@ Tags: mcp, ai agent, automation, elementor, rest api
 Requires at least: 6.6
 Tested up to: 7.1
 Requires PHP: 8.1
-Stable tag: 0.14.0
+Stable tag: 0.15.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -88,6 +88,11 @@ The refusal names which error code applies and what to do about it, and says how
 
 The full changelog for every release is maintained at
 https://github.com/Mrshahidali420/SiteHelm/blob/main/CHANGELOG.md
+
+= 0.15.0 =
+* A media item can be deleted, with a preview naming the file, the resized copies that go with it, and any content using it as a featured image.
+* Operations no longer disappear from the catalogue because the plugin they talk to is missing; they are listed either way, marked unavailable, with the reason.
+* A write that fails its check now says what actually went wrong, and stops pointing at a snapshot that was never taken.
 
 = 0.14.0 =
 * An agent can find an operation from a plain description of what it wants to do, wherever that operation lives, and every match comes back with a call it can run.
