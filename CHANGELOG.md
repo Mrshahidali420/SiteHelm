@@ -11,6 +11,17 @@ an operation behaves.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A write that fails verification now says what actually went wrong, and stops offering a
+  snapshot that was never taken.** When an operation re-read what it had just written and
+  did not like the answer, the engine threw its verdict away and reported the same sentence
+  every time: the target could not be re-read. It then told the administrator to restore the
+  recorded snapshot, which for a delete — and for every operation that records no snapshot
+  by design — did not exist. A delete that worked read as a delete that failed, pointing at
+  a recovery that was not there. An operation's own account of the failure now reaches the
+  caller intact, and the advice matches whether there is anything to restore.
+
 ## [0.14.0] — 2026-09-07
 
 An agent can now find an operation from a plain description of what it wants to do, plus
