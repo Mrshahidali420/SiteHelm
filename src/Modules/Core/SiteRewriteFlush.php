@@ -111,6 +111,7 @@ final class SiteRewriteFlush implements WriteOperation {
 	}
 
 	// phpcs:disable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+	// phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 	// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 	/**
 	 * Counts what this site currently has cached, and asserts the caller may
@@ -256,5 +257,6 @@ final class SiteRewriteFlush implements WriteOperation {
 		}
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 }
