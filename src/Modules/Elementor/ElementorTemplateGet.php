@@ -20,6 +20,7 @@ use SiteHelm\Contracts\PreviewPolicy;
 use SiteHelm\Contracts\Risk;
 use SiteHelm\Contracts\RollbackPolicy;
 use SiteHelm\Contracts\SnapshotPolicy;
+use SiteHelm\Registry\PayloadShape;
 
 /**
  * REQ-0102: one saved template, in the shape that can be applied again.
@@ -245,7 +246,7 @@ final class ElementorTemplateGet {
 			'nodes'            => $normalized['nodes'],
 			'totals'           => $normalized['totals'],
 			'content'          => $stored,
-			'pageSettings'     => $this->page_settings( $template_id ),
+			'pageSettings'     => PayloadShape::map( $this->page_settings( $template_id ) ),
 			'elementorVersion' => $this->version_stamp( $template_id ),
 		];
 	}

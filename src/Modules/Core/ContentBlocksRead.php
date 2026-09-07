@@ -20,7 +20,7 @@ use SiteHelm\Contracts\PreviewPolicy;
 use SiteHelm\Contracts\Risk;
 use SiteHelm\Contracts\RollbackPolicy;
 use SiteHelm\Contracts\SnapshotPolicy;
-use stdClass;
+use SiteHelm\Registry\PayloadShape;
 
 /**
  * REQ-0077: read the block structure of a post before changing it.
@@ -240,7 +240,7 @@ final class ContentBlocksRead {
 	 * @return object|array<string, mixed> The renderable map.
 	 */
 	private function objectOf( array $attributes ): object|array {
-		return [] === $attributes ? new stdClass() : $attributes;
+		return PayloadShape::map( $attributes );
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 

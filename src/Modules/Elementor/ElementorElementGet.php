@@ -20,6 +20,7 @@ use SiteHelm\Contracts\PreviewPolicy;
 use SiteHelm\Contracts\Risk;
 use SiteHelm\Contracts\RollbackPolicy;
 use SiteHelm\Contracts\SnapshotPolicy;
+use SiteHelm\Registry\PayloadShape;
 
 /**
  * REQ-0065: what one Elementor element actually holds right now. It is the read
@@ -276,7 +277,7 @@ final class ElementorElementGet {
 				'path'       => (string) $found['path'],
 				'childCount' => $node['childCount'],
 			],
-			'storedSettings' => $this->settings( $found['node'] ),
+			'storedSettings' => PayloadShape::map( $this->settings( $found['node'] ) ),
 		];
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase

@@ -9,7 +9,7 @@ declare(strict_types=1);
 
 namespace SiteHelm\Audit;
 
-use stdClass;
+use SiteHelm\Registry\PayloadShape;
 
 /**
  * Produces the audit summary.
@@ -70,7 +70,7 @@ final class AuditRedactor {
 
 		$summary = [
 			'changed' => $changed,
-			'metrics' => [] === $metrics ? new stdClass() : $metrics,
+			'metrics' => PayloadShape::map( $metrics ),
 		];
 
 		if ( null !== $failure && '' !== $failure ) {

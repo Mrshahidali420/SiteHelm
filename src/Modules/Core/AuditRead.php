@@ -21,9 +21,9 @@ use SiteHelm\Contracts\PreviewPolicy;
 use SiteHelm\Contracts\Risk;
 use SiteHelm\Contracts\RollbackPolicy;
 use SiteHelm\Contracts\SnapshotPolicy;
+use SiteHelm\Registry\PayloadShape;
 use SiteHelm\Storage\AuditStore;
 use SiteHelm\Storage\Installer;
-use stdClass;
 
 /**
  * REQ-0009: audit log read. An agency operator reviews who changed what and
@@ -261,7 +261,7 @@ final class AuditRead {
 			'target'          => (string) $row['target_key'],
 			'planFingerprint' => (string) $row['plan_fingerprint'],
 			'outcome'         => (string) $row['outcome'],
-			'summary'         => is_array( $summary ) ? $summary : new stdClass(),
+			'summary'         => PayloadShape::map( is_array( $summary ) ? $summary : [] ),
 			'rollbackRef'     => is_string( $reference ) && '' !== $reference ? $reference : null,
 			'timestamp'       => (int) $row['recorded_at'],
 		];

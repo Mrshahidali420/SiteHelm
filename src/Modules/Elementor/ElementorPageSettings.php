@@ -11,6 +11,7 @@ namespace SiteHelm\Modules\Elementor;
 
 use SiteHelm\Contracts\ErrorCode;
 use SiteHelm\Contracts\OperationException;
+use SiteHelm\Registry\PayloadShape;
 
 /**
  * The one allowlist both page-settings operations are built from.
@@ -576,7 +577,7 @@ final class ElementorPageSettings {
 
 		return [
 			self::FIELD_LAYOUT_SYNC => self::layoutSync( $stored, $page_template ),
-			self::FIELD_STORED      => $stored,
+			self::FIELD_STORED      => PayloadShape::map( $stored ),
 			self::FIELD_WRITABLE    => self::project( $stored, $page_template ),
 		];
 	}

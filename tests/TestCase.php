@@ -173,10 +173,41 @@ abstract class TestCase extends PHPUnitTestCase {
 			'number'  => is_int( $value ) || is_float( $value ),
 			'boolean' => is_bool( $value ),
 			'array'   => is_array( $value ) && array_is_list( $value ),
-			'object'  => $value instanceof stdClass || is_array( $value ),
+			'object'  => self::encodesAsJsonObject( $value ),
 			'null'    => null === $value,
 			default   => true,
 		};
+	}
+
+
+	/**
+	 * Reports whether a value will reach a client as a JSON object.
+	 *
+	 * PHP cannot tell an empty map from an empty list, and json_encode resolves
+	 * the ambiguity the wrong way for us: `[]` goes out as `[]`, so a member the
+	 * schema declares an object arrives as an array and a strict client rejects
+	 * the response. A list-keyed array goes out the same way for the same reason.
+	 *
+	 * This used to accept any array, which made the whole conformance assertion
+	 * blind to that defect. Three read operations were shipping `[]` under an
+	 * object declaration, each with a docblock promising an empty object, and no
+	 * test in the suite could tell — while six other producers coerced to
+	 * stdClass by hand, because someone noticed by eye. An oracle that cannot see
+	 * the defect its own codebase keeps making is not an oracle.
+	 *
+	 * A populated string-keyed array is accepted: that is the ordinary way an
+	 * object-valued member is built, and it encodes correctly.
+	 *
+	 * @param mixed $value The value a member holds.
+	 *
+	 * @return bool True when the value serializes as a JSON object.
+	 */
+	private static function encodesAsJsonObject( mixed $value ): bool {
+		if ( $value instanceof stdClass ) {
+			return true;
+		}
+
+		return is_array( $value ) && [] !== $value && ! array_is_list( $value );
 	}
 
 	/**
@@ -213,7 +244,7 @@ abstract class TestCase extends PHPUnitTestCase {
 	private function matchesDeclaredItem( mixed $item, array $items, array $root ): bool {
 		if ( 'object' === $items['type'] ) {
 			if ( ! isset( $items['properties'] ) ) {
-				return $item instanceof stdClass || is_array( $item );
+				return self::encodesAsJsonObject( $item );
 			}
 
 			return is_array( $item ) && $this->conformsToSchema( $item, $items, $root );

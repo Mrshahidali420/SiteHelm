@@ -321,7 +321,10 @@ final class ElementorTemplateGetTest extends TestCase {
 		$this->withElementor();
 		$this->meta[ self::TEMPLATE_ID ][ ElementorTemplateLibrary::META_PAGE_SETTINGS ] = 'a:0:{}';
 
-		$this->assertSame( [], $this->read()['pageSettings'] );
+		$settings = $this->read()['pageSettings'];
+
+		$this->assertEquals( new stdClass(), $settings );
+		$this->assertSame( '{}', (string) json_encode( $settings ) );
 	}
 
 	public function test_the_version_stamp_is_reported_rather_than_checked(): void {
