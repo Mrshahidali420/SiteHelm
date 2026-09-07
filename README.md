@@ -189,6 +189,8 @@ Importing media from a URL is the one place the plugin fetches something on the 
 | `fields-write` | ACF and Meta Box field values |
 | `system-read` | Connection check, environment, integration health, operation schemas and search, the catalogue export, users, site settings, plugin and theme inventory, theme file reads, snippet inventory, the audit log |
 
+Elementor is the deepest surface here: 37 operations across the two Elementor tools, reaching documents, element trees, page and container settings, templates, global colours and typography, and theme-template conditions.
+
 SEO operations work across seven SEO plugins in a fixed precedence, so the same call writes through whichever one the site runs. Where an integration is missing, the operation refuses and names what to activate.
 
 The full list, with each operation's capability, risk level and rollback policy, is in **[docs/OPERATIONS.md](docs/OPERATIONS.md)**.
