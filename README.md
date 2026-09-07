@@ -1,6 +1,6 @@
 <h1 align="center">SiteHelm</h1>
 
-<p align="center"><strong>A WordPress MCP server for AI agents that has to be trusted with a client's live site.</strong></p>
+<p align="center">An MCP server inside WordPress, so an AI agent can change a live site and you can see, approve and undo every change.</p>
 
 <div align="center">
 
@@ -8,208 +8,71 @@
 [![License](https://img.shields.io/badge/license-GPL--2.0--or--later-green.svg)](LICENSE)
 [![PHP](https://img.shields.io/badge/PHP-%3E%3D8.1-8892BF.svg)](https://php.net)
 [![WordPress](https://img.shields.io/badge/WordPress-%3E%3D6.6-21759B.svg)](https://wordpress.org)
-[![MCP](https://img.shields.io/badge/MCP-2025--06--18-orange.svg)](https://modelcontextprotocol.io/)
-[![Operations](https://img.shields.io/badge/operations-113-blueviolet.svg)](docs/OPERATIONS.md)
-[![Tests](https://img.shields.io/badge/tests-6%2C118-brightgreen.svg)](#how-this-is-tested)
-[![Coverage](https://img.shields.io/badge/coverage-%E2%89%A580%25-brightgreen.svg)](#how-this-is-tested)
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
+[![MCP](https://img.shields.io/badge/MCP-JSON--RPC%202.0-000.svg)](https://modelcontextprotocol.io/)
 
-**[Operations reference](docs/OPERATIONS.md) · [Roadmap](ROADMAP.md) · [Changelog](CHANGELOG.md) · [Security](SECURITY.md) · [Contributing](CONTRIBUTING.md)**
+**[Website](https://wpsitehelm.com/) · [Operations reference](docs/OPERATIONS.md) · [Internals](docs/INTERNALS.md) · [Roadmap](ROADMAP.md) · [Changelog](CHANGELOG.md) · [Security](SECURITY.md) · [Contributing](CONTRIBUTING.md)**
 
 </div>
 
-> [!TIP]
-> **🎁 Found us on GitHub? That's worth 30%.** Use code **`GITHUB30`** at [checkout](https://checkout.freemius.com/plugin/37704/plan/62673/) for 30% off SiteHelm Pro — first payment **and every renewal**. [See pricing →](https://wpsitehelm.com/pricing)
-
 ---
 
-SiteHelm is a WordPress plugin that exposes your site to AI agents over the [Model Context Protocol](https://modelcontextprotocol.io/). Claude, Claude Code, Cursor, VS Code, or any other MCP client can read and write your content, search the whole site for a phrase, edit Elementor pages, manage media and menus, write ACF and Meta Box fields, edit SEO metadata in any of seven SEO plugins, moderate comments, manage redirects, read form entries, and see what plugins and themes are installed — through **113 typed operations**, every one of them capability-checked, previewed before it runs, snapshotted before it changes anything, and verified afterwards by reading the site back.
+## What it is
 
-The reason this project exists is the gap between *an agent can change your site* and *you would let an agent change a client's site*. Plenty of tools do the first. SiteHelm is built around the second.
+SiteHelm is a WordPress plugin. Once it is active, your site is an MCP server. Claude, Claude Code, Cursor, VS Code, or any other MCP client can connect to it and work on the site: posts and pages, media, menus, Elementor documents, ACF and Meta Box fields, SEO metadata, comments, redirects, users, site settings, and the plugin and theme inventory.
 
-```
-Preview  →  you read exactly what will change
-Approve  →  a single-use plan token, bound to those arguments
-Apply    →  snapshot, write, read back, verify
-Rollback →  restore from the snapshot the plan recorded
-```
+The agent gets 113 named operations, each with a strict input schema. It does not get PHP, SQL, a shell, or the filesystem.
 
-## Table of contents
+Every operation that changes the site runs the same way:
 
-- [Why SiteHelm](#why-sitehelm)
-- [The two-phase write](#the-two-phase-write)
-- [What it can do](#what-it-can-do)
-- [Install](#install)
-- [Connect your AI client](#connect-your-ai-client)
-- [Your first call](#your-first-call)
-- [Safety model](#safety-model)
-- [What an agent does not get](#what-an-agent-does-not-get)
-- [Architecture](#architecture)
-- [How this is tested](#how-this-is-tested)
-- [Requirements](#requirements)
-- [Roadmap](#roadmap)
-- [Contributing](#contributing)
-- [License](#license)
+1. **Capability check.** The operation checks the connected user's real WordPress capability for that object, inside the handler, before it looks anything up.
+2. **Preview.** The first call writes nothing. It returns the target, each field that would change with its before and after value, and a single-use plan token.
+3. **Snapshot.** When you apply, the engine records everything a restore would need before it touches the row.
+4. **Verify.** After the write, it reads the site back and compares what persisted with what the preview promised. A mismatch is reported as `VerificationFailed`, not as success.
+5. **Audit and rollback.** The change is written to a log you can read in wp-admin, and applied changes can be rolled back from there.
 
-## Why SiteHelm
+None of these steps can be skipped by the caller. That is the difference between this and a server that exposes a long list of loosely specified tools and trusts the model to use them carefully.
 
-Most WordPress AI integrations are a thin wrapper over the REST API: the agent calls a tool, something happens, and you find out what by looking at the site. That is fine on a scratch install and unacceptable on a client's live site, where the failure mode is not "the tool errored" but "the tool succeeded at the wrong thing and nobody noticed for a week."
+## Quick start
 
-SiteHelm makes a different trade. It is smaller in surface area and much stricter about each operation:
-
-| | Typical WordPress MCP tool | SiteHelm |
-|---|---|---|
-| **Before a write** | Executes immediately | Returns a preview of the exact field-level change, and a single-use plan token |
-| **Approval** | Implicit in the call | Explicit — a second call with the token, checked against the same arguments |
-| **After a write** | Reports what it *sent* | Re-reads the site and reports what actually *persisted* |
-| **When a write half-lands** | Silent | `VerificationFailed`, with the steps that completed |
-| **Undo** | Your backup plugin | A snapshot taken by the same plan, restorable by operation |
-| **Permissions** | Often a single API key | The authenticating WordPress user's real capabilities, re-checked per operation |
-| **Errors** | Whatever PHP threw | One of thirteen typed error codes with an operator-facing remedy — never a stack trace, path, or SQL string |
-| **Surface** | 200+ loosely specified tools | 113 operations behind 11 dispatchers, each with a strict JSON Schema |
-
-Fewer tools is deliberate. Every operation here has a written acceptance criterion, an input schema that rejects unknown properties, and a test that fails if the guard protecting it is deleted.
-
-## The two-phase write
-
-Every operation that changes the site runs in two phases. This is the core of the design, not an option you can turn on.
-
-**Phase 1 — preview.** Call the write with no `planToken`. Nothing is written. You get back the resolved target, the exact fields that would change with their before and after values, any warnings, and a **single-use plan token**.
-
-```jsonc
-// Response to a preview call
-{
-  "planToken": "…",
-  "preview": {
-    "target": "post:412",
-    "changedFields": {
-      "post_title": { "before": "Untitled", "after": "Spring Campaign" }
-    },
-    "warnings": []
-  }
-}
-```
-
-**Phase 2 — apply.** Resend the *same* arguments with the token. The token is bound to those arguments; changing them between phases is a `StalePlan` refusal rather than a surprise write. The engine then snapshots the target, applies the change, reads the site back, and compares what persisted against what the preview promised.
-
-If the read-back disagrees with the promise, you get `VerificationFailed` and the list of steps that completed — not a cheerful success message over a half-applied change.
-
-Writes that need it also record a rollback reference, so the change can be put back through `content-rollback-apply`.
-
-## What it can do
-
-113 operations across twelve modules, reached through 11 MCP tools (dispatchers). Call any dispatcher with no `operation` argument to get its catalogue — agents discover the surface at runtime instead of memorising it. An agent can also save the whole surface as one document: `system-catalog-export` and the `sitehelm://catalog` resource both return it, grouped by subject, with the risk and rollback flags a choice turns on. A client that connected before SiteHelm was updated will not see the resource — MCP clients read the server's capabilities once, at connection, and never ask again — so if `sitehelm://catalog` is missing, reconnect the client and it appears. The `system-catalog-export` tool returns the same document and needs no reconnect.
-
-<table>
-<tr><th align="left">Dispatcher</th><th align="left">Operations</th></tr>
-<tr><td><code>content-read</code></td><td>Posts, pages and custom post types, taxonomies, the block outline of a document, a site-wide phrase search that reaches inside Elementor data, the redirect table, a link check that resolves this site's own links against its posts and redirects, the public page a visitor is actually served, which CSS rule wins for a selector at a given viewport, the comment queue, SEO metadata and audit findings, and the forms this site holds with their entries</td></tr>
-<tr><td><code>content-write</code></td><td>Create, update, set status, set featured image, assign terms, update meta, trash, roll back, edit one block in place, set and delete redirects, moderate and reply to comments, set a user's role, change the allowlisted site settings, and write SEO metadata for a post or a term</td></tr>
-<tr><td><code>media-read</code></td><td>Attachment details, library listing, registered image sizes</td></tr>
-<tr><td><code>media-write</code></td><td>Upload, import from a URL, sanitise and store an SVG, resize an oversized image, update alt text and captions, attach to a post, and mint a ticket for a file too big to send as an argument</td></tr>
-<tr><td><code>menu-read</code></td><td>Menus, their items, and their theme location assignments</td></tr>
-<tr><td><code>menu-write</code></td><td>Create and update items, reorder a tree, assign a menu to a location</td></tr>
-<tr><td><code>elementor-read</code></td><td>Documents, element trees, a composition summary that does not grow with the page, element search, widget availability, control schemas, global design tokens, global style classes, saved templates, page settings, theme-builder templates and their display conditions</td></tr>
-<tr><td><code>elementor-write</code></td><td>Add, update, move, duplicate, remove and reorder elements; batched element updates; per-device widget settings; navigator labels; page layout; build, clear and create documents; save, import and apply library templates; global colours, typography and style classes; theme-template display conditions</td></tr>
-<tr><td><code>fields-read</code></td><td>ACF and Meta Box field groups, fields, and values</td></tr>
-<tr><td><code>fields-write</code></td><td>ACF and Meta Box field values</td></tr>
-<tr><td><code>system-read</code></td><td>Connection check, environment discovery, integration health, the schema of one named operation, a plain-language search across every dispatcher, the whole operation catalogue as one saveable document, the user list, the site settings, the plugin and theme inventory with what is waiting to update, theme file listing and reading, the snippet inventory and its safety controls, and the change audit log</td></tr>
-</table>
-
-**→ [Full operations reference](docs/OPERATIONS.md)** — every operation with its capability, risk, and rollback policy.
-
-### Page builders and field plugins
-
-Elementor, ACF, and Meta Box are **optional**. Their modules register only when the plugin is actually active and above its version floor; otherwise the operations report `IntegrationUnavailable` with a remedy rather than fataling. `system-integrations` tells you what SiteHelm can see:
-
-| Integration | Floor | Status when absent |
-|---|---|---|
-| Elementor | 3.0.0 | `Inactive` |
-| ACF / ACF Pro | 5.9.0 | `Inactive` |
-| Meta Box | 5.3.0 | `Inactive` |
-| Yoast SEO | 14.0 | `Inactive` |
-| Rank Math | 1.0.40 | `Inactive` |
-| All in One SEO | 4.0.0 | `Inactive` |
-| SEOPress | 5.0 | `Inactive` |
-| The SEO Framework | 4.2.0 | `Inactive` |
-| Slim SEO | 3.0.0 | `Inactive` |
-| SureRank | 1.0.0 | `Inactive` |
-
-Seven SEO plugins are supported, and the SEO operations do not ask you which one you run. They resolve it themselves in a fixed precedence and write through whichever is actually installed, so the same call works on a Yoast site and a Rank Math site without the agent knowing the difference.
-
-A plugin that is present but below its floor reports `VersionBlocked` — a distinct state from absent, because the fix is different.
-
-### Elementor support in detail
-
-Elementor is the deepest module, at 37 operations. SiteHelm edits the stored Elementor document tree directly and flushes the generated CSS afterwards, so changes show on the front end without opening the editor.
-
-- **Discovery** — list documents, read a document tree, search elements within a document, read one element, read a widget's control schema, check widget availability.
-- **Structure** — add, update, move, duplicate, and remove elements, addressed by their stable element id.
-- **Design tokens** — read the global palette and type styles with the identifiers writes address them by, then update global colours and typography. Entries merge rather than replace, so setting a colour does not erase its title.
-- **Theme builder** — list the header, footer, archive, and singular templates with the display conditions each one stores, then replace one template's conditions as a whole rule. SiteHelm owns the condition grammar rather than reading it from the plugin, so what a write accepts cannot shift under a plugin update, and the write discards Elementor's resolved condition map in the same step that stores the rule — otherwise the site keeps serving the old header while every re-read agrees the change landed.
-
-## Install
+### Install
 
 1. Download the latest `sitehelm-*.zip` from [Releases](https://github.com/Mrshahidali420/SiteHelm/releases).
-2. In WordPress: **Plugins → Add New → Upload Plugin**, choose the zip, **Install Now**, then **Activate**.
-3. Open **SiteHelm → Connect** and choose how your app signs in. On an HTTPS site the recommended path is one address pasted into the app, which then brings you here to approve it; otherwise press **Create an application password**. The endpoint, the credential and a ready-to-paste config for your client are all on that screen.
+2. In WordPress, go to **Plugins → Add New → Upload Plugin**, choose the zip, install, and activate.
+3. Open **SiteHelm → Connect**. The endpoint, a credential, and a config snippet for your client are all on that screen.
 
-That is the whole install. SiteHelm registers one REST route and one admin menu — no options screen, no dashboard widget, no cron jobs.
+The plugin registers one REST route and one admin menu. Nothing runs on a front-end page view.
 
-### The console
+### Connect a client
 
-Six tabs, plus a Dashboard widget that states write access, issued credentials and the last five operations at a glance. Seven controls, each a form that goes through the same checks as a client would: mint a credential, revoke one, pause every write, set the retention window, roll one change back, switch any operation off, switch a whole module off.
-
-- **Home** — one sentence on how the week went, three tiles (changes, could not be done, undone), and the last five things an app did, each as a plain sentence.
-- **Connect an app** — a choice of how the app signs in, the endpoint, an application password created in place and shown once, a config snippet for Claude Code, Cursor, or any other MCP client, the list of every credential SiteHelm has issued — which account it acts as, when it was last used — each with a **Revoke** button, and the list of apps that have signed in, each with **Sign out** and **Remove**. Below that: whether apps may sign in at all, the server address they are given, and a **Test discovery** button that fetches this site's own sign-in documents over the network and reports what came back.
-- **History** — every operation a client has performed, newest first, with its target, outcome, actor, client and rollback reference. Filterable by operation, correlation id, outcome, client or period, and every named client links to its own history, and **Export CSV** downloads every row the filters match. Each applied row has a **Roll back** button: a preview of what would change first, then a confirm, and the restoration runs through the same engine and is itself recorded.
-- **Health** — which modules are active, which are version-blocked, which are absent, whether the storage tables exist, whether the Authorization header actually reaches WordPress on this server (with the .htaccess fix when it does not — the same verdict also appears under Tools → Site Health), the **Write access** switch that pauses every write from every client at the gate, and the **Record retention** window that decides how long the log and its rollback snapshots are kept.
-- **Permissions** — one card per integration, naming what a blocked one is waiting on, with four buttons — Off, Read, Edit, Full — that set what a connected app may do with that module; a module whose per-operation switches match no level reads Custom.
-- **Tools** — the full catalogue of what a connected client can ask this site to do, grouped by tool and module, marked read or write, preview-required, destructive or high risk — each with an **on/off switch**. A switched-off operation leaves the catalogue and is refused exactly like an unknown one, so a client learns nothing about what sits behind the switch.
-
-If PHP or WordPress is below the floor, the plugin refuses to boot and shows an admin notice instead of fataling.
-
-### From source
-
-```bash
-git clone https://github.com/Mrshahidali420/SiteHelm.git
-cd SiteHelm
-composer install --no-dev
-```
-
-Then symlink or copy the directory into `wp-content/plugins/`.
-
-## Connect your AI client
-
-SiteHelm speaks JSON-RPC 2.0 over one authenticated REST route:
+The endpoint is:
 
 ```
 POST https://your-site.com/wp-json/sitehelm/v1/mcp
 ```
 
-There are two ways to authenticate, and the Connect screen offers both.
+There are two ways to sign in, and the Connect screen offers both.
 
-**Signing in (recommended, HTTPS only).** Paste the endpoint above into a client that supports it and nothing else: the app registers itself, sends you to this site to approve it, and holds a token afterwards. No password is written into a config file, and any app can be signed out or removed from the Connect screen. Turn it off, or set the address apps are given, in the settings at the bottom of that screen.
+- **Sign in from the app** (HTTPS only). Paste the endpoint into a client that supports it. The app registers itself, sends you to the site to approve it, and holds a token afterwards. No password goes into a config file. Any app can be signed out or removed from the Connect screen.
+- **Application password.** Works with every client. The snippets below use this path.
 
-**An application password over HTTP Basic.** Works with every client, including the ones that cannot sign in. The snippets below use this path.
-
-Either way the route requires a logged-in user, and every operation additionally re-checks that user's real capabilities — an agent can only do what that user could do by hand in wp-admin.
+Either way, the route needs a logged-in WordPress user, and every operation re-checks that user's capabilities. An agent can only do what that user could do by hand in wp-admin.
 
 <details>
 <summary><strong>Claude Code</strong></summary>
 
 ```bash
-claude mcp add --transport http sitehelm-your-site-com https://your-site.com/wp-json/sitehelm/v1/mcp \
+claude mcp add --transport http sitehelm https://your-site.com/wp-json/sitehelm/v1/mcp \
   --header "Authorization: Basic $(printf '%s' 'admin:xxxx xxxx xxxx xxxx xxxx xxxx' | base64)"
 ```
 </details>
 
 <details>
-<summary><strong>Cursor / VS Code / any HTTP MCP client</strong></summary>
+<summary><strong>Cursor, VS Code, or any HTTP MCP client</strong></summary>
 
 ```jsonc
 {
   "mcpServers": {
-    "sitehelm-your-site-com": {
+    "sitehelm": {
       "url": "https://your-site.com/wp-json/sitehelm/v1/mcp",
       "headers": {
         "Authorization": "Basic BASE64_OF_username:application_password"
@@ -221,9 +84,9 @@ claude mcp add --transport http sitehelm-your-site-com https://your-site.com/wp-
 </details>
 
 <details>
-<summary><strong>Clients that only speak stdio (Claude Desktop)</strong></summary>
+<summary><strong>Clients that only speak stdio, such as Claude Desktop</strong></summary>
 
-The plugin ships its own bridge at `bridge/sitehelm-bridge.mjs`. It needs Node 18 or newer and has no dependencies — it comes with the plugin rather than being fetched from a package registry, so what runs on your machine is what you installed. It reads its configuration from the environment rather than the command line, because a command line is readable by every process on the machine and a child process's environment is not.
+The plugin ships a bridge at `bridge/sitehelm-bridge.mjs`. It needs Node 18 or newer and has no dependencies. It reads its settings from the environment, not the command line, so the credential is not visible to other processes on the machine.
 
 ```jsonc
 {
@@ -240,12 +103,12 @@ The plugin ships its own bridge at `bridge/sitehelm-bridge.mjs`. It needs Node 1
 }
 ```
 
-`SITEHELM_TIMEOUT_MS` is optional and defaults to 120000. The bridge writes the protocol to stdout and nothing else; anything it wants to tell you goes to stderr.
+`SITEHELM_TIMEOUT_MS` is optional and defaults to 120000.
 </details>
 
-**Always use HTTPS.** An Application Password sent over plain HTTP is a credential sent in the clear.
+Use HTTPS. An application password sent over plain HTTP is a credential sent in the clear.
 
-## Your first call
+### First call
 
 Confirm the connection and see what the site exposes:
 
@@ -257,81 +120,115 @@ curl -sX POST https://your-site.com/wp-json/sitehelm/v1/mcp \
        "params":{"name":"system-read","arguments":{"operation":"system-connection"}}}'
 ```
 
-Then ask an agent for something real. Good first prompts:
+Then ask the agent for something real:
 
 > "List the Elementor documents on this site, then show me the element tree of the home page."
 
-> "Preview changing the hero heading on page 412 to 'Spring Campaign'. Don't apply it — show me the diff first."
+> "Preview changing the title of page 412 to 'Spring Campaign'. Do not apply it. Show me the diff first."
 
-> "What global colours does this site use, and which are system defaults?"
+> "Is ACF active, and is it above the version floor?"
 
-> "Check the integration health — is ACF active and above the version floor?"
+## How a write works
 
-## Safety model
+Every write is two calls with the same arguments.
 
-**Capabilities are checked first, every time.** Before an operation resolves a target, looks anything up, or touches the database, it checks the authenticating user's WordPress capability for that specific object. The check runs inside the operation, not only at the route, and each one is proven by a test that deletes the check and requires the suite to go red.
+**Preview.** Call the operation without a `planToken`. Nothing is written. The response names the target, lists each field that would change with its before and after value, carries any warnings, and returns a plan token.
 
-**Writes are two-phase and token-gated.** A plan token is single-use, bound to the arguments it was issued for, and expires. Reusing one is `StalePlan`. The server does not store your arguments between phases — you resend them, and the token is checked against them.
+```jsonc
+{
+  "planToken": "…",
+  "preview": {
+    "target": "post:412",
+    "changedFields": {
+      "post_title": { "before": "Untitled", "after": "Spring Campaign" }
+    },
+    "warnings": []
+  }
+}
+```
 
-**Writes are verified by re-reading.** The engine compares what persisted against what the preview promised. WordPress functions that return `false` both for a real failure and for a no-op are never trusted at their word; the affected write paths re-read and compare instead.
+**Apply.** Resend the same arguments with the token. The token is single-use, expires, and is bound to the arguments it was issued for. Change one argument and the call is refused as `StalePlan`. The server does not keep your arguments between the two calls; you resend them, and the token is checked against them.
 
-**Snapshots precede changes.** Every field a restore might need is captured before the write, and restores gate on key *presence* rather than on a null-coalescing default, so "this list was empty" is never confused with "this list was not recorded."
+The apply then snapshots the target, writes, reads the site back, and compares. If the read-back disagrees with the preview, the response is `VerificationFailed` with the list of steps that completed. Writes that support it record a rollback reference so the change can be put back with `content-rollback-apply` or from the console.
 
-**Refusals leak nothing.** The thirteen error codes carry an operator-facing message and a remedy. They never contain a stack trace, a filesystem path, a SQL fragment, `$wpdb->last_error`, an authorization header, or a resolved IP address. Server-side detail goes to `error_log`; the client gets a sentence it can act on.
+The preview and the apply run the same planning code. The diff you approved is the diff that lands.
 
-<details>
-<summary>The thirteen error codes</summary>
+### Refusals
+
+There are thirteen error codes, and each one carries a plain message and a remedy. None of them include a stack trace, a filesystem path, a SQL fragment, an authorization header, or a resolved IP address. Server-side detail goes to `error_log`.
 
 `AuthenticationFailed` · `Forbidden` · `IntegrationUnavailable` · `IntegrationUnlicensed` · `UpstreamUnavailable` · `UnsupportedVersion` · `InvalidInput` · `TargetNotFound` · `Conflict` · `StalePlan` · `ExecutionFailed` · `VerificationFailed` · `RollbackUnavailable`
-</details>
 
-**URL fetching is hardened.** Importing media from a URL is the most dangerous surface in the plugin, and it is treated that way: the host is resolved and validated before the connection, private, loopback, link-local, and reserved ranges are refused, every redirect hop is re-validated and re-pinned, the resolved address is pinned so the connection cannot be re-pointed between check and fetch, the wire read is capped, and the refusal is deliberately digit-free so it cannot become an SSRF oracle.
+### What an agent cannot do
 
-## What an agent does not get
+These are decisions, not gaps.
 
-Not "not yet". Decided, and not revisited — recorded as requirements so nobody proposes them again:
+- **No PHP execution.** No eval, no snippet runner, no "run this code".
+- **No raw SQL.** Every query goes through `$wpdb->prepare`. There is no query tool.
+- **No filesystem access.** No arbitrary read, write, or delete of site files.
+- **No code from an address the agent chose.** Plugins and themes install from WordPress.org by slug, or from a zip already in the site's own media library. No install accepts a URL or a file path. A fresh install lands deactivated. Installing is a Pro operation.
+- **No permanent delete of content.** Removal means trash, and rollback is required. The one exception is `media-delete`, which always previews and says plainly that there is no way back.
 
-- **No arbitrary PHP execution.** No `eval`, no code injection tool, no "run this snippet."
-- **No unrestricted SQL.** Every query goes through `$wpdb->prepare`; there is no pass-through query tool.
-- **No unrestricted filesystem access.** No arbitrary read, write, or delete of site files.
-- **No code from an address an agent chose.** Code reaches the site's disk two ways and no other: from WordPress.org by slug, or from a zip the operator has already put in the site's own media library. No install anywhere accepts a URL or a file path as an argument — the slug installs fetch only the download link WordPress.org itself answers with, checked against `https://downloads.wordpress.org/` before a byte moves, and the package installs take an attachment id and nothing else. Installing is a Pro operation either way, the package is read and refused before a byte moves, and a fresh install lands deactivated.
-- **No irreversible deletion.** Removal means trash or a reversible unlink, not `force_delete`.
+Importing media from a URL is the one place the plugin fetches something on the agent's say-so. The host is resolved and checked before the connection, private and loopback ranges are refused, every redirect hop is checked again, and the read is capped.
 
-An agent that needs any of these needs a different tool, and you should think hard before giving it one.
+## What it covers
 
-## Architecture
+113 operations, reached through 11 MCP tools. Each tool is a dispatcher: call it with no `operation` argument and it returns its own catalogue, so an agent discovers the surface at runtime. `system-operation-find` searches every tool at once from a plain-language query, and `system-catalog-export` returns the whole surface as one document.
 
-```
-MCP client
-   │  JSON-RPC 2.0 over HTTPS + Application Password
-   ▼
-RestTransport ──► McpServer ──► Dispatcher ──► CapabilityRegistry
-                                                    │
-                                     ┌──────────────┴──────────────┐
-                                     ▼                             ▼
-                                Read operation              Write operation
-                                                                   │
-                                                                   ▼
-                                                            ChangeEngine
-                                            resolve → plan → snapshot → apply
-                                                    → read back → verify
-```
+| Tool | What it reaches |
+|---|---|
+| `content-read` | Posts, pages, custom types, taxonomies, block outlines, site-wide search, redirects, link check, the rendered public page, which CSS rule wins for a selector, comments, SEO metadata and audit findings, forms and entries |
+| `content-write` | Create, update, status, featured image, terms, meta, trash, rollback, single-block edits, redirects, comment moderation, user roles, allowlisted site settings, SEO metadata |
+| `media-read` | Attachment details, library listing, registered image sizes |
+| `media-write` | Upload, import from a URL, SVG upload, resize, alt text and captions, attach to a post, delete |
+| `menu-read` | Menus, their theme locations, and a menu's full item tree |
+| `menu-write` | Create menus, add, update, reorder and remove items, assign a menu to a theme location |
+| `elementor-read` | Documents, element trees, settings, templates, global colours, typography and classes, theme-template conditions |
+| `elementor-write` | Element and document writes, page settings, templates, global tokens, theme-template conditions |
+| `fields-read` | ACF and Meta Box field groups, fields and values |
+| `fields-write` | ACF and Meta Box field values |
+| `system-read` | Connection check, environment, integration health, operation schemas and search, the catalogue export, users, site settings, plugin and theme inventory, theme file reads, snippet inventory, the audit log |
 
-Every write operation implements one interface with six methods — `resolveTarget`, `planChange`, `captureSnapshot`, `applyChange`, `readBack`, `restore` — and the engine drives them. `planChange()` runs in **both** phases, from the same code, which is what makes the preview and the applied change the same computation rather than two implementations that drift.
+SEO operations work across seven SEO plugins in a fixed precedence, so the same call writes through whichever one the site runs. Where an integration is missing, the operation refuses and names what to activate.
 
-Modules are self-contained under `src/Modules/`, and only a module's designated presence and API classes may name a third-party symbol. Nothing else in the codebase mentions `\Elementor\`, ACF, or RWMB directly, so an integration can be removed without touching the core.
+The full list, with each operation's capability, risk level and rollback policy, is in **[docs/OPERATIONS.md](docs/OPERATIONS.md)**.
 
-## How this is tested
+## The console
 
-This is the part the project actually cares about.
+SiteHelm adds one menu to wp-admin. From it you can:
 
-- **6,118 unit tests** on every push, across PHP 8.1, 8.2, and 8.3.
-- **A hard 80% line-coverage floor** enforced in CI — the build fails below it.
-- **WordPress Coding Standards** (phpcs) clean on `src/`, with suppressions scoped to individual methods and required to name a sniff that actually fires there.
-- **Golden-fixture invariants** on every operation definition, so a capability, risk level, or rollback policy cannot change without a reviewer seeing it in the diff.
-- **Deletion proofs.** For each load-bearing guard — capability checks, bounds, refusals, verification re-reads — a harness deletes that guard, lints the mutant to prove it still parses, runs the suite, and requires it to go **red**. A guard whose removal leaves the tests green is a guard nothing actually tests, and it is treated as a defect. Over 20 such proofs run for the Elementor global-token operations alone.
+- see the last few things an app did, in plain sentences, and a full filterable history with CSV export
+- roll back any applied change, with a preview first
+- pause every write on the site with one switch
+- switch off a single operation or a whole module
+- set what a connected app may do per integration: Off, Read, Edit, or Full
+- create and revoke credentials, and sign out or remove apps that signed in
+- set how long the log and its rollback snapshots are kept
+- check that the Authorization header reaches WordPress on this server, with the fix if it does not
 
-The tests are written to fail. Test doubles are deliberately hostile where it matters: the WordPress double used for kit writes returns `false` from `update_post_meta()` on every call, so the code's re-read verification has to be genuinely load-bearing rather than incidentally correct.
+None of these controls is reachable over MCP. An agent cannot turn its own limits off.
+
+## Free and Pro
+
+The free plugin is the whole safety model: the two-phase write, snapshots, verification, the audit log, rollback, and every console control. That stays free.
+
+SiteHelm Pro is a separate add-on sold through Freemius. It adds 51 operations on surfaces the free plugin does not reach:
+
+| Area | What Pro adds |
+|---|---|
+| SEO | The SEO plugin's own settings, per-post schema, Rank Math's 404 log and redirections |
+| WooCommerce | Products, prices, stock and categories read and written; orders and customers read-only |
+| Elementor Pro | Popups and dynamic tags |
+| Plugins and themes | Activate, deactivate, switch, update, install from WordPress.org or a media-library zip, delete |
+| Code | Code snippets, in its own risk tier; the one module that ships switched off |
+
+Pro never takes a free feature away, and batch size is never a reason to charge: if the free plugin has the single write, it has the bulk version too. The plugin is open source, so this is checkable rather than promised.
+
+Pricing is at [wpsitehelm.com/pricing](https://wpsitehelm.com/pricing). If you found the project here, the code `GITHUB30` at [checkout](https://checkout.freemius.com/plugin/37704/plan/62673/) takes 30% off the first payment and every renewal.
+
+## Privacy
+
+SiteHelm contains no AI model and sends no site content anywhere. The only outbound calls it makes are the update check against its GitHub releases, the Pro licence check when the add-on is installed, the WordPress.org lookup when a Pro install is requested, and a media import you asked for.
 
 ## Requirements
 
@@ -339,53 +236,52 @@ The tests are written to fail. Test doubles are deliberately hostile where it ma
 |---|---|
 | WordPress | 6.6 |
 | PHP | 8.1 |
-| Elementor | 3.0.0 *(optional)* |
-| ACF / ACF Pro | 5.9.0 *(optional)* |
-| Meta Box | 5.3.0 *(optional)* |
-| WooCommerce | 8.0 *(optional, SiteHelm Pro)* |
-| Node | 18 *(optional, only for the stdio bridge)* |
-| Transport | HTTPS strongly recommended |
+| Elementor | 3.0.0, optional |
+| ACF / ACF Pro | 5.9.0, optional |
+| Meta Box | 5.3.0, optional |
+| WooCommerce | 8.0, optional, Pro only |
+| Node | 18, optional, only for the stdio bridge |
 
-## Roadmap
+If PHP or WordPress is below the floor, the plugin refuses to boot and shows an admin notice instead of a fatal error.
 
-V1 is complete — all 52 requirements shipped and verified, and a good deal has shipped since: the stdio bridge, a site-wide content search that reaches inside Elementor data, redirects, rendered-page reads, a style check that answers which CSS rule wins, comment moderation, users, site settings, seven SEO plugins, forms, code snippets, the plugin and theme inventory, theme file reads, and the whole Elementor band — global classes, the template library, page-level editing, whole-document writes and SVG upload.
+## How it is tested
 
-**Next up:** Elementor 4's atomic layout elements once Elementor 4 is present, breakpoint-aware writes so tablet and mobile values travel in the same call as desktop, global variables alongside global colours and classes, and an opt-in strict-schema mode for validators that insist on `required` lists and non-empty enums. Recipes — a stored trigger paired with operations SiteHelm already registers, so the site can act on its own without any new write surface — is the larger one behind those.
+- The unit suite runs on every push across PHP 8.1, 8.2 and 8.3.
+- A line-coverage floor of 80% is enforced in CI. The build fails below it.
+- `src/` is clean against WordPress Coding Standards, and phpcs runs in CI.
+- Every operation definition is pinned by a golden fixture, so a capability, risk level or rollback policy cannot change without showing in a diff.
+- Load-bearing guards have deletion proofs: a harness removes the guard, confirms the mutant still parses, runs the suite, and requires it to fail. A guard whose removal leaves the suite green is treated as a defect.
 
-**SiteHelm Pro** is a separate add-on for the serious solo owner and the agency alike. Its
-first operations are here: the SEO plugin's own settings read and written as one reversible
-change, its per-post schema, and Rank Math's 404 log and redirections. Forms came next, and
-WooCommerce with them — products, prices, stock and categories read and written, with orders
-and customers read-only for good. Plugins and themes followed: the free plugin lists what is
-installed, what has an update waiting and what is still parked behind its own setup wizard,
-and Pro activates, deactivates, switches, updates, installs — from WordPress.org by slug, or
-from a zip already in the media library — finishes a setup wizard for the plugins it ships a
-recipe for, and deletes, which is previewed, refused for anything still running, and honest
-that there is no way back. Everything
-safety-related stays free, a free read never moves behind the paywall, and batch size is not
-a reason to charge: an operation that changes fifty posts under one preview and one rollback
-belongs in front of the licence, not behind it. See the roadmap for the Free/Pro split.
+Details are in [docs/INTERNALS.md](docs/INTERNALS.md).
 
-**→ [Full roadmap](ROADMAP.md)** · **→ [Changelog](CHANGELOG.md)**
+## Documentation
+
+| Document | What it covers |
+|---|---|
+| [docs/OPERATIONS.md](docs/OPERATIONS.md) | Every operation, its schema, capability, risk and rollback policy, and the error codes |
+| [docs/INTERNALS.md](docs/INTERNALS.md) | The write contract, the audit record, the console, how to add a module |
+| [ROADMAP.md](ROADMAP.md) | What has shipped, what is next, and the free/Pro split |
+| [CHANGELOG.md](CHANGELOG.md) | Release notes |
 
 ## Contributing
 
-Bug reports, feature requests, and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the workflow and the standards a change has to meet — including the deletion-proof requirement for any new guard.
+Bug reports, feature requests and pull requests are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) has the workflow and the standards a change has to meet, including the deletion-proof requirement for any new guard.
 
 ```bash
 composer install
 composer test    # PHPUnit
-composer lint    # phpcs against WordPress Coding Standards
+composer lint    # phpcs
 ```
 
-Security issues should not go in a public issue. See [SECURITY.md](SECURITY.md).
+## Security
+
+Do not open a public issue for a vulnerability. Use [GitHub's private reporting](https://github.com/Mrshahidali420/SiteHelm/security/advisories/new). [SECURITY.md](SECURITY.md) has the fallback contact, what to include, and the response times.
+
+## Support
+
+- [GitHub Issues](https://github.com/Mrshahidali420/SiteHelm/issues) for bugs and feature requests
+- [wpsitehelm.com](https://wpsitehelm.com/) for the product site and pricing
 
 ## License
 
-[GNU General Public License v2.0 or later](LICENSE), the same license as WordPress itself.
-
----
-
-<div align="center">
-<sub><strong>Keywords:</strong> wordpress mcp · mcp server · model context protocol · wordpress plugin · wordpress ai · ai agent · elementor mcp · elementor automation · acf mcp · meta box mcp · claude wordpress · claude code wordpress · cursor wordpress · llm tools · json-rpc · wordpress rest api · agentic wordpress · page builder automation · wordpress automation</sub>
-</div>
+[GNU General Public License v2.0 or later](LICENSE), the same license as WordPress.
