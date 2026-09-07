@@ -162,7 +162,7 @@ final class CatalogBuilder {
 		return array_filter(
 			$this->registry->forDispatcher( $dispatcher ),
 			static fn( OperationDefinition $d ): bool => $switches->isEnabled( $d->id )
-				&& PolicyEngine::isVisibleWithoutTarget( $d, $context )
+				&& PolicyEngine::isDescribable( $d, $context )
 		);
 	}
 
@@ -280,21 +280,11 @@ final class CatalogBuilder {
 			return 'retired_host';
 		}
 
-		$health = $context->moduleVersions[ $definition->module->value ]['health'] ?? ModuleHealth::Inactive->value;
-
-		// `unconfigured` IS AVAILABLE, and this is the line that decides it. That
-		// state means the plugin behind the module is loaded and in range but has
-		// not finished its own setup, so every operation still reads and writes
-		// exactly as it always did — what is missing is the plugin acting on what
-		// it holds. Refusing here would take a working module away over a caveat,
-		// and the caveat already has a place to be said: the integration health
-		// report names it in a sentence.
-		return match ( $health ) {
-			ModuleHealth::Active->value         => null,
-			ModuleHealth::Unconfigured->value   => null,
-			ModuleHealth::VersionBlocked->value => 'unsupported_version',
-			default                             => 'integration_unavailable',
-		};
+		// The module half of the question lives in PolicyEngine, because the
+		// saved catalogue and the operation search have to answer it exactly as
+		// this catalog does. It was private here once, and the other two surfaces
+		// answered it by not asking.
+		return PolicyEngine::moduleBlockedReason( $definition, $context );
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 }

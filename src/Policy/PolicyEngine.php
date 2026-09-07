@@ -11,6 +11,7 @@ namespace SiteHelm\Policy;
 
 use SiteHelm\Contracts\ErrorCode;
 use SiteHelm\Contracts\Mode;
+use SiteHelm\Contracts\ModuleHealth;
 use SiteHelm\Contracts\OperationContext;
 use SiteHelm\Contracts\OperationDefinition;
 use SiteHelm\Contracts\OperationException;
@@ -50,6 +51,29 @@ final class PolicyEngine {
 		'delete_post' => 'delete_posts',
 	];
 
+	/**
+	 * The capabilities SiteHelm allows that WordPress itself does not define.
+	 *
+	 * A capability WordPress ships is held or not held, and asking is always
+	 * meaningful. These two arrive with WooCommerce and go away with it, so on a
+	 * site without the shop plugin nobody holds them — not the owner, not an
+	 * administrator. Asking `user_can()` about one on such a site answers "no"
+	 * about the site, not about the caller, which is precisely how eight
+	 * operations came to be missing from the catalogue instead of being listed as
+	 * needing WooCommerce.
+	 *
+	 * The list stays short and hand-kept on purpose. There is no way to ask
+	 * WordPress which plugin defined a capability, so anything added to
+	 * `ALLOWED_CAPABILITIES` that a plugin rather than core defines belongs here
+	 * too.
+	 *
+	 * @var list<string>
+	 */
+	public const HOST_DEFINED_CAPABILITIES = [
+		'edit_products',
+		'manage_woocommerce',
+	];
+
 	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 	/**
 	 * Whether the resolved user holds every capability the operation requires,
@@ -77,6 +101,99 @@ final class PolicyEngine {
 	 */
 	public static function isVisibleWithoutTarget( OperationDefinition $definition, OperationContext $context ): bool {
 		foreach ( $definition->requiredCapabilities as $capability ) {
+			$effective = self::META_CAPABILITY_MAP[ $capability ] ?? $capability;
+
+			if ( ! user_can( $context->userId, $effective ) ) {
+				return false;
+			}
+		}
+
+		return true;
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+	/**
+	 * Why this operation cannot run here, judged on its module alone.
+	 *
+	 * The health map is the only thing that knows whether the plugin an
+	 * operation is written against is on this site, so every surface that
+	 * describes an operation has to ask the same question of it. It used to be
+	 * asked in one place and answered nowhere else, which is how a saved
+	 * catalogue came to say `available: true` about operations whose plugin was
+	 * not installed.
+	 *
+	 * `unconfigured` IS AVAILABLE, and this is the line that decides it. That
+	 * state means the plugin behind the module is loaded and in range but has
+	 * not finished its own setup, so every operation still reads and writes
+	 * exactly as it always did — what is missing is the plugin acting on what it
+	 * holds. Refusing here would take a working module away over a caveat, and
+	 * the caveat already has a place to be said: the integration health report
+	 * names it in a sentence.
+	 *
+	 * @param OperationDefinition $definition The operation to test.
+	 * @param OperationContext    $context    The request context.
+	 *
+	 * @return string|null The blocked reason, or null when the module is usable.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+	 */
+	public static function moduleBlockedReason( OperationDefinition $definition, OperationContext $context ): ?string {
+		$health = $context->moduleVersions[ $definition->module->value ]['health'] ?? ModuleHealth::Inactive->value;
+
+		return match ( $health ) {
+			ModuleHealth::Active->value         => null,
+			ModuleHealth::Unconfigured->value   => null,
+			ModuleHealth::VersionBlocked->value => 'unsupported_version',
+			default                             => 'integration_unavailable',
+		};
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+	/**
+	 * Whether a listing should carry this operation at all.
+	 *
+	 * A capability check cannot answer this question on its own, and believing
+	 * it could is what removed the eight commerce operations from a site that
+	 * had the add-on but not WooCommerce. Their capabilities — `edit_products`,
+	 * `manage_woocommerce` — are defined by WooCommerce. With the shop plugin
+	 * gone nobody holds them, not even the owner, so the capability filter read
+	 * "this caller may not be told about these" when the truth was "this site is
+	 * missing the plugin they belong to". The rows vanished, and buying the
+	 * add-on made eight operations stop being listed.
+	 *
+	 * So when the module's plugin is absent or out of range, the capabilities
+	 * that plugin defines are skipped rather than answered wrongly, and the rest
+	 * are checked exactly as before. A caller who could never have run the
+	 * operation anyway is still not told about it: nothing here lists an
+	 * operation to someone who lacks a capability WordPress itself defines.
+	 *
+	 * Nothing is loosened by the skip either. Such an operation is listed with
+	 * `available: false` and the reason, exactly as the free plugin already lists
+	 * the ones the add-on would add, and the dispatcher still refuses it. What
+	 * changes is that an agent reading the catalogue learns the site needs
+	 * WooCommerce rather than concluding the site can never sell anything.
+	 *
+	 * @param OperationDefinition $definition The operation to test.
+	 * @param OperationContext    $context    The request context.
+	 *
+	 * @return bool True when the operation belongs in a listing for this caller.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+	 */
+	public static function isDescribable( OperationDefinition $definition, OperationContext $context ): bool {
+		if ( null === self::moduleBlockedReason( $definition, $context ) ) {
+			return self::isVisibleWithoutTarget( $definition, $context );
+		}
+
+		foreach ( $definition->requiredCapabilities as $capability ) {
+			if ( in_array( $capability, self::HOST_DEFINED_CAPABILITIES, true ) ) {
+				continue;
+			}
+
 			$effective = self::META_CAPABILITY_MAP[ $capability ] ?? $capability;
 
 			if ( ! user_can( $context->userId, $effective ) ) {

@@ -825,4 +825,101 @@ final class CatalogBuilderTest extends TestCase {
 		);
 	}
 
+	/**
+	 * Registers a commerce read whose capability WooCommerce itself defines.
+	 */
+	private function registerCommerceOperation(): void {
+		$this->registry->register(
+			new OperationDefinition(
+				id: 'product-list',
+				domain: Domain::Content,
+				mode: Mode::Read,
+				description: 'List the products in this shop.',
+				inputSchema: [
+					'type'                 => 'object',
+					'properties'           => [],
+					'additionalProperties' => false,
+				],
+				outputSchema: [
+					'type'                 => 'object',
+					'properties'           => [],
+					'additionalProperties' => false,
+				],
+				schemaVersion: 1,
+				requiredCapabilities: [ 'manage_woocommerce' ],
+				risk: Risk::Low,
+				isReadOnly: true,
+				isDestructive: false,
+				isIdempotent: true,
+				previewPolicy: PreviewPolicy::NotApplicable,
+				snapshotPolicy: SnapshotPolicy::NotApplicable,
+				rollbackPolicy: RollbackPolicy::NotApplicable,
+				module: ModuleId::Woocommerce,
+				supportedVersions: [
+					'wordpress'   => '>=6.6',
+					'woocommerce' => '>=8.0',
+				],
+				example: [
+					'operation' => 'product-list',
+					'arguments' => [],
+				],
+			),
+			static fn(): array => []
+		);
+	}
+
+	/**
+	 * A context saying what state the shop plugin is in.
+	 *
+	 * @param string $commerce_health Health status for the WooCommerce module.
+	 */
+	private function makeCommerceContext( string $commerce_health ): OperationContext {
+		return new OperationContext(
+			siteId: 'example.com',
+			userId: 7,
+			clientId: 'client',
+			correlationId: 'corr-1',
+			permissionMode: PermissionMode::SafeWrite,
+			moduleVersions: [
+				'diagnostics' => [
+					'version' => null,
+					'health'  => 'active',
+				],
+				'woocommerce' => [
+					'version' => null,
+					'health'  => $commerce_health,
+				],
+			],
+			requestTime: 1_800_000_000,
+		);
+	}
+
+	/**
+	 * The defect: `manage_woocommerce` arrives with WooCommerce, so on a site
+	 * without the shop plugin nobody holds it and the capability filter dropped
+	 * every commerce operation from the catalog. Installing the add-on made
+	 * eight operations vanish instead of appear.
+	 */
+	public function test_an_operation_whose_own_plugin_is_missing_is_listed_with_the_reason(): void {
+		$this->registerCommerceOperation();
+
+		$catalog = $this->builder->build( 'content-read', $this->makeCommerceContext( 'inactive' ) );
+		$entries = array_column( $catalog['operations'], null, 'operation' );
+
+		$this->assertArrayHasKey( 'product-list', $entries );
+		$this->assertFalse( $entries['product-list']['available'] );
+		$this->assertSame( 'integration_unavailable', $entries['product-list']['blockedReason'] );
+	}
+
+	/**
+	 * With the plugin there the capability means what it says again, and a
+	 * caller who does not hold it is told nothing.
+	 */
+	public function test_a_working_plugin_restores_the_capability_filter(): void {
+		$this->registerCommerceOperation();
+
+		$catalog = $this->builder->build( 'content-read', $this->makeCommerceContext( 'active' ) );
+
+		$this->assertNotContains( 'product-list', array_column( $catalog['operations'], 'operation' ) );
+	}
 }

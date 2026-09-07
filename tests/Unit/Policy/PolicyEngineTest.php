@@ -334,4 +334,120 @@ final class PolicyEngineTest extends TestCase {
 			$this->assertSame( ErrorCode::Forbidden, $e->errorCode );
 		}
 	}
+
+	/**
+	 * Builds a definition on a named module with named capabilities.
+	 *
+	 * @param ModuleId $module       The module the operation belongs to.
+	 * @param string[] $capabilities The capabilities it requires.
+	 */
+	private function makeModuleDefinition( ModuleId $module, array $capabilities ): OperationDefinition {
+		return new OperationDefinition(
+			id: 'product-update',
+			domain: Domain::Content,
+			mode: Mode::Write,
+			description: 'Test operation.',
+			inputSchema: [ 'type' => 'object', 'properties' => [], 'additionalProperties' => false ],
+			outputSchema: [ 'type' => 'object', 'properties' => [], 'additionalProperties' => false ],
+			schemaVersion: 1,
+			requiredCapabilities: $capabilities,
+			risk: Risk::Low,
+			isReadOnly: false,
+			isDestructive: false,
+			isIdempotent: true,
+			previewPolicy: PreviewPolicy::Required,
+			snapshotPolicy: SnapshotPolicy::Required,
+			rollbackPolicy: RollbackPolicy::Supported,
+			module: $module,
+			supportedVersions: [
+				'wordpress'   => '>=6.6',
+				'woocommerce' => '>=8.0',
+			],
+			example: [ 'operation' => 'product-update', 'arguments' => [] ],
+		);
+	}
+
+	/**
+	 * A context whose health map says what state one module is in.
+	 *
+	 * @param string $module The module identifier.
+	 * @param string $health The health value.
+	 */
+	private function makeHealthContext( string $module, string $health ): OperationContext {
+		return new OperationContext(
+			siteId: 'example.com',
+			userId: 7,
+			clientId: 'client',
+			correlationId: 'corr-1',
+			permissionMode: PermissionMode::SafeWrite,
+			moduleVersions: [
+				$module => [
+					'version' => null,
+					'health'  => $health,
+				],
+			],
+			requestTime: 1_800_000_000,
+		);
+	}
+
+	public function test_a_module_that_is_active_or_unconfigured_blocks_nothing(): void {
+		$definition = $this->makeModuleDefinition( ModuleId::Woocommerce, [ 'edit_products' ] );
+
+		$this->assertNull( PolicyEngine::moduleBlockedReason( $definition, $this->makeHealthContext( 'woocommerce', 'active' ) ) );
+		$this->assertNull( PolicyEngine::moduleBlockedReason( $definition, $this->makeHealthContext( 'woocommerce', 'unconfigured' ) ) );
+	}
+
+	public function test_a_module_out_of_range_or_absent_names_why(): void {
+		$definition = $this->makeModuleDefinition( ModuleId::Woocommerce, [ 'edit_products' ] );
+
+		$this->assertSame(
+			'unsupported_version',
+			PolicyEngine::moduleBlockedReason( $definition, $this->makeHealthContext( 'woocommerce', 'version-blocked' ) )
+		);
+		$this->assertSame(
+			'integration_unavailable',
+			PolicyEngine::moduleBlockedReason( $definition, $this->makeHealthContext( 'woocommerce', 'inactive' ) )
+		);
+		$this->assertSame(
+			'integration_unavailable',
+			PolicyEngine::moduleBlockedReason( $definition, $this->makeHealthContext( 'core', 'active' ) ),
+			'A module with no row at all is missing, not available.'
+		);
+	}
+
+	/**
+	 * The defect this pair pins: with WooCommerce gone, nobody holds the
+	 * capabilities WooCommerce defines, so the capability filter hid the eight
+	 * commerce operations from the owner as well as from everyone else. Buying
+	 * the add-on made operations disappear.
+	 */
+	public function test_an_operation_is_still_listed_when_its_own_plugin_defines_the_capability(): void {
+		Functions\when( 'user_can' )->justReturn( false );
+
+		$definition = $this->makeModuleDefinition( ModuleId::Woocommerce, [ 'edit_products', 'manage_woocommerce' ] );
+		$context    = $this->makeHealthContext( 'woocommerce', 'inactive' );
+
+		$this->assertFalse( PolicyEngine::isVisibleWithoutTarget( $definition, $context ) );
+		$this->assertTrue( PolicyEngine::isDescribable( $definition, $context ) );
+	}
+
+	public function test_a_missing_plugin_does_not_disclose_operations_the_caller_could_never_run(): void {
+		Functions\when( 'user_can' )->justReturn( false );
+
+		$definition = $this->makeModuleDefinition( ModuleId::Woocommerce, [ 'edit_products', 'manage_options' ] );
+
+		$this->assertFalse(
+			PolicyEngine::isDescribable( $definition, $this->makeHealthContext( 'woocommerce', 'inactive' ) ),
+			'manage_options belongs to WordPress, so it is still answerable and still asked.'
+		);
+	}
+
+	public function test_a_working_module_is_described_exactly_as_it_is_seen(): void {
+		Functions\when( 'user_can' )->justReturn( false );
+
+		$definition = $this->makeModuleDefinition( ModuleId::Woocommerce, [ 'edit_products' ] );
+		$context    = $this->makeHealthContext( 'woocommerce', 'active' );
+
+		$this->assertFalse( PolicyEngine::isDescribable( $definition, $context ) );
+	}
 }

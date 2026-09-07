@@ -90,11 +90,11 @@ final class CatalogExport {
 					continue;
 				}
 
-				if ( ! PolicyEngine::isVisibleWithoutTarget( $definition, $context ) ) {
+				if ( ! PolicyEngine::isDescribable( $definition, $context ) ) {
 					continue;
 				}
 
-				$rows[] = $this->row( $definition, $dispatcher );
+				$rows[] = $this->row( $definition, $dispatcher, $context );
 			}
 		}
 
@@ -146,12 +146,26 @@ final class CatalogExport {
 	/**
 	 * One registered operation, reduced to the facts a choice turns on.
 	 *
+	 * `available` reports whether the module's host plugin is present and in
+	 * range, and nothing else. It used to be the literal `true`, which made the
+	 * export claim every Elementor operation was callable on a site with no
+	 * Elementor.
+	 *
+	 * It deliberately stops there. Read-only mode and a retired host also block
+	 * an operation, but both are facts about the request that asked, and this
+	 * document is meant to be saved and re-read later. Folding them in would make
+	 * a file that stopped being true the moment the setting changed. The live
+	 * catalog on each dispatcher answers those two.
+	 *
 	 * @param OperationDefinition $definition The operation.
 	 * @param string              $dispatcher The dispatcher it answers on.
+	 * @param OperationContext    $context    The request context.
 	 *
 	 * @return array<string, mixed> The row.
 	 */
-	private function row( OperationDefinition $definition, string $dispatcher ): array {
+	private function row( OperationDefinition $definition, string $dispatcher, OperationContext $context ): array {
+		$blocked = PolicyEngine::moduleBlockedReason( $definition, $context );
+
 		return [
 			'operation'      => $definition->id,
 			'dispatcher'     => $dispatcher,
@@ -161,8 +175,8 @@ final class CatalogExport {
 			'previewPolicy'  => $definition->previewPolicy->value,
 			'rollbackPolicy' => $definition->rollbackPolicy->value,
 			'isDestructive'  => $definition->isDestructive,
-			'available'      => true,
-			'blockedReason'  => null,
+			'available'      => null === $blocked,
+			'blockedReason'  => $blocked,
 		];
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
@@ -368,6 +382,11 @@ final class CatalogExport {
 
 		if ( 'requires_pro' === $row['blockedReason'] ) {
 			$flags[] = 'Pro';
+		} elseif ( false === $row['available'] ) {
+			// The markdown is read by agents, and a row with no flag reads as one
+			// they can call. Whatever the reason, an unavailable row has to carry
+			// something a reader cannot mistake for a working operation.
+			$flags[] = 'unavailable';
 		}
 
 		return implode( ' · ', $flags );

@@ -98,7 +98,7 @@ Writes that need it also record a rollback reference, so the change can be put b
 
 ## What it can do
 
-113 operations across twelve modules, reached through 11 MCP tools (dispatchers). Call any dispatcher with no `operation` argument to get its catalogue — agents discover the surface at runtime instead of memorising it. An agent can also save the whole surface as one document: `system-catalog-export` and the `sitehelm://catalog` resource both return it, grouped by subject, with the risk and rollback flags a choice turns on.
+113 operations across twelve modules, reached through 11 MCP tools (dispatchers). Call any dispatcher with no `operation` argument to get its catalogue — agents discover the surface at runtime instead of memorising it. An agent can also save the whole surface as one document: `system-catalog-export` and the `sitehelm://catalog` resource both return it, grouped by subject, with the risk and rollback flags a choice turns on. A client that connected before SiteHelm was updated will not see the resource — MCP clients read the server's capabilities once, at connection, and never ask again — so if `sitehelm://catalog` is missing, reconnect the client and it appears. The `system-catalog-export` tool returns the same document and needs no reconnect.
 
 <table>
 <tr><th align="left">Dispatcher</th><th align="left">Operations</th></tr>

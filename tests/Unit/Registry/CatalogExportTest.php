@@ -114,19 +114,38 @@ final class CatalogExportTest extends TestCase {
 		);
 	}
 
-	private function context(): OperationContext {
+	/**
+	 * A request context whose health map covers every module in the fixture.
+	 *
+	 * A real request carries a row for every module, so a fixture that named
+	 * only one was quietly telling the export that media and plugins were not
+	 * installed. Callers override one module to test what a missing plugin does.
+	 *
+	 * @param array<string, array<string, mixed>> $health Health rows to merge over the defaults.
+	 */
+	private function context( array $health = [] ): OperationContext {
+		$modules = [
+			'diagnostics' => [
+				'version' => null,
+				'health'  => 'active',
+			],
+			'media'       => [
+				'version' => null,
+				'health'  => 'active',
+			],
+			'extensions'  => [
+				'version' => null,
+				'health'  => 'active',
+			],
+		];
+
 		return new OperationContext(
 			siteId: 'example.com',
 			userId: 7,
 			clientId: 'client',
 			correlationId: 'corr-1',
 			permissionMode: PermissionMode::SafeWrite,
-			moduleVersions: [
-				'diagnostics' => [
-					'version' => null,
-					'health'  => 'active',
-				],
-			],
+			moduleVersions: array_merge( $modules, $health ),
 			requestTime: 1_800_000_000,
 		);
 	}
@@ -451,5 +470,90 @@ final class CatalogExportTest extends TestCase {
 
 		$this->assertIsArray( $row );
 		$this->assertArrayNotHasKey( 'inputSchema', $row );
+	}
+
+	/**
+	 * The export used to hardcode `available: true`, so a saved catalogue told
+	 * an agent that every Elementor operation was callable on a site with no
+	 * Elementor. The row belongs in the file; the claim that it works does not.
+	 */
+	public function test_a_row_whose_plugin_is_missing_is_listed_and_marked_unavailable(): void {
+		$context = $this->context(
+			[
+				'media' => [
+					'version' => null,
+					'health'  => 'inactive',
+				],
+			]
+		);
+
+		$row = null;
+
+		foreach ( $this->export->rows( $context ) as $candidate ) {
+			if ( 'media-upload' === $candidate['operation'] ) {
+				$row = $candidate;
+			}
+		}
+
+		$this->assertIsArray( $row, 'A missing plugin hides nothing; it explains itself.' );
+		$this->assertFalse( $row['available'] );
+		$this->assertSame( 'integration_unavailable', $row['blockedReason'] );
+	}
+
+	public function test_a_module_out_of_range_says_so_rather_than_going_quiet(): void {
+		$context = $this->context(
+			[
+				'media' => [
+					'version' => '1.0.0',
+					'health'  => 'version-blocked',
+				],
+			]
+		);
+
+		$rows = array_column( $this->export->rows( $context ), 'blockedReason', 'operation' );
+
+		$this->assertSame( 'unsupported_version', $rows['media-upload'] );
+	}
+
+	/**
+	 * The markdown is what an agent actually reads, and an unflagged row there
+	 * reads as one it can call.
+	 */
+	public function test_the_markdown_flags_a_row_it_cannot_call(): void {
+		$context = $this->context(
+			[
+				'media' => [
+					'version' => null,
+					'health'  => 'inactive',
+				],
+			]
+		);
+
+		foreach ( explode( "
+", $this->export->markdown( $context ) ) as $line ) {
+			if ( str_contains( $line, 'media-upload' ) ) {
+				$this->assertStringContainsString( 'unavailable', $line );
+			}
+		}
+	}
+
+	/**
+	 * The digest is per caller and per site state. A plugin going away changes
+	 * what the catalogue says, so a client holding the old file has to be told.
+	 */
+	public function test_a_module_falling_away_changes_the_version(): void {
+		$before = $this->export->version( $this->context() );
+		$after  = $this->export->version(
+			$this->context(
+				[
+					'media' => [
+						'version' => null,
+						'health'  => 'inactive',
+					],
+				]
+			)
+		);
+
+		$this->assertNotSame( $before, $after );
 	}
 }

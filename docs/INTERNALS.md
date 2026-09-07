@@ -4206,6 +4206,33 @@ them side by side. It walks the same two filters a dispatcher catalogue walks, t
 would have withheld, and it adds the Pro operations this site does not have — named, not
 hidden — so "the add-on does that" stays a possible answer.
 
+**Listing and availability are two questions, and `PolicyEngine` answers both.**
+`isVisibleWithoutTarget()` asks whether the caller holds the capabilities; `moduleBlockedReason()`
+asks whether the plugin the operation talks to is present and in range; `isDescribable()` is
+the listing rule built from the two. The distinction is not academic. `edit_products` and
+`manage_woocommerce` are defined by WooCommerce, so on a site without it nobody holds them —
+`user_can()` answers "no" about the site while the caller reads it as an answer about
+themselves. The eight commerce operations were therefore listed as `requires_pro` on a site
+without the add-on and dropped entirely once the add-on was installed, which is the wrong way
+round. `PolicyEngine::HOST_DEFINED_CAPABILITIES` names the capabilities that arrive with a
+plugin rather than with WordPress; when the module is blocked those are skipped and every
+other required capability is still checked, so a missing plugin never discloses an operation
+to a caller who could not have run it anyway. `ReservedCapabilityTest` keeps that list a
+subset of `ALLOWED_CAPABILITIES`; anything added to the allowlist that a plugin defines
+belongs in it too.
+
+**`available` in the export answers for the module and nothing else.** `CatalogExport::row()`
+and `OperationFind::entry()` both used to write the literal `true`, so the saved document
+claimed every Elementor operation was callable on a site with no Elementor — the capability
+filter never hid them, because `edit_posts` is core's and an administrator holds it. Both now
+compute the flag from `moduleBlockedReason()`, and the markdown renderer flags any row it
+cannot call. It deliberately stops there: read-only mode and a retired host also block an
+operation, but both are facts about the request that asked, and a document meant to be saved
+and re-read would stop being true the moment a setting changed. `CatalogBuilder` — the live
+per-dispatcher catalogue, which is request-scoped — answers those two on top of the module
+question, and delegates the module half to the same `PolicyEngine` method so all three
+surfaces cannot drift.
+
 **`system-catalog-export`** (`system-read`, free, `read`) renders the same rows two ways.
 Markdown by default: a padded table, grouped by module, with a `preview` / `rollback` /
 `destructive` / risk flag string per row — cheap per operation and readable by anything that

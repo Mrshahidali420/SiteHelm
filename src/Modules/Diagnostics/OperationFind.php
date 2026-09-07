@@ -288,11 +288,11 @@ final class OperationFind {
 					continue;
 				}
 
-				if ( ! PolicyEngine::isVisibleWithoutTarget( $definition, $context ) ) {
+				if ( ! PolicyEngine::isDescribable( $definition, $context ) ) {
 					continue;
 				}
 
-				$candidates[] = $this->entry( $definition, $dispatcher );
+				$candidates[] = $this->entry( $definition, $dispatcher, $context );
 			}
 		}
 
@@ -307,18 +307,25 @@ final class OperationFind {
 	 * to call it, and a definition's example is a complete, runnable call; without
 	 * it every search is followed by a schema read before anything happens.
 	 *
+	 * `available` answers for the module's host plugin: an operation whose plugin
+	 * is missing or out of range is still worth naming, but a caller told it was
+	 * available would spend its next turn on a refusal.
+	 *
 	 * @param OperationDefinition $definition The operation.
 	 * @param string              $dispatcher The dispatcher it answers on.
+	 * @param OperationContext    $context    The request context.
 	 *
 	 * @return array<string, mixed> The entry.
 	 */
-	private function entry( OperationDefinition $definition, string $dispatcher ): array {
+	private function entry( OperationDefinition $definition, string $dispatcher, OperationContext $context ): array {
+		$blocked = PolicyEngine::moduleBlockedReason( $definition, $context );
+
 		return [
 			'operation'     => $definition->id,
 			'dispatcher'    => $dispatcher,
 			'description'   => $definition->description,
-			'available'     => true,
-			'blockedReason' => null,
+			'available'     => null === $blocked,
+			'blockedReason' => $blocked,
 			'example'       => $definition->example,
 		];
 	}
