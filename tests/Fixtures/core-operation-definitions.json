@@ -25,11 +25,12 @@
         "comment-reply",
         "user-role-set",
         "site-settings-set",
+        "site-rewrite-flush",
         "user-list",
         "site-settings-read",
         "audit-list"
     ],
-    "operationCount": 28,
+    "operationCount": 29,
     "definitions": {
         "content-get": {
             "inputSchema": {
@@ -2126,6 +2127,60 @@
                         "description": "false asks search engines not to index the site. This is the setting that deindexes a site; the preview warns when turning it off."
                     }
                 },
+                "additionalProperties": false
+            },
+            "outputSchema": {
+                "type": "object",
+                "oneOf": [
+                    {
+                        "title": "Plan phase",
+                        "type": "object",
+                        "properties": {
+                            "plan": {
+                                "type": "object",
+                                "description": "The change plan to approve, including its plan token."
+                            }
+                        },
+                        "required": [
+                            "plan"
+                        ],
+                        "additionalProperties": false
+                    },
+                    {
+                        "title": "Apply phase",
+                        "type": "object",
+                        "properties": {
+                            "target": {
+                                "type": "string",
+                                "description": "The concrete target that was written."
+                            },
+                            "changed": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                },
+                                "description": "The fields the approved plan changed."
+                            },
+                            "state": {
+                                "type": "object",
+                                "description": "The verified persisted state of the target."
+                            }
+                        },
+                        "required": [
+                            "target",
+                            "changed",
+                            "state"
+                        ],
+                        "additionalProperties": false
+                    }
+                ]
+            }
+        },
+        "site-rewrite-flush": {
+            "inputSchema": {
+                "type": "object",
+                "properties": [],
+                "required": [],
                 "additionalProperties": false
             },
             "outputSchema": {

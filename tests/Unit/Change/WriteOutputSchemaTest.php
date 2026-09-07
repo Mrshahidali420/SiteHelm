@@ -48,6 +48,7 @@ final class WriteOutputSchemaTest extends TestCase {
 		'comment-reply',
 		'user-role-set',
 		'site-settings-set',
+		'site-rewrite-flush',
 	];
 
 	public function test_every_core_write_declares_the_shared_union(): void {

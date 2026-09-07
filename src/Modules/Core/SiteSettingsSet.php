@@ -48,11 +48,18 @@ use SiteHelm\Contracts\SnapshotPolicy;
  * rollback that puts the whole surface back is the honest reading of "restore
  * the settings".
  *
- * PERMALINK CHANGES FLUSH REWRITE RULES, in the write and in the restore
+ * PERMALINK CHANGES CLEAR THE ADDRESS CACHE, in the write and in the restore
  * both. `update_option( 'permalink_structure' )` alone leaves the old rules
  * live, so every pretty URL would keep resolving the old way while the option
- * claims otherwise — a write whose effect does not match its read-back. The
- * flush is soft (no .htaccess rewrite) because the hard variant needs
+ * claims otherwise — a write whose effect does not match its read-back.
+ *
+ * The cache is DELETED rather than rebuilt here, and that is a correction of
+ * how this operation used to work. It called `flush_rewrite_rules()`, which
+ * does not work the site's addresses out afresh: it saves whatever the global
+ * `$wp_rewrite` is holding, and that object read the permalink structure at the
+ * top of the request, before this write moved it. So the rules being saved were
+ * the ones for the structure we had just left. {@see RewriteCache} carries the
+ * reasoning in full. Nothing here touches .htaccess, which would need
  * filesystem credentials this plugin refuses to hold.
  *
  * @package SiteHelm
@@ -271,7 +278,7 @@ final class SiteSettingsSet implements RollbackDelegate {
 	}
 
 	/**
-	 * Writes each planned option, then flushes rewrite rules if URLs changed.
+	 * Writes each planned option, then clears the address cache if URLs changed.
 	 *
 	 * `update_option()` returns false both on failure AND when the value is
 	 * already what was requested, so its return is not treated as a verdict —
@@ -292,7 +299,7 @@ final class SiteSettingsSet implements RollbackDelegate {
 		}
 
 		if ( array_key_exists( 'permalinkStructure', $planned->payload ) ) {
-			flush_rewrite_rules( false );
+			RewriteCache::forget();
 		}
 
 		return SiteSettings::TARGET_KEY;
@@ -369,7 +376,7 @@ final class SiteSettingsSet implements RollbackDelegate {
 		}
 
 		if ( $permalink_changes ) {
-			flush_rewrite_rules( false );
+			RewriteCache::forget();
 		}
 
 		return SiteSettings::TARGET_KEY;

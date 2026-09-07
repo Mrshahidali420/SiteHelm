@@ -1,6 +1,6 @@
 # Operations reference
 
-SiteHelm exposes **113 operations** through **11 MCP tools**, called dispatchers. Every operation is
+SiteHelm exposes **114 operations** through **11 MCP tools**, called dispatchers. Every operation is
 declared once, in code, with a strict input schema (`additionalProperties: false`), a required
 capability, a risk level, and preview, snapshot, and rollback policies. That declaration is the
 contract the gateway enforces and the catalogue an agent discovers.
@@ -131,7 +131,7 @@ path), or to nothing, which is the `broken` count worth acting on. A link a redi
 catches is still worth rewriting: the redirect is a safety net, not a fix. At most 200
 links are listed per item, and `truncated` says when a page held more.
 
-### `content-write` — 19 operations
+### `content-write` — 20 operations
 
 | Operation | Does | Capability | Risk | Rollback |
 |---|---|---|---|---|
@@ -154,6 +154,7 @@ links are listed per item, and `truncated` says when a page held more.
 | `content-term-seo-set` | Writes one category's or tag's search-engine metadata into whichever SEO plugin the site runs | `edit_posts` + the taxonomy's edit capability | medium | supported |
 | `user-role-set` | Replaces one user's roles with a single registered role | `promote_users` | high | supported |
 | `site-settings-set` | Changes site settings from a strict fifteen-field allowlist — title, tagline, site icon, site logo, timezone, date and time formats, posts per page, front page geometry, permalink structure, default comment and ping status, search-engine visibility | `manage_options` | medium | supported |
+| `site-rewrite-flush` | Clears the stored address rules so WordPress works them out again on the next visit — the answer to a page that plainly exists answering "not found" after a plugin, theme or permalink change | `manage_options` | low | not-applicable |
 
 > **`content-seo-audit-fix` offers only the four findings with a mechanical fix.**
 > A missing focus keyword, a low score and a too-short description need a person, and
