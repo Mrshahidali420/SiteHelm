@@ -21,6 +21,17 @@ if ( ! class_exists( 'WP_Query' ) ) {
 }
 
 /*
+ * ARRAY_A is a WordPress constant rather than a class, but it reaches the code
+ * under test the same way one does: an operation names it in a call to
+ * get_post(). It is defined here, under the same guard and to the same value
+ * WordPress gives it, so that a test exercising such a call does not fail on
+ * the constant rather than on the behaviour it is asking about.
+ */
+if ( ! defined( 'ARRAY_A' ) ) {
+	define( 'ARRAY_A', 'ARRAY_A' );
+}
+
+/*
  * WP_Comment is the second WordPress class the operations name in a signature
  * rather than only through a faked function, so it is aliased here for the same
  * reason and under the same guard: the alias is permanent for the process, and a

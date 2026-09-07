@@ -20,7 +20,7 @@
 
 SiteHelm is a WordPress plugin. Once it is active, your site is an MCP server. Claude, Claude Code, Cursor, VS Code, or any other MCP client can connect to it and work on the site: posts and pages, media, menus, Elementor documents, ACF and Meta Box fields, SEO metadata, comments, redirects, users, site settings, and the plugin and theme inventory.
 
-The agent gets 114 named operations, each with a strict input schema. It does not get PHP, SQL, a shell, or the filesystem.
+The agent gets 115 named operations, each with a strict input schema. It does not get PHP, SQL, a shell, or the filesystem.
 
 Every operation that changes the site runs the same way:
 
@@ -173,7 +173,7 @@ Importing media from a URL is the one place the plugin fetches something on the 
 
 ## What it covers
 
-114 operations, reached through 11 MCP tools. Each tool is a dispatcher: call it with no `operation` argument and it returns its own catalogue, so an agent discovers the surface at runtime. `system-operation-find` searches every tool at once from a plain-language query, and `system-catalog-export` returns the whole surface as one document.
+115 operations, reached through 11 MCP tools. Each tool is a dispatcher: call it with no `operation` argument and it returns its own catalogue, so an agent discovers the surface at runtime. `system-operation-find` searches every tool at once from a plain-language query, and `system-catalog-export` returns the whole surface as one document.
 
 | Tool | What it reaches |
 |---|---|

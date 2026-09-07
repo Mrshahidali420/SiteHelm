@@ -4373,3 +4373,51 @@ found the leaks itself — including two the hand audit had missed.
 Five tests were asserting the defect. Each was named for the promise the code
 was breaking, so the names stood and only the assertions changed; they pin the
 wire form, `'{}'`, rather than a PHP value that cannot tell the two apart.
+
+---
+
+## 74. Saving a page without changing it (REQ-0127)
+
+Most of what a WordPress site shows is not stored on the post. It is worked out
+once, when the post is saved, and kept somewhere else: an SEO plugin's score and
+its sitemap entry, a page builder's compiled CSS, a caching plugin's copy of the
+page, a translation plugin's index. Every one of those is refreshed by the same
+signal — `wp_insert_post()` firing `save_post` — and by nothing else. Content
+that reached the row any other way therefore leaves all of it stale while the row
+itself is correct: a restore from backup, an import, a direct database edit, a
+plugin activated after the post was written.
+
+`content-resave` is that save with an empty payload. `planChange()` returns
+`new PlannedChange( [], $unchanged, ... )` — nothing to write, and a promise
+about what must not move.
+
+**Why the whole row is passed, not the id.** The obvious implementation is
+`wp_update_post( [ 'ID' => $id ] )`. It is wrong, and wrong in a way that reports
+success. WordPress expects the array handed to `wp_update_post()` to be slashed
+and calls `wp_unslash()` on it before storing. Passing the id alone makes
+`wp_update_post()` fetch the stored row itself — already unslashed — and merge,
+so the unslashing runs a second time over text that was never slashed. Every
+backslash in `post_content` is eaten: a regular expression in a code block, a
+Windows path, an escaped shortcode bracket. The save succeeds, every hook fires,
+the operation reports success, and the content is quietly damaged.
+
+`applyChange()` therefore reads the row with `get_post( $id, ARRAY_A )` and
+passes `wp_slash( $row )`, which restores the escaping level `wp_update_post()`
+expects. The test that pins this stubs `wp_slash` with a real `addslashes` rather
+than the identity, because an identity stub makes the escaped row and the raw row
+indistinguishable and the whole test would pass against the defect.
+
+**The promise, and the three fields deliberately outside it.**
+`UNCHANGED_FIELDS` is `post_type`, `post_status`, `post_title`, `post_name`,
+`post_content`, `post_excerpt` — the text columns the escaping fault can reach.
+`meta` and `terms` are excluded because they are exactly where the plugins being
+woken up write their recalculated answers, so including them would fail
+verification on precisely the sites where the operation is working.
+`post_modified_gmt` is excluded because moving it is the point.
+
+**A snapshot is still taken** (`SnapshotPolicy::Required`, rollback supported)
+even though the operation changes nothing itself. The save runs third-party code,
+and a badly written `save_post` handler can rewrite the content it was handed.
+The snapshot is the ordinary `ContentTarget::snapshotOf()` one, so a damaged item
+rolls back like any other content write. A rollback cannot un-fire the hooks, and
+the module's existing rollback wording already says so.

@@ -1,6 +1,6 @@
 # Operations reference
 
-SiteHelm exposes **114 operations** through **11 MCP tools**, called dispatchers. Every operation is
+SiteHelm exposes **115 operations** through **11 MCP tools**, called dispatchers. Every operation is
 declared once, in code, with a strict input schema (`additionalProperties: false`), a required
 capability, a risk level, and preview, snapshot, and rollback policies. That declaration is the
 contract the gateway enforces and the catalogue an agent discovers.
@@ -131,7 +131,7 @@ path), or to nothing, which is the `broken` count worth acting on. A link a redi
 catches is still worth rewriting: the redirect is a safety net, not a fix. At most 200
 links are listed per item, and `truncated` says when a page held more.
 
-### `content-write` — 20 operations
+### `content-write` — 21 operations
 
 | Operation | Does | Capability | Risk | Rollback |
 |---|---|---|---|---|
@@ -139,6 +139,7 @@ links are listed per item, and `truncated` says when a page held more.
 | `content-update` | Updates title, content, excerpt, slug, or hand-ordered position | `edit_post` | medium | supported |
 | `content-status-set` | Publishes, drafts, schedules, or privatises | `edit_post` | medium | supported |
 | `content-featured-media-set` | Sets or clears the featured image | `edit_post` | medium | supported |
+| `content-resave` | Saves an item again with every field exactly as it is, so anything that recalculates on save — an SEO score and sitemap entry, a builder's compiled CSS, a cached copy — works itself out again | `edit_post` | medium | supported |
 | `content-meta-update` | Writes the custom fields a site administrator has named on the SiteHelm status screen | `edit_post` | high | supported |
 | `content-terms-assign` | Assigns categories, tags, or custom terms | `edit_post` | medium | supported |
 | `content-trash` | Moves an item to trash — reversible, never a permanent delete | `delete_post` | medium | required |

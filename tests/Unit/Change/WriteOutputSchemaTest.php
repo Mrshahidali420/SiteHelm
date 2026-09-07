@@ -38,6 +38,7 @@ final class WriteOutputSchemaTest extends TestCase {
 		'content-rollback-apply',
 		'content-featured-media-set',
 		'content-status-set',
+		'content-resave',
 		'content-meta-update',
 		'content-terms-assign',
 		'content-trash',
