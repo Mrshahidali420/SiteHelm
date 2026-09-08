@@ -10,8 +10,8 @@ declare(strict_types=1);
 namespace SiteHelm\Modules\Seo;
 
 use SiteHelm\Change\PlannedChange;
+use SiteHelm\Change\RollbackDelegate;
 use SiteHelm\Change\TargetState;
-use SiteHelm\Change\WriteOperation;
 use SiteHelm\Change\WriteOutputSchema;
 use SiteHelm\Contracts\Domain;
 use SiteHelm\Contracts\ErrorCode;
@@ -39,7 +39,7 @@ use SiteHelm\Contracts\SnapshotPolicy;
  *
  * @package SiteHelm
  */
-final class SeoTermMetadataSet implements WriteOperation {
+final class SeoTermMetadataSet implements RollbackDelegate {
 
 	/** The promised field naming the store the change landed in. */
 	private const FIELD_PROVIDER = 'provider';
@@ -249,7 +249,10 @@ final class SeoTermMetadataSet implements WriteOperation {
 			);
 		}
 
-		return $current->targetKey;
+		// REBUILT FROM THE TARGET THE WRITE ACTUALLY REACHED, not echoed back from the
+		// plan. restore() builds its key the same way, and two ways of naming one term
+		// is how a key the rollback cannot parse gets recorded.
+		return SeoTermFields::targetKey( $taxonomy, $term_id );
 	}
 
 	/**
@@ -329,6 +332,133 @@ final class SeoTermMetadataSet implements WriteOperation {
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- These two are the RollbackDelegate contract's method names.
+	// phpcs:disable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase -- $targetKey and $restoreState are the contract's parameter names.
+	// phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase -- errorCode is the exception's own property name.
+	// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The messages are literals written for end users and echo no caller input.
+	/**
+	 * Resolves the term one of this operation's own recorded keys names.
+	 *
+	 * A KEY THAT IS NOT OURS NAMES NOTHING HERE. `content-rollback-apply` reads a
+	 * post id out of a `post:` key, and a `term-seo:` key is not that shape, so the
+	 * undo answered target_not_found for every term SEO change ever made. Parsing our
+	 * own key here is the fix; coercing a foreign one would aim the undo at something
+	 * nobody asked for, so it is refused instead.
+	 *
+	 * THE GUARDS ARE THE WRITE PATH'S OWN, THROUGH THE WRITE PATH'S OWN RESOLVER, and
+	 * that matters because this runs in the preview phase as well as the apply phase
+	 * and the rollback operation's front gate could not ask about a term it had no way
+	 * to name. Routing through SeoTermTarget keeps the gate order identical, so an undo
+	 * cannot reach a term by a route the write itself refuses.
+	 *
+	 * A TAXONOMY THAT IS NO LONGER PUBLIC IS A TARGET WE CANNOT PUT BACK, and the
+	 * rollback contract has no code for "the input was wrong" — nothing here came from
+	 * the caller. The forward path keeps its own answer, which is about an argument
+	 * somebody typed.
+	 *
+	 * @param string           $targetKey The recorded target key.
+	 * @param OperationContext $context   The request context.
+	 *
+	 * @return TargetState The term's current SEO metadata.
+	 *
+	 * @throws OperationException With ErrorCode::TargetNotFound when the key names no
+	 *                            term this operation wrote to, and with the codes
+	 *                            SeoTermTarget::resolve() raises for the term itself.
+	 */
+	public function resolveRollbackTarget( string $targetKey, OperationContext $context ): TargetState {
+		$target = SeoTermFields::fromKey( $targetKey );
+
+		if ( null === $target ) {
+			throw new OperationException(
+				ErrorCode::TargetNotFound,
+				'That recorded reference does not name a term this operation wrote SEO metadata to, so there is nothing to put back.',
+				'Read the term\'s SEO metadata to see its current state, and set the values you want by hand.'
+			);
+		}
+
+		[ $taxonomy, $term_id ] = $target;
+
+		try {
+			$resolved = $this->target()->resolve(
+				[
+					'taxonomy' => $taxonomy,
+					'id'       => $term_id,
+				],
+				$context
+			);
+		} catch ( OperationException $refusal ) {
+			if ( ErrorCode::InvalidInput !== $refusal->errorCode ) {
+				throw $refusal;
+			}
+
+			throw new OperationException(
+				ErrorCode::TargetNotFound,
+				'The taxonomy the recorded state names is no longer a public one this site registers, so there is nothing to put back.',
+				'Read the term\'s SEO metadata to see its current state, and set the values you want by hand.'
+			);
+		}
+
+		return $this->state( $taxonomy, $term_id, $resolved[2] );
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+
+	/**
+	 * The field map a restore of this recorded snapshot would read back as.
+	 *
+	 * IT IS SPELLED IN readBack()'s VOCABULARY, because that is what the promise is
+	 * compared against. The snapshot holds one plugin's RAW STORE — an option array
+	 * under Yoast, meta rows under Rank Math — and a read-back answers projected field
+	 * names; the two share exactly one key. Handing the snapshot back would promise
+	 * something no read can ever return, pass the plan check, and verify nothing while
+	 * the site was wrong. The translation is the provider's own, so it mirrors the read
+	 * rather than restating it.
+	 *
+	 * THE VALIDATION IS restore()'s, EXACTLY. A looser one promises a map for a state
+	 * restore() then refuses, leaving the operator an undo that reported a promise it
+	 * never kept. The empty map is the documented "promise nothing", which the caller
+	 * turns into a refusal to run at all.
+	 *
+	 * THE RECORDED PROVIDER MUST STILL BE THE ACTIVE ONE, for restore()'s reason: a
+	 * snapshot replayed through a different plugin's provider writes nothing that
+	 * plugin reads. Asked here so the preview refuses rather than the apply.
+	 *
+	 * IT NEVER READS THE PROMISE OUT OF `$current`. planChange() builds the forward
+	 * promise from the present state; a rollback that did the same would hand back the
+	 * very values it is supposed to replace, and verify a no-op as applied.
+	 *
+	 * @param array<string, mixed> $restoreState The recorded restore state.
+	 * @param TargetState          $current      The target's present state, unused.
+	 * @param OperationContext     $context      The request context, unused.
+	 *
+	 * @return array<string, string|bool|null> The promised field map, or empty to refuse.
+	 *
+	 * @throws OperationException With ErrorCode::IntegrationUnavailable.
+	 */
+	public function promiseRollback( array $restoreState, TargetState $current, OperationContext $context ): array {
+		unset( $current, $context );
+
+		$taxonomy = isset( $restoreState['taxonomy'] ) && is_string( $restoreState['taxonomy'] ) ? $restoreState['taxonomy'] : '';
+		$term_id  = isset( $restoreState['term_id'] ) && is_int( $restoreState['term_id'] ) ? $restoreState['term_id'] : 0;
+
+		if ( '' === $taxonomy || $term_id < 1 ) {
+			return [];
+		}
+
+		$provider = $this->target()->provider();
+
+		if ( ( $restoreState['provider'] ?? null ) !== $provider->name() ) {
+			return [];
+		}
+
+		return array_merge(
+			[ self::FIELD_PROVIDER => $provider->name() ],
+			$provider->valuesFromSnapshot( $restoreState )
+		);
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
 	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 
 	/**

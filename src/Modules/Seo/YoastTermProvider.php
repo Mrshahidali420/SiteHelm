@@ -62,7 +62,33 @@ final class YoastTermProvider extends SeoTermProviderBase {
 	 * @return array<string, string|bool|null> Field name => value.
 	 */
 	public function values( string $taxonomy, int $term_id ): array {
-		$raw    = $this->term_array( $taxonomy, $term_id );
+		return $this->valuesFromArray( $this->term_array( $taxonomy, $term_id ) );
+	}
+
+	/**
+	 * What values() would answer if the option held the array this snapshot recorded.
+	 *
+	 * @param array<string, mixed> $snapshot A snapshot this provider captured.
+	 *
+	 * @return array<string, string|bool|null> Field name => value, every field present.
+	 */
+	public function valuesFromSnapshot( array $snapshot ): array {
+		$term = isset( $snapshot['term'] ) && is_array( $snapshot['term'] ) ? $snapshot['term'] : [];
+
+		return $this->valuesFromArray( $term );
+	}
+
+	/**
+	 * The projection itself, over a stored array rather than over a term.
+	 *
+	 * ONE COPY OF THE PROJECTION RULE, so the live read and the rollback promise
+	 * cannot drift into two different answers to "what does this store say".
+	 *
+	 * @param array<string, mixed> $raw The term's stored array.
+	 *
+	 * @return array<string, string|bool|null> Field name => value, every field present.
+	 */
+	private function valuesFromArray( array $raw ): array {
 		$values = [];
 
 		foreach ( SeoTermFields::FIELD_ORDER as $field ) {

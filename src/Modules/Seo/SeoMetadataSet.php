@@ -10,8 +10,8 @@ declare(strict_types=1);
 namespace SiteHelm\Modules\Seo;
 
 use SiteHelm\Change\PlannedChange;
+use SiteHelm\Change\RollbackDelegate;
 use SiteHelm\Change\TargetState;
-use SiteHelm\Change\WriteOperation;
 use SiteHelm\Change\WriteOutputSchema;
 use SiteHelm\Contracts\Domain;
 use SiteHelm\Contracts\ErrorCode;
@@ -53,7 +53,7 @@ use SiteHelm\Contracts\SnapshotPolicy;
  *
  * @package SiteHelm
  */
-final class SeoMetadataSet implements WriteOperation {
+final class SeoMetadataSet implements RollbackDelegate {
 
 	/**
 	 * The promised field naming the store the change landed in.
@@ -426,6 +426,126 @@ final class SeoMetadataSet implements WriteOperation {
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
 	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- These two are the RollbackDelegate contract's method names.
+	// phpcs:disable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase -- $targetKey and $restoreState are the contract's parameter names.
+	// phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase -- userId is the context object's own property name.
+	// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The messages are literals written for end users and echo no caller input.
+	/**
+	 * Resolves the post one of this operation's own recorded keys names.
+	 *
+	 * A KEY THAT IS NOT OURS NAMES NOTHING HERE. `content-rollback-apply` reads a
+	 * post id out of a `post:` key, and a `post-seo:` key is not that shape, so the
+	 * undo answered target_not_found for every SEO change ever made. Parsing our own
+	 * key here is the fix; coercing a foreign one would aim the undo at a post
+	 * nobody asked for, so it is refused instead.
+	 *
+	 * THE CAPABILITY IS ASKED AGAIN, AND IT IS NOT REDUNDANT. This runs in the
+	 * preview phase as well as the apply phase, and the rollback operation's own
+	 * front gate has no post id to ask about: it could not parse one out of a key
+	 * shape it does not know. Without this question a caller allowed to edit their
+	 * own posts could rewrite any post's SEO metadata through the undo.
+	 *
+	 * The three guards are resolveTarget()'s three guards, in resolveTarget()'s
+	 * order, so an undo cannot reach a post, or a site with no SEO plugin, by a
+	 * route the write itself refuses.
+	 *
+	 * @param string           $targetKey The recorded target key.
+	 * @param OperationContext $context   The request context.
+	 *
+	 * @return TargetState The post's current SEO metadata.
+	 *
+	 * @throws OperationException With ErrorCode::TargetNotFound when the key names no
+	 *                            post this operation wrote to, and with the codes
+	 *                            resolveTarget() raises for the post itself.
+	 */
+	public function resolveRollbackTarget( string $targetKey, OperationContext $context ): TargetState {
+		$post_id = SeoFields::postIdFromKey( $targetKey );
+
+		if ( null === $post_id ) {
+			throw new OperationException(
+				ErrorCode::TargetNotFound,
+				'That recorded reference does not name a post this operation wrote SEO metadata to, so there is nothing to put back.',
+				'Read the post\'s SEO metadata to see its current state, and set the values you want by hand.'
+			);
+		}
+
+		if ( ! user_can( $context->userId, SeoFields::CAPABILITY, $post_id ) ) {
+			throw new OperationException(
+				ErrorCode::Forbidden,
+				'Your WordPress user may not edit the requested post.',
+				'Ask a site administrator to grant your WordPress user permission to edit that post.'
+			);
+		}
+
+		$provider = $this->provider();
+
+		if ( null === get_post( $post_id ) ) {
+			throw new OperationException(
+				ErrorCode::TargetNotFound,
+				'No post on this site matches the requested identifier.',
+				'Call content-list to see the posts this site holds, and confirm the identifier you named.'
+			);
+		}
+
+		return $this->state( $post_id, $provider );
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+
+	/**
+	 * The field map a restore of this recorded snapshot would read back as.
+	 *
+	 * IT IS SPELLED IN readBack()'s VOCABULARY, because that is what the promise is
+	 * compared against. The snapshot holds one plugin's RAW META ROWS and a read-back
+	 * answers projected field names; the two share exactly one key. Handing the
+	 * snapshot back would promise something no read can ever return, pass the plan
+	 * check, and verify nothing while the site was wrong. The translation is the
+	 * provider's own, so it mirrors the read rather than restating it.
+	 *
+	 * THE VALIDATION IS restore()'s, EXACTLY. A looser one promises a map for a state
+	 * restore() then refuses, leaving the operator an undo that reported a promise it
+	 * never kept. The empty map is the documented "promise nothing", which the caller
+	 * turns into a refusal to run at all.
+	 *
+	 * THE RECORDED PROVIDER MUST STILL BE THE ACTIVE ONE, for restore()'s reason: a
+	 * snapshot replayed through a different plugin's provider writes nothing that
+	 * plugin reads. Asked here so the preview refuses rather than the apply.
+	 *
+	 * IT NEVER READS THE PROMISE OUT OF `$current`. planChange() builds the forward
+	 * promise from the present state; a rollback that did the same would hand back
+	 * the very values it is supposed to replace, and verify a no-op as applied.
+	 *
+	 * @param array<string, mixed> $restoreState The recorded restore state.
+	 * @param TargetState          $current      The target's present state, unused.
+	 * @param OperationContext     $context      The request context, unused.
+	 *
+	 * @return array<string, string|bool|null> The promised field map, or empty to refuse.
+	 *
+	 * @throws OperationException With ErrorCode::IntegrationUnavailable.
+	 */
+	public function promiseRollback( array $restoreState, TargetState $current, OperationContext $context ): array {
+		unset( $current, $context );
+
+		$post_id = isset( $restoreState['post_id'] ) && is_int( $restoreState['post_id'] ) ? $restoreState['post_id'] : 0;
+
+		if ( $post_id < 1 ) {
+			return [];
+		}
+
+		$provider = $this->provider();
+
+		if ( ( $restoreState['provider'] ?? null ) !== $provider->name() ) {
+			return [];
+		}
+
+		return array_merge(
+			[ self::FIELD_PROVIDER => $provider->name() ],
+			$provider->valuesFromSnapshot( $restoreState )
+		);
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
 
 	/**
 	 * The active provider, or a refusal.

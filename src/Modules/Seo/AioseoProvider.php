@@ -87,7 +87,39 @@ final class AioseoProvider implements SeoProvider {
 	 * @return array<string, string|bool|null> Field name => value, every field present.
 	 */
 	public function values( int $post_id ): array {
-		$row   = $this->row( $post_id );
+		return $this->valuesFromRow( $this->row( $post_id ) );
+	}
+
+	/**
+	 * What values() would answer if the table held the row this snapshot recorded.
+	 *
+	 * THE ROLLBACK PROMISE IS MEASURED IN THE READ'S VOCABULARY. A snapshot holds
+	 * the raw table row and a read-back answers projected field names, so a
+	 * rollback that promised the snapshot would promise something no read can ever
+	 * return, pass the plan check, and verify nothing while the site was wrong.
+	 *
+	 * @param array<string, mixed> $snapshot A snapshot this provider captured.
+	 *
+	 * @return array<string, string|bool|null> Field name => value, every field present.
+	 */
+	public function valuesFromSnapshot( array $snapshot ): array {
+		$row = isset( $snapshot['row'] ) && is_array( $snapshot['row'] ) ? $snapshot['row'] : null;
+
+		return $this->valuesFromRow( $row );
+	}
+
+	/**
+	 * The projection itself, over a row rather than over a post.
+	 *
+	 * ONE COPY OF THE PROJECTION RULE. The live read and the rollback promise both
+	 * arrive here, so they cannot drift into two different answers to "what does
+	 * this store say".
+	 *
+	 * @param array<string, mixed>|null $row The stored row, or null when there is none.
+	 *
+	 * @return array<string, string|bool|null> Field name => value, every field present.
+	 */
+	private function valuesFromRow( ?array $row ): array {
 		$flags = $this->robots( $row );
 
 		$ordered = [];

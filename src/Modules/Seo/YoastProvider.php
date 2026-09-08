@@ -137,14 +137,14 @@ final class YoastProvider extends SeoMetaProvider {
 	/**
 	 * Yoast's stored answer for the two robots flags.
 	 *
-	 * @param int $post_id The post identifier.
+	 * @param array<string, mixed[]> $meta Meta key => raw rows.
 	 *
 	 * @return array<string, bool|null> Flag field name => true, false, or null.
 	 */
-	protected function readFlags( int $post_id ): array {
+	protected function readFlags( array $meta ): array {
 		return [
-			SeoFields::FIELD_NOINDEX  => $this->flag( $post_id, self::KEY_NOINDEX, self::INDEX ),
-			SeoFields::FIELD_NOFOLLOW => $this->flag( $post_id, self::KEY_NOFOLLOW, self::FOLLOW ),
+			SeoFields::FIELD_NOINDEX  => $this->flag( $meta, self::KEY_NOINDEX, self::INDEX ),
+			SeoFields::FIELD_NOFOLLOW => $this->flag( $meta, self::KEY_NOFOLLOW, self::FOLLOW ),
 		];
 	}
 
@@ -183,14 +183,14 @@ final class YoastProvider extends SeoMetaProvider {
 	 * Guarded on shape rather than cast: this is post meta, and a value written by
 	 * an importer can be an array.
 	 *
-	 * @param int    $post_id  The post identifier.
-	 * @param string $key      The meta key.
-	 * @param string $negative The stored value meaning "explicitly off".
+	 * @param array<string, mixed[]> $meta     Meta key => raw rows.
+	 * @param string                 $key      The meta key.
+	 * @param string                 $negative The stored value meaning "explicitly off".
 	 *
 	 * @return bool|null True, false, or null for "the plugin decides".
 	 */
-	private function flag( int $post_id, string $key, string $negative ): ?bool {
-		$stored = get_post_meta( $post_id, $key, true );
+	private function flag( array $meta, string $key, string $negative ): ?bool {
+		$stored = $this->storedValue( $meta, $key );
 
 		if ( ! is_string( $stored ) && ! is_numeric( $stored ) ) {
 			return null;

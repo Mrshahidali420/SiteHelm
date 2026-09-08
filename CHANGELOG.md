@@ -135,7 +135,30 @@ an operation behaves.
   and said it had worked, leaving the image broken everywhere it appeared. It now looks for the
   file first and refuses while the reduced image is still in place, so nothing is lost.
 
+- **Setting a post's or a term's SEO metadata offered an undo that was refused.** Both recorded
+  an undo point and showed the button, then stopped with target-not-found when it was pressed,
+  because the saved reference names a post's SEO or a term's, and the undo could only read one
+  naming an ordinary post. Both now find their own target and put back what they recorded.
+  What the undo promises is spelled the way a read of that metadata answers, translated by the
+  same SEO plugin's code the read itself uses, so a preview of the undo says what you end up
+  with rather than repeating the plugin's own stored rows back at you. An undo recorded while a
+  different SEO plugin was active is refused rather than replayed into a plugin that would not
+  read it, and a recorded term whose taxonomy is no longer public is refused as a target that
+  is not there.
+
+  Bulk SEO changes and audit fixes still cannot be undone. What they record cannot be turned
+  back into the page it came from, so the undo has nothing to find; that is being made honest
+  rather than left as a button that fails.
+
 ### Security
+
+- **An undo could rewrite the SEO metadata of a post the person was not allowed to edit.**
+  Setting a post's SEO metadata asks whether you may edit that particular post. Undoing it
+  asked nothing: the undo could not read the saved reference well enough to know which post it
+  named, so the check it would have made was never reached. Anyone who could edit their own
+  posts could have gone backwards through a recorded undo and rewritten the title and
+  description of any post on the site. The undo now asks the same question the write asks,
+  before it touches anything, and refuses without naming the permission.
 
 - **A theme file read could be aimed outside the themes directory.** The tools that read and
   list a theme's files let a caller say which theme to look in, and the name they gave picked

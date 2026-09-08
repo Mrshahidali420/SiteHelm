@@ -138,14 +138,14 @@ final class SeoFrameworkProvider extends SeoMetaProvider {
 	/**
 	 * The plugin's stored answer for the two robots flags.
 	 *
-	 * @param int $post_id The post identifier.
+	 * @param array<string, mixed[]> $meta Meta key => raw rows.
 	 *
 	 * @return array<string, bool|null> Flag field name => true or null.
 	 */
-	protected function readFlags( int $post_id ): array {
+	protected function readFlags( array $meta ): array {
 		return [
-			SeoFields::FIELD_NOINDEX  => $this->flag( $post_id, self::KEY_NOINDEX ),
-			SeoFields::FIELD_NOFOLLOW => $this->flag( $post_id, self::KEY_NOFOLLOW ),
+			SeoFields::FIELD_NOINDEX  => $this->flag( $meta, self::KEY_NOINDEX ),
+			SeoFields::FIELD_NOFOLLOW => $this->flag( $meta, self::KEY_NOFOLLOW ),
 		];
 	}
 
@@ -186,13 +186,13 @@ final class SeoFrameworkProvider extends SeoMetaProvider {
 	 * Guarded on shape rather than cast: this is post meta, and a value written
 	 * by an importer can be an array.
 	 *
-	 * @param int    $post_id The post identifier.
-	 * @param string $key     The meta key.
+	 * @param array<string, mixed[]> $meta Meta key => raw rows.
+	 * @param string                 $key  The meta key.
 	 *
 	 * @return bool|null True, or null for "the plugin decides".
 	 */
-	private function flag( int $post_id, string $key ): ?bool {
-		$stored = get_post_meta( $post_id, $key, true );
+	private function flag( array $meta, string $key ): ?bool {
+		$stored = $this->storedValue( $meta, $key );
 
 		if ( ! is_string( $stored ) && ! is_int( $stored ) ) {
 			return null;
