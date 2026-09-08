@@ -155,10 +155,15 @@ final class MediaMimeGuard {
 	 * The steps run in this order and the order is load bearing: nothing
 	 * consults an allowlist until the bytes have identified themselves.
 	 *
-	 * @param string   $filename The client-supplied filename.
-	 * @param string   $bytes    The decoded payload.
-	 * @param int|null $byteCap  The ceiling to bound against, or null for the
-	 *                           base64 transport's own.
+	 * @param string   $filename     The client-supplied filename.
+	 * @param string   $bytes        The decoded payload.
+	 * @param int|null $byteCap      The ceiling to bound against, or null for the
+	 *                               base64 transport's own.
+	 * @param string[] $forbidTypes  Types this transport must never carry, even
+	 *                               when the site's allowlist admits them. The
+	 *                               import path passes package types here so a
+	 *                               package cannot be fetched from a URL; every
+	 *                               other transport passes nothing.
 	 *
 	 * @return array{bytes: string, filename: string, mimeType: string, extension: string}
 	 *         The decoded bytes, the sanitized filename, the sniffed type, and
@@ -168,7 +173,7 @@ final class MediaMimeGuard {
 	 *                            Refused content is a bad request on either
 	 *                            transport, never an execution failure.
 	 */
-	public function inspectBytes( string $filename, string $bytes, ?int $byteCap = null ): array {
+	public function inspectBytes( string $filename, string $bytes, ?int $byteCap = null, array $forbidTypes = [] ): array {
 		// 2. Size, against the smaller of the built-in cap and the site's own.
 		//
 		// THE CAP IS A PARAMETER BECAUSE THE TRANSPORT DECIDES IT, not because a
@@ -202,6 +207,21 @@ final class MediaMimeGuard {
 				ErrorCode::InvalidInput,
 				'The content is not one of the file types this site accepts.',
 				'Upload a JPEG, PNG, GIF, or WebP image, or ask a site administrator which types this site accepts.'
+			);
+		}
+
+		// 5b. Some types may enter the library only as a POSTED upload, never
+		// fetched from an address the caller names. The import transport passes
+		// them here; every other transport passes nothing and this step is
+		// inert. It runs AFTER step 5, so the type is already known to be
+		// acceptable in principle: this refusal is about the transport that
+		// delivered it, not about the type itself. The message names no type,
+		// like every other refusal in this class.
+		if ( in_array( $sniffed, $forbidTypes, true ) ) {
+			throw new OperationException(
+				ErrorCode::InvalidInput,
+				'This kind of file cannot be added by fetching it from a web address.',
+				'Upload the file directly instead of naming a URL to fetch it from.'
 			);
 		}
 

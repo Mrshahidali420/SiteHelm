@@ -315,7 +315,9 @@ links are listed per item, and `truncated` says when a page held more.
 > validated before the connection is made; private, loopback, link-local, and reserved ranges are
 > refused; every redirect hop is re-validated and re-pinned; the resolved address is pinned so the
 > connection cannot be re-pointed between the check and the fetch; the wire read is capped; and the
-> refusal message is deliberately digit-free so it cannot be used as an SSRF oracle.
+> refusal message is deliberately digit-free so it cannot be used as an SSRF oracle. It also
+> refuses a plugin or theme package: an installable zip can be uploaded, where the caller holds
+> and is answerable for the bytes, but it can never be fetched from an address the caller names.
 
 > **`media-svg-upload` never stores the file it was given.** An SVG is markup the browser renders
 > in the site's own origin, so `media-upload` and `media-import` refuse it outright and continue to.
@@ -669,9 +671,12 @@ dispatchers are frozen and there is no `system-write`.
 > `theme-install-upload` take one argument, `attachment`, an integer id — there is still no
 > `url`, `package`, `source`, `path` or `zip` property anywhere, so nothing an agent names is
 > fetched. The file has to already be an attachment on this site, and one the calling account
-> may edit. Putting it there is a separate, previewed, logged call, `media-upload`,
-> `media-import`, or — for a package too large to travel as an argument at all —
-> `media-upload-ticket` followed by a raw post to the URL it hands back. Whichever route the
+> may edit. Putting it there is a separate, previewed, logged call that carries the bytes:
+> `media-upload`, or — for a package too large to travel as an argument at all —
+> `media-upload-ticket` followed by a raw post to the URL it hands back. `media-import`, which
+> fetches from a web address, refuses a package outright: a zip can be uploaded, where the
+> caller is answerable for the bytes it sends, but it can never be fetched from an address the
+> caller names. Whichever route the
 > file takes, the site's own `get_allowed_mime_types()` still has to permit a zip:
 > SiteHelm's own allowlist is images only, and the add-on widens it to zip while a Pro licence
 > is active by way of a filter that runs **before** the deny lists are subtracted, so it can
