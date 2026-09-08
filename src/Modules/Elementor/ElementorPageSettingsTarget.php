@@ -243,6 +243,77 @@ final class ElementorPageSettingsTarget {
 	}
 
 	/**
+	 * Resolves the settings row a recorded rollback names.
+	 *
+	 * THE CAPABILITY IS ASKED AGAIN HERE, and that is the whole point of this
+	 * method rather than a bare `resolve()`. The rollback operation's own front
+	 * gate asks whether the caller may edit a post, which is the right question
+	 * for this target — but it asks it about the key it was handed, and the key
+	 * has to be parsed before anything can be asked about it. `resolve()` asks
+	 * both questions in the right order, so this method parses and then hands
+	 * over to it.
+	 *
+	 * @param string           $target_key The recorded target key.
+	 * @param OperationContext $context    The request context.
+	 *
+	 * @return TargetState The resolved settings row.
+	 *
+	 * @throws OperationException With ErrorCode::TargetNotFound when the key names
+	 *                            no document this account may edit.
+	 */
+	public function resolveRollbackTarget( string $target_key, OperationContext $context ): TargetState {
+		$post_id = ElementorPageSettings::postIdFromKey( $target_key );
+
+		if ( null === $post_id ) {
+			throw $this->notFound();
+		}
+
+		return $this->resolve( $post_id, $context );
+	}
+
+	// phpcs:disable Generic.CodeAnalysis.UnusedFunctionParameter.FoundAfterLastUsed
+	/**
+	 * The read-back a recorded restore state promises.
+	 *
+	 * IT MIRRORS `restore()` LINE FOR LINE, because a promise that reasons about
+	 * the recorded bytes rather than about what putting them back actually writes
+	 * is a promise verification will fail. A state whose `existed` member is not
+	 * true restores by DELETING the settings row, and a deleted row reads back as
+	 * an empty map — not as the recorded settings. The same holds for the page
+	 * template.
+	 *
+	 * SILENCE ABOUT THE PAGE TEMPLATE MEANS NO PROMISE AT ALL. `restore()` leaves
+	 * that row exactly as it is when the snapshot says nothing about it, so
+	 * nothing here can say what it will hold afterwards, and an empty promise is
+	 * the honest answer.
+	 *
+	 * @param array<string, mixed> $restore_state The recorded restore state.
+	 * @param TargetState          $current       The row's current state.
+	 * @param OperationContext     $context       The request context.
+	 *
+	 * @return array<string, mixed> The promised read-back, empty when the state
+	 *                              promises nothing about the page template.
+	 */
+	public function promiseRollback( array $restore_state, TargetState $current, OperationContext $context ): array {
+		if ( ! array_key_exists( self::SNAPSHOT_TEMPLATE_EXISTED, $restore_state ) ) {
+			return [];
+		}
+
+		$recorded_settings = $restore_state[ self::SNAPSHOT_SETTINGS ] ?? null;
+		$settings          = true === ( $restore_state[ self::SNAPSHOT_EXISTED ] ?? null ) && is_array( $recorded_settings )
+			? $recorded_settings
+			: [];
+
+		$recorded_template = $restore_state[ self::SNAPSHOT_PAGE_TEMPLATE ] ?? null;
+		$page_template     = true === $restore_state[ self::SNAPSHOT_TEMPLATE_EXISTED ] && is_string( $recorded_template )
+			? $recorded_template
+			: '';
+
+		return $this->fieldsFor( $settings, $page_template );
+	}
+	// phpcs:enable Generic.CodeAnalysis.UnusedFunctionParameter.FoundAfterLastUsed
+
+	/**
 	 * Stores one settings row and re-reads it.
 	 *
 	 * THE RE-READ IS NOT OPTIONAL. `update_post_meta()` answers true on a site

@@ -10,8 +10,8 @@ declare(strict_types=1);
 namespace SiteHelm\Modules\Elementor;
 
 use SiteHelm\Change\PlannedChange;
+use SiteHelm\Change\RollbackDelegate;
 use SiteHelm\Change\TargetState;
-use SiteHelm\Change\WriteOperation;
 use SiteHelm\Change\WriteOutputSchema;
 use SiteHelm\Contracts\Domain;
 use SiteHelm\Contracts\ErrorCode;
@@ -53,7 +53,7 @@ use SiteHelm\Contracts\SnapshotPolicy;
  *
  * @package SiteHelm
  */
-final class ElementorThemeConditionsSet implements WriteOperation {
+final class ElementorThemeConditionsSet implements RollbackDelegate {
 
 	/**
 	 * The operation identifier, named once so the definition and its example
@@ -177,6 +177,28 @@ final class ElementorThemeConditionsSet implements WriteOperation {
 	 *                           ErrorCode::TargetNotFound.
 	 */
 	public function resolveTarget( array $input, OperationContext $context ): TargetState {
+		return $this->resolvedTemplate( (int) ( $input[ self::INPUT_ID ] ?? 0 ), $context );
+	}
+
+	/**
+	 * The four gates, and the resolved template behind them.
+	 *
+	 * SEPARATE FROM `resolveTarget()` BECAUSE A ROLLBACK ASKS THE SAME FOUR
+	 * QUESTIONS ABOUT A TEMPLATE NOBODY SENT IN THE ARGUMENTS. The template a
+	 * rollback names comes out of a recorded key rather than out of the request,
+	 * and the gates have to run against THAT template — asking them about the
+	 * request's template would gate one page and change another.
+	 *
+	 * @param int              $template_id The theme template's post identifier.
+	 * @param OperationContext $context     The request context.
+	 *
+	 * @return TargetState The resolved template.
+	 *
+	 * @throws OperationException With ErrorCode::Forbidden,
+	 *                           ErrorCode::IntegrationUnavailable or
+	 *                           ErrorCode::TargetNotFound.
+	 */
+	private function resolvedTemplate( int $template_id, OperationContext $context ): TargetState {
 		if ( ! user_can( $context->userId, ElementorThemeConditions::CAPABILITY ) ) {
 			throw new OperationException(
 				ErrorCode::Forbidden,
@@ -192,8 +214,6 @@ final class ElementorThemeConditionsSet implements WriteOperation {
 				'Activate Elementor, or install it first if it is not on this site, then try again.'
 			);
 		}
-
-		$template_id = (int) ( $input[ self::INPUT_ID ] ?? 0 );
 
 		if ( ! $this->is_editable_theme_template( $template_id, $context ) ) {
 			throw new OperationException(
@@ -388,6 +408,84 @@ final class ElementorThemeConditionsSet implements WriteOperation {
 		);
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase,WordPress.Security.EscapeOutput.ExceptionNotEscaped
+
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- These two are the RollbackDelegate contract's method names.
+	// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The message is a fixed literal written for end users.
+	/**
+	 * Resolves the theme template a recorded rollback names.
+	 *
+	 * @param string           $target_key The recorded target key.
+	 * @param OperationContext $context    The request context.
+	 *
+	 * @return TargetState The resolved template.
+	 *
+	 * @throws OperationException With ErrorCode::TargetNotFound when the key names
+	 *                           no theme template this account may edit.
+	 */
+	public function resolveRollbackTarget( string $target_key, OperationContext $context ): TargetState {
+		$template_id = ElementorThemeConditions::templateIdFromKey( $target_key );
+
+		if ( null === $template_id ) {
+			throw new OperationException(
+				ErrorCode::TargetNotFound,
+				'That recorded reference does not name an Elementor theme template, so there is nothing to put back.',
+				'List the templates with elementor-theme-template-list and set the rule by hand.'
+			);
+		}
+
+		return $this->resolvedTemplate( $template_id, $context );
+	}
+
+	// phpcs:disable Generic.CodeAnalysis.UnusedFunctionParameter.FoundAfterLastUsed -- $current and $context are the RollbackDelegate contract's signature; the promise is of the recorded rule, not of the present one.
+	/**
+	 * The read-back a recorded restore state promises.
+	 *
+	 * IT MIRRORS `restore()`, WHICH DOES NOT WRITE THE RECORDED LIST BACK IN
+	 * EVERY CASE. A recorded absent row is put back by deleting the row, and a
+	 * deleted row reads back as an empty list rather than as whatever the
+	 * snapshot happens to hold beside the flag.
+	 *
+	 * A LIST THAT IS NOT ALL NON-EMPTY STRINGS PROMISES NOTHING. Elementor's
+	 * stored rule is a list of strings, `conditions()` drops everything else on
+	 * the way back out, and `write()` fails its own round-trip check on a list it
+	 * cannot read back — so a promise built from such a list would be a promise
+	 * the restore cannot keep.
+	 *
+	 * @param array<string, mixed> $restore_state The recorded restore state.
+	 * @param TargetState          $current       The template's current state.
+	 * @param OperationContext     $context       The request context.
+	 *
+	 * @return array<string, mixed> The promised read-back, empty when the state
+	 *                              holds no restorable rule.
+	 */
+	public function promiseRollback( array $restore_state, TargetState $current, OperationContext $context ): array {
+		$present = $restore_state[ self::SNAPSHOT_PRESENT ] ?? null;
+
+		if ( ! is_bool( $present ) ) {
+			return [];
+		}
+
+		if ( false === $present ) {
+			return $this->conditions->fieldsFor( [] );
+		}
+
+		$recorded = $restore_state[ self::SNAPSHOT_CONDITIONS ] ?? null;
+
+		if ( ! is_array( $recorded ) ) {
+			return [];
+		}
+
+		foreach ( $recorded as $condition ) {
+			if ( ! is_string( $condition ) || '' === $condition ) {
+				return [];
+			}
+		}
+
+		return $this->conditions->fieldsFor( array_values( $recorded ) );
+	}
+	// phpcs:enable Generic.CodeAnalysis.UnusedFunctionParameter.FoundAfterLastUsed
+	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 
 	// phpcs:disable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase,WordPress.Security.EscapeOutput.ExceptionNotEscaped -- $restoreState matches the WriteOperation contract, and the messages are fixed literals.
 	/**

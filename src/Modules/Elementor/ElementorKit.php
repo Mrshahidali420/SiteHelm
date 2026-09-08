@@ -180,27 +180,25 @@ final class ElementorKit {
 
 	// phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase,WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid,WordPress.Security.EscapeOutput.ExceptionNotEscaped -- OperationContext declares camelCase members, the module vocabulary is camelCase, and the messages are fixed literals carrying nothing from the request.
 	/**
-	 * The active kit, once the caller is allowed to see it.
+	 * Refuses a caller who may not touch this site's appearance settings.
 	 *
-	 * THE GUARD ORDER IS CAPABILITY, PRESENCE, LOOKUP, and it is the order every
+	 * THE GUARD ORDER IS CAPABILITY THEN PRESENCE, and it is the order every
 	 * other Elementor entry point uses. A caller with no rights over site
-	 * appearance causes no option read and is not told whether this site runs
-	 * Elementor, which is configuration they are not entitled to.
+	 * appearance is not told whether this site runs Elementor, which is
+	 * configuration they are not entitled to.
 	 *
-	 * NO ACTIVE KIT IS A REFUSAL, NOT AN EMPTY ANSWER. Elementor creates the kit
-	 * on activation and the option is only absent on a site where that never
-	 * completed; answering "the palette is empty" there would tell an operator
-	 * their brand colours had been lost.
+	 * IT IS SEPARATE FROM `activeId()` BECAUSE A ROLLBACK ASKS THE SAME QUESTION
+	 * ABOUT A DIFFERENT KIT. A recorded rollback names the kit it was taken
+	 * against, which need not still be the active one, so the delegate resolves
+	 * that kit by its own identifier — but the caller must clear exactly this
+	 * gate first, since `content-rollback-apply` only asked about `edit_post`.
 	 *
 	 * @param OperationContext $context The request context.
 	 *
-	 * @return int The active kit's post identifier.
-	 *
-	 * @throws OperationException With ErrorCode::Forbidden,
-	 *                           ErrorCode::IntegrationUnavailable or
-	 *                           ErrorCode::TargetNotFound.
+	 * @throws OperationException With ErrorCode::Forbidden or
+	 *                           ErrorCode::IntegrationUnavailable.
 	 */
-	public function activeId( OperationContext $context ): int {
+	public function guard( OperationContext $context ): void {
 		if ( ! user_can( $context->userId, self::CAPABILITY ) ) {
 			throw new OperationException(
 				ErrorCode::Forbidden,
@@ -216,6 +214,29 @@ final class ElementorKit {
 				'Activate Elementor, or install it first if it is not on this site, then try again.'
 			);
 		}
+	}
+
+	/**
+	 * The active kit, once the caller is allowed to see it.
+	 *
+	 * THE GUARD ORDER IS CAPABILITY, PRESENCE, LOOKUP. A caller with no rights
+	 * over site appearance causes no option read at all.
+	 *
+	 * NO ACTIVE KIT IS A REFUSAL, NOT AN EMPTY ANSWER. Elementor creates the kit
+	 * on activation and the option is only absent on a site where that never
+	 * completed; answering "the palette is empty" there would tell an operator
+	 * their brand colours had been lost.
+	 *
+	 * @param OperationContext $context The request context.
+	 *
+	 * @return int The active kit's post identifier.
+	 *
+	 * @throws OperationException With ErrorCode::Forbidden,
+	 *                           ErrorCode::IntegrationUnavailable or
+	 *                           ErrorCode::TargetNotFound.
+	 */
+	public function activeId( OperationContext $context ): int {
+		$this->guard( $context );
 
 		$raw = get_option( self::OPTION_ACTIVE );
 		$id  = is_numeric( $raw ) ? (int) $raw : 0;

@@ -325,6 +325,94 @@ final class ElementorKitWrite {
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid,WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase,WordPress.Security.EscapeOutput.ExceptionNotEscaped
 
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid,WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The module vocabulary is camelCase, and the message is a fixed literal carrying nothing from the request.
+	/**
+	 * Resolves the kit a recorded rollback names, not the kit that is active now.
+	 *
+	 * A SNAPSHOT NAMES ITS OWN KIT, AND THAT MATTERS. `resolve()` reads the active
+	 * kit because a forward write always edits the active one; a rollback puts
+	 * back what a past write took, and a site can switch kits in between. Reading
+	 * the active kit here would restore one kit's tokens over another's.
+	 *
+	 * THE CAPABILITY RE-CHECK HAPPENS HERE. `content-rollback-apply` asks
+	 * `edit_post` at its front gate, which says nothing about who may rewrite this
+	 * site's colours and fonts, so the kit's own gate is asked again.
+	 *
+	 * @param string           $target_key The target key the snapshot recorded.
+	 * @param string[]         $keys       The pair of repeater keys.
+	 * @param OperationContext $context    The request context.
+	 *
+	 * @return TargetState The current state of the recorded kit.
+	 *
+	 * @throws OperationException With ErrorCode::TargetNotFound when the key names
+	 *                           no kit, or ErrorCode::Forbidden when this caller
+	 *                           may not rewrite it.
+	 */
+	public function resolveRollbackTarget( string $target_key, array $keys, OperationContext $context ): TargetState {
+		$this->kit->guard( $context );
+
+		$kit_id = ElementorKit::kitIdFromKey( $target_key );
+
+		if ( null === $kit_id ) {
+			throw new OperationException(
+				ErrorCode::TargetNotFound,
+				'That recorded reference does not name an Elementor site-settings kit, so there is nothing to put back.',
+				'Read the tokens with elementor-global-tokens-get and set the ones you need by hand.'
+			);
+		}
+
+		return new TargetState(
+			ElementorKit::targetKey( $kit_id ),
+			true,
+			$this->fieldsFor( $this->lists( $this->kit->settings( $kit_id ), $keys ) )
+		);
+	}
+	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+
+	/**
+	 * The fields a restoration of this recorded state would read back as.
+	 *
+	 * A RESTORE THAT REMOVES A KEY AND ONE THAT WRITES `[]` READ BACK THE SAME.
+	 * `snapshot()` records `[]` for a key the row did not hold, and `listFor()`
+	 * answers `[]` for a key that is not there, so projecting the recorded lists
+	 * straight through `fieldsFor()` describes both outcomes correctly.
+	 *
+	 * THE RECORDED LISTS MUST COVER EXACTLY THIS OPERATION'S KEYS. `restoreState()`
+	 * only touches keys the snapshot holds, so a key it is missing keeps whatever
+	 * the row holds now — a value nothing in the recorded state can predict. An
+	 * empty map is the honest answer there, and the caller turns it into
+	 * `rollback_unavailable`.
+	 *
+	 * @param array<string, mixed> $restore_state The decoded recorded state.
+	 * @param string[]             $keys          The pair of repeater keys.
+	 *
+	 * @return array<string, mixed> The promised after-state, or an empty map.
+	 */
+	public function promiseRollback( array $restore_state, array $keys ): array {
+		$kit_id  = $restore_state[ self::SNAPSHOT_KIT ] ?? null;
+		$lists   = $restore_state[ self::SNAPSHOT_LISTS ] ?? null;
+		$present = $restore_state[ self::SNAPSHOT_PRESENT ] ?? null;
+
+		if ( ! is_int( $kit_id ) || $kit_id <= 0 || ! is_array( $lists ) || ! is_array( $present ) ) {
+			return [];
+		}
+
+		$promised = [];
+
+		foreach ( $keys as $key ) {
+			$recorded = $lists[ $key ] ?? null;
+
+			if ( ! is_array( $recorded ) ) {
+				return [];
+			}
+
+			$promised[ $key ] = array_values( $recorded );
+		}
+
+		return $this->fieldsFor( $promised );
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+
 	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid,WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase,WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The name and $restoreState match the WriteOperation contract, and the messages are fixed literals.
 	/**
 	 * Puts the recorded repeater lists back.
