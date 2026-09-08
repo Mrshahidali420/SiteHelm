@@ -55,6 +55,19 @@ an operation behaves.
 
 ### Fixed
 
+- **Six operations said they could be undone when they could not.** Four of them add
+  something new to the media library — `media-upload`, `media-import`, `media-svg-upload` and
+  `media-upload-ticket` — and there is nothing to put back, because nothing was there before.
+  The other two, `content-seo-bulk-set` and `content-seo-audit-fix`, change a whole set of
+  posts at once, and the change is filed under the set rather than under any one post, so an
+  undo has no page to aim at. All six now say plainly that no undo is offered. Nothing about
+  what they do has changed; what changed is what they promise, which is what an agent reads
+  before it decides how to work. The four uploads also stop adding a puzzling "no snapshot was
+  captured" warning to every successful call.
+
+  A bulk SEO run that fails part way through still puts back the posts it had already touched
+  before it returns the refusal. That was never the undo button and is unaffected.
+
 - **A permalink change left the old addresses live.** `site-settings-set` rebuilt the stored
   address rules after moving the permalink structure, and rebuilding them in the same request
   saves whatever WordPress worked out when the request started — which is the structure we had

@@ -54,8 +54,8 @@ final class MediaUploadTest extends MediaUploadTestCase {
 		$this->assertFalse( $definition->isDestructive );
 		$this->assertFalse( $definition->isIdempotent, 'Each apply creates a new attachment.' );
 		$this->assertSame( PreviewPolicy::Required, $definition->previewPolicy );
-		$this->assertSame( SnapshotPolicy::Supported, $definition->snapshotPolicy );
-		$this->assertSame( RollbackPolicy::Supported, $definition->rollbackPolicy );
+		$this->assertSame( SnapshotPolicy::NotApplicable, $definition->snapshotPolicy, 'A new attachment has no prior state to keep.' );
+		$this->assertSame( RollbackPolicy::NotApplicable, $definition->rollbackPolicy, 'There is nothing to put back, so no undo is offered.' );
 		$this->assertSame( WriteOutputSchema::schema(), $definition->outputSchema );
 	}
 

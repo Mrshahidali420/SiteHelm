@@ -159,8 +159,8 @@ links are listed per item, and `truncated` says when a page held more.
 | `comment-status-set` | Approves, holds, spams, or trashes one comment | `moderate_comments` | medium | supported |
 | `comment-reply` | Posts an approved reply beneath one comment, authored by the acting user | `moderate_comments` | medium | supported |
 | `content-seo-set` | Writes one item's search-engine metadata into whichever SEO plugin the site runs | `edit_post` | medium | supported |
-| `content-seo-bulk-set` | Sets the per-post fields of `content-seo-set` on up to fifty posts as one previewed, reversible change; one post the caller may not edit, or one that does not exist, refuses the whole set | `edit_post` on every post | medium | supported |
-| `content-seo-audit-fix` | Takes the same page `content-seo-audit` would (type, status, limit ≤ 50, offset, minScore) and fixes the chosen findings on every post that carries one as one previewed, reversible change — `missing-description` from the post's excerpt or text (a post whose text yields fewer than 70 characters is reported under `unfixable`), `description-too-long` and `title-too-long` trimmed at a word boundary, `noindex` set to false | `edit_post` on every post | medium | supported |
+| `content-seo-bulk-set` | Sets the per-post fields of `content-seo-set` on up to fifty posts as one previewed change that cannot be undone afterwards; one post the caller may not edit, or one that does not exist, refuses the whole set | `edit_post` on every post | medium | not applicable |
+| `content-seo-audit-fix` | Takes the same page `content-seo-audit` would (type, status, limit ≤ 50, offset, minScore) and fixes the chosen findings on every post that carries one as one previewed change that cannot be undone afterwards — `missing-description` from the post's excerpt or text (a post whose text yields fewer than 70 characters is reported under `unfixable`), `description-too-long` and `title-too-long` trimmed at a word boundary, `noindex` set to false | `edit_post` on every post | medium | not applicable |
 | `content-term-seo-set` | Writes one category's or tag's search-engine metadata into whichever SEO plugin the site runs | `edit_posts` + the taxonomy's edit capability | medium | supported |
 | `user-role-set` | Replaces one user's roles with a single registered role | `promote_users` | high | supported |
 | `site-settings-set` | Changes site settings from a strict fifteen-field allowlist — title, tagline, site icon, site logo, timezone, date and time formats, posts per page, front page geometry, permalink structure, default comment and ping status, search-engine visibility | `manage_options` | medium | supported |
@@ -169,6 +169,12 @@ links are listed per item, and `truncated` says when a page held more.
 > **`content-seo-audit-fix` offers only the four findings with a mechanical fix.**
 > A missing focus keyword, a low score and a too-short description need a person, and
 > are reported under `unfixable` rather than guessed at.
+
+> **Neither bulk SEO change can be undone once it has finished.** Both work over a set of
+> posts rather than one page, and the change is filed under the set, not under any post in
+> it, so there is no page a later undo could be pointed at. If the run itself fails part way
+> through, the posts it had already touched are put back before the refusal is returned.
+> To be able to step back afterwards, set the posts one at a time with `content-seo-set`.
 > **`user-role-set` is a system operation wearing a content dispatcher.** It is here, not
 > beside `user-list`, only because the dispatcher set is frozen and holds no
 > `system-write`. Read the roster with `user-list` first: the write accepts one role slug
@@ -284,12 +290,12 @@ links are listed per item, and `truncated` says when a page held more.
 
 | Operation | Does | Capability | Risk | Rollback |
 |---|---|---|---|---|
-| `media-upload` | Uploads a file from supplied bytes | `upload_files` | high | supported |
-| `media-import` | Fetches a file from a URL and adds it to the library | `upload_files` | high | supported |
+| `media-upload` | Uploads a file from supplied bytes | `upload_files` | high | not applicable |
+| `media-import` | Fetches a file from a URL and adds it to the library | `upload_files` | high | not applicable |
 | `media-meta-update` | Updates alt text, caption, title, description | `edit_post` | medium | supported |
 | `media-attach` | Attaches an existing item to a post | `edit_post` | medium | supported |
 | `media-resize` | Brings an oversized image within a width and height you name, keeping the original file | `edit_post` + `upload_files` | high | supported |
-| `media-svg-upload` | Adds one SVG image, rebuilt from a safe subset before it is stored | `upload_files` + `unfiltered_html` | high | supported |
+| `media-svg-upload` | Adds one SVG image, rebuilt from a safe subset before it is stored | `upload_files` + `unfiltered_html` | high | not applicable |
 | `media-upload-ticket` | Issues a short-lived, single-use URL to post one large file to, for content too big to send as an argument | `upload_files` | high | not applicable |
 | `media-delete` | Deletes one library item and the files behind it, for good | `delete_post` | high | not applicable |
 

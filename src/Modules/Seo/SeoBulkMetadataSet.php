@@ -92,8 +92,14 @@ final class SeoBulkMetadataSet implements WriteOperation {
 			isDestructive: false,
 			isIdempotent: true,
 			previewPolicy: PreviewPolicy::Required,
+			// THE SNAPSHOT IS FOR THIS OPERATION'S OWN FAILURE, NOT FOR AN UNDO.
+			// A half-finished bulk change is put back by the engine out of the state
+			// captured here, so the snapshot is required. The button is not offered:
+			// this operation's target key is a digest of the ids it was given, and
+			// nothing can read those ids back out of a digest, so a later rollback
+			// has no way to find the posts it would be putting back.
 			snapshotPolicy: SnapshotPolicy::Required,
-			rollbackPolicy: RollbackPolicy::Supported,
+			rollbackPolicy: RollbackPolicy::NotApplicable,
 			module: ModuleId::Seo,
 			supportedVersions: SeoPresence::supportedVersions(),
 			example: [

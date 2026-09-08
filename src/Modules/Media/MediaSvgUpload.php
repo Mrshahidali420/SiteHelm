@@ -157,8 +157,12 @@ final class MediaSvgUpload implements WriteOperation {
 			isDestructive: false,
 			isIdempotent: false,
 			previewPolicy: PreviewPolicy::Required,
-			snapshotPolicy: SnapshotPolicy::Supported,
-			rollbackPolicy: RollbackPolicy::Supported,
+			// NOTHING EXISTED BEFORE THIS RAN, SO THERE IS NOTHING TO PUT BACK.
+			// The upload adds a new library item; there is no earlier version of it to
+			// capture and no state an undo could return to. Deleting the item is a
+			// separate decision, made on purpose, not an undo.
+			snapshotPolicy: SnapshotPolicy::NotApplicable,
+			rollbackPolicy: RollbackPolicy::NotApplicable,
 			module: ModuleId::Media,
 			supportedVersions: [ 'wordpress' => '>=' . SITEHELM_MIN_WP ],
 			example: [

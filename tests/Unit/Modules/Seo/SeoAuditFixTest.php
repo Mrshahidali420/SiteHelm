@@ -160,7 +160,7 @@ final class SeoAuditFixTest extends TestCase {
 		$this->page( $rows );
 	}
 
-	public function test_the_definition_is_a_previewed_reversible_write_over_four_findings(): void {
+	public function test_the_definition_is_a_previewed_write_with_no_undo_over_four_findings(): void {
 		$definition = SeoAuditFix::definition();
 
 		$this->assertSame( 'content-seo-audit-fix', $definition->id );
@@ -178,8 +178,8 @@ final class SeoAuditFixTest extends TestCase {
 			$definition->inputSchema['properties']['fixes']['items']['enum']
 		);
 		$this->assertSame( PreviewPolicy::Required, $definition->previewPolicy );
-		$this->assertSame( SnapshotPolicy::Required, $definition->snapshotPolicy );
-		$this->assertSame( RollbackPolicy::Supported, $definition->rollbackPolicy );
+		$this->assertSame( SnapshotPolicy::Required, $definition->snapshotPolicy, 'A half-finished run is put back from this.' );
+		$this->assertSame( RollbackPolicy::NotApplicable, $definition->rollbackPolicy, 'The target key is a digest, so no later undo can find the posts.' );
 	}
 
 
