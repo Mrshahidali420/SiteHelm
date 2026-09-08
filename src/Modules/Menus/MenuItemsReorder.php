@@ -10,8 +10,8 @@ declare(strict_types=1);
 namespace SiteHelm\Modules\Menus;
 
 use SiteHelm\Change\PlannedChange;
+use SiteHelm\Change\RollbackDelegate;
 use SiteHelm\Change\TargetState;
-use SiteHelm\Change\WriteOperation;
 use SiteHelm\Change\WriteOutputSchema;
 use SiteHelm\Contracts\Domain;
 use SiteHelm\Contracts\ErrorCode;
@@ -59,7 +59,7 @@ use SiteHelm\Contracts\SnapshotPolicy;
  *
  * @package SiteHelm
  */
-final class MenuItemsReorder implements WriteOperation {
+final class MenuItemsReorder implements RollbackDelegate {
 
 	/**
 	 * The one field this operation promises and verifies.
@@ -583,6 +583,86 @@ final class MenuItemsReorder implements WriteOperation {
 	}
 	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- resolveRollbackTarget is a RollbackDelegate contract method name.
+	// phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase -- $context->userId is an OperationContext contract property name.
+	// phpcs:disable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase -- $targetKey is a RollbackDelegate contract parameter name.
+	// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Envelope text, never echoed.
+	/**
+	 * Resolves the menu a recorded arrangement names, for content-rollback-apply.
+	 *
+	 * The content-rollback-apply front gate asks `edit_post`, the wrong question
+	 * for a menu term, so the capability is re-checked HERE — and it runs in both
+	 * the preview and the apply phase because this method does. The refusal never
+	 * names the capability, for the reason resolveMenu() gives: the gap between a
+	 * "forbidden" and a "not found" would tell a caller who may not manage menus
+	 * which menu keys exist.
+	 *
+	 * @param string           $targetKey The recorded target key.
+	 * @param OperationContext $context   The request context.
+	 *
+	 * @return TargetState The menu's current arrangement.
+	 *
+	 * @throws OperationException With ErrorCode::Forbidden or
+	 *                            ErrorCode::TargetNotFound.
+	 */
+	public function resolveRollbackTarget( string $targetKey, OperationContext $context ): TargetState {
+		if ( ! user_can( $context->userId, MenuTarget::REQUIRED_CAPABILITY ) ) {
+			throw new OperationException(
+				ErrorCode::Forbidden,
+				'Your WordPress user may not administer this site\'s navigation menus.',
+				'Ask a site administrator to grant the ability to edit theme options, then retry.'
+			);
+		}
+
+		$menu_id = MenuTarget::menuIdFromKey( $targetKey );
+
+		if ( null === $menu_id || null === $this->menu_by_id( $menu_id ) ) {
+			throw new OperationException(
+				ErrorCode::TargetNotFound,
+				'The referenced snapshot does not name a navigation menu on this site.',
+				'Read the activity log to find a current rollback reference.'
+			);
+		}
+
+		return new TargetState( $targetKey, true, $this->menu_state( $menu_id ) );
+	}
+
+	/**
+	 * The after-state a restore of this snapshot would produce.
+	 *
+	 * The whole recorded arrangement is promised under `order`, unchanged, because
+	 * a reorder never touches a label: every value it records — each item's parent
+	 * and position — round-trips through the write and reads back exactly, so
+	 * WriteVerifier can compare the recorded arrangement against the read-back
+	 * field for field. That is the promise MenuItemUpdate cannot make about a
+	 * title or a description, and can make here because there are none.
+	 *
+	 * A state that names no menu, or whose recorded items are not an array, holds
+	 * nothing restorable and promises nothing; the caller turns the empty map into
+	 * rollback_unavailable.
+	 *
+	 * @param array<string, mixed> $restoreState The recorded restore state.
+	 * @param TargetState          $current      The resolved current state.
+	 * @param OperationContext     $context      The request context.
+	 *
+	 * @return array<string, mixed> The promised after-state, or [] when nothing is
+	 *                              restorable.
+	 */
+	public function promiseRollback( array $restoreState, TargetState $current, OperationContext $context ): array {
+		$menu_id  = is_numeric( $restoreState['menu_id'] ?? null ) ? (int) $restoreState['menu_id'] : 0;
+		$recorded = $restoreState['items'] ?? null;
+
+		if ( $menu_id <= 0 || ! is_array( $recorded ) ) {
+			return [];
+		}
+
+		return [ self::ORDER_FIELD => $recorded ];
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 
 	/**
 	 * One menu's identity beside its current arrangement.

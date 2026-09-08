@@ -10,8 +10,8 @@ declare(strict_types=1);
 namespace SiteHelm\Modules\Menus;
 
 use SiteHelm\Change\PlannedChange;
+use SiteHelm\Change\RollbackDelegate;
 use SiteHelm\Change\TargetState;
-use SiteHelm\Change\WriteOperation;
 use SiteHelm\Change\WriteOutputSchema;
 use SiteHelm\Contracts\Domain;
 use SiteHelm\Contracts\ErrorCode;
@@ -66,7 +66,7 @@ use SiteHelm\Contracts\SnapshotPolicy;
  *
  * @package SiteHelm
  */
-final class MenuLocationAssign implements WriteOperation {
+final class MenuLocationAssign implements RollbackDelegate {
 
 	/**
 	 * The target-key prefix for a theme-location-shaped target.
@@ -582,17 +582,32 @@ final class MenuLocationAssign implements WriteOperation {
 	 * @return array<string, mixed> The normalized projection.
 	 */
 	private function project( string $location ): array {
-		$map     = $this->currentMap();
-		$menu_id = null;
-
-		if ( array_key_exists( $location, $map ) && is_numeric( $map[ $location ] ) && (int) $map[ $location ] > 0 ) {
-			$menu_id = (int) $map[ $location ];
-		}
-
 		return [
 			'location' => $location,
-			'menuId'   => $menu_id,
+			'menuId'   => $this->menu_id_in( $this->currentMap(), $location ),
 		];
+	}
+
+	/**
+	 * The positive menu identifier one location holds in a given map, or null.
+	 *
+	 * Named once so the projection readBack() reports and the projection
+	 * promiseRollback() promises answer the same question the same way. A stored 0
+	 * or a non-numeric value reads as null — core treats a 0 as empty, so
+	 * reporting it as the integer 0 would describe the location as pointing at a
+	 * menu that cannot exist.
+	 *
+	 * @param array<string, mixed> $map      The location slug to menu id map.
+	 * @param string               $location The theme location slug.
+	 *
+	 * @return int|null The assigned menu identifier, or null for none.
+	 */
+	private function menu_id_in( array $map, string $location ): ?int {
+		if ( array_key_exists( $location, $map ) && is_numeric( $map[ $location ] ) && (int) $map[ $location ] > 0 ) {
+			return (int) $map[ $location ];
+		}
+
+		return null;
 	}
 
 	/**
@@ -614,4 +629,85 @@ final class MenuLocationAssign implements WriteOperation {
 		return '' === $location ? null : $location;
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- resolveRollbackTarget is a RollbackDelegate contract method name.
+	// phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase -- $context->userId is an OperationContext contract property name.
+	// phpcs:disable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase -- $targetKey is a RollbackDelegate contract parameter name.
+	// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Envelope text, never echoed.
+	/**
+	 * Resolves the location a recorded assignment names, for
+	 * content-rollback-apply.
+	 *
+	 * The content-rollback-apply front gate asks `edit_post`, the wrong question
+	 * for a theme location, so the capability is re-checked HERE — and it runs in
+	 * both the preview and the apply phase because this method does. The refusal
+	 * message does not name the capability.
+	 *
+	 * @param string           $targetKey The recorded target key.
+	 * @param OperationContext $context   The request context.
+	 *
+	 * @return TargetState The location's current assignment.
+	 *
+	 * @throws OperationException With ErrorCode::Forbidden or
+	 *                            ErrorCode::TargetNotFound.
+	 */
+	public function resolveRollbackTarget( string $targetKey, OperationContext $context ): TargetState {
+		if ( ! user_can( $context->userId, 'edit_theme_options' ) ) {
+			throw new OperationException(
+				ErrorCode::Forbidden,
+				'Your WordPress user may not change this site\'s navigation menu locations.',
+				'Ask a site administrator to grant the ability to edit theme options, then retry.'
+			);
+		}
+
+		$location = $this->locationFromKey( $targetKey );
+
+		if ( null === $location || ! $this->fields->locationExists( $location ) ) {
+			throw new OperationException(
+				ErrorCode::TargetNotFound,
+				'The referenced snapshot does not name a navigation location the active theme registers.',
+				'Read the activity log to find a current rollback reference.'
+			);
+		}
+
+		return new TargetState( self::LOCATION_PREFIX . $location, true, $this->project( $location ) );
+	}
+
+	/**
+	 * The after-state a restore of this snapshot would produce.
+	 *
+	 * A restore writes the recorded location map back whole, so the location this
+	 * snapshot names ends up holding whatever that recorded map assigned it. The
+	 * promise is that value read the way readBack() reads it — through the same
+	 * `menuId` rule, so a recorded 0 or a stray non-numeric promises null rather
+	 * than a menu that cannot exist.
+	 *
+	 * A state that names no location, or carries no recorded map, holds nothing
+	 * restorable and promises nothing; the caller turns the empty map into
+	 * rollback_unavailable.
+	 *
+	 * @param array<string, mixed> $restoreState The recorded restore state.
+	 * @param TargetState          $current      The resolved current state.
+	 * @param OperationContext     $context      The request context.
+	 *
+	 * @return array<string, mixed> The promised after-state, or [] when nothing is
+	 *                              restorable.
+	 */
+	public function promiseRollback( array $restoreState, TargetState $current, OperationContext $context ): array {
+		$location = $restoreState['location'] ?? null;
+		$map      = $restoreState['locations'] ?? null;
+
+		if ( ! is_string( $location ) || '' === $location || ! is_array( $map ) ) {
+			return [];
+		}
+
+		return [
+			'location' => $location,
+			'menuId'   => $this->menu_id_in( $map, $location ),
+		];
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 }
