@@ -65,6 +65,15 @@ the payload is a program, so its effect cannot be bounded at write time by anyon
 stored can be promised, what it will do cannot. Extreme exists for the Pro Code module and no
 free operation may declare it — the test suite refuses one that tries.
 
+**Side effects** are what an operation does on top of the change it names, every time, on
+every site: saving a page runs whatever code the site's plugins have hooked to a save,
+clearing permalinks throws away work the site had already done so the next visitor waits for
+it again, and deleting a menu item or an image leaves other parts of the site still pointing
+at it. Each catalogue entry carries a list of these, drawn from a closed set of five, each
+with a sentence a person can read. Only a consequence that holds every time the operation runs
+is listed; anything that depends on the arguments is a plan-time warning instead. An empty list
+means none has been declared, not that the operation was checked and found harmless.
+
 ## Error codes
 
 Exactly thirteen, closed set. A refusal always carries an operator-facing message and, where one

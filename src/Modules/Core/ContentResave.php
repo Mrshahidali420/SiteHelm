@@ -23,6 +23,7 @@ use SiteHelm\Contracts\OperationException;
 use SiteHelm\Contracts\PreviewPolicy;
 use SiteHelm\Contracts\Risk;
 use SiteHelm\Contracts\RollbackPolicy;
+use SiteHelm\Contracts\SideEffect;
 use SiteHelm\Contracts\SnapshotPolicy;
 
 /**
@@ -132,6 +133,7 @@ final class ContentResave implements WriteOperation {
 				'operation' => self::ID,
 				'arguments' => [ 'id' => 42 ],
 			],
+			sideEffects: [ SideEffect::RunsInstalledCode ],
 		);
 	}
 

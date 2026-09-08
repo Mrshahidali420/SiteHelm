@@ -23,6 +23,7 @@ use SiteHelm\Contracts\OperationException;
 use SiteHelm\Contracts\PreviewPolicy;
 use SiteHelm\Contracts\Risk;
 use SiteHelm\Contracts\RollbackPolicy;
+use SiteHelm\Contracts\SideEffect;
 use SiteHelm\Contracts\SnapshotPolicy;
 
 /**
@@ -107,6 +108,7 @@ final class SiteRewriteFlush implements WriteOperation {
 				'operation' => 'site-rewrite-flush',
 				'arguments' => [],
 			],
+			sideEffects: [ SideEffect::SlowsTheNextVisit ],
 		);
 	}
 

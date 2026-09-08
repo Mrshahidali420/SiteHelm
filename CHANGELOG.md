@@ -13,6 +13,16 @@ an operation behaves.
 
 ### Added
 
+- **The catalogue now says what an operation costs beyond the change it names.** Some
+  operations do something on top of what they promise, every time, on every site. Saving a
+  page runs whatever code the plugins here have hooked to it. Flushing permalinks throws away
+  work the site had already done, so the next visitor waits for it again. Deleting a menu item
+  or an image leaves other parts of the site still pointing at it. None of that was written
+  down anywhere, so an agent could only find out by doing it. Every operation now carries a
+  list of these, each with a sentence a person can read, and both the live catalogue and the
+  saved export publish it. An empty list means nothing has been declared, not that the
+  operation was checked and found harmless.
+
 - **A page can be saved again without changing it.** Much of what a site shows is not stored
   on the page at all. It is worked out once, when the page is saved, and kept somewhere else:
   an SEO plugin's score and its sitemap entry, a page builder's compiled CSS, a caching

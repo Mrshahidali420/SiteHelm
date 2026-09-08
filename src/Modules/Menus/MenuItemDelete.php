@@ -23,6 +23,7 @@ use SiteHelm\Contracts\OperationException;
 use SiteHelm\Contracts\PreviewPolicy;
 use SiteHelm\Contracts\Risk;
 use SiteHelm\Contracts\RollbackPolicy;
+use SiteHelm\Contracts\SideEffect;
 use SiteHelm\Contracts\SnapshotPolicy;
 
 /**
@@ -115,6 +116,7 @@ final class MenuItemDelete implements RollbackDelegate {
 					'item' => 412,
 				],
 			],
+			sideEffects: [ SideEffect::LeavesReferencesBehind ],
 		);
 	}
 

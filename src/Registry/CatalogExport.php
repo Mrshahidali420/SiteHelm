@@ -175,6 +175,7 @@ final class CatalogExport {
 			'previewPolicy'  => $definition->previewPolicy->value,
 			'rollbackPolicy' => $definition->rollbackPolicy->value,
 			'isDestructive'  => $definition->isDestructive,
+			'sideEffects'    => $definition->sideEffectRows(),
 			'available'      => null === $blocked,
 			'blockedReason'  => $blocked,
 		];
@@ -188,9 +189,11 @@ final class CatalogExport {
 	 * operator then switched off is not named here, because "buy the add-on"
 	 * would be false.
 	 *
-	 * They carry no risk or policy flags: ProCatalogue records a dispatcher, a
-	 * module and a sentence, and a fabricated risk level on a row nobody can run
-	 * is worse than an honest blank.
+	 * They carry no risk, policy flags or side effects: ProCatalogue records a
+	 * dispatcher, a module and a sentence, and a fabricated risk level on a row
+	 * nobody can run is worse than an honest blank. An empty side-effect list
+	 * would be the worst of the three, because it does not read as a blank — it
+	 * reads as the operation having been checked and found to carry none.
 	 *
 	 * @return list<array<string, mixed>> The absent rows.
 	 */
@@ -211,6 +214,7 @@ final class CatalogExport {
 				'previewPolicy'  => null,
 				'rollbackPolicy' => null,
 				'isDestructive'  => null,
+				'sideEffects'    => null,
 				'available'      => false,
 				'blockedReason'  => 'requires_pro',
 			];

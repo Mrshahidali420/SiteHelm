@@ -4421,3 +4421,66 @@ and a badly written `save_post` handler can rewrite the content it was handed.
 The snapshot is the ordinary `ContentTarget::snapshotOf()` one, so a damaged item
 rolls back like any other content write. A rollback cannot un-fire the hooks, and
 the module's existing rollback wording already says so.
+
+## 75. What an operation costs beyond the change it names (REQ-0128)
+
+`content-resave` changes nothing. Its whole point is to run other people's code —
+an SEO plugin's score, a builder's compiled CSS, a cache's copy — by firing
+`save_post`. That cost had nowhere to live. `risk` says how bad a mistake would
+be, `isDestructive` says whether state is lost without a snapshot, and neither of
+them says "this hands control to code we did not write".
+
+`SideEffect` is a closed enum of five consequences, and `OperationDefinition`
+takes a list of them.
+
+**The line that decides what belongs here.** A definition is static. It is built
+once at registration, with no arguments in hand, and it is identical for every
+caller on every site. So a fact may be declared here only if it is true *every
+time* the operation runs. Anything that depends on what was passed is a plan-time
+warning, which is why the largest warning clusters in the codebase — an image
+written without an attachment id, a field whose definition cannot be read, a
+no-op — are not side effects and never will be. It is also why "deletion is
+permanent" is absent: `isDestructive` and `rollbackPolicy` already carry it.
+
+The five cases:
+
+| Case | What it says |
+|---|---|
+| `runs-installed-code` | Somebody else's code runs during this call, so timing and reach depend on the plugins installed here. |
+| `replaces-running-code` | What runs on later requests is different afterwards. |
+| `slows-the-next-visit` | Something already worked out is discarded; the next visitor waits for it again. |
+| `changes-what-visitors-see` | The change reaches the public site now, not when an editor publishes. |
+| `leaves-references-behind` | Other parts of the site may still point at what this changed, and are not updated with it. |
+
+**Why the first two are separate.** Saving a page runs installed code during the
+call and leaves the same code running afterwards. Writing a snippet leaves
+different code running on every later request. They have different remedies, and
+a reader in a hurry collapses them, so `SideEffectTest` pins them apart.
+
+**The case that is not here.** `widens-access` was drafted and dropped. Its only
+candidate was `user-role-set`, which demotes as often as it promotes, so the fact
+is argument-dependent and fails the static rule above.
+
+**Two rules the constructor enforces.** A side effect declared twice is refused,
+because anything counting them would read two consequences. And a `Mode::Read`
+operation may not declare any: a read changes nothing, so a read with a real
+consequence is a write that has been declared wrongly, and this is where that
+shows up.
+
+**One method, two surfaces.** `sideEffectRows()` renders `{effect, sentence}`
+rows, and both `CatalogBuilder` and `CatalogExport` publish that method's output
+rather than building the shape themselves. A wire shape written out twice is a
+wire shape that drifts, and clients are told to save the export and re-read it.
+Slugs alone would not do: an MCP client has no SiteHelm vocabulary to turn
+`slows-the-next-visit` into something a person can read, so the sentence travels
+with it.
+
+`sentence()` matches with no default arm on purpose. A case added without a
+sentence throws `UnhandledMatchError` in the test rather than reaching a
+catalogue.
+
+**Absence is not a claim of safety.** An empty list means nothing has been
+declared, not that the operation was examined and found to carry none. That is
+also why `CatalogExport::absent_pro_rows()` writes `null` here rather than `[]`
+for operations the add-on has not registered — a blank reads as unknown, an empty
+list reads as checked.
