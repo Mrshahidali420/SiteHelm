@@ -50,11 +50,20 @@ use SiteHelm\Contracts\SnapshotPolicy;
  *
  * THE BYTES GET NO TRUST FROM HAVING BEEN FETCHED. A 200 response from a host
  * that passed MediaUrlGuard is a delivery, not a warrant. The response is handed
- * to MediaMimeGuard::inspectBytes() exactly as a base64 argument would be, and
+ * to MediaMimeGuard::inspectBytes() the same way a base64 argument would be, and
  * the declared `Content-Type` is never consulted at any point: the type is
  * sniffed from the content, the extension must agree with the sniffed type, and
  * the extension deny list runs before either. A PHP script served as
  * `image/png` is refused for what it is, not for what it claimed.
+ *
+ * THE ONE THING AN IMPORT MAY NOT DO THAT AN UPLOAD MAY. It passes
+ * MediaFields::URL_IMPORT_DENIED_TYPES to the guard, so a package type — the
+ * `application/zip` the Pro add-on adds to the allowlist so a plugin or theme
+ * can reach the library — is refused on this transport even though a posted
+ * upload accepts it. A package is installable code, and letting a caller name a
+ * web address the site then fetches a package from would hand it installable
+ * code without the caller ever holding the bytes. A package must be uploaded,
+ * where the caller is answerable for what it sends; it may not be fetched.
  *
  * THE FILENAME IS NEVER INVENTED. It is the caller's `filename` when supplied,
  * otherwise the basename of the URL's path — and when that yields nothing usable
@@ -292,7 +301,7 @@ final class MediaImport implements WriteOperation {
 		// by test_the_content_guard_hands_back_the_bytes_it_was_given, so a guard
 		// that starts normalising what it validates cannot quietly leave this
 		// operation holding the unnormalised copy.
-		$inspected           = $this->guard->inspectBytes( $filename, $bytes );
+		$inspected           = $this->guard->inspectBytes( $filename, $bytes, null, MediaFields::URL_IMPORT_DENIED_TYPES );
 		$this->pending_bytes = $inspected['bytes'];
 
 		return $this->planner->plan( $inspected, $input, $validated['url'] );

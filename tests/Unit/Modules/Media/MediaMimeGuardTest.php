@@ -501,4 +501,91 @@ final class MediaMimeGuardTest extends TestCase {
 			}
 		}
 	}
+
+	/**
+	 * A real, sniffable, empty ZIP: the 22-byte end-of-central-directory record
+	 * a valid archive ends with. libmagic reports it as application/zip, which is
+	 * the type the Pro add-on adds to the allowlist so a plugin or theme package
+	 * can reach the library.
+	 */
+	private function zipBytes(): string {
+		return "PK\x05\x06" . str_repeat( "\x00", 18 );
+	}
+
+	/**
+	 * Configures the site exactly as the Pro add-on leaves it: `application/zip`
+	 * added to the module allowlist, to the site's permitted upload types, and to
+	 * core's full extension map. On this site a posted zip is a legitimate upload.
+	 */
+	private function permitZipUploads(): void {
+		Functions\when( 'get_option' )->justReturn( [ 'image/png', 'application/zip' ] );
+		Functions\when( 'get_allowed_mime_types' )->justReturn(
+			$this->allowedMimeTypes( [ 'zip' => 'application/zip' ] )
+		);
+		Functions\when( 'wp_get_mime_types' )->justReturn(
+			$this->coreMimeTypes() + [ 'zip' => 'application/zip' ]
+		);
+	}
+
+	/**
+	 * AP-2. The transport guard: a package type the site accepts as an upload is
+	 * still refused when it arrives on a transport that forbids it.
+	 *
+	 * This is the URL-import path. The site permits zip uploads — the allowlist,
+	 * the permitted types and the extension map all admit `application/zip`, so
+	 * every other step passes — yet the import transport passes the package type
+	 * in $forbidTypes, and step 5b refuses it. Without that argument this exact
+	 * zip is accepted (the companion test below), so this proves the block is the
+	 * transport, not a change to what the library accepts.
+	 *
+	 * A caller who could name a URL here would hand installable code to the
+	 * library without ever holding the bytes, routing around the Code module's
+	 * entire install-safety apparatus.
+	 */
+	public function test_a_forbidden_type_is_refused_on_the_import_transport_though_the_site_accepts_it(): void {
+		$this->permitZipUploads();
+
+		try {
+			$this->guard->inspectBytes(
+				'theme.zip',
+				$this->zipBytes(),
+				null,
+				MediaFields::URL_IMPORT_DENIED_TYPES
+			);
+		} catch ( OperationException $refusal ) {
+			$this->assertSame( ErrorCode::InvalidInput, $refusal->errorCode );
+
+			// The refusal names neither the type nor a path, like every other
+			// refusal in this class.
+			foreach ( [ $refusal->getMessage(), (string) $refusal->remediation ] as $text ) {
+				$this->assertStringNotContainsStringIgnoringCase( 'zip', $text );
+				$this->assertDoesNotMatchRegularExpression(
+					'#(/|\\\\|wp-content|wp-admin|uploads|[A-Za-z]:)#',
+					$text
+				);
+			}
+
+			return;
+		}
+
+		$this->fail( 'inspectBytes() accepted a zip the import transport must refuse.' );
+	}
+
+	/**
+	 * AP-2, the companion. The SAME zip, on the SAME site, with no $forbidTypes —
+	 * the posted-upload transport — is accepted and reports its sniffed type.
+	 *
+	 * This is what proves the fix narrows one transport and leaves the other
+	 * alone: a package uploaded directly still reaches the library, so the Pro
+	 * install operations keep working; only fetching one from a URL is closed.
+	 */
+	public function test_the_same_forbidden_type_is_accepted_when_the_transport_does_not_forbid_it(): void {
+		$this->permitZipUploads();
+
+		$inspected = $this->guard->inspectBytes( 'theme.zip', $this->zipBytes() );
+
+		$this->assertSame( 'application/zip', $inspected['mimeType'] );
+		$this->assertSame( 'theme.zip', $inspected['filename'] );
+		$this->assertSame( 'zip', $inspected['extension'] );
+	}
 }

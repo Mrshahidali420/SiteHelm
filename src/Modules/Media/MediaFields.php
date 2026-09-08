@@ -71,6 +71,23 @@ final class MediaFields {
 	public const DENIED_EXTENSIONS = [ 'svg', 'svgz', 'php', 'phtml', 'phar', 'html', 'htm', 'xhtml', 'js' ];
 
 	/**
+	 * Types that may enter the library only as a POSTED upload, never fetched
+	 * from an address the caller names.
+	 *
+	 * The Pro add-on appends `application/zip` to the allowlist so a plugin or
+	 * theme package can reach the library and the install operations can read it
+	 * back out. A package is arbitrary code the moment it is installed, so the
+	 * one thing a caller must not be able to do is name a web address and have
+	 * the site fetch a package from it — that hands installable code to the
+	 * library without the caller ever holding the bytes, and turns a URL into a
+	 * payload. Requiring the bytes to be posted keeps the caller answerable for
+	 * exactly what it uploads, and leaves image import, the operation's real
+	 * purpose, untouched. inspectBytes() subtracts these for the import
+	 * transport only; a posted upload passes nothing here and is unaffected.
+	 */
+	public const URL_IMPORT_DENIED_TYPES = [ 'application/zip' ];
+
+	/**
 	 * A positive decimal integer with no leading zero, which is the only suffix
 	 * an attachment target key may carry.
 	 */
