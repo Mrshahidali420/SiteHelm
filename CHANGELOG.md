@@ -73,6 +73,46 @@ an operation behaves.
   no choice but to reject it, over a state that means nothing worse than "this has not been
   set". They now answer `{}`.
 
+- **A deleted menu item could not be put back.** Deleting a menu item recorded what it was so
+  the deletion could be undone, and the undo never ran. The rollback checked the saved
+  reference as if it were an ordinary post and threw the menu item out before it reached the
+  code that knew how to restore it. That check now runs only on the path that restores a post,
+  which is the only place it means anything, and the undo works.
+
+- **Three menu writes offered an undo that was refused when it was pressed.** Reordering a
+  menu, changing what a menu item links to, and assigning a menu to a location each recorded an
+  undo point and showed the button, then refused. The record they wrote could only be redeemed
+  for a change a different part of the plugin had made, so their undo was never redeemable.
+  Each now puts back its own change — the fields it recorded, the whole arrangement, the
+  recorded map — and each re-checks that the person asking may edit menus before it touches
+  anything, refusing without naming the capability when they may not.
+
+- **Twelve Elementor document edits offered an undo that never worked.** Building a document,
+  adding, moving, updating, duplicating, removing and relabelling elements, reordering them,
+  and applying a template all recorded a snapshot and showed the undo button. Pressing it read
+  the saved reference as an ordinary post, did not recognise an Elementor document, and stopped
+  with target-not-found. Each of the twelve now resolves its own document and puts it back, and
+  the restored page is measured through the same path the writer uses, so a preview of the undo
+  describes the document you actually end up with.
+
+### Security
+
+- **A theme file read could be aimed outside the themes directory.** The tools that read and
+  list a theme's files let a caller say which theme to look in, and the name they gave picked
+  the very folder the read was fenced inside. WordPress treats any folder that exists as a
+  theme, with or without a style.css, so a name like `../secret` pointed the read at a folder
+  next to the themes directory — and a plain wp-config.php came straight back, database
+  password and all. A theme name is now accepted only when the site actually has a theme
+  installed under it, checked before any disk is touched.
+
+- **A plugin or theme package could be pulled in from a web address.** With the Pro add-on on,
+  a zip may be brought into the media library so a plugin or theme can be installed from it,
+  and the URL importer shared that permission. An agent could have named a web address, had the
+  site fetch a zip from it, and installed it — handing the site code nobody here chose and
+  going around every safety step in front of an install. The importer now refuses a package
+  outright. A zip can still be uploaded, where whoever sends it holds the bytes and is
+  answerable for them, and installing from a zip already in the library still works.
+
 ## [0.15.0] — 2026-09-07
 
 A media item can now be deleted, and two faults a real site turned up while the last
