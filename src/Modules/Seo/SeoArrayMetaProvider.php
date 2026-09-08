@@ -156,18 +156,51 @@ abstract class SeoArrayMetaProvider implements SeoProvider {
 	 * @return array<string, string|bool|null> Field name => value, every field present.
 	 */
 	public function values( int $post_id ): array {
+		return $this->valuesFromMeta( $this->rawMeta( $post_id ) );
+	}
+
+	/**
+	 * What values() would answer if the store held the rows this snapshot recorded.
+	 *
+	 * THE ROLLBACK PROMISE IS MEASURED IN THE READ'S VOCABULARY. A snapshot holds
+	 * raw vendor rows and a read-back answers projected field names, so a rollback
+	 * that promised the snapshot would promise something no read can ever return,
+	 * pass the plan check, and verify nothing while the site was wrong.
+	 *
+	 * @param array<string, mixed> $snapshot A snapshot this provider captured.
+	 *
+	 * @return array<string, string|bool|null> Field name => value, every field present.
+	 */
+	public function valuesFromSnapshot( array $snapshot ): array {
+		$meta = isset( $snapshot['meta'] ) && is_array( $snapshot['meta'] ) ? $snapshot['meta'] : [];
+
+		return $this->valuesFromMeta( $meta );
+	}
+
+	/**
+	 * The projection itself, over rows rather than over a post.
+	 *
+	 * ONE COPY OF THE PROJECTION RULE. The live read and the rollback promise both
+	 * arrive here, so they cannot drift into two different answers to "what does
+	 * this store say".
+	 *
+	 * @param array<string, mixed[]> $meta Meta key => raw rows.
+	 *
+	 * @return array<string, string|bool|null> Field name => value, every field present.
+	 */
+	private function valuesFromMeta( array $meta ): array {
 		$values = [];
 
 		foreach ( $this->textPaths() as $field => $path ) {
-			$values[ $field ] = $this->readText( $post_id, $path );
+			$values[ $field ] = $this->readText( $meta, $path );
 		}
 
 		foreach ( $this->imagePaths() as $field => $path ) {
-			$values[ $field ] = $this->readText( $post_id, $path );
+			$values[ $field ] = $this->readText( $meta, $path );
 		}
 
 		foreach ( $this->flagPaths() as $field => $path ) {
-			$values[ $field ] = $this->flagFromStored( $this->readRaw( $post_id, $path ) );
+			$values[ $field ] = $this->flagFromStored( $this->readRaw( $meta, $path ) );
 		}
 
 		$ordered = [];
@@ -257,13 +290,13 @@ abstract class SeoArrayMetaProvider implements SeoProvider {
 	/**
 	 * One text value at a path, projected.
 	 *
-	 * @param int                              $post_id The post identifier.
-	 * @param array{0: string, 1: string|null} $path  The [meta key, sub-key] path.
+	 * @param array<string, mixed[]>           $meta Meta key => raw rows.
+	 * @param array{0: string, 1: string|null} $path The [meta key, sub-key] path.
 	 *
 	 * @return string|null The value, or null when it is unset or empty.
 	 */
-	private function readText( int $post_id, array $path ): ?string {
-		$stored = $this->readRaw( $post_id, $path );
+	private function readText( array $meta, array $path ): ?string {
+		$stored = $this->readRaw( $meta, $path );
 
 		if ( ! is_string( $stored ) && ! is_numeric( $stored ) ) {
 			return null;
@@ -280,15 +313,19 @@ abstract class SeoArrayMetaProvider implements SeoProvider {
 	 * The whole-row read is guarded on shape before a sub-key is followed,
 	 * because post meta is a store any plugin or import can put anything into.
 	 *
-	 * @param int                              $post_id The post identifier.
-	 * @param array{0: string, 1: string|null} $path  The [meta key, sub-key] path.
+	 * The rows are read the way the single-value meta read would have read them,
+	 * so a snapshot's rows decode exactly as the live store's do.
+	 *
+	 * @param array<string, mixed[]>           $meta Meta key => raw rows.
+	 * @param array{0: string, 1: string|null} $path The [meta key, sub-key] path.
 	 *
 	 * @return mixed The stored value, or null.
 	 */
-	private function readRaw( int $post_id, array $path ) {
+	private function readRaw( array $meta, array $path ) {
 		[ $key, $sub ] = $path;
 
-		$stored = get_post_meta( $post_id, $key, true );
+		$rows   = isset( $meta[ $key ] ) && is_array( $meta[ $key ] ) ? array_values( $meta[ $key ] ) : [];
+		$stored = [] === $rows ? '' : $rows[0];
 
 		if ( null === $sub ) {
 			return '' === $stored ? null : $stored;

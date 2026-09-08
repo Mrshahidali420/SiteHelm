@@ -79,11 +79,15 @@ abstract class SeoMetaProvider implements SeoProvider {
 	/**
 	 * This plugin's stored answer for the two robots flags.
 	 *
-	 * @param int $post_id The post identifier.
+	 * READ FROM ROWS, NOT FROM THE POST, so the same decoding answers both the live
+	 * store and a captured snapshot. A flag decoded one way for a read and another
+	 * way for a rollback promise is a promise that verifies nothing.
+	 *
+	 * @param array<string, mixed[]> $meta Meta key => raw rows, as rawMeta() reports them.
 	 *
 	 * @return array<string, bool|null> Flag field name => true, false, or null for "the plugin decides".
 	 */
-	abstract protected function readFlags( int $post_id ): array;
+	abstract protected function readFlags( array $meta ): array;
 
 	/**
 	 * Writes the named robots flags in this plugin's own encoding.
@@ -161,17 +165,50 @@ abstract class SeoMetaProvider implements SeoProvider {
 	 * @return array<string, string|bool|null> Field name => value, every field present.
 	 */
 	public function values( int $post_id ): array {
+		return $this->valuesFromMeta( $this->rawMeta( $post_id ) );
+	}
+
+	/**
+	 * What values() would answer if the store held the rows this snapshot recorded.
+	 *
+	 * THE ROLLBACK PROMISE IS MEASURED IN THE READ'S VOCABULARY. A snapshot holds
+	 * raw vendor rows and a read-back answers projected field names, so a rollback
+	 * that promised the snapshot would promise something no read can ever return,
+	 * pass the plan check, and verify nothing while the site was wrong.
+	 *
+	 * @param array<string, mixed> $snapshot A snapshot this provider captured.
+	 *
+	 * @return array<string, string|bool|null> Field name => value, every field present.
+	 */
+	public function valuesFromSnapshot( array $snapshot ): array {
+		$meta = isset( $snapshot['meta'] ) && is_array( $snapshot['meta'] ) ? $snapshot['meta'] : [];
+
+		return $this->valuesFromMeta( $meta );
+	}
+
+	/**
+	 * The projection itself, over rows rather than over a post.
+	 *
+	 * ONE COPY OF THE PROJECTION RULE. The live read and the rollback promise both
+	 * arrive here, so they cannot drift into two different answers to "what does
+	 * this store say".
+	 *
+	 * @param array<string, mixed[]> $meta Meta key => raw rows.
+	 *
+	 * @return array<string, string|bool|null> Field name => value, every field present.
+	 */
+	private function valuesFromMeta( array $meta ): array {
 		$values = [];
 
 		foreach ( $this->textKeys() as $field => $key ) {
-			$values[ $field ] = $this->readText( $post_id, $key );
+			$values[ $field ] = $this->cleanText( $this->storedValue( $meta, $key ) );
 		}
 
 		foreach ( $this->imageKeys() as $field => $key ) {
-			$values[ $field ] = $this->readText( $post_id, $key );
+			$values[ $field ] = $this->cleanText( $this->storedValue( $meta, $key ) );
 		}
 
-		$flags = $this->readFlags( $post_id );
+		$flags = $this->readFlags( $meta );
 
 		$ordered = [];
 		foreach ( SeoFields::FIELD_ORDER as $field ) {
@@ -313,8 +350,40 @@ abstract class SeoMetaProvider implements SeoProvider {
 	 * @return string|null The value, or null when it is unset or empty.
 	 */
 	protected function readText( int $post_id, string $key ): ?string {
-		$stored = get_post_meta( $post_id, $key, true );
+		return $this->cleanText( get_post_meta( $post_id, $key, true ) );
+	}
 
+	/**
+	 * The single row the single-value meta read would have returned.
+	 *
+	 * The absent case answers the empty string rather than null, because that is
+	 * what get_post_meta()'s single read answers and a decoder written against one
+	 * of those two shapes must not change its mind depending on where the rows
+	 * came from.
+	 *
+	 * @param array<string, mixed[]> $meta Meta key => raw rows.
+	 * @param string                 $key  The meta key.
+	 *
+	 * @return mixed The first row, or the empty string when the key holds none.
+	 */
+	protected function storedValue( array $meta, string $key ) {
+		$rows = isset( $meta[ $key ] ) && is_array( $meta[ $key ] ) ? array_values( $meta[ $key ] ) : [];
+
+		return [] === $rows ? '' : $rows[0];
+	}
+
+	/**
+	 * One stored value as a reportable string.
+	 *
+	 * The value is guarded on shape before it is trimmed, because post meta is a
+	 * store any plugin or import can put an array or an object into, and `trim()`
+	 * on an array is a fatal rather than a wrong answer.
+	 *
+	 * @param mixed $stored The stored value.
+	 *
+	 * @return string|null The value, or null when it is unset or empty.
+	 */
+	private function cleanText( $stored ): ?string {
 		if ( ! is_string( $stored ) && ! is_numeric( $stored ) ) {
 			return null;
 		}

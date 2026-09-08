@@ -60,19 +60,64 @@ final class RankMathTermProvider extends SeoTermProviderBase {
 	public function values( string $taxonomy, int $term_id ): array {
 		unset( $taxonomy );
 
+		return $this->valuesFromMeta( $this->raw_meta( $term_id ) );
+	}
+
+	/**
+	 * What values() would answer if the store held the rows this snapshot recorded.
+	 *
+	 * @param array<string, mixed> $snapshot A snapshot this provider captured.
+	 *
+	 * @return array<string, string|bool|null> Field name => value, every field present.
+	 */
+	public function valuesFromSnapshot( array $snapshot ): array {
+		$meta = isset( $snapshot['meta'] ) && is_array( $snapshot['meta'] ) ? $snapshot['meta'] : [];
+
+		return $this->valuesFromMeta( $meta );
+	}
+
+	/**
+	 * The projection itself, over rows rather than over a term.
+	 *
+	 * ONE COPY OF THE PROJECTION RULE, so the live read and the rollback promise
+	 * cannot drift into two different answers to "what does this store say".
+	 *
+	 * @param array<string, mixed[]> $meta Meta key => raw rows.
+	 *
+	 * @return array<string, string|bool|null> Field name => value, every field present.
+	 */
+	private function valuesFromMeta( array $meta ): array {
 		$values = [];
 
 		foreach ( SeoTermFields::FIELD_ORDER as $field ) {
 			if ( SeoFields::FIELD_NOINDEX === $field ) {
-				$values[ $field ] = $this->noindex( $term_id );
+				$values[ $field ] = $this->noindex_from( $this->stored_value( $meta, self::KEY_ROBOTS ) );
 
 				continue;
 			}
 
-			$values[ $field ] = self::clean( get_term_meta( $term_id, self::TEXT_KEYS[ $field ], true ) );
+			$values[ $field ] = self::clean( $this->stored_value( $meta, self::TEXT_KEYS[ $field ] ) );
 		}
 
 		return $values;
+	}
+
+	/**
+	 * The single row the single-value term-meta read would have returned.
+	 *
+	 * The absent case answers the empty string rather than null, because that is
+	 * what get_term_meta()'s single read answers and a decoder must not change its
+	 * mind depending on where the rows came from.
+	 *
+	 * @param array<string, mixed[]> $meta Meta key => raw rows.
+	 * @param string                 $key  The meta key.
+	 *
+	 * @return mixed The first row, or the empty string when the key holds none.
+	 */
+	private function stored_value( array $meta, string $key ) {
+		$rows = isset( $meta[ $key ] ) && is_array( $meta[ $key ] ) ? array_values( $meta[ $key ] ) : [];
+
+		return [] === $rows ? '' : $rows[0];
 	}
 
 	/**
@@ -182,12 +227,12 @@ final class RankMathTermProvider extends SeoTermProviderBase {
 	/**
 	 * The noindex state the directive array holds.
 	 *
-	 * @param int $term_id The term identifier.
+	 * @param mixed $stored The stored directive list.
 	 *
 	 * @return bool|null True for noindex, false for index, null for neither.
 	 */
-	private function noindex( int $term_id ): ?bool {
-		$directives = $this->directives( $term_id );
+	private function noindex_from( $stored ): ?bool {
+		$directives = $this->directives_from( $stored );
 
 		if ( in_array( self::NOINDEX, $directives, true ) ) {
 			return true;
@@ -233,8 +278,17 @@ final class RankMathTermProvider extends SeoTermProviderBase {
 	 * @return string[] The directives.
 	 */
 	private function directives( int $term_id ): array {
-		$stored = get_term_meta( $term_id, self::KEY_ROBOTS, true );
+		return $this->directives_from( get_term_meta( $term_id, self::KEY_ROBOTS, true ) );
+	}
 
+	/**
+	 * The same cleaning, over a stored value rather than a term.
+	 *
+	 * @param mixed $stored The stored directive list.
+	 *
+	 * @return string[] The directives.
+	 */
+	private function directives_from( $stored ): array {
 		if ( ! is_array( $stored ) ) {
 			return [];
 		}

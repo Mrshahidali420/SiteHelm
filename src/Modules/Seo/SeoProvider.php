@@ -91,6 +91,29 @@ interface SeoProvider {
 	public function values( int $post_id ): array;
 
 	/**
+	 * What values() would answer if the store held the rows a snapshot recorded.
+	 *
+	 * THE SNAPSHOT AND THE READ SPEAK DIFFERENT LANGUAGES, and a rollback has to
+	 * promise the read's. capture() records raw vendor rows; a read-back answers
+	 * projected field names; the two share exactly one key. A rollback that
+	 * promised the snapshot would be non-empty, would pass the plan check, and
+	 * would verify nothing while the site was wrong — so the translation lives
+	 * here, beside the store that knows how to read itself.
+	 *
+	 * IT MIRRORS values(), NOT project(). The two disagree about a store that
+	 * cannot hold an explicit negative, and a rollback is measured against what a
+	 * read reports rather than against what a write asked for.
+	 *
+	 * @param array<string, mixed> $snapshot A snapshot this provider captured.
+	 *
+	 * @return array<string, string|bool|null> Field name => value, every field present.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+	 */
+	public function valuesFromSnapshot( array $snapshot ): array;
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+
+	/**
 	 * The plugin's own analysis scores for one post.
 	 *
 	 * BOTH KEYS ARE ALWAYS PRESENT: `seoScore` and `readabilityScore`, each an

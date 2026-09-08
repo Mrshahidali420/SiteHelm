@@ -44,6 +44,29 @@ interface SeoTermProvider {
 	public function values( string $taxonomy, int $term_id ): array;
 
 	/**
+	 * What values() would answer if the store held the rows a snapshot recorded.
+	 *
+	 * THE SNAPSHOT AND THE READ SPEAK DIFFERENT LANGUAGES, and a rollback has to
+	 * promise the read's. capture() records the raw store; a read-back answers
+	 * projected field names. A rollback that promised the snapshot would be
+	 * non-empty, would pass the plan check, and would verify nothing while the
+	 * site was wrong — so the translation lives beside the store that knows how to
+	 * read itself.
+	 *
+	 * The taxonomy and term are not asked for: a snapshot carries everything the
+	 * projection needs, and re-reading the live store here would answer the state
+	 * a rollback is about to replace.
+	 *
+	 * @param array<string, mixed> $snapshot A snapshot this provider captured.
+	 *
+	 * @return array<string, string|bool|null> Field name => value, every field present.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+	 */
+	public function valuesFromSnapshot( array $snapshot ): array;
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+
+	/**
 	 * What the named changes will read back as once written.
 	 *
 	 * @param array<string, string|bool|null> $changes Field name => requested value.

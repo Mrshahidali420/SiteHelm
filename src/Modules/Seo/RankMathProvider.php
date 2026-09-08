@@ -153,12 +153,12 @@ final class RankMathProvider extends SeoMetaProvider {
 	/**
 	 * Rank Math's stored answer for the two robots flags.
 	 *
-	 * @param int $post_id The post identifier.
+	 * @param array<string, mixed[]> $meta Meta key => raw rows.
 	 *
 	 * @return array<string, bool|null> Flag field name => true, false, or null.
 	 */
-	protected function readFlags( int $post_id ): array {
-		$directives = $this->directives( $post_id );
+	protected function readFlags( array $meta ): array {
+		$directives = $this->directivesFrom( $this->storedValue( $meta, self::KEY_ROBOTS ) );
 
 		$noindex = null;
 		if ( in_array( self::NOINDEX, $directives, true ) ) {
@@ -227,8 +227,20 @@ final class RankMathProvider extends SeoMetaProvider {
 	 * @return string[] The directives.
 	 */
 	private function directives( int $post_id ): array {
-		$stored = get_post_meta( $post_id, self::KEY_ROBOTS, true );
+		return $this->directivesFrom( get_post_meta( $post_id, self::KEY_ROBOTS, true ) );
+	}
 
+	/**
+	 * The same cleaning, over a stored value rather than a post.
+	 *
+	 * The live read and a captured snapshot both arrive here, so a directive list
+	 * cannot be decoded one way for a read and another way for a rollback promise.
+	 *
+	 * @param mixed $stored The stored directive list.
+	 *
+	 * @return string[] The directives.
+	 */
+	private function directivesFrom( $stored ): array {
 		if ( ! is_array( $stored ) ) {
 			return [];
 		}
