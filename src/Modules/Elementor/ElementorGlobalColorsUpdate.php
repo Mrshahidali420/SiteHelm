@@ -10,8 +10,8 @@ declare(strict_types=1);
 namespace SiteHelm\Modules\Elementor;
 
 use SiteHelm\Change\PlannedChange;
+use SiteHelm\Change\RollbackDelegate;
 use SiteHelm\Change\TargetState;
-use SiteHelm\Change\WriteOperation;
 use SiteHelm\Contracts\Domain;
 use SiteHelm\Contracts\ErrorCode;
 use SiteHelm\Contracts\Mode;
@@ -48,7 +48,7 @@ use SiteHelm\Contracts\SnapshotPolicy;
  *
  * @package SiteHelm
  */
-final class ElementorGlobalColorsUpdate implements WriteOperation {
+final class ElementorGlobalColorsUpdate implements RollbackDelegate {
 
 	/**
 	 * The registered operation identifier.
@@ -281,6 +281,36 @@ final class ElementorGlobalColorsUpdate implements WriteOperation {
 		return $this->writes->readBackState( $targetKey, self::KEYS );
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- These two are the RollbackDelegate contract's method names.
+	/**
+	 * Resolves the kit a recorded rollback names.
+	 *
+	 * @param string           $target_key The recorded target key.
+	 * @param OperationContext $context    The request context.
+	 *
+	 * @return TargetState The resolved kit.
+	 */
+	public function resolveRollbackTarget( string $target_key, OperationContext $context ): TargetState {
+		return $this->writes->resolveRollbackTarget( $target_key, self::KEYS, $context );
+	}
+
+	// phpcs:disable Generic.CodeAnalysis.UnusedFunctionParameter.FoundAfterLastUsed -- $current and $context are the RollbackDelegate contract's signature; the promise is of the recorded restore, not the present state.
+	/**
+	 * The read-back a recorded restore state promises.
+	 *
+	 * @param array<string, mixed> $restore_state The recorded restore state.
+	 * @param TargetState          $current       The kit's current state.
+	 * @param OperationContext     $context       The request context.
+	 *
+	 * @return array<string, mixed> The promised read-back, empty when the state
+	 *                              holds no restorable palette.
+	 */
+	public function promiseRollback( array $restore_state, TargetState $current, OperationContext $context ): array {
+		return $this->writes->promiseRollback( $restore_state, self::KEYS );
+	}
+	// phpcs:enable Generic.CodeAnalysis.UnusedFunctionParameter.FoundAfterLastUsed
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 
 	// phpcs:disable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase -- $restoreState matches the WriteOperation contract.
 	/**

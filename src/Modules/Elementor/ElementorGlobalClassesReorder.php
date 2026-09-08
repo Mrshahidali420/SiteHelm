@@ -10,8 +10,8 @@ declare(strict_types=1);
 namespace SiteHelm\Modules\Elementor;
 
 use SiteHelm\Change\PlannedChange;
+use SiteHelm\Change\RollbackDelegate;
 use SiteHelm\Change\TargetState;
-use SiteHelm\Change\WriteOperation;
 use SiteHelm\Contracts\Domain;
 use SiteHelm\Contracts\ErrorCode;
 use SiteHelm\Contracts\Mode;
@@ -46,7 +46,9 @@ use SiteHelm\Contracts\SnapshotPolicy;
  *
  * @package SiteHelm
  */
-final class ElementorGlobalClassesReorder implements WriteOperation {
+final class ElementorGlobalClassesReorder implements RollbackDelegate {
+
+	use ElementorGlobalClassRollbackTrait;
 
 	/**
 	 * The registered operation identifier.

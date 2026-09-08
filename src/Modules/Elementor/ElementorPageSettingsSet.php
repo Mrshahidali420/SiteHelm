@@ -10,8 +10,8 @@ declare(strict_types=1);
 namespace SiteHelm\Modules\Elementor;
 
 use SiteHelm\Change\PlannedChange;
+use SiteHelm\Change\RollbackDelegate;
 use SiteHelm\Change\TargetState;
-use SiteHelm\Change\WriteOperation;
 use SiteHelm\Contracts\Domain;
 use SiteHelm\Contracts\ErrorCode;
 use SiteHelm\Contracts\Mode;
@@ -80,7 +80,7 @@ use SiteHelm\Contracts\SnapshotPolicy;
  *
  * @package SiteHelm
  */
-final class ElementorPageSettingsSet implements WriteOperation {
+final class ElementorPageSettingsSet implements RollbackDelegate {
 
 	/**
 	 * The registered operation identifier.
@@ -364,6 +364,34 @@ final class ElementorPageSettingsSet implements WriteOperation {
 	}
 	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- These two are the RollbackDelegate contract's method names.
+	/**
+	 * Resolves the settings row a recorded rollback names.
+	 *
+	 * @param string           $target_key The recorded target key.
+	 * @param OperationContext $context    The request context.
+	 *
+	 * @return TargetState The resolved settings row.
+	 */
+	public function resolveRollbackTarget( string $target_key, OperationContext $context ): TargetState {
+		return $this->targets->resolveRollbackTarget( $target_key, $context );
+	}
+
+	/**
+	 * The read-back a recorded restore state promises.
+	 *
+	 * @param array<string, mixed> $restore_state The recorded restore state.
+	 * @param TargetState          $current       The row's current state.
+	 * @param OperationContext     $context       The request context.
+	 *
+	 * @return array<string, mixed> The promised read-back, empty when the state
+	 *                              promises nothing.
+	 */
+	public function promiseRollback( array $restore_state, TargetState $current, OperationContext $context ): array {
+		return $this->targets->promiseRollback( $restore_state, $current, $context );
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 
 	// phpcs:disable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase -- $restoreState matches the WriteOperation contract.
 	/**

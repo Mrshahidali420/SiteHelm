@@ -10,8 +10,10 @@ declare(strict_types=1);
 namespace SiteHelm\Tests\Unit\Modules\Elementor;
 
 use SiteHelm\Change\PlannedChange;
+use SiteHelm\Change\TargetState;
 use SiteHelm\Contracts\ErrorCode;
 use SiteHelm\Contracts\OperationException;
+use SiteHelm\Modules\Elementor\ElementorApi;
 use SiteHelm\Modules\Elementor\ElementorClassRepositorySnapshot;
 use SiteHelm\Modules\Elementor\ElementorGlobalClassWrite;
 use SiteHelm\Tests\Doubles\GlobalClassFakeParser;
@@ -480,5 +482,99 @@ final class ElementorGlobalClassWriteTest extends TestCase {
 		$this->assertSame( '', $writes->labelOf( [ 'id' => 'g-card' ] ) );
 		$this->assertSame( '', $writes->labelOf( null ) );
 		$this->assertSame( '', $writes->labelOf( [ 'label' => [ 'not', 'scalar' ] ] ) );
+	}
+
+	// ------------------------------------------------- the rollback delegate
+
+	/**
+	 * The promise the four class writes advertise is the read-back a real
+	 * restore leaves — measured, not read off the recorded bytes.
+	 *
+	 * The snapshot stores the whole repository keyed by editing context; the
+	 * read-back projects one digest and one count of the frontend set. A promise
+	 * built in the snapshot's vocabulary would hand the recorded bytes back to
+	 * themselves and verify having restored nothing.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_the_rollback_promise_equals_the_read_back_of_a_real_restore(): void {
+		$this->installGlobalClassRepository();
+		$this->seedGlobalClasses( [ 'g-card' => $this->globalClassDefinition( 'g-card', 'Card' ) ], [ 'g-card' ] );
+
+		$writes   = $this->globalClassWrites();
+		$recorded = (array) $writes->capture();
+
+		$this->assertNotSame( [], $recorded, 'A seeded repository must be snapshottable.' );
+
+		$writes->apply(
+			$writes->plan(
+				[
+					'g-card'   => $this->globalClassDefinition( 'g-card', 'Card' ),
+					'g-button' => $this->globalClassDefinition( 'g-button', 'Button' ),
+				],
+				[ 'g-card', 'g-button' ],
+				[]
+			)
+		);
+
+		$current = $writes->resolveRollbackTarget( ElementorClassRepositorySnapshot::TARGET_KEY, $this->globalClassContext() );
+		$promise = $writes->promiseRollback( $recorded, $current, $this->globalClassContext() );
+
+		$this->assertNotSame( [], $promise, 'A recorded class set must promise a read-back.' );
+		$this->assertNotSame( $current->fields, $promise, 'The promise must describe the recorded set, not the one the site holds now.' );
+
+		$writes->restoreState( $recorded );
+
+		$this->assertSame(
+			$writes->readBackState( ElementorClassRepositorySnapshot::TARGET_KEY )->fields,
+			$promise,
+			'The promise must be exactly the read-back a real restore leaves.'
+		);
+	}
+
+	/**
+	 * A snapshot holding no frontend context promises nothing.
+	 *
+	 * The read-back measures the frontend set only. A snapshot carrying just the
+	 * preview editor's copy names nothing that read-back could be compared
+	 * against, and an empty map is how the rollback says so — promising the
+	 * preview copy instead would verify a set nobody asked to be put back.
+	 */
+	public function test_a_snapshot_holding_no_frontend_context_promises_nothing(): void {
+		$current = new TargetState( ElementorClassRepositorySnapshot::TARGET_KEY, true, [] );
+
+		$this->assertSame(
+			[],
+			$this->globalClassWrites()->promiseRollback(
+				[
+					ElementorClassRepositorySnapshot::SNAPSHOT_CONTEXTS => [
+						ElementorApi::CONTEXT_PREVIEW => [
+							ElementorApi::GLOBAL_CLASSES_ITEMS_KEY => [],
+							ElementorApi::GLOBAL_CLASSES_ORDER_KEY => [],
+						],
+					],
+				],
+				$current,
+				$this->globalClassContext()
+			)
+		);
+	}
+
+	/**
+	 * A recorded key naming anything but the class repository refuses.
+	 *
+	 * The refusal must not name the capability: the caller is being told their
+	 * reference is wrong, not that their account is, and a permission word in a
+	 * not-found message sends them to the wrong fix.
+	 */
+	public function test_a_key_that_is_not_the_class_repository_refuses_the_rollback(): void {
+		try {
+			$this->globalClassWrites()->resolveRollbackTarget( 'elementor-document:7', $this->globalClassContext() );
+			$this->fail( 'A key naming no class repository must refuse.' );
+		} catch ( OperationException $exception ) {
+			$this->assertSame( ErrorCode::TargetNotFound, $exception->errorCode );
+			$this->assertStringNotContainsString( ElementorGlobalClassWrite::CAPABILITY, $exception->getMessage() );
+		}
 	}
 }

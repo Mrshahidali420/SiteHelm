@@ -472,6 +472,55 @@ final class ElementorKitWriteTest extends TestCase {
 			$this->assertSame( ErrorCode::VerificationFailed, $e->errorCode );
 		}
 	}
+
+	// ------------------------------------------------- the rollback delegate
+
+	/**
+	 * The promise a token rollback advertises is the read-back a real restore
+	 * leaves — measured, not read off the recorded bytes.
+	 *
+	 * The snapshot stores the raw lists plus a presence map; the read-back
+	 * projects a digest and an entry count over the same two keys. A promise
+	 * expressed in the snapshot's vocabulary would compare the recorded lists
+	 * against themselves and pass whether or not the kit row moved.
+	 */
+	public function test_the_rollback_promise_equals_the_read_back_of_a_real_restore(): void {
+		$context  = $this->makeContext();
+		$snapshot = (array) $this->operation->captureSnapshot( $this->operation->resolveTarget( [], $context ), $context );
+
+		$key = $this->apply( $this->request( 'primary', [ 'color' => '#FF0000' ] ) );
+
+		$current = $this->operation->resolveRollbackTarget( $key, $context );
+		$promise = $this->operation->promiseRollback( $snapshot, $current, $context );
+
+		$this->assertNotSame( [], $promise, 'A recorded kit must promise a read-back.' );
+		$this->assertNotSame( $current->fields, $promise, 'The promise must describe the recorded palette, not the one the kit holds now.' );
+
+		$this->operation->restore( $snapshot, $context );
+
+		$this->assertSame(
+			$this->operation->readBack( $key, $context )->fields,
+			$promise,
+			'The promise must be exactly the read-back a real restore leaves.'
+		);
+	}
+
+	/**
+	 * A recorded key naming no kit refuses the rollback.
+	 *
+	 * The refusal must not name the capability: the reference is what is wrong,
+	 * and a permission word here sends the caller to change a role that was
+	 * never the problem.
+	 */
+	public function test_a_key_naming_no_kit_refuses_the_rollback(): void {
+		try {
+			$this->operation->resolveRollbackTarget( 'elementor-document:7', $this->makeContext() );
+			$this->fail( 'A key naming no kit must refuse.' );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::TargetNotFound, $e->errorCode );
+			$this->assertStringNotContainsString( ElementorKit::CAPABILITY, $e->getMessage() );
+		}
+	}
 }
 
 /**

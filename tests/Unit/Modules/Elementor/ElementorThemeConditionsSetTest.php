@@ -891,6 +891,59 @@ final class ElementorThemeConditionsSetTest extends TestCase {
 		$this->assertInstanceOf( WriteOperation::class, $this->operation );
 	}
 
+	// ------------------------------------------------- the rollback delegate
+
+	/**
+	 * The promise a conditions rollback advertises is the read-back a real
+	 * restore leaves — measured, not read off the recorded bytes.
+	 *
+	 * The snapshot records the raw rule list and a flag saying whether the meta
+	 * row existed at all; the read-back projects the conditions the template
+	 * carries. A promise expressed in the snapshot's vocabulary would compare the
+	 * recorded list against itself and pass whether or not the row moved.
+	 */
+	public function test_the_rollback_promise_equals_the_read_back_of_a_real_restore(): void {
+		$this->withElementor();
+
+		$context  = $this->makeContext();
+		$snapshot = (array) $this->operation->captureSnapshot( $this->resolve(), $context );
+
+		$this->apply( [ 'include/singular/post', 'exclude/singular/post/12' ] );
+
+		$key     = ElementorThemeConditions::targetKey( 42 );
+		$current = $this->operation->resolveRollbackTarget( $key, $context );
+		$promise = $this->operation->promiseRollback( $snapshot, $current, $context );
+
+		$this->assertNotSame( [], $promise, 'A recorded rule must promise a read-back.' );
+		$this->assertNotSame( $current->fields, $promise, 'The promise must describe the recorded rule, not the one the template carries now.' );
+
+		$this->operation->restore( $snapshot, $context );
+
+		$this->assertSame(
+			$this->operation->readBack( $key, $context )->fields,
+			$promise,
+			'The promise must be exactly the read-back a real restore leaves.'
+		);
+	}
+
+	/**
+	 * A recorded key naming no theme template refuses the rollback.
+	 *
+	 * The refusal must not name the capability: the reference is what is wrong,
+	 * and a permission word here sends the caller to change a role that was never
+	 * the problem.
+	 */
+	public function test_a_key_naming_no_theme_template_refuses_the_rollback(): void {
+		$this->withElementor();
+
+		$refusal = $this->expectRefusal(
+			ErrorCode::TargetNotFound,
+			fn() => $this->operation->resolveRollbackTarget( 'elementor-document:42', $this->makeContext() )
+		);
+
+		$this->assertStringNotContainsString( ElementorThemeConditions::CAPABILITY, $refusal->getMessage() );
+	}
+
 	/**
 	 * Asserts a call refuses with one error code and returns the refusal.
 	 *

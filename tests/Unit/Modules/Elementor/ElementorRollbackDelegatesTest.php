@@ -70,4 +70,50 @@ final class ElementorRollbackDelegatesTest extends TestCase {
 			$class . ' records an elementor-document snapshot and must be able to redeem it.'
 		);
 	}
+
+	/**
+	 * The eight Elementor writes whose target is not a document.
+	 *
+	 * Global classes, kit tokens, one page's settings row and one theme
+	 * template's display rule. None of these keys carries a post id the rollback
+	 * operation's own parser can read, so every one of them advertised an undo
+	 * that resolved to target_not_found — the same defect as the twelve above,
+	 * on four targets that are not posts at all.
+	 *
+	 * @return array<string, array{class-string}> The operation classes.
+	 */
+	public static function nonDocumentWriteProvider(): array {
+		$classes = [
+			'ElementorGlobalClassCreate',
+			'ElementorGlobalClassUpdate',
+			'ElementorGlobalClassDelete',
+			'ElementorGlobalClassesReorder',
+			'ElementorGlobalColorsUpdate',
+			'ElementorGlobalTypographyUpdate',
+			'ElementorPageSettingsSet',
+			'ElementorThemeConditionsSet',
+		];
+
+		$cases = [];
+
+		foreach ( $classes as $short ) {
+			$cases[ $short ] = [ 'SiteHelm\\Modules\\Elementor\\' . $short ];
+		}
+
+		return $cases;
+	}
+
+	/**
+	 * Each of the eight is a RollbackDelegate.
+	 *
+	 * @dataProvider nonDocumentWriteProvider
+	 *
+	 * @param class-string $class The operation class.
+	 */
+	public function test_an_elementor_write_on_a_non_document_target_is_a_rollback_delegate( string $class ): void {
+		$this->assertTrue(
+			is_subclass_of( $class, RollbackDelegate::class ),
+			$class . ' records a snapshot the rollback operation cannot resolve on its own, so it must redeem it itself.'
+		);
+	}
 }

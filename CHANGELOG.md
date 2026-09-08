@@ -95,6 +95,17 @@ an operation behaves.
   the restored page is measured through the same path the writer uses, so a preview of the undo
   describes the document you actually end up with.
 
+- **Eight more Elementor writes offered an undo that was refused.** Creating, changing,
+  deleting and reordering global classes, changing the global colours and the global fonts,
+  setting a page's Elementor settings, and setting where a theme template applies each recorded
+  an undo point and showed the button, then stopped with target-not-found when it was pressed.
+  None of the eight edits a post, and the undo could only read a saved reference that named
+  one. Each now finds its own target — the class repository, the kit, the page, the theme
+  template — and puts back what it recorded, measured through the same path the write itself
+  uses, so the preview of the undo describes what you actually end up with. Each re-checks that
+  the person asking may make that change before it touches anything, and refuses without
+  naming the capability when they may not.
+
 ### Security
 
 - **A theme file read could be aimed outside the themes directory.** The tools that read and

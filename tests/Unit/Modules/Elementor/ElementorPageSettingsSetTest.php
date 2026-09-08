@@ -926,6 +926,99 @@ final class ElementorPageSettingsSetTest extends TestCase {
 		}
 	}
 
+	// ------------------------------------------------- the rollback delegate
+
+	/**
+	 * The promise a page-settings rollback advertises is the read-back a real
+	 * restore leaves — measured, not read off the recorded bytes.
+	 *
+	 * The snapshot records the whole settings row plus the page-template row and
+	 * two presence flags; the read-back projects a digest, a key count and the
+	 * template. A promise expressed in the snapshot's vocabulary would compare
+	 * the recorded row against itself and pass whether or not either row moved.
+	 */
+	public function test_the_rollback_promise_equals_the_read_back_of_a_real_restore(): void {
+		$this->withElementor();
+		$this->storePageFixture();
+		$this->storePageSettings(
+			[
+				'custom_css' => '.hero{}',
+				'template'   => 'elementor_theme',
+			]
+		);
+		$this->storePageTemplate( 'elementor_theme' );
+
+		$operation = $this->pageSettingsSet();
+		$input     = $this->arguments( [ 'layout' => 'canvas' ] );
+		$target    = $this->resolved( $operation, $input );
+		$planned   = $operation->planChange( $target, $input, $this->context() );
+		$snapshot  = (array) $operation->captureSnapshot( $target, $this->context() );
+
+		$key = $operation->applyChange( $target, $planned, $this->context() );
+
+		$current = $operation->resolveRollbackTarget( $key, $this->context() );
+		$promise = $operation->promiseRollback( $snapshot, $current, $this->context() );
+
+		$this->assertNotSame( [], $promise, 'A recorded settings row must promise a read-back.' );
+		$this->assertNotSame( $current->fields, $promise, 'The promise must describe the recorded row, not the one the page holds now.' );
+
+		$operation->restore( $snapshot, $this->context() );
+
+		$this->assertSame(
+			$operation->readBack( $key, $this->context() )->fields,
+			$promise,
+			'The promise must be exactly the read-back a real restore leaves.'
+		);
+	}
+
+	/**
+	 * A snapshot with no record of the page-template row promises nothing.
+	 *
+	 * A restore leaves that row alone when the snapshot never measured it, so
+	 * nothing can honestly predict what the read-back will find there. An empty
+	 * map is how the rollback says so; guessing an empty template would promise
+	 * a theme change the restore never makes.
+	 */
+	public function test_a_snapshot_with_no_record_of_the_template_row_promises_nothing(): void {
+		$this->withElementor();
+		$this->storePageFixture();
+
+		$operation = $this->pageSettingsSet();
+		$key       = ElementorPageSettings::targetKey( self::DOCUMENT_ID );
+
+		$this->assertSame(
+			[],
+			$operation->promiseRollback(
+				[
+					'post_id'  => self::DOCUMENT_ID,
+					'existed'  => true,
+					'settings' => [ 'custom_css' => '.hero{}' ],
+				],
+				$operation->resolveRollbackTarget( $key, $this->context() ),
+				$this->context()
+			)
+		);
+	}
+
+	/**
+	 * A recorded key that names no page-settings row refuses the rollback.
+	 *
+	 * The refusal must not name the capability: the reference is what is wrong,
+	 * and `edit_post` in a not-found message sends the caller to change a role
+	 * that was never the problem.
+	 */
+	public function test_a_key_that_is_not_a_page_settings_key_refuses_the_rollback(): void {
+		$this->withElementor();
+
+		try {
+			$this->pageSettingsSet()->resolveRollbackTarget( 'elementor-document:' . self::DOCUMENT_ID, $this->context() );
+			$this->fail( 'A key naming no page-settings row must refuse.' );
+		} catch ( OperationException $refusal ) {
+			$this->assertSame( ErrorCode::TargetNotFound, $refusal->errorCode );
+			$this->assertStringNotContainsString( 'edit_post', $refusal->getMessage() );
+		}
+	}
+
 	// ------------------------------------------------------- the scaffolding
 
 	/**

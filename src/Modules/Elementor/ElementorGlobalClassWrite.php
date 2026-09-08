@@ -547,6 +547,84 @@ final class ElementorGlobalClassWrite {
 		];
 	}
 
+	// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The message is a fixed literal carrying nothing from the request.
+	/**
+	 * Resolves the class repository from its recorded target key.
+	 *
+	 * The repository is one thing per site, so the key is a constant rather than
+	 * an identifier: anything else names a target these operations never wrote.
+	 *
+	 * THE CAPABILITY RE-CHECK HAPPENS HERE, through `resolve()`, which asks
+	 * `guard()` before it reads. `content-rollback-apply` asks `edit_post` at its
+	 * front gate, and a caller holding only that has no business rewriting the
+	 * site's global class repository.
+	 *
+	 * @param string           $target_key The target key the snapshot recorded.
+	 * @param OperationContext $context    The request context.
+	 *
+	 * @return TargetState The current state of the repository.
+	 *
+	 * @throws OperationException With ErrorCode::TargetNotFound when the key names
+	 *                           no repository, or ErrorCode::Forbidden when this
+	 *                           caller may not rewrite it.
+	 */
+	public function resolveRollbackTarget( string $target_key, OperationContext $context ): TargetState {
+		if ( ElementorClassRepositorySnapshot::TARGET_KEY !== $target_key ) {
+			throw new OperationException(
+				ErrorCode::TargetNotFound,
+				'That recorded reference does not name this site\'s Elementor global classes, so there is nothing to put back.',
+				'List the classes with ' . ElementorGlobalClassList::OPERATION_ID . ' and set the ones you need by hand.'
+			);
+		}
+
+		return $this->resolve( $context );
+	}
+	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+
+	// phpcs:disable Generic.CodeAnalysis.UnusedFunctionParameter.FoundAfterLastUsed -- $current and $context are the RollbackDelegate contract's signature; the promise is of the recorded restore, not the present state.
+	/**
+	 * The fields a restoration of this recorded repository would read back as.
+	 *
+	 * THE PROMISE IS MEASURED ON THE FRONTEND CONTEXT ALONE, because that is the
+	 * one context `readBackState()` measures. A snapshot records every context
+	 * Elementor reports and the restore writes all of them back, but verification
+	 * only ever looks at the frontend, so promising anything else would promise a
+	 * number nothing compares against.
+	 *
+	 * A snapshot with no frontend context yields an empty map rather than a guess.
+	 * The caller turns that into `rollback_unavailable`, which is the honest
+	 * answer: the restore may well run, but nothing here can say what it lands on.
+	 *
+	 * @param array<string, mixed> $restore_state The decoded recorded state.
+	 * @param TargetState          $current       The resolved current state.
+	 * @param OperationContext     $context       The request context.
+	 *
+	 * @return array<string, mixed> The promised after-state, or an empty map.
+	 */
+	public function promiseRollback( array $restore_state, TargetState $current, OperationContext $context ): array {
+		$contexts = $restore_state[ ElementorClassRepositorySnapshot::SNAPSHOT_CONTEXTS ] ?? null;
+
+		if ( ! is_array( $contexts ) ) {
+			return [];
+		}
+
+		$frontend = $contexts[ ElementorApi::CONTEXT_FRONTEND ] ?? null;
+
+		if ( ! is_array( $frontend ) ) {
+			return [];
+		}
+
+		$items = $frontend[ ElementorApi::GLOBAL_CLASSES_ITEMS_KEY ] ?? null;
+		$order = $frontend[ ElementorApi::GLOBAL_CLASSES_ORDER_KEY ] ?? null;
+
+		if ( ! is_array( $items ) || ! is_array( $order ) ) {
+			return [];
+		}
+
+		return $this->fieldsFor( $items, array_values( $order ) );
+	}
+	// phpcs:enable Generic.CodeAnalysis.UnusedFunctionParameter.FoundAfterLastUsed
+
 	// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The message is a literal written for end users and quotes no stored content.
 	/**
 	 * One stored class definition, or a refusal naming the identifier's absence.
