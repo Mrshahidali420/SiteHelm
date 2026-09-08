@@ -10,8 +10,8 @@ declare(strict_types=1);
 namespace SiteHelm\Modules\Menus;
 
 use SiteHelm\Change\PlannedChange;
+use SiteHelm\Change\RollbackDelegate;
 use SiteHelm\Change\TargetState;
-use SiteHelm\Change\WriteOperation;
 use SiteHelm\Change\WriteOutputSchema;
 use SiteHelm\Contracts\Domain;
 use SiteHelm\Contracts\ErrorCode;
@@ -58,7 +58,7 @@ use SiteHelm\Contracts\SnapshotPolicy;
  *
  * @package SiteHelm
  */
-final class MenuItemUpdate implements WriteOperation {
+final class MenuItemUpdate implements RollbackDelegate {
 
 	/**
 	 * The fields this operation can change, in the read path's own order.
@@ -730,4 +730,106 @@ final class MenuItemUpdate implements WriteOperation {
 
 		return $promise;
 	}
+
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- The RollbackDelegate contract's own camelCase names.
+	// phpcs:disable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase -- $targetKey and $restoreState match the RollbackDelegate contract.
+	// phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase -- $context->userId is the OperationContext contract's own property name.
+	// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The messages are literals written for end users.
+	/**
+	 * Resolves one of this operation's stored item keys for a rollback, after
+	 * confirming this caller may administer the site's navigation menus.
+	 *
+	 * The capability is asked here rather than left to the rollback operation's
+	 * own front gate, which asks about `edit_post` — the wrong question for a menu
+	 * item. Resolution runs in both phases, so a permission withdrawn between
+	 * preview and apply refuses the apply.
+	 *
+	 * @param string           $targetKey The target key the snapshot recorded.
+	 * @param OperationContext $context   The request context.
+	 *
+	 * @return TargetState The item's current state, in readBack()'s projection.
+	 *
+	 * @throws OperationException With ErrorCode::Forbidden or
+	 *                           ErrorCode::TargetNotFound.
+	 */
+	public function resolveRollbackTarget( string $targetKey, OperationContext $context ): TargetState {
+		if ( ! user_can( $context->userId, MenuTarget::REQUIRED_CAPABILITY ) ) {
+			throw new OperationException(
+				ErrorCode::Forbidden,
+				'Your WordPress user may not administer this site\'s navigation menus.',
+				'Ask a site administrator to grant the ability to edit theme options, then retry.'
+			);
+		}
+
+		$item_id = MenuTarget::itemIdFromKey( $targetKey );
+
+		if ( null === $item_id ) {
+			throw new OperationException(
+				ErrorCode::TargetNotFound,
+				'The referenced snapshot does not name a navigation menu item on this site.',
+				'Read the activity log to find a current rollback reference.'
+			);
+		}
+
+		return $this->targets->resolveItem( $item_id, $context );
+	}
+
+	/**
+	 * The after-state a restoration of this recorded item would produce, in the
+	 * read path's field order.
+	 *
+	 * ONLY THE FIELDS THAT DETERMINISTICALLY ROUND-TRIP THROUGH THE READ
+	 * DERIVATION ARE PROMISED. restore() puts the whole recorded field set back;
+	 * this promise names the subset WriteVerifier can safely compare against the
+	 * read-back. Three fields are deliberately left out:
+	 *
+	 * - the LABEL, because core texturizes a title on read (`&` becomes `&#038;`),
+	 *   so the recorded column never equals the read-back even for a custom link;
+	 * - the DESCRIPTION, because core trims it to 200 words on read;
+	 * - the ADDRESS of anything but a custom link, because WordPress RECOMPUTES it
+	 *   from the content the item names.
+	 *
+	 * Promising a field the restore leaves unchanged, whose recorded value does
+	 * not equal its read-back, would make WriteVerifier report "not applied" for a
+	 * rollback that in fact put everything back. The excluded fields are still
+	 * restored; they are simply not the ones the engine checks. This is the same
+	 * conservatism promise() applies on the forward path, for the same reason.
+	 *
+	 * @param array<string, mixed> $restoreState The decoded recorded state.
+	 * @param TargetState          $current      The resolved current state.
+	 * @param OperationContext     $context      The request context.
+	 *
+	 * @return array<string, mixed> The promised after-state, or an empty map.
+	 */
+	public function promiseRollback( array $restoreState, TargetState $current, OperationContext $context ): array {
+		$item_id = is_numeric( $restoreState['item_id'] ?? null ) ? (int) $restoreState['item_id'] : 0;
+		$menu_id = is_numeric( $restoreState['menu_id'] ?? null ) ? (int) $restoreState['menu_id'] : 0;
+
+		if ( $item_id <= 0 || $menu_id <= 0 ) {
+			return [];
+		}
+
+		$promise = [
+			'parent'   => (int) ( $restoreState['menu-item-parent-id'] ?? 0 ),
+			'position' => (int) ( $restoreState['menu-item-position'] ?? 0 ),
+			'target'   => MenuFields::targetToken( (string) ( $restoreState['menu-item-target'] ?? '' ) ),
+			'classes'  => array_values(
+				array_filter(
+					explode( ' ', (string) ( $restoreState['menu-item-classes'] ?? '' ) ),
+					static fn( string $name ): bool => '' !== $name
+				)
+			),
+			'xfn'      => (string) ( $restoreState['menu-item-xfn'] ?? '' ),
+		];
+
+		if ( self::CUSTOM_LINK_TYPE === (string) ( $restoreState['menu-item-type'] ?? '' ) ) {
+			$promise['url'] = (string) ( $restoreState['menu-item-url'] ?? '' );
+		}
+
+		return $this->promise( $promise );
+	}
+	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 }
