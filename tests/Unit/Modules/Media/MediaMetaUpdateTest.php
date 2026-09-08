@@ -582,6 +582,94 @@ final class MediaMetaUpdateTest extends TestCase {
 		$this->assertSame( 'Cat on a wall', $state->fields['title'] );
 	}
 
+	public function test_the_rollback_promise_equals_what_the_read_back_measures(): void {
+		$context  = $this->makeContext();
+		$current  = $this->currentState();
+		$snapshot = $this->operation->captureSnapshot( $current, $context );
+		$input    = [
+			'id'          => 108,
+			'title'       => 'A different title',
+			'alt'         => 'A different alt',
+			'caption'     => 'A different caption',
+			'description' => 'A different description',
+		];
+		$planned  = $this->operation->planChange( $current, $input, $context );
+
+		$this->operation->applyChange( $current, $planned, $context );
+
+		$after   = $this->operation->readBack( 'attachment:108', $context );
+		$promise = $this->operation->promiseRollback( $snapshot, $after, $context );
+
+		$this->assertNotSame(
+			$after->fields,
+			$promise,
+			'A promise that matched the state the write left would be promising to change nothing.'
+		);
+		$this->assertSame( 'A different title', $after->fields['title'] );
+		$this->assertNotSame( $after->fields['title'], $promise['title'] );
+
+		$this->operation->restore( $snapshot, $context );
+		$restored = $this->operation->readBack( 'attachment:108', $context );
+
+		foreach ( $promise as $field => $value ) {
+			$this->assertSame(
+				$value,
+				$restored->fields[ $field ],
+				'The undo button showed ' . $field . ' before it was pressed, so the read after it must agree.'
+			);
+		}
+
+		$this->assertSame(
+			[ 'title', 'alt', 'caption', 'description' ],
+			array_keys( $promise ),
+			'The promise has to be in the vocabulary readBack() projects, or verification compares it against nothing.'
+		);
+	}
+
+	public function test_the_rollback_resolves_the_recorded_attachment(): void {
+		$state = $this->operation->resolveRollbackTarget( 'attachment:108', $this->makeContext() );
+
+		$this->assertSame( 'attachment:108', $state->targetKey );
+		$this->assertTrue( $state->exists );
+	}
+
+	/**
+	 * @dataProvider unredeemableKeys
+	 *
+	 * @param string $key The recorded reference.
+	 */
+	public function test_a_key_that_names_no_attachment_is_refused( string $key ): void {
+		try {
+			$this->operation->resolveRollbackTarget( $key, $this->makeContext() );
+			$this->fail( 'Expected ' . $key . ' to be refused.' );
+		} catch ( OperationException $error ) {
+			$this->assertSame( ErrorCode::TargetNotFound, $error->errorCode );
+		}
+	}
+
+	/**
+	 * @return array<string, array{0: string}>
+	 */
+	public static function unredeemableKeys(): array {
+		return [
+			'a post key'      => [ 'post:108' ],
+			'the pending key' => [ 'attachment:new' ],
+			'a bare number'   => [ '108' ],
+		];
+	}
+
+	public function test_a_snapshot_naming_no_attachment_promises_nothing(): void {
+		$this->assertSame(
+			[],
+			$this->operation->promiseRollback(
+				[ 'title' => 'Cat on a wall' ],
+				$this->currentState(),
+				$this->makeContext()
+			),
+			'An empty promise is what ContentRollbackApply turns into rollback_unavailable, which is the honest answer.'
+		);
+	}
+
 	public function test_no_refusal_message_names_a_field_value_a_path_or_a_query(): void {
 		$refusals = [
 			$this->planAndApply( [ 'id' => 108 ] ),

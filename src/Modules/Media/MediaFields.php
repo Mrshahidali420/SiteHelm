@@ -185,25 +185,56 @@ final class MediaFields {
 		$metadata = wp_get_attachment_metadata( $attachmentId );
 		$metadata = is_array( $metadata ) ? $metadata : [];
 
-		return [
-			'id'          => $attachmentId,
-			'title'       => (string) $media->post_title,
-			'filename'    => '' === $file ? '' : (string) wp_basename( $file ),
-			'mimeType'    => (string) $media->post_mime_type,
-			'url'         => $url,
-			'alt'         => (string) get_post_meta( $attachmentId, self::ALT_META_KEY, true ),
-			'caption'     => (string) $media->post_excerpt,
-			'description' => (string) $media->post_content,
-			'parent'      => (int) $media->post_parent,
-			'uploadedGmt' => (string) $media->post_date_gmt,
-			'width'       => isset( $metadata['width'] ) ? (int) $metadata['width'] : null,
-			'height'      => isset( $metadata['height'] ) ? (int) $metadata['height'] : null,
-			'filesize'    => $this->filesize( $metadata, $file ),
-			'sizes'       => $this->renditions( $metadata, $url ),
-		];
+		return array_merge(
+			[
+				'id'          => $attachmentId,
+				'title'       => (string) $media->post_title,
+				'filename'    => '' === $file ? '' : (string) wp_basename( $file ),
+				'mimeType'    => (string) $media->post_mime_type,
+				'url'         => $url,
+				'alt'         => (string) get_post_meta( $attachmentId, self::ALT_META_KEY, true ),
+				'caption'     => (string) $media->post_excerpt,
+				'description' => (string) $media->post_content,
+				'parent'      => (int) $media->post_parent,
+				'uploadedGmt' => (string) $media->post_date_gmt,
+			],
+			$this->fromMetadata( $metadata, $url, $file )
+		);
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+	/**
+	 * The four members of the projection a metadata array alone decides.
+	 *
+	 * Public, and called by read() rather than restated beside it, because
+	 * media-resize's rollback has to say what a RECORDED metadata array will read
+	 * back as once the attachment points at the file that produced it. A second
+	 * copy of this arithmetic is the copy that drifts, and the two rules most
+	 * likely to drift are both here and nowhere else: a filesize the metadata does
+	 * not carry is measured off disk and a measured 0 is reported as null, and a
+	 * rendition URL is composed from the full-size URL's directory.
+	 *
+	 * A metadata array holding nothing still projects an answer — four members,
+	 * two of them null and one of them empty. That is a real description of an
+	 * attachment nothing measured, not an absence of one.
+	 *
+	 * @param array<string, mixed> $metadata The attachment metadata.
+	 * @param string               $url      The full-size URL, or ''.
+	 * @param string               $file     The absolute path, or ''.
+	 *
+	 * @return array<string, mixed> The width, height, filesize and renditions.
+	 */
+	public function fromMetadata( array $metadata, string $url, string $file ): array {
+		return [
+			'width'    => isset( $metadata['width'] ) ? (int) $metadata['width'] : null,
+			'height'   => isset( $metadata['height'] ) ? (int) $metadata['height'] : null,
+			'filesize' => $this->filesize( $metadata, $file ),
+			'sizes'    => $this->renditions( $metadata, $url ),
+		];
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 
 	// phpcs:disable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
 	/**
