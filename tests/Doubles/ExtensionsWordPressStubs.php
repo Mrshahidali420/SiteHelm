@@ -76,6 +76,16 @@ trait ExtensionsWordPressStubs {
 	private array $themeDirectories = [];
 
 	/**
+	 * The themes root on disk, for the reads that must model wp_get_theme() faithfully.
+	 *
+	 * When set, a stylesheet WordPress has never installed is still turned into a
+	 * theme against this root, the way core does: that is the behaviour AP-1
+	 * exploited, and a double that refused an unknown stylesheet outright could
+	 * not reproduce it.
+	 */
+	private string $themesRoot = '';
+
+	/**
 	 * The stylesheet of the theme the site is showing.
 	 */
 	private string $liveStylesheet = '';
@@ -157,15 +167,35 @@ trait ExtensionsWordPressStubs {
 			function ( $stylesheet = '' ) {
 				$stylesheet = '' === (string) $stylesheet ? $this->liveStylesheet : (string) $stylesheet;
 
+				// An installed theme resolves to its seeded row and directory.
+				if ( array_key_exists( $stylesheet, $this->installedThemes ) ) {
+					return $this->themeFor(
+						$stylesheet,
+						$this->installedThemes[ $stylesheet ],
+						true,
+						$this->themeDirectories[ $stylesheet ] ?? ''
+					);
+				}
+
+				// A stylesheet WordPress has never installed is still turned into
+				// a theme against the themes root, exactly as core does: the
+				// directory is the root joined to the name WITHOUT resolving it,
+				// and the theme "exists" whenever that directory is present on
+				// disk — core reserves a false exists() for a missing directory,
+				// not a missing style.css. This is the behaviour AP-1 turned into
+				// an arbitrary file read, so the double reproduces it faithfully
+				// or the regression test cannot see the bug.
+				$directory = '' === $this->themesRoot ? '' : $this->themesRoot . '/' . $stylesheet;
+
 				return $this->themeFor(
 					$stylesheet,
-					$this->installedThemes[ $stylesheet ] ?? [
+					[
 						'name'     => '',
 						'template' => $stylesheet,
 						'version'  => '',
 					],
-					array_key_exists( $stylesheet, $this->installedThemes ),
-					$this->themeDirectories[ $stylesheet ] ?? ''
+					'' !== $directory && is_dir( $directory ),
+					$directory
 				);
 			}
 		);
@@ -248,6 +278,20 @@ trait ExtensionsWordPressStubs {
 	 */
 	private function seedThemeDirectory( string $stylesheet, string $directory ): void {
 		$this->themeDirectories[ $stylesheet ] = $directory;
+	}
+
+	/**
+	 * Puts the themes root at a real directory on disk.
+	 *
+	 * Once set, wp_get_theme() resolves an unknown stylesheet against this root
+	 * the way core does, which is what lets a test drive a stylesheet that walks
+	 * out of the themes directory — the AP-1 attack — instead of only the ones
+	 * that were seeded.
+	 *
+	 * @param string $directory Where this site keeps its themes.
+	 */
+	private function seedThemesRoot( string $directory ): void {
+		$this->themesRoot = rtrim( str_replace( '\\', '/', $directory ), '/' );
 	}
 
 	/**

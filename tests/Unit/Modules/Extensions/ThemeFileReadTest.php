@@ -203,6 +203,64 @@ final class ThemeFileReadTest extends TestCase {
 		];
 	}
 
+	/**
+	 * The `theme` argument cannot be walked out of the themes directory.
+	 *
+	 * This is AP-1. The path argument was guarded from the start, but the theme
+	 * argument selected the very directory that guard anchors to, and WordPress
+	 * calls a directory a theme as long as it exists — no stylesheet required. So
+	 * `theme: "../secret"` resolved the containment root to a sibling of the
+	 * themes directory, and a plain `path: "wp-config.php"` then read a file that
+	 * never was in any theme. The double models wp_get_theme() the way core
+	 * behaves here, so without the installed-theme check this test reads the
+	 * planted credentials; with it, the name is refused before any disk is
+	 * touched for it.
+	 */
+	public function test_a_theme_that_walks_out_of_the_themes_directory_is_refused(): void {
+		$base = $this->makeThemeTree(
+			[
+				'themes/childtheme/style.css' => '/* the live theme */',
+				'secret/wp-config.php'        => "<?php\ndefine( 'DB_PASSWORD', 'hunter2' );\n",
+			]
+		);
+
+		$this->liveStylesheet = 'childtheme';
+		$this->seedTheme( 'childtheme', 'Child Theme', '1.0' );
+		$this->seedThemeDirectory( 'childtheme', $base . '/themes/childtheme' );
+		$this->seedThemesRoot( $base . '/themes' );
+
+		try {
+			$result = $this->operation()->handle(
+				[
+					'path'  => 'wp-config.php',
+					'theme' => '../secret',
+				],
+				$this->context()
+			);
+			$this->fail( sprintf( 'The read returned a file it should never have reached: %s', $result['contents'] ) );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::TargetNotFound, $e->errorCode );
+			$this->assertStringNotContainsString( 'hunter2', $e->getMessage() );
+		}
+	}
+
+	public function test_a_theme_name_this_site_has_not_installed_is_refused(): void {
+		$this->liveThemeHolding( [ 'style.css' => 'body{}' ] );
+
+		try {
+			$this->operation()->handle(
+				[
+					'path'  => 'style.css',
+					'theme' => 'a-theme-that-is-not-here',
+				],
+				$this->context()
+			);
+			$this->fail( 'Expected a refusal.' );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::TargetNotFound, $e->errorCode );
+		}
+	}
+
 	public function test_a_link_pointing_out_of_the_theme_reads_nothing(): void {
 		$root    = $this->liveThemeHolding( [ 'style.css' => 'body{}' ] );
 		$outside = $this->makeThemeTree( [ 'wp-config.php' => '<?php // credentials' ] );
