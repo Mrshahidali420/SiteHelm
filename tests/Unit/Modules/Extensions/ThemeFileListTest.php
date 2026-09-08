@@ -218,6 +218,34 @@ final class ThemeFileListTest extends TestCase {
 		];
 	}
 
+	/**
+	 * A theme name that walks out of the themes directory is refused (AP-1).
+	 *
+	 * The listing shares ThemeFileGate::locateTheme() with the read, so the same
+	 * unguarded `theme` argument would have let a caller list — and then read —
+	 * a directory outside every theme. The installed-theme check refuses it.
+	 */
+	public function test_a_theme_that_walks_out_of_the_themes_directory_is_refused(): void {
+		$base = $this->makeThemeTree(
+			[
+				'themes/childtheme/style.css' => '/* the live theme */',
+				'secret/wp-config.php'        => "<?php\ndefine( 'DB_PASSWORD', 'hunter2' );\n",
+			]
+		);
+
+		$this->liveStylesheet = 'childtheme';
+		$this->seedTheme( 'childtheme', 'Child Theme', '1.0' );
+		$this->seedThemeDirectory( 'childtheme', $base . '/themes/childtheme' );
+		$this->seedThemesRoot( $base . '/themes' );
+
+		try {
+			$this->operation()->handle( [ 'theme' => '../secret' ], $this->context() );
+			$this->fail( 'Expected a refusal.' );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::TargetNotFound, $e->errorCode );
+		}
+	}
+
 	public function test_a_link_pointing_out_of_the_theme_is_not_followed(): void {
 		$root    = $this->liveThemeHolding( [ 'style.css' => 'body{}' ] );
 		$outside = $this->makeThemeTree( [ 'secrets.php' => '<?php // not the theme' ] );

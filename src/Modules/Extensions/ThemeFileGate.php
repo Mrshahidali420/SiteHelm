@@ -108,6 +108,16 @@ final class ThemeFileGate {
 	 * An empty name means the live theme, which is what a caller inspecting a
 	 * page it has just looked at almost always wants.
 	 *
+	 * THE NAME MUST BE ONE THIS SITE ACTUALLY HAS INSTALLED, and that check is
+	 * what makes the whole class safe. Everything downstream anchors its
+	 * containment to the directory this method returns, so if the caller could
+	 * choose that directory, the containment would guard a root the attacker
+	 * picked. `wp_get_theme()` alone does not stop that: WordPress calls a theme
+	 * "existing" as long as its directory is present, even with no stylesheet in
+	 * it, so a name like `../..` resolves to the WordPress root and passes
+	 * `exists()`. Only accepting a name WordPress itself lists as installed
+	 * refuses every path that leaves the themes directory, by construction.
+	 *
 	 * @param string $stylesheet The theme's directory name, or an empty string for the live theme.
 	 *
 	 * @return array{stylesheet: string, root: string} The resolved name and its real directory.
@@ -116,15 +126,16 @@ final class ThemeFileGate {
 	 */
 	public function locateTheme( string $stylesheet ): array {
 		$requested = '' === $stylesheet ? (string) get_stylesheet() : $stylesheet;
-		$theme     = wp_get_theme( $requested );
 
-		if ( ! $theme->exists() ) {
+		if ( ! array_key_exists( $requested, wp_get_themes() ) ) {
 			throw new OperationException(
 				ErrorCode::TargetNotFound,
 				sprintf( 'No theme is installed in a directory named "%s".', $requested ),
 				'Call system-theme-list to see the themes this site has installed and the name each one goes by.'
 			);
 		}
+
+		$theme = wp_get_theme( $requested );
 
 		$root = realpath( (string) $theme->get_stylesheet_directory() );
 
