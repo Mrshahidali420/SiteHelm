@@ -12,7 +12,7 @@ namespace SiteHelm\Modules\Elementor;
 use SiteHelm\Change\PayloadNormalizer;
 use SiteHelm\Change\PlannedChange;
 use SiteHelm\Change\TargetState;
-use SiteHelm\Change\WriteOperation;
+use SiteHelm\Change\RollbackDelegate;
 use SiteHelm\Contracts\Domain;
 use SiteHelm\Contracts\ErrorCode;
 use SiteHelm\Contracts\Mode;
@@ -75,7 +75,9 @@ use SiteHelm\Contracts\SnapshotPolicy;
  *
  * @package SiteHelm
  */
-final class ElementorElementDuplicate implements WriteOperation {
+final class ElementorElementDuplicate implements RollbackDelegate {
+
+	use ElementorRollbackDelegateTrait;
 
 	/**
 	 * The registered operation identifier.
