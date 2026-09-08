@@ -64,7 +64,7 @@ final class SeoBulkMetadataSetTest extends TestCase {
 		return new SeoBulkMetadataSet( new SeoPresence() );
 	}
 
-	public function test_the_definition_caps_the_set_at_fifty_and_is_a_previewed_reversible_write(): void {
+	public function test_the_definition_caps_the_set_at_fifty_and_is_a_previewed_write_with_no_undo(): void {
 		$definition = SeoBulkMetadataSet::definition();
 
 		$this->assertSame( 'content-seo-bulk-set', $definition->id );
@@ -72,8 +72,8 @@ final class SeoBulkMetadataSetTest extends TestCase {
 		$this->assertSame( 50, $definition->inputSchema['properties']['ids']['maxItems'] );
 		$this->assertSame( [ 'ids' ], $definition->inputSchema['required'] );
 		$this->assertSame( PreviewPolicy::Required, $definition->previewPolicy );
-		$this->assertSame( SnapshotPolicy::Required, $definition->snapshotPolicy );
-		$this->assertSame( RollbackPolicy::Supported, $definition->rollbackPolicy );
+		$this->assertSame( SnapshotPolicy::Required, $definition->snapshotPolicy, 'A half-finished run is put back from this.' );
+		$this->assertSame( RollbackPolicy::NotApplicable, $definition->rollbackPolicy, 'The target key is a digest, so no later undo can find the posts.' );
 
 		$expected = array_merge( [ 'ids' ], SeoFields::TEXT_FIELDS, SeoFields::FLAG_FIELDS );
 		$actual   = array_keys( $definition->inputSchema['properties'] );

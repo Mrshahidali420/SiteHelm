@@ -2840,6 +2840,13 @@ last space only when that keeps ≥ 60 % of the bound. The promise carries `fixe
 memoised per target key and re-reported by `readBack()`, which re-reads only the posts the
 plan actually wrote. Apply stops at the first `apply()` false with the bulk op's wording.
 
+**Both declare `rollbackPolicy: NotApplicable` and keep `snapshotPolicy: Required`.**
+The two are not the same promise. The snapshot exists so `SnapshotLifecycle::compensate()`
+can put back the posts a half-finished run already wrote, and `restore()` is reached from
+there. The operator-facing undo is a different route: `content-rollback-apply` resolves a
+recorded target key, and these two keys are `sha1` digests of the id list, which nothing can
+invert back into posts. Do not delete the snapshot when reading the rollback declaration.
+
 ## 46. Atomic vs classic Elementor widgets — the two write vocabularies
 
 Elementor ships **two widget vocabularies at once**, and every Elementor write path has to

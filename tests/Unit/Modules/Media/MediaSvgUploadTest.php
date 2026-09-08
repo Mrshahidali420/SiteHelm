@@ -15,6 +15,8 @@ use SiteHelm\Contracts\ErrorCode;
 use SiteHelm\Contracts\OperationException;
 use SiteHelm\Contracts\PreviewPolicy;
 use SiteHelm\Contracts\Risk;
+use SiteHelm\Contracts\RollbackPolicy;
+use SiteHelm\Contracts\SnapshotPolicy;
 use SiteHelm\Modules\Media\MediaAssetPlan;
 use SiteHelm\Modules\Media\MediaFields;
 use SiteHelm\Modules\Media\MediaSideload;
@@ -119,6 +121,8 @@ final class MediaSvgUploadTest extends MediaUploadTestCase {
 		$this->assertSame( 'media-svg-upload', $definition->id );
 		$this->assertSame( Risk::High, $definition->risk );
 		$this->assertSame( PreviewPolicy::Required, $definition->previewPolicy );
+		$this->assertSame( SnapshotPolicy::NotApplicable, $definition->snapshotPolicy, 'A new attachment has no prior state to keep.' );
+		$this->assertSame( RollbackPolicy::NotApplicable, $definition->rollbackPolicy, 'There is nothing to put back, so no undo is offered.' );
 		$this->assertFalse( $definition->isReadOnly );
 		$this->assertFalse( $definition->isDestructive );
 		$this->assertFalse( $definition->isIdempotent );

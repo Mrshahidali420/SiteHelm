@@ -134,8 +134,11 @@ final class MediaUploadTicket implements WriteOperation {
 			isDestructive: false,
 			isIdempotent: false,
 			previewPolicy: PreviewPolicy::Required,
-			snapshotPolicy: SnapshotPolicy::Supported,
-			rollbackPolicy: RollbackPolicy::Supported,
+			// A TICKET CHANGES NOTHING ON THE SITE, SO THERE IS NOTHING TO PUT BACK.
+			// It only hands out a one-time address to upload to. Until that address is
+			// used the library is untouched, and an unused ticket simply expires.
+			snapshotPolicy: SnapshotPolicy::NotApplicable,
+			rollbackPolicy: RollbackPolicy::NotApplicable,
 			module: ModuleId::Media,
 			supportedVersions: [ 'wordpress' => '>=' . SITEHELM_MIN_WP ],
 			example: [
