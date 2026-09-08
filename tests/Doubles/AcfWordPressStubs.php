@@ -228,6 +228,36 @@ trait AcfWordPressStubs {
 		$values = $values_by_key;
 		$rows   = $stored_rows;
 
+		// LEARNED FROM THE DEFINITIONS THIS DOUBLE WAS ALREADY HANDED, not asked for
+		// as two more parameters. ACF's own read and delete both need to know which
+		// postmeta row a field key stands for, and which default the field declares;
+		// both facts are already in the definitions, and a site whose stubs disagreed
+		// with its own field list would be a site no assertion could trust.
+		$names_by_key    = [];
+		$defaults_by_key = [];
+
+		foreach ( $fields_by_group as $group_fields ) {
+			if ( ! is_array( $group_fields ) ) {
+				continue;
+			}
+
+			foreach ( $group_fields as $field ) {
+				if ( ! is_array( $field ) || ! isset( $field['key'] ) || ! is_scalar( $field['key'] ) ) {
+					continue;
+				}
+
+				$field_key = (string) $field['key'];
+
+				$names_by_key[ $field_key ] = isset( $field['name'] ) && is_scalar( $field['name'] )
+					? (string) $field['name']
+					: '';
+
+				if ( array_key_exists( 'default_value', $field ) ) {
+					$defaults_by_key[ $field_key ] = $field['default_value'];
+				}
+			}
+		}
+
 		if ( null !== $version && ! defined( AcfPresence::VERSION_CONSTANT ) ) {
 			define( AcfPresence::VERSION_CONSTANT, $version );
 		}
@@ -276,10 +306,20 @@ trait AcfWordPressStubs {
 		// and common enough that a theme can define its own.
 		if ( $with_value_function ) {
 			Functions\when( 'get_field' )->alias(
-				function ( mixed $selector = null, mixed $post_id = false, mixed $format = true ) use ( &$values ): mixed {
+				function ( mixed $selector = null, mixed $post_id = false, mixed $format = true ) use ( &$values, &$rows, $names_by_key, $defaults_by_key ): mixed {
 					$key = is_scalar( $selector ) ? (string) $selector : '';
 
 					$this->acfCalls[] = [ 'value', [ $key, $post_id, $format ] ];
+
+					// THE DEFAULT ONLY WHEN THERE IS NO ROW TO READ, which is
+					// `acf_get_value()`'s own order: it loads the metadata first and falls
+					// back to `default_value` only when there is none. A field declaring no
+					// default is untouched by this branch, so a site whose definitions carry
+					// none behaves exactly as it did before the branch existed.
+					if ( array_key_exists( $key, $defaults_by_key )
+						&& ! in_array( self::acfRowName( $post_id, $names_by_key[ $key ] ?? '' ), $rows, true ) ) {
+						return $defaults_by_key[ $key ];
+					}
 
 					return $values[ $key ] ?? null;
 				}
@@ -340,8 +380,23 @@ trait AcfWordPressStubs {
 
 		if ( $with_delete_function ) {
 			Functions\when( 'delete_field' )->alias(
-				function ( mixed $selector = null, mixed $post_id = false ): bool {
+				function ( mixed $selector = null, mixed $post_id = false ) use ( &$values, &$rows, $names_by_key ): bool {
 					$this->acfCalls[] = [ 'delete', [ $selector, $post_id ] ];
+
+					// THE ROW AND THE VALUE GO TOGETHER HERE FOR THE REASON THEY DO IN THE
+					// WRITE ABOVE. `acf_delete_value()` deletes the postmeta row and its
+					// reference row and flushes the cache, so the next read finds no metadata
+					// — the field's declared default, or null. A double that recorded the
+					// call and left the value standing answered a deleted field with the
+					// value that was just removed, and any read-back taken after a restore
+					// measured the write it was supposed to have undone.
+					$key = is_scalar( $selector ) ? (string) $selector : '';
+
+					unset( $values[ $key ] );
+
+					$row = self::acfRowName( $post_id, $names_by_key[ $key ] ?? '' );
+
+					$rows = array_values( array_filter( $rows, static fn ( string $held ): bool => $held !== $row ) );
 
 					return false;
 				}
@@ -405,5 +460,22 @@ trait AcfWordPressStubs {
 		}
 
 		return count( array_filter( $this->acfCalls, fn( array $call ): bool => $kind === $call[0] ) );
+	}
+
+	/**
+	 * The postmeta row identifier one post-and-name pair stands for.
+	 *
+	 * ONE PLACE, because the write, the delete and the read all have to agree about
+	 * the spelling. A row written under one shape and looked for under another makes
+	 * a field that is stored read as absent, which is the exact state these suites
+	 * exist to keep apart from a field holding an empty value.
+	 *
+	 * @param mixed  $post_id The post the row belongs to.
+	 * @param string $name    The field name the row is keyed under.
+	 *
+	 * @return string The row identifier.
+	 */
+	private static function acfRowName( mixed $post_id, string $name ): string {
+		return sprintf( '%s:%s', is_scalar( $post_id ) ? $post_id : '', $name );
 	}
 }

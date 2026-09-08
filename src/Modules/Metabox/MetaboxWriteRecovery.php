@@ -239,12 +239,16 @@ final class MetaboxWriteRecovery {
 	 *
 	 * @param array<string, mixed> $restoreState The recorded restore state.
 	 *
-	 * @return string The concrete target key that was restored.
+	 * @return array<string, mixed> `{ target: string, restored: string[] }` — the
+	 *                              concrete target key, and the field ids this
+	 *                              restore actually put back. The caller re-reads
+	 *                              exactly those to have the restore verified, and
+	 *                              a bare target key left it with nothing to read.
 	 *
 	 * @throws OperationException With ErrorCode::ExecutionFailed when the recorded
 	 *                            state is not one this operation wrote.
 	 */
-	public function restore( array $restoreState ): string {
+	public function restore( array $restoreState ): array {
 		$post   = $restoreState['post'] ?? null;
 		$fields = $restoreState['fields'] ?? null;
 
@@ -262,6 +266,7 @@ final class MetaboxWriteRecovery {
 		}
 
 		$completed = [];
+		$restored  = [];
 
 		foreach ( $fields as $entry ) {
 			if ( ! is_array( $entry )
@@ -287,6 +292,8 @@ final class MetaboxWriteRecovery {
 				$this->api->deleteValue( $entry['id'], $post );
 			}
 
+			$restored[] = $entry['id'];
+
 			$completed[] = sprintf(
 				'%s %s',
 				$entry['present'] ? 'restored' : 'cleared',
@@ -294,7 +301,10 @@ final class MetaboxWriteRecovery {
 			);
 		}
 
-		return MetaboxFieldUpdate::targetKey( $post );
+		return [
+			'target'   => MetaboxFieldUpdate::targetKey( $post ),
+			'restored' => $restored,
+		];
 	}
 	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
@@ -312,11 +322,17 @@ final class MetaboxWriteRecovery {
 	 * one row it can be and refusing it would fail a restore this module can perform
 	 * correctly. It is not a shape capture() produces.
 	 *
+	 * PUBLIC BECAUSE THE PROMISE HAS TO ROW A RECORDED VALUE THE SAME WAY THE RESTORE
+	 * WILL. MetaboxFieldUpdate::promiseRollback() says what the restored field will
+	 * read as, and it can only say that by rowing the recorded value exactly as the
+	 * restore below rows it. A second copy of this rule would drift, and the drift
+	 * would show up as a correct rollback reported as one that did not take.
+	 *
 	 * @param mixed $recorded The recorded value.
 	 *
 	 * @return mixed[] The rows to write back.
 	 */
-	private static function rowsOf( mixed $recorded ): array {
+	public static function rowsOf( mixed $recorded ): array {
 		return is_array( $recorded ) ? array_values( $recorded ) : [ $recorded ];
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid

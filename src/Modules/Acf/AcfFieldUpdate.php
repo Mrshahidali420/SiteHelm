@@ -11,8 +11,8 @@ namespace SiteHelm\Modules\Acf;
 
 use SiteHelm\Change\PayloadNormalizer;
 use SiteHelm\Change\PlannedChange;
+use SiteHelm\Change\RollbackDelegate;
 use SiteHelm\Change\TargetState;
-use SiteHelm\Change\WriteOperation;
 use SiteHelm\Change\WriteOutputSchema;
 use SiteHelm\Contracts\Domain;
 use SiteHelm\Contracts\ErrorCode;
@@ -65,11 +65,17 @@ use SiteHelm\Contracts\SnapshotPolicy;
  * the apply phase, so the record is rebuilt from the caller's own input on every
  * call and nothing survives between requests.
  *
+ * IT REDEEMS ITS OWN SNAPSHOTS. `content-rollback-apply` reads a post id out of a
+ * `post:` key, and an `acf-post:` key answered target_not_found there: the undo
+ * button this write's required rollback policy puts in front of an operator was
+ * offered and then refused. RollbackDelegate is what routes the redemption back
+ * here, where the key, the guard order and the field vocabulary are all known.
+ *
  * Nothing here names an ACF symbol (spec Decision 2).
  *
  * @package SiteHelm
  */
-final class AcfFieldUpdate implements WriteOperation {
+final class AcfFieldUpdate implements RollbackDelegate {
 
 	/**
 	 * The prefix of the stable target key this operation writes against.
@@ -111,6 +117,19 @@ final class AcfFieldUpdate implements WriteOperation {
 	 * @var string[]
 	 */
 	private array $written = [];
+
+	/**
+	 * What each applicable field reads as once its stored row is gone, by field key.
+	 *
+	 * Built by resolveRollbackTarget() from the definitions the index already carries,
+	 * and read by promiseRollback() alone. ACF answers a field's declared
+	 * `default_value` when there is no metadata to read, so the value a restore-to-
+	 * absent will be measured as is a property of the definition and not of the
+	 * snapshot — which records only that there was no row.
+	 *
+	 * @var array<string, mixed>
+	 */
+	private array $defaults = [];
 
 	/**
 	 * The operation's registered definition.
@@ -583,6 +602,141 @@ final class AcfFieldUpdate implements WriteOperation {
 	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
 
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- These two are the RollbackDelegate contract's method names.
+	// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The message is a literal written for end users and echoes no caller input.
+	/**
+	 * Resolves the post one of this operation's own recorded keys names.
+	 *
+	 * A KEY THAT IS NOT OURS NAMES NOTHING HERE. `content-rollback-apply` reads a post
+	 * id out of a `post:` key, and an `acf-post:` key is not that shape; coercing one
+	 * would aim the undo at a post nobody asked for, so it is refused instead.
+	 *
+	 * THE CAPABILITY IS ASKED AGAIN, THROUGH THE WRITE PATH'S OWN RESOLVER. The
+	 * contract requires it: this runs in the preview phase as well as the apply phase,
+	 * and the rollback operation's front gate asked its question about a post id it
+	 * parsed out of a key shape these targets do not have. Routing through
+	 * AcfWriteTarget keeps the gate ORDER identical to the write path's, so an undo
+	 * cannot reach a post, or a site without ACF, by a route the write itself refuses.
+	 *
+	 * THE STATE IS EVERY FIELD THE POST'S INDEX MAKES APPLICABLE, not only the fields
+	 * the snapshot recorded. This map is the concurrent-edit fingerprint, the
+	 * operator's before-column, and the arm of verification that separates a rollback
+	 * that did not take from one that did; an empty or partial one would make a
+	 * conflict unfireable and read a failed undo as applied. The superset costs
+	 * nothing, because verification looks its fields up by key.
+	 *
+	 * @param string           $target_key The recorded target key.
+	 * @param OperationContext $context    The request context.
+	 *
+	 * @return TargetState The post's current field values.
+	 *
+	 * @throws OperationException With ErrorCode::TargetNotFound when the key names no
+	 *                            post this operation wrote to, and with the codes
+	 *                            AcfWriteTarget::resolve() raises for the post itself.
+	 */
+	public function resolveRollbackTarget( string $target_key, OperationContext $context ): TargetState {
+		$post = self::postIdFromKey( $target_key );
+
+		if ( null === $post ) {
+			throw new OperationException(
+				ErrorCode::TargetNotFound,
+				'That recorded reference does not name a post this operation wrote custom fields to, so there is nothing to put back.',
+				'Read the fields with acf-field-get and set the ones you need with acf-field-update.'
+			);
+		}
+
+		$target = $this->targets->resolve( [ 'post' => $post ], $context );
+
+		$fields         = [];
+		$this->defaults = [];
+
+		foreach ( $target['resolved'] as $field ) {
+			$fields[ $field['key'] ] = $this->read( $field['key'], $post );
+
+			// KEPT BECAUSE THE DEFINITION IS IN HAND HERE AND THE PROMISE CANNOT ASK FOR
+			// IT LATER. promiseRollback() has to say what a field with no stored row
+			// will read as, and that is the definition's own default rather than null.
+			$definition = $field['definition'] ?? null;
+
+			$this->defaults[ $field['key'] ] = $this->canonical->project(
+				is_array( $definition ) ? ( $definition['default_value'] ?? null ) : null
+			);
+		}
+
+		return new TargetState( self::targetKey( $post ), true, $fields );
+	}
+	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+
+	// phpcs:disable Generic.CodeAnalysis.UnusedFunctionParameter.FoundAfterLastUsed -- $current and $context are the RollbackDelegate contract's signature; the promise is of the recorded state, never of the present one.
+	/**
+	 * The field map a restore of this recorded snapshot would read back as.
+	 *
+	 * IT IS SPELLED IN readBack()'s VOCABULARY, because that is what the promise is
+	 * compared against. The snapshot is a LIST of entries carrying a key, a name and a
+	 * presence flag; the read-back is a map of field key to value. Handing the list
+	 * back would promise the snapshot to itself and verify nothing.
+	 *
+	 * THE TWO BRANCHES ARE restore()'s TWO BRANCHES, and nothing else decides:
+	 *
+	 *   - `present === true`  → the recorded value. It was measured through read() at
+	 *                           capture and restore() puts it back through the same
+	 *                           writer, so read() answers it again.
+	 *   - `present === false` → what the field reads as with no row, which is the
+	 *                           default its definition declares and null only when it
+	 *                           declares none. Promising null for a field that has a
+	 *                           default would report a correct restore as not applied.
+	 *
+	 * THE VALIDATION IS restore()'s, EXACTLY. A looser one promises a map for a state
+	 * restore() then refuses part-way through, leaving the operator an undo that
+	 * reported a promise it never kept. The empty map is the documented "promise
+	 * nothing", which the caller turns into a refusal to run at all.
+	 *
+	 * IT NEVER READS THE PROMISE OUT OF `$current`. A promise that hands the present
+	 * state back passes every comparison that only weighs the two against each other.
+	 *
+	 * IT RUNS AFTER resolveRollbackTarget(), AND THAT ORDERING IS THE GUARANTEE behind
+	 * the defaults map, the same way captureSnapshot() depends on the resolver having
+	 * run before it. The engine resolves the target before it plans the change, so the
+	 * definitions are in hand by the time the promise is made. The coalesce on a missing
+	 * key is not a stand-in for that ordering: it answers the field whose group has been
+	 * removed since the write, which declares no default any more and reads as null.
+	 *
+	 * @param array<string, mixed> $restore_state The recorded restore state.
+	 * @param TargetState          $current       The target's present state.
+	 * @param OperationContext     $context       The request context.
+	 *
+	 * @return array<string, mixed> The promised read-back, empty when nothing is.
+	 */
+	public function promiseRollback( array $restore_state, TargetState $current, OperationContext $context ): array {
+		$post   = $restore_state['post'] ?? null;
+		$fields = $restore_state['fields'] ?? null;
+
+		if ( ! is_int( $post ) || $post < 1 || ! is_array( $fields ) ) {
+			return [];
+		}
+
+		$promise = [];
+
+		foreach ( $fields as $entry ) {
+			if ( ! is_array( $entry )
+				|| ! is_string( $entry['key'] ?? null )
+				|| '' === $entry['key']
+				|| ! array_key_exists( 'present', $entry )
+				|| ! is_bool( $entry['present'] )
+				|| ! array_key_exists( 'value', $entry ) ) {
+				return [];
+			}
+
+			$promise[ $entry['key'] ] = $entry['present']
+				? $entry['value']
+				: ( $this->defaults[ $entry['key'] ] ?? null );
+		}
+
+		return $promise;
+	}
+	// phpcs:enable Generic.CodeAnalysis.UnusedFunctionParameter.FoundAfterLastUsed
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+
 	// phpcs:disable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase -- $restoreState matches the recorded-state vocabulary used across the change engine.
 	// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The messages are literals written for end users and quote no recorded value.
 	/**
@@ -645,6 +799,13 @@ final class AcfFieldUpdate implements WriteOperation {
 
 		$completed = [];
 
+		// THE READ-BACK MEASURES WHAT THIS PUT BACK, AND ONLY applyChange() USED TO
+		// FILL THIS IN. A rollback enters here instead, so a restore that left the list
+		// alone had readBack() measure an EMPTY map and verification pass having
+		// checked nothing. It is filled per completed entry, so a restore that stops
+		// part-way is verified on exactly the fields it reached.
+		$this->written = [];
+
 		foreach ( $fields as $entry ) {
 			if ( ! is_array( $entry )
 				|| ! is_string( $entry['key'] ?? null )
@@ -665,6 +826,8 @@ final class AcfFieldUpdate implements WriteOperation {
 			} else {
 				$this->api->deleteValue( $entry['key'], $post );
 			}
+
+			$this->written[] = $entry['key'];
 
 			// The NAME, because it is what an operator recognises, and a name is
 			// permitted in an operator-facing message where a value is not.

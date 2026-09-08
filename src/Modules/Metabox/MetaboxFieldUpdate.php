@@ -10,8 +10,8 @@ declare(strict_types=1);
 namespace SiteHelm\Modules\Metabox;
 
 use SiteHelm\Change\PlannedChange;
+use SiteHelm\Change\RollbackDelegate;
 use SiteHelm\Change\TargetState;
-use SiteHelm\Change\WriteOperation;
 use SiteHelm\Change\WriteOutputSchema;
 use SiteHelm\Contracts\Domain;
 use SiteHelm\Contracts\ErrorCode;
@@ -67,7 +67,7 @@ use SiteHelm\Contracts\SnapshotPolicy;
  *
  * @package SiteHelm
  */
-final class MetaboxFieldUpdate implements WriteOperation {
+final class MetaboxFieldUpdate implements RollbackDelegate {
 
 	/**
 	 * The prefix of the stable target key this operation writes against.
@@ -111,7 +111,7 @@ final class MetaboxFieldUpdate implements WriteOperation {
 	private array $warnings = [];
 
 	/**
-	 * The field ids applyChange() wrote, in plan order, for readBack() to re-read.
+	 * The field ids the last write or restore touched, for readBack() to re-read.
 	 *
 	 * @var string[]
 	 */
@@ -525,6 +525,133 @@ final class MetaboxFieldUpdate implements WriteOperation {
 	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
 
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- These two are the RollbackDelegate contract's method names.
+	// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The message is a literal written for end users and echoes no caller input.
+	/**
+	 * Resolves the post one of this operation's own recorded keys names.
+	 *
+	 * A KEY THAT IS NOT OURS NAMES NOTHING HERE. `content-rollback-apply` reads a post
+	 * id out of a `post:` key, and a `metabox-post:` key is not that shape; coercing
+	 * one would aim the undo at a post nobody asked for, so it is refused instead.
+	 *
+	 * THE CAPABILITY IS ASKED AGAIN, THROUGH THE WRITE PATH'S OWN RESOLVER. The
+	 * contract requires it: this runs in the preview phase as well as the apply phase,
+	 * and the rollback operation's front gate asked its question about a post id it
+	 * parsed out of a key shape these targets do not have. Routing through
+	 * MetaboxWriteTarget keeps the gate ORDER identical to the write path's, so an
+	 * undo cannot reach a post, or a site without Meta Box, by a route the write
+	 * itself refuses. It names no fields, which is why the resolver hands the
+	 * applicable ones back rather than only the requested ones.
+	 *
+	 * THE STATE IS EVERY FIELD THIS POST'S GROUPS CARRY, not only the fields the
+	 * snapshot recorded. This map is the concurrent-edit fingerprint, the operator's
+	 * before-column, and the arm of verification that separates a rollback that did
+	 * not take from one that did; an empty or partial one would make a conflict
+	 * unfireable and read a failed undo as applied. The superset costs nothing,
+	 * because verification looks its fields up by id.
+	 *
+	 * @param string           $target_key The recorded target key.
+	 * @param OperationContext $context    The request context.
+	 *
+	 * @return TargetState The post's current field values.
+	 *
+	 * @throws OperationException With ErrorCode::TargetNotFound when the key names no
+	 *                            post this operation wrote to, and with the codes
+	 *                            MetaboxWriteTarget::resolve() raises for the post.
+	 */
+	public function resolveRollbackTarget( string $target_key, OperationContext $context ): TargetState {
+		$post = self::postIdFromKey( $target_key );
+
+		if ( null === $post ) {
+			throw new OperationException(
+				ErrorCode::TargetNotFound,
+				'That recorded reference does not name a post this operation wrote Meta Box field values to, so there is nothing to put back.',
+				'Read the fields with metabox-field-get and set the ones you need with metabox-field-update.'
+			);
+		}
+
+		$target = $this->targets->resolve( [ 'post' => $post ], [], $context );
+		$fields = [];
+
+		foreach ( $target['fields'] as $field ) {
+			$fields[ $field['id'] ] = $this->read( $field['id'], $post );
+		}
+
+		return new TargetState( self::targetKey( $post ), true, $fields );
+	}
+	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+
+	// phpcs:disable Generic.CodeAnalysis.UnusedFunctionParameter.FoundAfterLastUsed -- $current and $context are the RollbackDelegate contract's signature; the promise is of the recorded state, never of the present one.
+	/**
+	 * The field map a restore of this recorded snapshot would read back as.
+	 *
+	 * IT IS SPELLED IN readBack()'s VOCABULARY, because that is what the promise is
+	 * compared against. The snapshot is a LIST of entries carrying an id, a name and a
+	 * presence flag; the read-back is a map of field id to value. Handing the list
+	 * back would promise the snapshot to itself and verify nothing.
+	 *
+	 * THE TWO BRANCHES ARE MetaboxWriteRecovery::restore()'s TWO BRANCHES:
+	 *
+	 *   - `present === true`  → the recorded ROWS, projected. The snapshot records raw
+	 *                           postmeta rows so that a restore can write them, and
+	 *                           read() settles the same rows into one value; handing
+	 *                           the recorded list over unprojected promises `['']`
+	 *                           where the field will read as `''`.
+	 *   - `present === false` → the empty row list, through the same projection, which
+	 *                           is `''`. Meta Box applies no default of its own, so
+	 *                           with the row gone `get_post_meta` answers an empty
+	 *                           list. Promising null instead would report a correct
+	 *                           restore as not applied.
+	 *
+	 * BOTH BRANCHES GO THROUGH ONE PROJECTION AND THE RESTORE'S OWN ROWING, so the
+	 * promise cannot drift from the measurement by being spelled a second way.
+	 *
+	 * THE VALIDATION IS THE RESTORE'S, EXACTLY. A looser one promises a map for a
+	 * state the restore then refuses part-way through, leaving the operator an undo
+	 * that reported a promise it never kept. The empty map is the documented "promise
+	 * nothing", which the caller turns into a refusal to run at all.
+	 *
+	 * IT NEVER READS THE PROMISE OUT OF `$current`. A promise that hands the present
+	 * state back passes every comparison that only weighs the two against each other.
+	 *
+	 * @param array<string, mixed> $restore_state The recorded restore state.
+	 * @param TargetState          $current       The target's present state.
+	 * @param OperationContext     $context       The request context.
+	 *
+	 * @return array<string, mixed> The promised read-back, empty when nothing is.
+	 */
+	public function promiseRollback( array $restore_state, TargetState $current, OperationContext $context ): array {
+		$post   = $restore_state['post'] ?? null;
+		$fields = $restore_state['fields'] ?? null;
+
+		if ( ! is_int( $post ) || $post < 1 || ! is_array( $fields ) ) {
+			return [];
+		}
+
+		$promise = [];
+
+		foreach ( $fields as $entry ) {
+			if ( ! is_array( $entry )
+				|| ! is_string( $entry['id'] ?? null )
+				|| '' === $entry['id']
+				|| ! array_key_exists( 'present', $entry )
+				|| ! is_bool( $entry['present'] )
+				|| ! array_key_exists( 'value', $entry ) ) {
+				return [];
+			}
+
+			$promise[ $entry['id'] ] = $this->canonical->settle(
+				$this->canonical->projectOutbound(
+					$entry['present'] ? MetaboxWriteRecovery::rowsOf( $entry['value'] ) : []
+				)
+			);
+		}
+
+		return $promise;
+	}
+	// phpcs:enable Generic.CodeAnalysis.UnusedFunctionParameter.FoundAfterLastUsed
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+
 	// phpcs:disable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase -- $restoreState matches the recorded-state vocabulary used across the change engine.
 	/**
 	 * Puts a recorded snapshot back.
@@ -542,7 +669,18 @@ final class MetaboxFieldUpdate implements WriteOperation {
 	 *                            state is not one this operation wrote.
 	 */
 	public function restore( array $restoreState, OperationContext $context ): string {
-		return $this->recovery->restore( $restoreState );
+		// THE READ-BACK MEASURES WHAT THIS PUT BACK, AND ONLY applyChange() USED TO
+		// FILL THE LIST IN. A rollback enters here instead, so a restore that left it
+		// alone had readBack() measure an EMPTY map and verification pass having
+		// checked nothing. Cleared first, so a restore that refuses part-way cannot be
+		// verified against whatever the last write happened to touch.
+		$this->written = [];
+
+		$outcome = $this->recovery->restore( $restoreState );
+
+		$this->written = $outcome['restored'];
+
+		return $outcome['target'];
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
 

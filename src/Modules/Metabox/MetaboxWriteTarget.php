@@ -103,7 +103,8 @@ final class MetaboxWriteTarget {
 	 * @param array[]              $requests The parsed request entries, each `{ field, value }`.
 	 * @param OperationContext     $context  The operation context.
 	 *
-	 * @return array<string, mixed> `{ post: int, groups: array[], writes: array[] }`.
+	 * @return array<string, mixed> `{ post: int, groups: array[], fields: array[],
+	 *                              writes: array[] }`.
 	 *
 	 * @throws OperationException With ErrorCode::InvalidInput when the identifier is
 	 *                            not usable; ErrorCode::Forbidden when the resolved
@@ -189,9 +190,14 @@ final class MetaboxWriteTarget {
 			];
 		}
 
+		// THE APPLICABLE FIELDS RIDE OUT ALONGSIDE THE REQUESTED ONES because a
+		// rollback names no fields of its own. It has a post and a recorded snapshot,
+		// and the before-state it owes the engine covers the whole post, so the caller
+		// that asks for nothing still needs the index this resolve already built.
 		return [
 			'post'   => $post_id,
 			'groups' => $groups,
+			'fields' => $fields,
 			'writes' => $writes,
 		];
 	}

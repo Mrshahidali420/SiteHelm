@@ -87,6 +87,17 @@ an operation behaves.
   recorded map — and each re-checks that the person asking may edit menus before it touches
   anything, refusing without naming the capability when they may not.
 
+- **The two custom-field writes offered an undo that was refused, and verified nothing.**
+  Setting ACF fields and setting Meta Box fields both recorded an undo point and showed the
+  button, then stopped with target-not-found when it was pressed, because the undo could only
+  read a saved reference naming an ordinary post. Underneath that, the step meant to confirm an
+  undo had worked was reading an empty list, so it would have passed without checking anything.
+  Both now resolve their own post, put back exactly what they recorded, and re-read those same
+  fields to confirm it. A field that had no value before the write is restored to having none,
+  and the undo now predicts what it will read as afterwards rather than assuming nothing.
+  Each re-checks that the person asking may edit the post before it touches anything, and
+  refuses without naming the capability when they may not.
+
 - **Twelve Elementor document edits offered an undo that never worked.** Building a document,
   adding, moving, updating, duplicating, removing and relabelling elements, reordering them,
   and applying a template all recorded a snapshot and showed the undo button. Pressing it read
