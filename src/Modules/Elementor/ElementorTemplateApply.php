@@ -11,7 +11,7 @@ namespace SiteHelm\Modules\Elementor;
 
 use SiteHelm\Change\PlannedChange;
 use SiteHelm\Change\TargetState;
-use SiteHelm\Change\WriteOperation;
+use SiteHelm\Change\RollbackDelegate;
 use SiteHelm\Change\WriteOutputSchema;
 use SiteHelm\Contracts\Domain;
 use SiteHelm\Contracts\ErrorCode;
@@ -67,7 +67,9 @@ use SiteHelm\Contracts\SnapshotPolicy;
  *
  * @package SiteHelm
  */
-final class ElementorTemplateApply implements WriteOperation {
+final class ElementorTemplateApply implements RollbackDelegate {
+
+	use ElementorRollbackDelegateTrait;
 
 	/**
 	 * The input member naming the template to apply.

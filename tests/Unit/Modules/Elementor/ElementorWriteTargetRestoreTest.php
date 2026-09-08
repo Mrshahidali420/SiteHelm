@@ -10,9 +10,11 @@ declare(strict_types=1);
 namespace SiteHelm\Tests\Unit\Modules\Elementor;
 
 use Brain\Monkey\Functions;
+use SiteHelm\Change\TargetState;
 use SiteHelm\Contracts\ErrorCode;
 use SiteHelm\Contracts\OperationException;
 use SiteHelm\Modules\Elementor\ElementorDocument;
+use SiteHelm\Modules\Elementor\ElementorWriteTarget;
 use SiteHelm\Tests\Doubles\WriteTargetFixtures;
 use SiteHelm\Tests\TestCase;
 
@@ -405,5 +407,107 @@ final class ElementorWriteTargetRestoreTest extends TestCase {
 		}
 
 		$this->assertSame( [], $this->writes, 'Nothing may be written for a snapshot that cannot be read.' );
+	}
+
+	// ------------------------------------------------- rollback delegate
+
+	/**
+	 * THE PROMISE IS WHAT THE RESTORE ACTUALLY STORES. content-rollback-apply
+	 * shows the operator this promise at preview and then verifies the apply
+	 * against it, so the two must not be able to drift. The promise is measured
+	 * through the same coerce-then-encode path restore() writes by: whatever
+	 * restore() puts in storage, resolve() reads the same four fields back, and
+	 * they are the four the promise named. This is the whole reason these twelve
+	 * writes were handing back a reference the plugin then refused — the promise
+	 * was never the thing the restore would produce, and now it is.
+	 */
+	public function test_the_rollback_promise_equals_the_read_back_of_a_real_restore(): void {
+		$this->withElementor();
+		$this->storeRaw( '[]', 'builder' );
+
+		$recorded = [
+			'post_id'         => self::DOCUMENT_ID,
+			'_elementor_data' => (string) json_encode( $this->fixtureTree() ),
+		];
+
+		$key     = ElementorWriteTarget::targetKey( self::DOCUMENT_ID );
+		$current = $this->target()->resolveRollbackTarget( $key, $this->context() );
+		$promise = $this->target()->promiseRollback( $recorded, $current, $this->context() );
+
+		$this->assertNotSame( [], $promise, 'A restorable document must promise a read-back.' );
+
+		$this->target()->restore( $recorded, $this->context() );
+
+		$read_back = $this->target()->resolveRollbackTarget( $key, $this->context() )->fields;
+
+		$this->assertSame( $read_back, $promise, 'The promise must be exactly the read-back a real restore leaves.' );
+	}
+
+	/**
+	 * RESOLVING A ROLLBACK TARGET RE-CHECKS THE CALLER, in both phases of the
+	 * undo. content-rollback-apply's front gate asks `edit_post` about a post id
+	 * parsed from the key; for a caller who may not edit THIS document that is
+	 * the wrong question, and resolution asks the right one — exactly as a
+	 * forward write does.
+	 */
+	public function test_resolving_a_rollback_target_refuses_a_caller_who_may_not_edit(): void {
+		$this->mayEdit = false;
+
+		try {
+			$this->target()->resolveRollbackTarget( ElementorWriteTarget::targetKey( self::DOCUMENT_ID ), $this->context() );
+			$this->fail( 'A caller who may not edit the document must not resolve its rollback target.' );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::TargetNotFound, $e->errorCode );
+		}
+	}
+
+	/**
+	 * A TARGET KEY THAT IS NOT AN ELEMENTOR DOCUMENT KEY cannot be resolved here.
+	 * The rollback path routes to a delegate by the recording operation's own
+	 * identity, so a foreign or malformed key reaching this resolver is a caller
+	 * bug, not a document to touch.
+	 */
+	public function test_a_key_that_is_not_a_document_key_refuses(): void {
+		try {
+			$this->target()->resolveRollbackTarget( 'post:42', $this->context() );
+			$this->fail( 'A non-document key must refuse.' );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::TargetNotFound, $e->errorCode );
+		}
+	}
+
+	/**
+	 * A RECORDED STATE NAMING NO DOCUMENT PROMISES NOTHING. The caller turns an
+	 * empty promise into rollback_unavailable rather than a false read-back, so
+	 * the promise is empty in exactly the cases restore() would refuse.
+	 */
+	public function test_a_state_naming_no_document_promises_nothing(): void {
+		$current = new TargetState( ElementorWriteTarget::targetKey( self::DOCUMENT_ID ), true, [] );
+
+		$this->assertSame(
+			[],
+			$this->target()->promiseRollback( [ '_elementor_edit_mode' => 'builder' ], $current, $this->context() )
+		);
+	}
+
+	/**
+	 * A RECORDED DOCUMENT THAT WILL NOT DECODE PROMISES NOTHING, for the reason
+	 * restore() refuses it: a promise measured over bytes that cannot be read
+	 * would describe a restore that cannot happen.
+	 */
+	public function test_an_undecodable_recorded_document_promises_nothing(): void {
+		$current = new TargetState( ElementorWriteTarget::targetKey( self::DOCUMENT_ID ), true, [] );
+
+		$this->assertSame(
+			[],
+			$this->target()->promiseRollback(
+				[
+					'post_id'         => self::DOCUMENT_ID,
+					'_elementor_data' => '{not json at all',
+				],
+				$current,
+				$this->context()
+			)
+		);
 	}
 }

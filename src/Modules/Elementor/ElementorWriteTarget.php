@@ -371,6 +371,74 @@ final class ElementorWriteTarget {
 	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- These two are the RollbackDelegate contract's method names.
+	/**
+	 * Resolves the document a recorded rollback names, for the rollback-apply path.
+	 *
+	 * `content-rollback-apply` runs its own front gate against `edit_post` on a
+	 * post id, the wrong question for a target key that is not a post. This is the
+	 * right one: it re-checks the caller against THIS document, exactly as a
+	 * forward write does, in both the preview and the apply phase of the undo.
+	 *
+	 * @param string           $target_key The recorded target key.
+	 * @param OperationContext $context     The request context.
+	 *
+	 * @return TargetState The resolved document.
+	 *
+	 * @throws OperationException With ErrorCode::TargetNotFound when the key names
+	 *                            no Elementor document, or the caller may not edit
+	 *                            the one it names.
+	 */
+	public function resolveRollbackTarget( string $target_key, OperationContext $context ): TargetState {
+		$post_id = self::postIdFromKey( $target_key );
+
+		if ( null === $post_id ) {
+			throw $this->not_found();
+		}
+
+		return $this->resolve( $post_id, $context );
+	}
+
+	// phpcs:disable Generic.CodeAnalysis.UnusedFunctionParameter.FoundAfterLastUsed -- $current and $context are the RollbackDelegate contract's signature; the promise is of the recorded restore, not the present state.
+	/**
+	 * The rollback-apply read-back a recorded restore state promises.
+	 *
+	 * Measured through the SAME coerce-then-encode path `restore()` writes by, so
+	 * the promise a preview shows describes the document the apply would actually
+	 * store — not the bytes recorded, which the writer never writes verbatim. An
+	 * empty map is the honest answer when the state names no restorable document;
+	 * the caller turns that into rollback_unavailable rather than a false promise.
+	 *
+	 * @param array<string, mixed> $restore_state The recorded restore state.
+	 * @param TargetState          $current        The document's current state (unused; the promise is of the restore, not the present).
+	 * @param OperationContext     $context        The request context (unused; resolution already happened).
+	 *
+	 * @return array<string, mixed> The promised read-back, or an empty map when
+	 *                              the state holds no restorable document.
+	 */
+	public function promiseRollback( array $restore_state, TargetState $current, OperationContext $context ): array {
+		if ( ! array_key_exists( ElementorDocument::META_DATA, $restore_state ) ) {
+			return [];
+		}
+
+		$tree = $this->decoded_list( $restore_state[ ElementorDocument::META_DATA ] );
+
+		if ( null === $tree ) {
+			return [];
+		}
+
+		$coerced = $this->coercion->coerceTree( $tree );
+		$json    = wp_json_encode( $coerced );
+
+		if ( ! is_string( $json ) ) {
+			return [];
+		}
+
+		return $this->fieldsFor( $coerced, $json );
+	}
+	// phpcs:enable Generic.CodeAnalysis.UnusedFunctionParameter.FoundAfterLastUsed
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+
 	// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The message is a literal written for end users and quotes no stored content.
 	/**
 	 * Writes one recorded edit mode back, and proves it landed.
@@ -455,15 +523,39 @@ final class ElementorWriteTarget {
 	 *                            recorded document is not a list of elements.
 	 */
 	private function recorded_tree( mixed $recorded ): array {
+		$decoded = $this->decoded_list( $recorded );
+
+		if ( null === $decoded ) {
+			throw $this->unrestorable_document();
+		}
+
+		return $decoded;
+	}
+
+	/**
+	 * The element list one recorded value holds, or null when it holds none.
+	 *
+	 * The []-returning half of `recorded_tree()`, split out because a restore and
+	 * a rollback promise ask the same question and must answer it the same way:
+	 * `restore()` throws on a document it cannot read, and `promiseRollback()`
+	 * returns an empty promise on one — two callers, one decode, so the promise a
+	 * preview shows can never describe a restore that would then refuse.
+	 *
+	 * @param mixed $recorded The recorded document.
+	 *
+	 * @return array[]|null The raw element list, or null when it will not decode
+	 *                      to a list of elements.
+	 */
+	private function decoded_list( mixed $recorded ): ?array {
 		$decoded = is_string( $recorded ) ? $this->decode( $recorded ) : null;
 
 		if ( ! is_array( $decoded ) || ! array_is_list( $decoded ) ) {
-			throw $this->unrestorable_document();
+			return null;
 		}
 
 		foreach ( $decoded as $element ) {
 			if ( ! is_array( $element ) ) {
-				throw $this->unrestorable_document();
+				return null;
 			}
 		}
 
