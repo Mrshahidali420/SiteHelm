@@ -665,10 +665,13 @@ final class ContentRollbackApplyTest extends TestCase {
 	}
 
 	/**
-	 * The contract scopes a write dispatcher's rollback to its OWN domain. A
-	 * snapshot recorded by another module can be perfectly healthy — the module
-	 * compatibility check would pass it — and still not be this operation's to
-	 * restore. Only core records snapshots today, so nothing else catches this.
+	 * The contract scopes a write dispatcher's POST-SHAPED rollback to its OWN
+	 * domain. A snapshot recorded by another module can be perfectly healthy — the
+	 * module compatibility check would pass it — and still not be this operation's
+	 * to feed through the post-column restore. A foreign-module snapshot whose
+	 * origin is NOT a delegate takes the post path, and this refuses it; a
+	 * delegate resolves cross-module through its own operation instead (see
+	 * test_a_delegate_recorded_by_a_non_core_module_still_resolves).
 	 */
 	public function test_a_snapshot_recorded_by_another_module_is_target_not_found(): void {
 		$this->queueSnapshot(
@@ -1900,5 +1903,75 @@ final class ContentRollbackApplyTest extends TestCase {
 		} catch ( OperationException $exception ) {
 			$this->assertSame( ErrorCode::TargetNotFound, $exception->errorCode );
 		}
+	}
+
+	/**
+	 * REQ-0081 / C1: a delegate whose snapshot was recorded by a NON-core module
+	 * reaches its own resolution and promises the recorded row.
+	 *
+	 * The module-identity refusal guards the post-column restore, which a delegate
+	 * never takes. It once ran before the delegate branch and demanded the
+	 * snapshot's module be `core`, so a delegate recorded by any other module —
+	 * `menu-item-delete` in production — had its reference refused as
+	 * `target_not_found` before its origin could resolve it, making every non-core
+	 * rollback reference unredeemable though the write advertised one. This drives
+	 * the same delegated plan as test_a_delegated_plan_promises_the_recorded_row,
+	 * but with a snapshot stamped by a non-core module and a context that reports
+	 * that module active at the recorded version. `redirect-set` stands in for the
+	 * delegate; delegation keys on the origin implementing RollbackDelegate and on
+	 * the non-post target key, never on the module the snapshot names.
+	 */
+	public function test_a_delegate_recorded_by_a_non_core_module_still_resolves(): void {
+		$this->registerRedirectOrigin();
+
+		$context = new OperationContext(
+			siteId: 'example.com',
+			userId: 7,
+			clientId: 'demo-client',
+			correlationId: 'corr-3',
+			permissionMode: PermissionMode::SafeWrite,
+			moduleVersions: [
+				'menus' => [
+					'version' => '6.8.1',
+					'health'  => 'active',
+				],
+			],
+			requestTime: 1_800_000_500,
+		);
+
+		$this->queueSnapshot(
+			array_merge(
+				$this->redirectSnapshot(
+					[
+						'/old' => [
+							'source'       => '/old',
+							'target'       => '/first',
+							'status'       => 302,
+							'forwardQuery' => false,
+						],
+					]
+				),
+				[
+					'module_id'       => 'menus',
+					'module_versions' => '{"menus":{"health":"active","version":"6.8.1"}}',
+				]
+			),
+			2
+		);
+
+		$current = $this->operation->resolveTarget( [ 'rollbackRef' => self::REFERENCE ], $context );
+		$planned = $this->operation->planChange( $current, [ 'rollbackRef' => self::REFERENCE ], $context );
+
+		$this->assertSame( 'redirect:/old', $current->targetKey );
+		$this->assertSame(
+			[
+				'forwardQuery' => false,
+				'source'       => '/old',
+				'status'       => 302,
+				'target'       => '/first',
+			],
+			$planned->afterFields
+		);
+		$this->assertSame( self::REFERENCE, $planned->payload['rollbackRef'] );
 	}
 }

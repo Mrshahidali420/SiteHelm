@@ -128,15 +128,22 @@ final class RollbackAdmission {
 	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 
 	/**
-	 * Confirms the snapshot belongs to the content domain.
+	 * Confirms a POST-PATH snapshot belongs to the content domain.
 	 *
-	 * The contract scopes a write dispatcher's rollback to a write "in its own
-	 * domain". Module HEALTH is a different question from module IDENTITY:
-	 * `media-*` snapshots are recorded by a module that will be perfectly
-	 * healthy, and health alone would authorize `content-rollback-apply` to
-	 * restore one. Today only the core module records snapshots, so the check is
-	 * unobservable — which is exactly why it must exist before a second module
-	 * ships and makes it observable as a defect.
+	 * The contract scopes a write dispatcher's post-shaped rollback to a write "in
+	 * its own domain". Module HEALTH is a different question from module IDENTITY:
+	 * `media-*` snapshots are recorded by a module that will be perfectly healthy,
+	 * and health alone would authorize `content-rollback-apply` to feed one
+	 * through the post-column restore it has no business touching.
+	 *
+	 * This gates the POST path ONLY. Non-core modules do record snapshots —
+	 * `menu-item-delete` among them — and a snapshot whose origin is a
+	 * RollbackDelegate is restored in that origin's own vocabulary, cross-module
+	 * by design; content-rollback-apply calls this only on the branch that has
+	 * decoded the snapshot as a post. Calling it before the delegate branch
+	 * instead refused every non-core delegate's reference before its origin could
+	 * resolve it, which is the defect that split this call out of the shared
+	 * prologue and into the post path.
 	 *
 	 * `target_not_found` is reused rather than a new code invented: the eleven
 	 * codes are fixed, and from the caller's side a reference it may not act on
