@@ -627,6 +627,103 @@ final class MediaAttachTest extends TestCase {
 		$this->assertSame( 0, $state->fields['parent'] );
 	}
 
+	public function test_the_rollback_promise_equals_what_the_read_back_measures(): void {
+		$context  = $this->makeContext();
+		$current  = $this->currentState();
+		$snapshot = $this->operation->captureSnapshot( $current, $context );
+		$planned  = $this->operation->planChange(
+			$current,
+			[
+				'id'     => 108,
+				'parent' => 42,
+			],
+			$context
+		);
+
+		$this->operation->applyChange( $current, $planned, $context );
+
+		$after   = $this->operation->readBack( 'attachment:108', $context );
+		$promise = $this->operation->promiseRollback( $snapshot, $after, $context );
+
+		$this->assertNotSame(
+			$after->fields,
+			$promise,
+			'A promise that matched the state the write left would be promising to change nothing.'
+		);
+		$this->assertSame( [ 'parent' => 0 ], $promise );
+		$this->assertSame( 42, $after->fields['parent'] );
+
+		$this->operation->restore( $snapshot, $context );
+		$restored = $this->operation->readBack( 'attachment:108', $context );
+
+		foreach ( $promise as $field => $value ) {
+			$this->assertSame(
+				$value,
+				$restored->fields[ $field ],
+				'The undo button showed ' . $field . ' before it was pressed, so the read after it must agree.'
+			);
+		}
+	}
+
+	public function test_the_rollback_resolves_the_recorded_attachment(): void {
+		$state = $this->operation->resolveRollbackTarget( 'attachment:108', $this->makeContext() );
+
+		$this->assertSame( 'attachment:108', $state->targetKey );
+		$this->assertTrue( $state->exists );
+		$this->assertArrayHasKey(
+			'parent',
+			$state->fields,
+			'ContentRollbackApply hands this state to captureSnapshot(), which reads the parent out of it.'
+		);
+	}
+
+	/**
+	 * @dataProvider unredeemableKeys
+	 *
+	 * @param string $key The recorded reference.
+	 */
+	public function test_a_key_that_names_no_attachment_is_refused( string $key ): void {
+		try {
+			$this->operation->resolveRollbackTarget( $key, $this->makeContext() );
+			$this->fail( 'Expected ' . $key . ' to be refused.' );
+		} catch ( OperationException $error ) {
+			$this->assertSame( ErrorCode::TargetNotFound, $error->errorCode );
+		}
+	}
+
+	/**
+	 * @return array<string, array{0: string}>
+	 */
+	public static function unredeemableKeys(): array {
+		return [
+			'a post key'      => [ 'post:108' ],
+			'the pending key' => [ 'attachment:new' ],
+			'a bare number'   => [ '108' ],
+		];
+	}
+
+	public function test_a_snapshot_that_records_no_parent_promises_nothing(): void {
+		$context = $this->makeContext();
+		$current = $this->currentState();
+
+		$this->assertSame(
+			[],
+			$this->operation->promiseRollback( [ 'post_id' => 108 ], $current, $context ),
+			'An empty promise is what ContentRollbackApply turns into rollback_unavailable, which is the honest answer.'
+		);
+		$this->assertSame(
+			[],
+			$this->operation->promiseRollback(
+				[
+					'post_id' => 0,
+					'parent'  => 42,
+				],
+				$current,
+				$context
+			)
+		);
+	}
+
 	public function test_no_refusal_message_names_a_path_a_query_or_a_credential(): void {
 		$refusals = [
 			$this->planAndApply( [ 'id' => 108 ] ),

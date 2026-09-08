@@ -50,6 +50,9 @@ use Throwable;
  */
 final class MediaResizeTest extends TestCase {
 
+	/** The base URL the fake uploads directory is served at. */
+	private const UPLOADS_URL = 'https://example.com/uploads';
+
 	private MediaResize $operation;
 
 	private stdClass $attachment;
@@ -63,8 +66,21 @@ final class MediaResizeTest extends TestCase {
 	/** The directory the fake uploads live in, with forward slashes. */
 	private string $uploadDir = '';
 
+	/**
+	 * What wp_get_attachment_url() builds its answer on.
+	 *
+	 * Separate from the uploads baseurl on purpose: core passes that URL through
+	 * a filter, so a site serving its uploads from a CDN answers a host the
+	 * baseurl never mentions. A test sets this to prove the promise follows the
+	 * filtered URL rather than the composed one.
+	 */
+	private string $attachmentUrlBase = '';
+
 	/** The absolute path of the untouched original. */
 	private string $sourcePath = '';
+
+	/** The absolute path the recorded `_wp_attached_file` pointer resolves to. */
+	private string $recordedPath = '';
 
 	/** What wp_get_original_image_path() answers, so a test can empty it. */
 	private string $originalPath = '';
@@ -77,6 +93,9 @@ final class MediaResizeTest extends TestCase {
 
 	/** Whether the regenerated metadata reports the size that was asked for. */
 	private bool $metadataReportsReduced = true;
+
+	/** Whether the caller may put bytes into this site's uploads directory. */
+	private bool $mayUploadFiles = true;
 
 	/** Whether update_post_meta() actually moves the attached-file pointer. */
 	private bool $pointerMoves = true;
@@ -106,7 +125,9 @@ final class MediaResizeTest extends TestCase {
 		$this->metadataRegenerates    = true;
 		$this->metadataReportsReduced = true;
 		$this->pointerMoves           = true;
+		$this->mayUploadFiles         = true;
 		$this->takenBasenames         = [];
+		$this->attachmentUrlBase      = self::UPLOADS_URL;
 
 		$this->uploadDir = str_replace( '\\', '/', rtrim( sys_get_temp_dir(), '/\\' ) ) . '/sitehelm-resize-test';
 		if ( ! is_dir( $this->uploadDir ) ) {
@@ -117,6 +138,17 @@ final class MediaResizeTest extends TestCase {
 		file_put_contents( $this->sourcePath, 'pretend these are jpeg bytes' );
 
 		$this->attachedFile = '2026/07/cat.jpg';
+
+		// THE POINTER'S OWN PATH IS A REAL PATH. A rollback refuses when the file
+		// its snapshot recorded is no longer on disk, and that refusal is decided
+		// by file_exists() on the path composed from the uploads basedir and the
+		// recorded pointer. A fixture that only ever wrote the flattened name
+		// would make every rollback here take the missing-file branch.
+		$this->recordedPath = $this->uploadDir . '/' . $this->attachedFile;
+		if ( ! is_dir( dirname( $this->recordedPath ) ) ) {
+			mkdir( dirname( $this->recordedPath ), 0777, true );
+		}
+		file_put_contents( $this->recordedPath, 'pretend these are the original jpeg bytes' );
 		$this->metadata     = [
 			'width'  => 4000,
 			'height' => 3000,
@@ -141,7 +173,7 @@ final class MediaResizeTest extends TestCase {
 	}
 
 	protected function tearDown(): void {
-		foreach ( (array) glob( $this->uploadDir . '/*' ) as $file ) {
+		foreach ( (array) glob( $this->uploadDir . '/{,*/,*/*/}*', GLOB_BRACE ) as $file ) {
 			if ( is_string( $file ) && is_file( $file ) ) {
 				unlink( $file );
 			}
@@ -158,9 +190,27 @@ final class MediaResizeTest extends TestCase {
 		// MediaTarget re-checks the capability on the resolved item itself. The
 		// gate that placement backstops is PolicyEngine's, which is tested where
 		// it lives; here it only has to answer so resolve() can complete.
-		Functions\when( 'user_can' )->justReturn( true );
+		Functions\when( 'user_can' )->alias(
+			fn( $user, $capability = '', ...$args ): bool => 'upload_files' === $capability
+				? $this->mayUploadFiles
+				: true
+		);
 		Functions\when( 'wp_attachment_is_image' )->justReturn( true );
-		Functions\when( 'wp_get_attachment_url' )->justReturn( 'https://example.com/uploads/cat.jpg' );
+		// COMPOSED FROM THE POINTER, not a constant. A rollback promise says what a
+		// RECORDED metadata array will read back as, and two of the four members it
+		// promises are built out of this URL. A fake that answered the same string
+		// whatever the attachment pointed at would make the promise agree with the
+		// read for a reason production does not have.
+		Functions\when( 'wp_get_attachment_url' )->alias(
+			fn( $id = 0 ): string => $this->attachmentUrlBase . '/' . $this->attachedFile
+		);
+		Functions\when( 'wp_upload_dir' )->alias(
+			fn(): array => [
+				'basedir' => $this->uploadDir,
+				'baseurl' => self::UPLOADS_URL,
+				'error'   => false,
+			]
+		);
 		Functions\when( 'wp_basename' )->alias( static fn( string $path ): string => basename( $path ) );
 		Functions\when( 'wp_filesize' )->justReturn( 0 );
 		Functions\when( 'trailingslashit' )->alias(
@@ -919,5 +969,187 @@ final class MediaResizeTest extends TestCase {
 			$refusal->errorCode,
 			'A restore has no verifier downstream, so it has to measure its own result.'
 		);
+	}
+
+	/**
+	 * Reduces the image and answers the snapshot the write recorded.
+	 *
+	 * @return array<string, mixed> The snapshot.
+	 */
+	private function reduceAndSnapshot(): array {
+		$context  = $this->makeContext();
+		$current  = $this->currentState();
+		$snapshot = $this->operation->captureSnapshot( $current, $context );
+		$input    = [
+			'id'       => 108,
+			'maxWidth' => 2000,
+		];
+
+		$this->operation->applyChange(
+			$current,
+			$this->operation->planChange( $current, $input, $context ),
+			$context
+		);
+
+		return (array) $snapshot;
+	}
+
+	public function test_the_rollback_promise_follows_a_filtered_attachment_url(): void {
+		// A SITE SERVING ITS UPLOADS FROM SOMEWHERE ELSE. wp_get_attachment_url()
+		// runs through a filter and honours upload_url_path, so the URL the
+		// read-back measures need not start with the uploads baseurl at all. A
+		// promise composed from that baseurl would disagree with the read on every
+		// rendition, and a rollback that had worked would be reported as suspect.
+		$this->attachmentUrlBase = 'https://cdn.example.com/media';
+
+		$context  = $this->makeContext();
+		$snapshot = $this->reduceAndSnapshot();
+
+		$promise = $this->operation->promiseRollback(
+			$snapshot,
+			$this->operation->readBack( 'attachment:108', $context ),
+			$context
+		);
+
+		$this->assertNotSame( [], $promise['sizes'], 'The fixture has to carry renditions for this to test anything.' );
+
+		foreach ( $promise['sizes'] as $rendition ) {
+			$this->assertStringStartsWith(
+				'https://cdn.example.com/media/2026/07/',
+				$rendition['url'],
+				'The promise has to name the directory the read-back will name, not the one the baseurl composes.'
+			);
+		}
+
+		// AND IT IS THE SAME STRING THE READ-BACK ANSWERS. Put the recorded state
+		// back and measure: the promise was made before any of this ran.
+		$this->operation->restore( $snapshot, $context );
+
+		$restored = $this->operation->readBack( 'attachment:108', $context )->fields;
+
+		$this->assertSame(
+			$promise,
+			array_intersect_key( $restored, $promise ),
+			'The promise and the read-back have to agree on a filtered site, or verification fails a rollback that worked.'
+		);
+	}
+
+	public function test_the_rollback_promise_equals_what_the_read_back_measures(): void {
+		$context  = $this->makeContext();
+		$snapshot = $this->reduceAndSnapshot();
+
+		$after   = $this->operation->readBack( 'attachment:108', $context );
+		$promise = $this->operation->promiseRollback( $snapshot, $after, $context );
+
+		$this->assertSame(
+			[ 'width', 'height', 'filesize', 'sizes' ],
+			array_keys( $promise ),
+			'The promise has to be in the vocabulary readBack() projects, not the raw storage the snapshot holds.'
+		);
+		$this->assertNotSame(
+			$after->fields,
+			$promise,
+			'A promise that matched the state the write left would be promising to change nothing.'
+		);
+		$this->assertSame( 4000, $promise['width'] );
+		$this->assertSame( 2000, $after->fields['width'] );
+
+		$this->operation->restore( $snapshot, $context );
+		$restored = $this->operation->readBack( 'attachment:108', $context );
+
+		foreach ( $promise as $field => $value ) {
+			$this->assertSame(
+				$value,
+				$restored->fields[ $field ],
+				'The undo button showed ' . $field . ' before it was pressed, so the read after it must agree.'
+			);
+		}
+	}
+
+	public function test_the_rollback_resolves_the_recorded_attachment(): void {
+		$state = $this->operation->resolveRollbackTarget( 'attachment:108', $this->makeContext() );
+
+		$this->assertSame( 'attachment:108', $state->targetKey );
+		$this->assertTrue( $state->exists );
+	}
+
+	/**
+	 * @dataProvider unredeemableKeys
+	 *
+	 * @param string $key The recorded reference.
+	 */
+	public function test_a_key_that_names_no_attachment_is_refused( string $key ): void {
+		try {
+			$this->operation->resolveRollbackTarget( $key, $this->makeContext() );
+			$this->fail( 'Expected ' . $key . ' to be refused.' );
+		} catch ( OperationException $error ) {
+			$this->assertSame( ErrorCode::TargetNotFound, $error->errorCode );
+		}
+	}
+
+	/**
+	 * @return array<string, array{0: string}>
+	 */
+	public static function unredeemableKeys(): array {
+		return [
+			'a post key'      => [ 'post:108' ],
+			'the pending key' => [ 'attachment:new' ],
+			'a bare number'   => [ '108' ],
+		];
+	}
+
+	public function test_a_caller_who_may_not_add_files_may_not_undo_a_reduction(): void {
+		$this->mayUploadFiles = false;
+		$refusal              = null;
+
+		try {
+			$this->operation->resolveRollbackTarget( 'attachment:108', $this->makeContext() );
+		} catch ( OperationException $error ) {
+			$refusal = $error;
+		}
+
+		$this->assertInstanceOf(
+			OperationException::class,
+			$refusal,
+			'The rollback path is authorised as content-rollback-apply, so the second capability this write declares has no other gate.'
+		);
+		$this->assertSame( ErrorCode::Forbidden, $refusal->errorCode );
+
+		foreach ( [ 'upload_files', 'edit_post', 'capability' ] as $forbidden ) {
+			$this->assertStringNotContainsString(
+				$forbidden,
+				$refusal->getMessage(),
+				'A refusal names what the caller may not do, never the WordPress name of the right they are missing.'
+			);
+		}
+	}
+
+	public function test_a_rollback_whose_recorded_image_is_gone_refuses_rather_than_reporting_success(): void {
+		$context  = $this->makeContext();
+		$snapshot = $this->reduceAndSnapshot();
+
+		unlink( $this->recordedPath );
+
+		$this->assertSame(
+			[],
+			$this->operation->promiseRollback( $snapshot, $this->currentState(), $context ),
+			'An empty promise is refused at preview, so the operator is told before they press anything.'
+		);
+
+		$refusal = null;
+
+		try {
+			$this->operation->restore( $snapshot, $context );
+		} catch ( OperationException $error ) {
+			$refusal = $error;
+		}
+
+		$this->assertInstanceOf(
+			OperationException::class,
+			$refusal,
+			'Putting the pointer back to a file that is gone would leave the site serving a broken image and call it undone.'
+		);
+		$this->assertSame( ErrorCode::RollbackUnavailable, $refusal->errorCode );
+		$this->assertStringNotContainsString( $this->uploadDir, $refusal->getMessage() );
 	}
 }

@@ -142,6 +142,59 @@ final class MediaTarget {
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
 
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+	// phpcs:disable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+	// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+	/**
+	 * Resolves an attachment a snapshot recorded, for a rollback delegate.
+	 *
+	 * The three media writes that record a snapshot each redeem it themselves,
+	 * and each of them needs the same two steps in the same order: read the
+	 * identifier back out of the recorded key, then resolve it through the write
+	 * path's own gate. Extracted here for the reason everything else in this class
+	 * is — three copies of a guard order is two copies too many, and the copy that
+	 * drifts is the one deciding who may overwrite what.
+	 *
+	 * A KEY THAT IS NOT AN ATTACHMENT KEY NAMES NOTHING. So does the pending key
+	 * `attachment:new`, which stands for an item that did not exist when it was
+	 * written; attachmentIdFromKey() answers null to both, and coercing either
+	 * would aim an undo at whatever post id fell out.
+	 *
+	 * IT REFUSES WITH TargetNotFound AND NEVER WITH Forbidden, which is not an
+	 * oversight to correct. resolve() gives one message to a missing item and to a
+	 * forbidden one deliberately, so the operation cannot be used to probe which
+	 * identifiers exist, and passing that refusal through unchanged is what keeps
+	 * it true on the rollback path too.
+	 *
+	 * IT RETURNS resolve()'s FULL PROJECTION, unchanged. `content-rollback-apply`
+	 * hands this state to the origin's own captureSnapshot() to record the
+	 * pre-rollback state, and MediaAttach reads `parent` out of it: a leaner state
+	 * would record a parent of 0 and turn the undo's own undo into a detach.
+	 *
+	 * @param string           $targetKey The target key the snapshot recorded.
+	 * @param OperationContext $context   The request context.
+	 *
+	 * @return TargetState The recorded item's current state.
+	 *
+	 * @throws OperationException With ErrorCode::TargetNotFound.
+	 */
+	public function resolveRecorded( string $targetKey, OperationContext $context ): TargetState {
+		$attachment_id = $this->fields->attachmentIdFromKey( $targetKey );
+
+		if ( null === $attachment_id ) {
+			throw new OperationException(
+				ErrorCode::TargetNotFound,
+				'That recorded reference does not name a media item on this site, so there is nothing to put back.',
+				'Find the item with media-list, then set what you need with media-meta-update.'
+			);
+		}
+
+		return $this->resolve( $attachment_id, $context );
+	}
+	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+
 	/**
 	 * The state of an attachment that does not exist yet.
 	 *

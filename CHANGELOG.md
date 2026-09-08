@@ -117,6 +117,24 @@ an operation behaves.
   the person asking may make that change before it touches anything, and refuses without
   naming the capability when they may not.
 
+- **Three media writes offered an undo that was refused.** Attaching an image to a page,
+  changing an image's title, alt text, caption or description, and shrinking an image each
+  recorded an undo point and showed the button, then stopped with target-not-found when it was
+  pressed. The saved reference names an attachment, and the undo could only read one that named
+  an ordinary post. All three now find their own attachment and put back what they recorded,
+  described in the same words the read of that image answers in, so a preview of the undo says
+  what you actually end up with. Each re-checks that the person asking may make that change
+  before it touches anything — for shrinking that means both permissions the operation itself
+  asks for, one of which nothing on the undo path had been asking — and refuses without naming
+  the capability when they may not.
+
+- **Undoing a resize could report success and leave a missing image.** Shrinking an image keeps
+  the original on disk and points the library back at it to undo. If that original had gone in
+  the meantime — a backup restore, a cleanup plugin, someone deleting it by hand — the undo
+  moved the pointer back to a file that was not there, checked the pointer, found it correct
+  and said it had worked, leaving the image broken everywhere it appeared. It now looks for the
+  file first and refuses while the reduced image is still in place, so nothing is lost.
+
 ### Security
 
 - **A theme file read could be aimed outside the themes directory.** The tools that read and

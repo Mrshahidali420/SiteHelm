@@ -10,8 +10,8 @@ declare(strict_types=1);
 namespace SiteHelm\Modules\Media;
 
 use SiteHelm\Change\PlannedChange;
+use SiteHelm\Change\RollbackDelegate;
 use SiteHelm\Change\TargetState;
-use SiteHelm\Change\WriteOperation;
 use SiteHelm\Change\WriteOutputSchema;
 use SiteHelm\Contracts\Domain;
 use SiteHelm\Contracts\ErrorCode;
@@ -57,9 +57,15 @@ use SiteHelm\Contracts\SnapshotPolicy;
  * `isDestructive` stays false, which keeps the policies at required / required /
  * supported rather than forcing all three to required.
  *
+ * IT REDEEMS ITS OWN SNAPSHOTS. `content-rollback-apply` reads a post id out of a
+ * `post:` key, and an `attachment:` key answered target_not_found there: the undo
+ * button this write's required rollback policy puts in front of an operator was
+ * offered and then refused. RollbackDelegate is what routes the redemption back
+ * here, where the key shape and the parent vocabulary are both known.
+ *
  * @package SiteHelm
  */
-final class MediaAttach implements WriteOperation {
+final class MediaAttach implements RollbackDelegate {
 
 	/**
 	 * The one field this operation promises. It must match the key
@@ -365,6 +371,70 @@ final class MediaAttach implements WriteOperation {
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- These two are the RollbackDelegate contract's method names.
+	// phpcs:disable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase -- $targetKey and $restoreState are the contract's own parameter names.
+	/**
+	 * Resolves the media item one of this operation's own recorded keys names.
+	 *
+	 * THE GATE IS THE WRITE PATH'S OWN, and the contract requires it to be asked
+	 * here: `content-rollback-apply` declares `edit_post` at the front gate and
+	 * resolves it against a post id parsed out of a key shape these targets do not
+	 * have. Routing through MediaTarget keeps the question, the order and the one
+	 * shared refusal message identical to the write's, so an undo cannot reach an
+	 * item the write itself refuses. It runs in both phases, so a permission
+	 * withdrawn between preview and apply refuses the apply.
+	 *
+	 * @param string           $targetKey The recorded target key.
+	 * @param OperationContext $context   The request context.
+	 *
+	 * @return TargetState The media item's current state.
+	 *
+	 * @throws OperationException With ErrorCode::TargetNotFound when the key names
+	 *                            no media item this caller may edit.
+	 */
+	public function resolveRollbackTarget( string $targetKey, OperationContext $context ): TargetState {
+		return $this->targets->resolveRecorded( $targetKey, $context );
+	}
+
+	// phpcs:disable Generic.CodeAnalysis.UnusedFunctionParameter.FoundAfterLastUsed -- $current and $context are the contract's signature; the promise is of the recorded state, never of the present one.
+	/**
+	 * The field map a restore of this recorded snapshot would read back as.
+	 *
+	 * ONE MEMBER, BECAUSE THE SNAPSHOT HOLDS ONE. `parent` is already spelled the
+	 * way MediaFields::read() projects it, so the translation the redirect and
+	 * Elementor delegates need is not needed here — but the promise is still built
+	 * from the RECORDED value, never from `$current`, because a promise that hands
+	 * the present state back passes every comparison that only weighs the two
+	 * against each other.
+	 *
+	 * THE VALIDATION IS restoreFields()'s, EXACTLY. That method writes `parent`
+	 * only when the key is present and the value is numeric, and refuses outright
+	 * when no item is identified. A looser gate here would promise a parent for a
+	 * state whose restore then silently writes no column at all and reports the
+	 * rollback verified. The empty map is the documented "promise nothing", which
+	 * the caller turns into a refusal to run.
+	 *
+	 * @param array<string, mixed> $restoreState The recorded restore state.
+	 * @param TargetState          $current      The target's present state.
+	 * @param OperationContext     $context      The request context.
+	 *
+	 * @return array<string, mixed> The promised read-back, empty when nothing is.
+	 */
+	public function promiseRollback( array $restoreState, TargetState $current, OperationContext $context ): array {
+		$attachment_id = $restoreState['post_id'] ?? null;
+
+		if ( ! is_int( $attachment_id ) || $attachment_id < 1
+			|| ! array_key_exists( self::PROMISED_FIELD, $restoreState )
+			|| ! is_numeric( $restoreState[ self::PROMISED_FIELD ] ) ) {
+			return [];
+		}
+
+		return [ self::PROMISED_FIELD => (int) $restoreState[ self::PROMISED_FIELD ] ];
+	}
+	// phpcs:enable Generic.CodeAnalysis.UnusedFunctionParameter.FoundAfterLastUsed
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 
 	/**
 	 * Writes the recorded parent back.

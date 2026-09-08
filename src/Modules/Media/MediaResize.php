@@ -10,8 +10,8 @@ declare(strict_types=1);
 namespace SiteHelm\Modules\Media;
 
 use SiteHelm\Change\PlannedChange;
+use SiteHelm\Change\RollbackDelegate;
 use SiteHelm\Change\TargetState;
-use SiteHelm\Change\WriteOperation;
 use SiteHelm\Change\WriteOutputSchema;
 use SiteHelm\Contracts\Domain;
 use SiteHelm\Contracts\ErrorCode;
@@ -70,9 +70,16 @@ use SiteHelm\Contracts\SnapshotPolicy;
  * the loss. That is what `isIdempotent` protects against here: not that the
  * second call succeeds, but that it cannot change anything.
  *
+ * IT REDEEMS ITS OWN SNAPSHOTS. `content-rollback-apply` reads a post id out of a
+ * `post:` key, and an `attachment:` key answered target_not_found there: the undo
+ * button this write's required rollback policy puts in front of an operator was
+ * offered and then refused. RollbackDelegate is what routes the redemption back
+ * here, where the recorded file, the recorded metadata and the second capability
+ * this write requires are all known.
+ *
  * @package SiteHelm
  */
-final class MediaResize implements WriteOperation {
+final class MediaResize implements RollbackDelegate {
 
 	/**
 	 * The operation identifier, used in this class's own server-log lines.
@@ -133,6 +140,16 @@ final class MediaResize implements WriteOperation {
 	private const STEPS_BEFORE_WRITE = [ 'plan approved', 'snapshot captured' ];
 
 	/**
+	 * The second capability this operation declares, named once.
+	 *
+	 * It governs putting bytes into this site's uploads directory, which is what
+	 * separates this write from the two media writes that only move a pointer or
+	 * a string. resolveRollbackTarget() re-asks it because the rollback path has
+	 * no other gate that will.
+	 */
+	private const FILE_CAPABILITY = 'upload_files';
+
+	/**
 	 * The operation's registered definition.
 	 *
 	 * @return OperationDefinition The definition registered for media-resize.
@@ -169,7 +186,7 @@ final class MediaResize implements WriteOperation {
 			],
 			outputSchema: WriteOutputSchema::schema(),
 			schemaVersion: 1,
-			requiredCapabilities: [ 'edit_post', 'upload_files' ],
+			requiredCapabilities: [ 'edit_post', self::FILE_CAPABILITY ],
 			risk: Risk::High,
 			isReadOnly: false,
 			isDestructive: false,
@@ -445,6 +462,107 @@ final class MediaResize implements WriteOperation {
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
 
+	// phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid -- These two are the RollbackDelegate contract's method names.
+	// phpcs:disable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase -- $targetKey and $restoreState are the contract's own parameter names.
+	/**
+	 * Resolves the media item one of this operation's own recorded keys names.
+	 *
+	 * THE SECOND CAPABILITY IS ASKED HERE, AND NOTHING ELSE ASKS IT ON THIS PATH.
+	 * This operation declares two, and the front gate that enforces both is
+	 * `content-rollback-apply`'s — which asks about the rollback operation's own
+	 * declaration, not this one's. MediaTarget then asks only the first. So
+	 * without this line an undo of a reduction would run for a caller the
+	 * reduction itself refuses, which is the exact hole the contract folds the
+	 * re-check into resolution to close. It is asked BEFORE the item is resolved,
+	 * matching the gateway's order on the write path, so a caller who may not
+	 * touch this site's files learns nothing about which identifiers exist.
+	 *
+	 * THE GATE FOR THE ITEM ITSELF IS THE WRITE PATH'S OWN, through MediaTarget,
+	 * so the question, the order and the one shared refusal message stay identical
+	 * to the write's. Both checks run in both phases, so a permission withdrawn
+	 * between preview and apply refuses the apply.
+	 *
+	 * @param string           $targetKey The recorded target key.
+	 * @param OperationContext $context   The request context.
+	 *
+	 * @return TargetState The media item's current state.
+	 *
+	 * @throws OperationException With ErrorCode::Forbidden when the caller may not
+	 *                            change the files this site serves, and
+	 *                            ErrorCode::TargetNotFound when the key names no
+	 *                            media item this caller may edit.
+	 */
+	public function resolveRollbackTarget( string $targetKey, OperationContext $context ): TargetState {
+		if ( ! user_can( $context->userId, self::FILE_CAPABILITY ) ) {
+			throw new OperationException(
+				ErrorCode::Forbidden,
+				'Your WordPress user may not change the image files this site serves, so this reduction cannot be undone.',
+				'Ask a site administrator to grant your WordPress user rights over this site\'s media library.'
+			);
+		}
+
+		return $this->targets->resolveRecorded( $targetKey, $context );
+	}
+
+	// phpcs:disable Generic.CodeAnalysis.UnusedFunctionParameter.FoundAfterLastUsed -- $current and $context are the contract's signature; the promise is of the recorded state, never of the present one.
+	/**
+	 * The field map a restore of this recorded snapshot would read back as.
+	 *
+	 * A TRANSLATION, NOT A COPY, AND THAT IS THE WHOLE OF THIS METHOD. The
+	 * snapshot records raw storage — the attached-file pointer and the metadata
+	 * array — while readBack() projects `width`, `height`, `filesize` and `sizes`.
+	 * Handing the recorded members back would promise two keys the read-back does
+	 * not carry and verify having restored nothing.
+	 *
+	 * THE TRANSLATION IS MediaFields' OWN, not a second copy of it. The filesize
+	 * fallback and the rendition URL rule live in fromMetadata(), which read()
+	 * calls for the same four members, so the promise cannot drift away from what
+	 * the read-back will measure.
+	 *
+	 * THE RECORDED FILE MUST STILL BE ON DISK, and that is a validation rather
+	 * than a courtesy: restore() refuses the same state, so promising a map for it
+	 * would offer an undo that then refuses at apply. A recorded metadata of `[]`
+	 * is a different case and still promises — four members describing an
+	 * attachment nothing measured is a real promise, not an empty one.
+	 *
+	 * IT NEVER READS THE PROMISE OUT OF `$current`. A promise that hands the
+	 * present state back passes every comparison that only weighs the two against
+	 * each other — and here the present state is the REDUCED image, which is
+	 * precisely what the undo is meant to move away from.
+	 *
+	 * @param array<string, mixed> $restoreState The recorded restore state.
+	 * @param TargetState          $current      The target's present state.
+	 * @param OperationContext     $context      The request context.
+	 *
+	 * @return array<string, mixed> The promised read-back, empty when nothing is.
+	 */
+	public function promiseRollback( array $restoreState, TargetState $current, OperationContext $context ): array {
+		$attachment_id = $restoreState['post_id'] ?? null;
+		$file          = $restoreState[ self::SNAPSHOT_FILE ] ?? null;
+		$metadata      = $restoreState[ self::SNAPSHOT_METADATA ] ?? null;
+
+		if ( ! is_int( $attachment_id ) || $attachment_id < 1
+			|| ! is_string( $file ) || '' === $file
+			|| ! is_array( $metadata ) ) {
+			return [];
+		}
+
+		$path = $this->recorded_path( $file );
+
+		if ( '' === $path || ! file_exists( $path ) ) {
+			return [];
+		}
+
+		return $this->fields->fromMetadata(
+			$metadata,
+			$this->recorded_url( $file, $attachment_id ),
+			$path
+		);
+	}
+	// phpcs:enable Generic.CodeAnalysis.UnusedFunctionParameter.FoundAfterLastUsed
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.VariableNotSnakeCase
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+
 	/**
 	 * Points the attachment back at the file and metadata it had.
 	 *
@@ -490,6 +608,23 @@ final class MediaResize implements WriteOperation {
 			throw new OperationException(
 				ErrorCode::RollbackUnavailable,
 				'The recorded snapshot does not describe the image it would restore, so this reduction cannot be undone.',
+				'Re-upload the image you want served, or restore it from a site backup.'
+			);
+		}
+
+		// THE RECORDED FILE HAS TO STILL BE THERE. assert_restored() compares the
+		// pointer alone, so a snapshot whose original was removed since the write
+		// — a backup restore, a media-cleanup plugin, an operator with an FTP
+		// client — would be pointed back at nothing and reported as undone,
+		// leaving the site serving a 404 in place of an image. Refused before
+		// anything is written, so the reduced image the caller still has stays
+		// the one being served.
+		$path = $this->recorded_path( $file );
+
+		if ( '' === $path || ! file_exists( $path ) ) {
+			throw new OperationException(
+				ErrorCode::RollbackUnavailable,
+				'The image this snapshot recorded is no longer on this site, so undoing the reduction would leave a broken image.',
 				'Re-upload the image you want served, or restore it from a site backup.'
 			);
 		}
@@ -585,6 +720,130 @@ final class MediaResize implements WriteOperation {
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 	// phpcs:enable WordPress.Security.EscapeOutput.ExceptionNotEscaped
+
+	/**
+	 * The absolute path of the file a snapshot recorded, or '' when this site
+	 * cannot say where its uploads live.
+	 *
+	 * IT IS DERIVED FROM THE RECORDED POINTER, NEVER FROM THE ITEM'S PRESENT
+	 * STATE. get_attached_file() answers for the REDUCED file, which is the one
+	 * thing an undo is moving away from.
+	 *
+	 * BOTH SHAPES OF `_wp_attached_file` ARE READ THE WAY CORE READS THEM. It
+	 * holds a path relative to the uploads basedir on an ordinary site, and an
+	 * absolute one on a site whose uploads directory moved after the file was
+	 * added. Treating the second as relative would compose a path that exists
+	 * nowhere, and the rollback would refuse an image that is sitting on disk.
+	 *
+	 * @param string $file The recorded `_wp_attached_file` value.
+	 *
+	 * @return string The absolute path, or ''.
+	 */
+	private function recorded_path( string $file ): string {
+		if ( $this->is_absolute( $file ) ) {
+			return $file;
+		}
+
+		$uploads = wp_upload_dir();
+
+		if ( ! is_array( $uploads ) || ! empty( $uploads['error'] ) || empty( $uploads['basedir'] ) ) {
+			return '';
+		}
+
+		return rtrim( (string) $uploads['basedir'], '/\\' ) . '/' . $file;
+	}
+
+	/**
+	 * The URL the recorded file will be served at once it is put back, or ''.
+	 *
+	 * IT IS MEASURED BEFORE IT IS COMPOSED, and that ordering is the point of the
+	 * method. read() takes this URL from wp_get_attachment_url(), which passes
+	 * through a filter and honours `upload_url_path`, so on a site serving its
+	 * uploads from a CDN a URL built out of the raw baseurl is not the URL the
+	 * read-back will measure. Promising the composed one would report a rollback
+	 * that worked as one that did not.
+	 *
+	 * ONLY THE DIRECTORY OF THIS URL IS EVER USED — renditions() takes everything
+	 * up to the last slash and nothing after it — and the reduced file is written
+	 * beside the original by wp_unique_filename(), so the live attachment's own
+	 * URL already carries the recorded file's directory, filtered exactly as it
+	 * will be filtered again after the restore. When the two pointers share a
+	 * directory, that live URL is the answer, and it is measured rather than
+	 * guessed at.
+	 *
+	 * The composed form remains for the case where they do not share one, which is
+	 * a site whose uploads moved between the write and the undo. A recorded
+	 * pointer that is already absolute names a file outside the uploads tree, and
+	 * there is no baseurl that can address it.
+	 *
+	 * THE TWO POINTERS ARE COMPARED, NOT THE TWO PATHS. Core composes this URL
+	 * out of `_wp_attached_file` and never out of the filesystem, so the pointers
+	 * are what decide whether one URL's directory answers for the other.
+	 *
+	 * @param string $file          The recorded `_wp_attached_file` value.
+	 * @param int    $attachment_id The attachment the snapshot was taken from.
+	 *
+	 * @return string The URL, or ''.
+	 */
+	private function recorded_url( string $file, int $attachment_id ): string {
+		$live_file = (string) get_post_meta( $attachment_id, '_wp_attached_file', true );
+		$live_url  = (string) wp_get_attachment_url( $attachment_id );
+
+		if ( '' !== $live_url && '' !== $live_file
+			&& self::directory_of( $live_file ) === self::directory_of( $file ) ) {
+			$slash = strrpos( $live_url, '/' );
+
+			if ( false !== $slash ) {
+				$normalised = str_replace( '\\', '/', $file );
+				$cut        = strrpos( $normalised, '/' );
+
+				return substr( $live_url, 0, $slash + 1 )
+					. ( false === $cut ? $normalised : substr( $normalised, $cut + 1 ) );
+			}
+		}
+
+		$uploads = wp_upload_dir();
+
+		if ( $this->is_absolute( $file ) || ! is_array( $uploads )
+			|| ! empty( $uploads['error'] ) || empty( $uploads['baseurl'] ) ) {
+			return '';
+		}
+
+		return rtrim( (string) $uploads['baseurl'], '/' ) . '/' . str_replace( '\\', '/', $file );
+	}
+
+	/**
+	 * The directory part of an absolute path, with separators normalised.
+	 *
+	 * Not dirname(): that answers differently for a path with a
+	 * trailing separator, and these two values are compared for equality rather
+	 * than used, so both sides must be cut the same way whatever shape they
+	 * arrive in.
+	 *
+	 * @param string $path An absolute filesystem path.
+	 *
+	 * @return string The directory, or '' when the path names no directory.
+	 */
+	private static function directory_of( string $path ): string {
+		$normalised = rtrim( str_replace( '\\', '/', $path ), '/' );
+		$slash      = strrpos( $normalised, '/' );
+
+		return false === $slash ? '' : substr( $normalised, 0, $slash );
+	}
+
+	/**
+	 * Whether a recorded pointer already names a place on this filesystem.
+	 *
+	 * Core's own test, kept here rather than reached for through a private core
+	 * helper: a leading slash, or a Windows drive letter.
+	 *
+	 * @param string $file The recorded `_wp_attached_file` value.
+	 *
+	 * @return bool True when the pointer is absolute.
+	 */
+	private function is_absolute( string $file ): bool {
+		return str_starts_with( $file, '/' ) || 1 === preg_match( '|^.:\\\\|', $file );
+	}
 
 	// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Messages are literals written for end users.
 	// phpcs:disable WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Editor failure detail goes to the server log precisely so it never reaches the envelope.
