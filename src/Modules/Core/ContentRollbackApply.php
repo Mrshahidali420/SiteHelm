@@ -240,17 +240,21 @@ final class ContentRollbackApply implements WriteOperation {
 		$snapshot  = $this->snapshot( $reference );
 
 		$this->admission->assert_same_site( $snapshot, $context );
-		$this->admission->assert_same_module( $snapshot );
 
-		// The delegated path branches HERE, after the two identity checks and
-		// before the post-bound ones. It runs the same origin-exists and
-		// module-compatibility refusals; what it does not run is
-		// RollbackAdmission::assert_original_capability(), whose whole body is post-shaped — the
-		// delegate authorized the caller against its own target inside
-		// resolveTarget(), which is the same check asked in the vocabulary of the
-		// thing being overwritten. The post path's ORDER is untouched, so a
-		// snapshot failing more than one of its refusals still reports the first
-		// one it used to.
+		// The delegated path branches HERE, after the cross-site check and before
+		// every post-bound one. A delegate restores in its origin's own
+		// vocabulary — a redirect table, a menu row — so it must work across
+		// modules by design (REQ-0081); the refusals below the branch all reason
+		// about a WordPress post and belong to the post path alone. The branch
+		// runs the origin-exists and module-compatibility refusals; what it does
+		// NOT run is assert_same_module() or
+		// RollbackAdmission::assert_original_capability(), both of which are
+		// post-shaped. assert_same_module() gates a non-post snapshot by demanding
+		// module_id === core; running it here, before the branch, refused every
+		// non-core delegate's reference — menu-item-delete's among them — before
+		// the origin could resolve it. The delegate authorized the caller against
+		// its own target inside resolveTarget(), which is the same check asked in
+		// the vocabulary of the thing being overwritten.
 		if ( null !== $this->delegate ) {
 			$this->admission->assert_origin_is_a_write( $snapshot );
 			$this->admission->assert_module_compatibility( $snapshot, $context );
@@ -258,6 +262,12 @@ final class ContentRollbackApply implements WriteOperation {
 			return $this->plan_delegated( $this->delegate, $snapshot, $current, $reference, $context );
 		}
 
+		// The post path's ORDER is load-bearing and unchanged: module identity is
+		// settled before the capability re-check, so a foreign-module post-shaped
+		// snapshot answers target_not_found regardless of who is asking and never
+		// discloses itself through a capability-shaped refusal. A snapshot failing
+		// more than one of these reports the first one it always did.
+		$this->admission->assert_same_module( $snapshot );
 		$this->admission->assert_original_capability( $snapshot, $current, $context );
 		$this->admission->assert_module_compatibility( $snapshot, $context );
 
