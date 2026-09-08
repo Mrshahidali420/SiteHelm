@@ -135,7 +135,7 @@ final class MenuItemsReorderProjectionTest extends MenuItemsReorderTestCase {
 		$this->assertSame( [ 'edit_theme_options' ], $definition->requiredCapabilities );
 		$this->assertSame( 'medium', $definition->risk->value );
 		$this->assertFalse( $definition->isReadOnly );
-		$this->assertFalse( $definition->isDestructive );
+		$this->assertFalse( $definition->losesStateWithoutSnapshot );
 		$this->assertTrue( $definition->isIdempotent );
 		$this->assertSame( 'required', $definition->previewPolicy->value );
 		$this->assertSame( 'required', $definition->snapshotPolicy->value );

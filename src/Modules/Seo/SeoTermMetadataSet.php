@@ -69,7 +69,7 @@ final class SeoTermMetadataSet implements RollbackDelegate {
 			requiredCapabilities: [ SeoTermFields::CAPABILITY ],
 			risk: Risk::Medium,
 			isReadOnly: false,
-			isDestructive: false,
+			losesStateWithoutSnapshot: false,
 			isIdempotent: true,
 			previewPolicy: PreviewPolicy::Required,
 			snapshotPolicy: SnapshotPolicy::Required,

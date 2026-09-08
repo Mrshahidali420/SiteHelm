@@ -500,7 +500,7 @@ final class ElementorDefinitionInvariantsTest extends TestCase {
 
 		foreach ( $reads as $read ) {
 			$this->assertTrue( $read->isReadOnly, "Read '{$read->id}' must declare isReadOnly true." );
-			$this->assertFalse( $read->isDestructive, "Read '{$read->id}' must declare isDestructive false." );
+			$this->assertFalse( $read->losesStateWithoutSnapshot, "Read '{$read->id}' must declare losesStateWithoutSnapshot false." );
 			$this->assertTrue( $read->isIdempotent, "Read '{$read->id}' must declare isIdempotent true." );
 			$this->assertSame( 'low', $read->risk->value, "Read '{$read->id}' must declare Risk::Low." );
 			$this->assertSame( 'not-applicable', $read->previewPolicy->value, "Read '{$read->id}' must declare previewPolicy not-applicable." );
@@ -552,12 +552,12 @@ final class ElementorDefinitionInvariantsTest extends TestCase {
 			// write and would refuse anything else. Hardcoding `supported` here
 			// would make the first destructive Elementor write fail this assertion
 			// for declaring the only policy it is allowed to declare.
-			$expected_rollback = $write->isDestructive ? 'required' : 'supported';
+			$expected_rollback = $write->losesStateWithoutSnapshot ? 'required' : 'supported';
 
 			$this->assertSame(
 				$expected_rollback,
 				$write->rollbackPolicy->value,
-				"Write '{$write->id}' must declare rollbackPolicy '{$expected_rollback}' for its isDestructive flag."
+				"Write '{$write->id}' must declare rollbackPolicy '{$expected_rollback}' for its losesStateWithoutSnapshot flag."
 			);
 			$this->assertSame( 'elementor-write', $write->dispatcherName(), "Write '{$write->id}' must route to elementor-write." );
 		}

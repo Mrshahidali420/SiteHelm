@@ -29,7 +29,7 @@ use SiteHelm\Contracts\SnapshotPolicy;
  * inside it. An agency operator deletes a section a client no longer wants,
  * without opening the editor and without risking the rest of the page.
  *
- * THE ONLY DESTRUCTIVE OPERATION IN THE ELEMENTOR MODULE. `isDestructive: true`
+ * THE ONLY DESTRUCTIVE OPERATION IN THE ELEMENTOR MODULE. `losesStateWithoutSnapshot: true`
  * forces preview, snapshot AND rollback to `Required` in the
  * `OperationDefinition` constructor, which is the matrix row this requirement
  * asks for: nothing is removed that was not previewed, nothing is removed
@@ -144,7 +144,7 @@ final class ElementorElementRemove implements RollbackDelegate {
 			requiredCapabilities: [ ElementorWriteTarget::REQUIRED_CAPABILITY ],
 			risk: Risk::High,
 			isReadOnly: false,
-			isDestructive: true,
+			losesStateWithoutSnapshot: true,
 			isIdempotent: false,
 			previewPolicy: PreviewPolicy::Required,
 			snapshotPolicy: SnapshotPolicy::Required,

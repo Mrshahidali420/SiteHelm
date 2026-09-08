@@ -51,7 +51,7 @@ final class MediaUploadTest extends MediaUploadTestCase {
 		$this->assertSame( [ 'upload_files' ], $definition->requiredCapabilities );
 		$this->assertSame( Risk::High, $definition->risk );
 		$this->assertFalse( $definition->isReadOnly );
-		$this->assertFalse( $definition->isDestructive );
+		$this->assertFalse( $definition->losesStateWithoutSnapshot );
 		$this->assertFalse( $definition->isIdempotent, 'Each apply creates a new attachment.' );
 		$this->assertSame( PreviewPolicy::Required, $definition->previewPolicy );
 		$this->assertSame( SnapshotPolicy::NotApplicable, $definition->snapshotPolicy, 'A new attachment has no prior state to keep.' );

@@ -61,7 +61,7 @@ use SiteHelm\Contracts\SnapshotPolicy;
  *
  * NOT DESTRUCTIVE, AND DELIBERATELY HIGH RISK. Nothing is removed, and the
  * snapshot restores the attachment to the file and metadata it had, so
- * `isDestructive` stays false. Risk is high anyway, because the change is
+ * `losesStateWithoutSnapshot` stays false. Risk is high anyway, because the change is
  * visible on every page that renders the asset and the operator will not see it
  * until they look at the front end.
  *
@@ -189,7 +189,7 @@ final class MediaResize implements RollbackDelegate {
 			requiredCapabilities: [ 'edit_post', self::FILE_CAPABILITY ],
 			risk: Risk::High,
 			isReadOnly: false,
-			isDestructive: false,
+			losesStateWithoutSnapshot: false,
 			isIdempotent: true,
 			previewPolicy: PreviewPolicy::Required,
 			snapshotPolicy: SnapshotPolicy::Required,

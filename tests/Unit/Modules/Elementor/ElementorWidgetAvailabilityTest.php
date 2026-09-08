@@ -656,7 +656,7 @@ final class ElementorWidgetAvailabilityTest extends TestCase {
 		$this->assertSame( ModuleId::Elementor, $definition->module );
 		$this->assertSame( [ 'edit_posts' ], $definition->requiredCapabilities );
 		$this->assertTrue( $definition->isReadOnly );
-		$this->assertFalse( $definition->isDestructive );
+		$this->assertFalse( $definition->losesStateWithoutSnapshot );
 		$this->assertTrue( $definition->isIdempotent );
 		$this->assertSame( 'low', $definition->risk->value );
 		$this->assertSame( false, $definition->inputSchema['additionalProperties'] );

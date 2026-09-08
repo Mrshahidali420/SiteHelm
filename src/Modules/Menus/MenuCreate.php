@@ -102,7 +102,7 @@ final class MenuCreate implements WriteOperation {
 			requiredCapabilities: [ 'edit_theme_options' ],
 			risk: Risk::Medium,
 			isReadOnly: false,
-			isDestructive: false,
+			losesStateWithoutSnapshot: false,
 			isIdempotent: false,
 			previewPolicy: PreviewPolicy::Required,
 			snapshotPolicy: SnapshotPolicy::Supported,

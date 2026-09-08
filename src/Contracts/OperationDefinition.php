@@ -143,26 +143,26 @@ final class OperationDefinition {
 	 * PHPDoc uses array shorthand rather than generic list syntax because WPCS's
 	 * IncorrectTypeHint sniff does not understand generics.
 	 *
-	 * @param string                           $id                   Stable kebab-case operation identifier.
-	 * @param Domain                           $domain               The product domain.
-	 * @param Mode                             $mode                 Whether the operation reads or writes.
-	 * @param string                           $description          Safe human-readable outcome statement.
-	 * @param array<string, mixed>             $inputSchema          Strict input schema.
-	 * @param array<string, mixed>             $outputSchema         Output schema for OperationResult data.
-	 * @param int                              $schemaVersion        Version of the schema pair, minimum 1.
-	 * @param string[]                         $requiredCapabilities WordPress capabilities.
-	 * @param Risk                             $risk                 Blast-radius classification.
-	 * @param bool                             $isReadOnly           True when nothing is mutated.
-	 * @param bool                             $isDestructive        True when state could be lost without a snapshot.
-	 * @param bool                             $isIdempotent         True when re-applying yields the same state.
-	 * @param PreviewPolicy                    $previewPolicy        Whether the plan phase is mandatory.
-	 * @param SnapshotPolicy                   $snapshotPolicy       Whether pre-change state is captured.
-	 * @param RollbackPolicy                   $rollbackPolicy       Whether the write can be reversed.
-	 * @param ModuleId                         $module               The single implementing module.
-	 * @param array<string, string>            $supportedVersions    Dependency version ranges.
-	 * @param array<string, mixed>             $example              At least one usage example.
-	 * @param array<int, array<string, mixed>> $moreExamples Further examples, one per distinct mode.
-	 * @param array<int, SideEffect>           $sideEffects  Consequences carried beyond the promised change.
+	 * @param string                           $id                        Stable kebab-case operation identifier.
+	 * @param Domain                           $domain                    The product domain.
+	 * @param Mode                             $mode                      Whether the operation reads or writes.
+	 * @param string                           $description               Safe human-readable outcome statement.
+	 * @param array<string, mixed>             $inputSchema               Strict input schema.
+	 * @param array<string, mixed>             $outputSchema              Output schema for OperationResult data.
+	 * @param int                              $schemaVersion             Version of the schema pair, minimum 1.
+	 * @param string[]                         $requiredCapabilities      WordPress capabilities.
+	 * @param Risk                             $risk                      Blast-radius classification.
+	 * @param bool                             $isReadOnly                True when nothing is mutated.
+	 * @param bool                             $losesStateWithoutSnapshot True when applying this destroys state only a snapshot could put back.
+	 * @param bool                             $isIdempotent              True when re-applying yields the same state.
+	 * @param PreviewPolicy                    $previewPolicy             Whether the plan phase is mandatory.
+	 * @param SnapshotPolicy                   $snapshotPolicy            Whether pre-change state is captured.
+	 * @param RollbackPolicy                   $rollbackPolicy            Whether the write can be reversed.
+	 * @param ModuleId                         $module                    The single implementing module.
+	 * @param array<string, string>            $supportedVersions         Dependency version ranges.
+	 * @param array<string, mixed>             $example                   At least one usage example.
+	 * @param array<int, array<string, mixed>> $moreExamples              Further examples, one per distinct mode.
+	 * @param array<int, SideEffect>           $sideEffects               Consequences carried beyond the promised change.
 	 *
 	 * @throws InvalidArgumentException When any contract rule is violated.
 	 *
@@ -182,7 +182,7 @@ final class OperationDefinition {
 		public readonly array $requiredCapabilities,
 		public readonly Risk $risk,
 		public readonly bool $isReadOnly,
-		public readonly bool $isDestructive,
+		public readonly bool $losesStateWithoutSnapshot,
 		public readonly bool $isIdempotent,
 		public readonly PreviewPolicy $previewPolicy,
 		public readonly SnapshotPolicy $snapshotPolicy,
@@ -252,7 +252,7 @@ final class OperationDefinition {
 		// Cross-field rule: read mode forces read-only, non-destructive, all policies not-applicable.
 		if ( Mode::Read === $mode ) {
 			$read_shape = $isReadOnly
-				&& ! $isDestructive
+				&& ! $losesStateWithoutSnapshot
 				&& PreviewPolicy::NotApplicable === $previewPolicy
 				&& SnapshotPolicy::NotApplicable === $snapshotPolicy
 				&& RollbackPolicy::NotApplicable === $rollbackPolicy;
@@ -271,7 +271,7 @@ final class OperationDefinition {
 		}
 
 		// Cross-field rule: destructive forces all three policies required.
-		if ( $isDestructive
+		if ( $losesStateWithoutSnapshot
 			&& ( PreviewPolicy::Required !== $previewPolicy
 				|| SnapshotPolicy::Required !== $snapshotPolicy
 				|| RollbackPolicy::Required !== $rollbackPolicy ) ) {

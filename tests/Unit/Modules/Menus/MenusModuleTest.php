@@ -90,7 +90,7 @@ final class MenusModuleTest extends TestCase {
 		$this->assertSame( [ 'edit_theme_options' ], $definition->requiredCapabilities );
 		$this->assertSame( 'low', $definition->risk->value );
 		$this->assertTrue( $definition->isReadOnly );
-		$this->assertFalse( $definition->isDestructive );
+		$this->assertFalse( $definition->losesStateWithoutSnapshot );
 		$this->assertTrue( $definition->isIdempotent );
 		$this->assertFalse( $registry->hasWriteOperation( 'menu-list' ) );
 	}

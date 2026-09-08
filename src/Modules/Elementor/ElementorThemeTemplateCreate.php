@@ -101,7 +101,7 @@ final class ElementorThemeTemplateCreate implements WriteOperation {
 			requiredCapabilities: [ ElementorKit::CAPABILITY ],
 			risk: Risk::Medium,
 			isReadOnly: false,
-			isDestructive: false,
+			losesStateWithoutSnapshot: false,
 			isIdempotent: false,
 			previewPolicy: PreviewPolicy::Required,
 			snapshotPolicy: SnapshotPolicy::Supported,

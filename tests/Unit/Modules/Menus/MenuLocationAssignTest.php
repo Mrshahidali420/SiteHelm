@@ -168,7 +168,7 @@ final class MenuLocationAssignTest extends TestCase {
 		$this->assertSame( [ 'edit_theme_options' ], $definition->requiredCapabilities );
 		$this->assertSame( Risk::Medium, $definition->risk );
 		$this->assertFalse( $definition->isReadOnly );
-		$this->assertFalse( $definition->isDestructive );
+		$this->assertFalse( $definition->losesStateWithoutSnapshot );
 		$this->assertTrue( $definition->isIdempotent );
 		$this->assertSame( PreviewPolicy::Required, $definition->previewPolicy );
 		$this->assertSame( SnapshotPolicy::Required, $definition->snapshotPolicy );

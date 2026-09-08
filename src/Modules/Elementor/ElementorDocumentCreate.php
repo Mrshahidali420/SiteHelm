@@ -218,7 +218,7 @@ final class ElementorDocumentCreate implements WriteOperation {
 			requiredCapabilities: [ 'edit_posts' ],
 			risk: Risk::Medium,
 			isReadOnly: false,
-			isDestructive: false,
+			losesStateWithoutSnapshot: false,
 			isIdempotent: false,
 			previewPolicy: PreviewPolicy::Required,
 			snapshotPolicy: SnapshotPolicy::Supported,

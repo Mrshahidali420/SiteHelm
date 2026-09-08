@@ -61,7 +61,7 @@ final class CommentListTest extends TestCase {
 		$this->assertSame( 'comment-list', $definition->id );
 		$this->assertSame( 'content-read', $definition->dispatcherName() );
 		$this->assertTrue( $definition->isReadOnly );
-		$this->assertFalse( $definition->isDestructive );
+		$this->assertFalse( $definition->losesStateWithoutSnapshot );
 		$this->assertSame( [ 'moderate_comments' ], $definition->requiredCapabilities );
 		$this->assertSame( false, $definition->inputSchema['additionalProperties'] );
 	}

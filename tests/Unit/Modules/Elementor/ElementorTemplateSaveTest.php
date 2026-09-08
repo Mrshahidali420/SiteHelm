@@ -134,7 +134,7 @@ final class ElementorTemplateSaveTest extends TestCase {
 		$this->assertSame( [ 'edit_posts' ], $definition->requiredCapabilities );
 		$this->assertSame( Risk::Medium, $definition->risk );
 		$this->assertFalse( $definition->isReadOnly );
-		$this->assertFalse( $definition->isDestructive );
+		$this->assertFalse( $definition->losesStateWithoutSnapshot );
 		$this->assertFalse( $definition->isIdempotent );
 		$this->assertSame( PreviewPolicy::Required, $definition->previewPolicy );
 		$this->assertSame( RollbackPolicy::Supported, $definition->rollbackPolicy );

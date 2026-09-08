@@ -548,7 +548,7 @@ final class MediaResizeTest extends TestCase {
 		$this->assertSame( Risk::High, $definition->risk );
 		$this->assertFalse( $definition->isReadOnly );
 		$this->assertFalse(
-			$definition->isDestructive,
+			$definition->losesStateWithoutSnapshot,
 			'Nothing is removed: the original file stays on disk and the snapshot points back at it.'
 		);
 		$this->assertTrue( $definition->isIdempotent );

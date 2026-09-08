@@ -89,7 +89,7 @@ final class SeoBulkMetadataSet implements WriteOperation {
 			requiredCapabilities: [ SeoFields::CAPABILITY ],
 			risk: Risk::High,
 			isReadOnly: false,
-			isDestructive: false,
+			losesStateWithoutSnapshot: false,
 			isIdempotent: true,
 			previewPolicy: PreviewPolicy::Required,
 			// THE SNAPSHOT IS FOR THIS OPERATION'S OWN FAILURE, NOT FOR AN UNDO.

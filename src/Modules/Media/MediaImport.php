@@ -90,7 +90,7 @@ use SiteHelm\Contracts\SnapshotPolicy;
  * AN IMPORT CANNOT BE ROLLED BACK, for the same reason an upload cannot. The
  * reversal that would exist instead — deleting an attachment and its files from
  * disk — is a destructive operation wearing a rollback's clothes, and would
- * force isDestructive true and all three policies to required. An operator who
+ * force losesStateWithoutSnapshot true and all three policies to required. An operator who
  * wants an imported asset gone deletes it in WordPress, where the confirmation
  * and the trash exist.
  *
@@ -189,7 +189,7 @@ final class MediaImport implements WriteOperation {
 			requiredCapabilities: [ 'upload_files' ],
 			risk: Risk::High,
 			isReadOnly: false,
-			isDestructive: false,
+			losesStateWithoutSnapshot: false,
 			isIdempotent: false,
 			previewPolicy: PreviewPolicy::Required,
 			// NOTHING EXISTED BEFORE THIS RAN, SO THERE IS NOTHING TO PUT BACK.

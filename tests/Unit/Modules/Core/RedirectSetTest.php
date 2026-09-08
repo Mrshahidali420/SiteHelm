@@ -50,7 +50,7 @@ final class RedirectSetTest extends RedirectTestCase {
 		$this->assertSame( Risk::Medium, $definition->risk );
 		$this->assertSame( [ 'manage_options' ], $definition->requiredCapabilities );
 		$this->assertFalse( $definition->isReadOnly );
-		$this->assertFalse( $definition->isDestructive );
+		$this->assertFalse( $definition->losesStateWithoutSnapshot );
 		$this->assertTrue( $definition->isIdempotent, 'Setting the same redirect twice leaves one row.' );
 		$this->assertSame( PreviewPolicy::Required, $definition->previewPolicy );
 		$this->assertSame( SnapshotPolicy::Required, $definition->snapshotPolicy );

@@ -155,3 +155,19 @@ The amendment is also out of order against the contract's own Change Policy, whi
 **Recorded in the contract (2026-09-06).** The `retryable` field row and the two affected Retryability cells are rewritten, and the Status carries a dated amendment line. `tests/Unit/Contracts/EnumsTest.php` pins both codes as false in a test naming the session that produced the contradiction, because that test is the thing that would otherwise put the old values back.
 
 **Reversibility.** Cheap. Nothing on the wire is renamed and no code changes meaning; only two booleans move, and they move toward what the prose beside them already said.
+
+---
+
+## I10. A field named for a judgement it was never making
+
+**Contract says.** `isDestructive` is true when the operation removes or wholesale replaces existing user-visible state such that data would be lost without a snapshot, and true forces preview, snapshot and rollback all to `required`.
+
+**Why it needed a ruling.** The definition and the name pull in different directions. The definition is about a snapshot; the name reads as a verdict on how bad the operation is. Follow the name and the shipped values look broken: `media-delete` takes away an image and every resized copy of it and nothing can put them back, and it declares the flag false; `content-trash` is undone by a site owner in two clicks, and declares it true. Follow the definition and both are right — a delete has no snapshot standing between the change and the loss, because there is no snapshot at all, and a flag of true would force a rollback the operation cannot honour. The field was also never published, so this only mattered inside the codebase; publishing it as it stood would have handed every client the misreading.
+
+**Ruling.** The field is renamed `losesStateWithoutSnapshot`. Meaning, allowed values and cross-field rules are unchanged. It and `isIdempotent` are both published in the catalogue, in `CatalogBuilder::entry()` and `CatalogExport::row()`.
+
+**Rationale.** A caller deciding whether to retry a write that timed out needs `isIdempotent` and had no way to read it; a caller choosing between two ways to do the same thing needs to know which one writes over what is there. Both facts existed. The rename is what makes the second one safe to hand out — a name that has to be explained before it can be read is not a name a client can key on, and the explanation was only ever in this repository.
+
+**Recorded in the contract (2026-09-09).** The field row and both cross-field rules are rewritten, and the Status carries a dated amendment line.
+
+**Reversibility.** Cheap inside the plugin, and a rename on the wire for anything already reading the export's `isDestructive` member. The export is a few weeks old and the member was documented as a flag word rather than a stable key, so the exposure is small; a client that read it gets an absent member rather than a wrong one, which fails loudly.

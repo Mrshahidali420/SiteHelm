@@ -108,7 +108,7 @@ final class PermissionLevel {
 				// arbitrary code at the level whose entire promise is that it
 				// stops short of the dangerous operations. An inequality gate
 				// widens every time a case is added above the one it names.
-				return ! $definition->isDestructive && ! $definition->risk->atLeast( Risk::High );
+				return ! $definition->losesStateWithoutSnapshot && ! $definition->risk->atLeast( Risk::High );
 			case self::READ:
 				return $definition->isReadOnly;
 			default:

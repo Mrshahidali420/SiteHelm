@@ -183,7 +183,7 @@ final class ElementorGlobalTokenInputTest extends TestCase {
 		$this->assertSame( $id, $definition->id );
 		$this->assertSame( Mode::Write, $definition->mode );
 		$this->assertFalse( $definition->isReadOnly );
-		$this->assertFalse( $definition->isDestructive );
+		$this->assertFalse( $definition->losesStateWithoutSnapshot );
 		$this->assertTrue( $definition->isIdempotent );
 		$this->assertSame( Risk::High, $definition->risk );
 		$this->assertSame( PreviewPolicy::Required, $definition->previewPolicy );

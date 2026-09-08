@@ -146,7 +146,7 @@ final class ElementorGlobalClassCreate implements RollbackDelegate {
 			requiredCapabilities: [ ElementorGlobalClassWrite::CAPABILITY ],
 			risk: Risk::High,
 			isReadOnly: false,
-			isDestructive: false,
+			losesStateWithoutSnapshot: false,
 			isIdempotent: false,
 			previewPolicy: PreviewPolicy::Required,
 			snapshotPolicy: SnapshotPolicy::Required,

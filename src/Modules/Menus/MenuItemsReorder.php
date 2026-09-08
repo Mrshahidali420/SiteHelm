@@ -140,7 +140,7 @@ final class MenuItemsReorder implements RollbackDelegate {
 			requiredCapabilities: [ MenuTarget::REQUIRED_CAPABILITY ],
 			risk: Risk::Medium,
 			isReadOnly: false,
-			isDestructive: false,
+			losesStateWithoutSnapshot: false,
 			isIdempotent: true,
 			previewPolicy: PreviewPolicy::Required,
 			snapshotPolicy: SnapshotPolicy::Required,

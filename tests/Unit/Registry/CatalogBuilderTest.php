@@ -55,7 +55,7 @@ final class CatalogBuilderTest extends TestCase {
 				requiredCapabilities: [ 'manage_options' ],
 				risk: Risk::Low,
 				isReadOnly: true,
-				isDestructive: false,
+				losesStateWithoutSnapshot: false,
 				isIdempotent: true,
 				previewPolicy: PreviewPolicy::NotApplicable,
 				snapshotPolicy: SnapshotPolicy::NotApplicable,
@@ -126,7 +126,60 @@ final class CatalogBuilderTest extends TestCase {
 		$this->assertSame( 1, $entry['schemaVersion'] );
 		$this->assertSame( [ 'manage_options' ], $entry['requiredCapabilities'] );
 		$this->assertSame( 'low', $entry['risk'] );
+		$this->assertFalse( $entry['losesStateWithoutSnapshot'], 'a read takes nothing away' );
+		$this->assertTrue( $entry['isIdempotent'], 'a read can always be sent again' );
 		$this->assertNotEmpty( $entry['examples'] );
+	}
+
+	/**
+	 * Both flags existed on every definition and neither reached a caller. An
+	 * agent deciding whether a write that timed out is safe to send again reads
+	 * `isIdempotent` or it guesses, and the catalogue is the only place it can
+	 * read it before making the call.
+	 */
+	public function test_a_write_publishes_what_it_overwrites_and_whether_it_can_be_repeated(): void {
+		$this->allowCapabilities( [ 'manage_options', 'edit_posts' ] );
+		$this->registry->registerWrite(
+			new OperationDefinition(
+				id: 'content-example-write',
+				domain: Domain::Content,
+				mode: Mode::Write,
+				description: 'Replace a stored value.',
+				inputSchema: [
+					'type'                 => 'object',
+					'properties'           => [],
+					'additionalProperties' => false,
+				],
+				outputSchema: [
+					'type'                 => 'object',
+					'properties'           => [],
+					'additionalProperties' => false,
+				],
+				schemaVersion: 1,
+				requiredCapabilities: [ 'edit_posts' ],
+				risk: Risk::Medium,
+				isReadOnly: false,
+				losesStateWithoutSnapshot: true,
+				isIdempotent: false,
+				previewPolicy: PreviewPolicy::Required,
+				snapshotPolicy: SnapshotPolicy::Required,
+				rollbackPolicy: RollbackPolicy::Required,
+				module: ModuleId::Core,
+				supportedVersions: [ 'wordpress' => '>=6.6' ],
+				example: [
+					'operation' => 'content-example-write',
+					'arguments' => [],
+				],
+			),
+			new StubWriteOperation()
+		);
+
+		$catalog = $this->builder->build( 'content-write', $this->makeContext() );
+		$entry   = $catalog['operations'][0];
+
+		$this->assertSame( 'content-example-write', $entry['operation'] );
+		$this->assertTrue( $entry['losesStateWithoutSnapshot'] );
+		$this->assertFalse( $entry['isIdempotent'] );
 	}
 
 	public function test_inactive_module_operation_stays_listed_with_reason(): void {
@@ -352,7 +405,7 @@ final class CatalogBuilderTest extends TestCase {
 			requiredCapabilities: [ 'edit_posts', 'publish_posts' ],
 			risk: Risk::Medium,
 			isReadOnly: false,
-			isDestructive: false,
+			losesStateWithoutSnapshot: false,
 			isIdempotent: true,
 			previewPolicy: PreviewPolicy::Required,
 			snapshotPolicy: SnapshotPolicy::Required,
@@ -396,7 +449,7 @@ final class CatalogBuilderTest extends TestCase {
 			requiredCapabilities: [ 'edit_posts', 'publish_posts' ],
 			risk: Risk::Medium,
 			isReadOnly: false,
-			isDestructive: false,
+			losesStateWithoutSnapshot: false,
 			isIdempotent: true,
 			previewPolicy: PreviewPolicy::Required,
 			snapshotPolicy: SnapshotPolicy::Required,
@@ -440,7 +493,7 @@ final class CatalogBuilderTest extends TestCase {
 				requiredCapabilities: [ 'edit_post' ],
 				risk: Risk::Medium,
 				isReadOnly: false,
-				isDestructive: false,
+				losesStateWithoutSnapshot: false,
 				isIdempotent: true,
 				previewPolicy: PreviewPolicy::Required,
 				snapshotPolicy: SnapshotPolicy::Required,
@@ -490,7 +543,7 @@ final class CatalogBuilderTest extends TestCase {
 				requiredCapabilities: [ 'edit_post', 'edit_posts' ],
 				risk: Risk::Medium,
 				isReadOnly: false,
-				isDestructive: false,
+				losesStateWithoutSnapshot: false,
 				isIdempotent: true,
 				previewPolicy: PreviewPolicy::Required,
 				snapshotPolicy: SnapshotPolicy::Required,
@@ -561,7 +614,7 @@ final class CatalogBuilderTest extends TestCase {
 				requiredCapabilities: [ 'edit_post' ],
 				risk: Risk::Medium,
 				isReadOnly: false,
-				isDestructive: false,
+				losesStateWithoutSnapshot: false,
 				isIdempotent: true,
 				previewPolicy: PreviewPolicy::Required,
 				snapshotPolicy: SnapshotPolicy::Required,
@@ -764,7 +817,7 @@ final class CatalogBuilderTest extends TestCase {
 			requiredCapabilities: [ 'manage_options' ],
 			risk: Risk::Low,
 			isReadOnly: true,
-			isDestructive: false,
+			losesStateWithoutSnapshot: false,
 			isIdempotent: true,
 			previewPolicy: PreviewPolicy::NotApplicable,
 			snapshotPolicy: SnapshotPolicy::NotApplicable,
@@ -849,7 +902,7 @@ final class CatalogBuilderTest extends TestCase {
 				requiredCapabilities: [ 'manage_woocommerce' ],
 				risk: Risk::Low,
 				isReadOnly: true,
-				isDestructive: false,
+				losesStateWithoutSnapshot: false,
 				isIdempotent: true,
 				previewPolicy: PreviewPolicy::NotApplicable,
 				snapshotPolicy: SnapshotPolicy::NotApplicable,

@@ -88,7 +88,7 @@ final class MediaModuleTest extends TestCase {
 		$this->assertSame( [ 'upload_files' ], $definition->requiredCapabilities );
 		$this->assertSame( 'low', $definition->risk->value );
 		$this->assertTrue( $definition->isReadOnly );
-		$this->assertFalse( $definition->isDestructive );
+		$this->assertFalse( $definition->losesStateWithoutSnapshot );
 		$this->assertTrue( $definition->isIdempotent );
 		$this->assertFalse( $registry->hasWriteOperation( 'media-get' ) );
 	}

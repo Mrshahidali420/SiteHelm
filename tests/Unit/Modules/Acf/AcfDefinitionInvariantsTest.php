@@ -341,7 +341,7 @@ final class AcfDefinitionInvariantsTest extends TestCase {
 
 			$this->assertSame( Mode::Read, $definition->mode, "Operation '{$definition->id}' must be a read." );
 			$this->assertTrue( $definition->isReadOnly, "Operation '{$definition->id}' must be read-only." );
-			$this->assertFalse( $definition->isDestructive, "Operation '{$definition->id}' must not be destructive." );
+			$this->assertFalse( $definition->losesStateWithoutSnapshot, "Operation '{$definition->id}' must not be destructive." );
 			$this->assertTrue( $definition->isIdempotent, "Operation '{$definition->id}' must be idempotent." );
 			$this->assertSame( PreviewPolicy::NotApplicable, $definition->previewPolicy, "Operation '{$definition->id}' must not declare a preview policy." );
 			$this->assertSame( SnapshotPolicy::NotApplicable, $definition->snapshotPolicy, "Operation '{$definition->id}' must not declare a snapshot policy." );
@@ -358,7 +358,7 @@ final class AcfDefinitionInvariantsTest extends TestCase {
 	 * write that applies without ever being previewed, and the registry's own gate
 	 * would be the only thing between that and a live site.
 	 *
-	 * `isDestructive` IS FALSE, DELIBERATELY. This operation replaces values; it
+	 * `losesStateWithoutSnapshot` IS FALSE, DELIBERATELY. This operation replaces values; it
 	 * removes no content. Declaring it destructive would force nothing REQ-0047 does
 	 * not already require through the three policies and would misreport a subtitle
 	 * edit as a deletion to every client that surfaces the flag.
@@ -368,7 +368,7 @@ final class AcfDefinitionInvariantsTest extends TestCase {
 
 		$this->assertSame( Mode::Write, $definition->mode );
 		$this->assertFalse( $definition->isReadOnly, 'A write is not read-only.' );
-		$this->assertFalse( $definition->isDestructive, 'Replacing a value removes no content.' );
+		$this->assertFalse( $definition->losesStateWithoutSnapshot, 'Replacing a value removes no content.' );
 		$this->assertSame( PreviewPolicy::Required, $definition->previewPolicy );
 		$this->assertSame( SnapshotPolicy::Required, $definition->snapshotPolicy );
 		$this->assertSame( RollbackPolicy::Required, $definition->rollbackPolicy );

@@ -115,7 +115,7 @@ final class UserRoleSet implements RollbackDelegate {
 			requiredCapabilities: [ UserFields::WRITE_CAPABILITY ],
 			risk: Risk::High,
 			isReadOnly: false,
-			isDestructive: false,
+			losesStateWithoutSnapshot: false,
 			isIdempotent: true,
 			previewPolicy: PreviewPolicy::Required,
 			snapshotPolicy: SnapshotPolicy::Required,

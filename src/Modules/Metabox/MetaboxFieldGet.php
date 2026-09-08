@@ -220,7 +220,7 @@ final class MetaboxFieldGet {
 			requiredCapabilities: [ 'edit_post' ],
 			risk: Risk::Low,
 			isReadOnly: true,
-			isDestructive: false,
+			losesStateWithoutSnapshot: false,
 			isIdempotent: true,
 			previewPolicy: PreviewPolicy::NotApplicable,
 			snapshotPolicy: SnapshotPolicy::NotApplicable,

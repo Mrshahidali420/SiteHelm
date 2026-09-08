@@ -77,7 +77,7 @@ final class SiteRewriteFlushTest extends TestCase {
 			'Recording a stale cache would tell an operator they had a way back to rules that were already wrong.'
 		);
 		$this->assertSame( RollbackPolicy::NotApplicable, $definition->rollbackPolicy );
-		$this->assertFalse( $definition->isDestructive );
+		$this->assertFalse( $definition->losesStateWithoutSnapshot );
 		$this->assertTrue( $definition->isIdempotent );
 		$this->assertSame( [], $definition->inputSchema['properties'] );
 		$this->assertFalse( $definition->inputSchema['additionalProperties'] );

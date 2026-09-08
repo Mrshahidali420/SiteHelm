@@ -124,7 +124,7 @@ final class MediaSvgUploadTest extends MediaUploadTestCase {
 		$this->assertSame( SnapshotPolicy::NotApplicable, $definition->snapshotPolicy, 'A new attachment has no prior state to keep.' );
 		$this->assertSame( RollbackPolicy::NotApplicable, $definition->rollbackPolicy, 'There is nothing to put back, so no undo is offered.' );
 		$this->assertFalse( $definition->isReadOnly );
-		$this->assertFalse( $definition->isDestructive );
+		$this->assertFalse( $definition->losesStateWithoutSnapshot );
 		$this->assertFalse( $definition->isIdempotent );
 		$this->assertSame( [ 'filename', 'content' ], $definition->inputSchema['required'] );
 		$this->assertFalse( $definition->inputSchema['additionalProperties'] );

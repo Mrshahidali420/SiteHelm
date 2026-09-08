@@ -131,7 +131,7 @@ final class MediaUploadTicket implements WriteOperation {
 			requiredCapabilities: [ 'upload_files' ],
 			risk: Risk::High,
 			isReadOnly: false,
-			isDestructive: false,
+			losesStateWithoutSnapshot: false,
 			isIdempotent: false,
 			previewPolicy: PreviewPolicy::Required,
 			// A TICKET CHANGES NOTHING ON THE SITE, SO THERE IS NOTHING TO PUT BACK.

@@ -592,7 +592,7 @@ final class ElementorElementGetTest extends TestCase {
 		$this->assertSame( 'elementor-element-get', $definition->id );
 		$this->assertTrue( $definition->isReadOnly );
 		$this->assertTrue( $definition->isIdempotent );
-		$this->assertFalse( $definition->isDestructive );
+		$this->assertFalse( $definition->losesStateWithoutSnapshot );
 		$this->assertSame( [ 'edit_post' ], $definition->requiredCapabilities );
 	}
 

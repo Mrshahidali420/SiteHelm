@@ -921,7 +921,7 @@ Design decisions that are not obvious from the code:
   `user_can( $userId, $capability )` with no target.
 - **Nothing is ever deleted.** Spam and trash are reversible statuses on a row that
   stays where it is; `SET_ARGUMENT_BY_STATUS` does not carry the value that would
-  perform a permanent deletion, so `isDestructive` is false with justification.
+  perform a permanent deletion, so `losesStateWithoutSnapshot` is false with justification.
   Permanent deletion is REQ-0056, permanently excluded.
 - **The status write goes through `wp_set_comment_status()`** for every destination,
   not the meta/column directly, because spam routes through `wp_spam_comment()` —
@@ -2535,7 +2535,7 @@ two tests in `ReservedCapabilityTest` enforce that.
   every gate above it. `RiskTest` writes the order out rather than deriving it, so an
   insertion has to be acknowledged.
 - **The same shape lives in `OperationsScreen`** twice: the warning colour on a switch row
-  is `isDestructive || risk->atLeast( Risk::High )`, and the badge block tests `Extreme`
+  is `losesStateWithoutSnapshot || risk->atLeast( Risk::High )`, and the badge block tests `Extreme`
   first, then `High`, so a row gets one risk badge and it is the accurate one.
 - **`ModuleId::Code` is the first module that is *off* rather than *unavailable*.**
   Elementor, ACF, Meta Box and WooCommerce report unavailable when the plugin behind them
@@ -2760,12 +2760,13 @@ with no add-on — and the console lists the nine writes as locked rather than h
   throws `OperationException` so the change engine's compensate path runs and the audit
   row closes `EXECUTION_FAILED` — an unreachable wordpress.org or an unknown slug is a
   clean typed refusal, never a partial state.
-- **Deleting is final, and `isDestructive` could not say so.** `plugin-delete` and
+- **Deleting is final, and `losesStateWithoutSnapshot` could not say so.** `plugin-delete` and
   `theme-delete` (`delete_plugins` / `delete_themes`, both `Risk::Extreme`) share
   `DeleteWrite`, an abstract base carrying everything except which noun is being removed.
-  They declare `isDestructive: false` — not because a delete is gentle, but because the
-  flag is a contract word meaning *destructive and reversible*: setting it true forces
-  preview, snapshot AND rollback to `Required`, and a delete cannot honour the last two.
+  They declare `losesStateWithoutSnapshot: false` — not because a delete is gentle, but because
+  the flag says a snapshot is what stands between this change and lost state, and setting it
+  true forces preview, snapshot AND rollback to `Required`. There is no snapshot here to
+  stand anywhere: the files are gone, so a delete cannot honour the last two.
   The honesty lives where a caller actually reads it — `Risk::Extreme` (which the `edit`
   permission level refuses outright, so only a full-permission client can call either),
   the description, and two plan warnings saying the files cannot be put back and that the
@@ -4262,7 +4263,7 @@ surfaces cannot drift.
 
 **`system-catalog-export`** (`system-read`, free, `read`) renders the same rows two ways.
 Markdown by default: a padded table, grouped by module, with a `preview` / `rollback` /
-`destructive` / risk flag string per row — cheap per operation and readable by anything that
+`replaces existing state` / `not repeatable` / risk flag string per row — cheap per operation and readable by anything that
 opens the saved file. `format: 'json'` returns the rows as data for a client that renders its
 own view. `detail: 'full'` adds each operation's input and output schema, at roughly two and a
 half times the size; `module` restricts the export to one subject.
@@ -4315,10 +4316,10 @@ would point at files that no longer exist. So `snapshotPolicy` and `rollbackPoli
 `NotApplicable` and `restore()` throws `ErrorCode::RollbackUnavailable`, rather than recording
 something that would tell an operator they had a way back when they did not.
 
-**`isDestructive` is false, and that is the contract word rather than a description.**
-`OperationDefinition` makes `isDestructive: true` force preview *and* snapshot *and* rollback
-all to `Required`, so in this codebase the flag means "destructive and reversible" — an
-operation that promises a way back. A permanent delete cannot promise one, so it declares what
+**`losesStateWithoutSnapshot` is false, and the name says why.**
+`OperationDefinition` makes `losesStateWithoutSnapshot: true` force preview *and* snapshot *and*
+rollback all to `Required`, so the flag is only ever true where a snapshot is the thing holding
+the old state — an operation that promises a way back through one. A permanent delete cannot promise one, so it declares what
 it can honour and says the rest through the description and the warnings the operator has to
 approve. The tier stays `High`: `Risk::Extreme` means the payload is a program and it gates the
 Read & edit permission level, so borrowing it here would switch a free operation off for every
@@ -4434,7 +4435,7 @@ the module's existing rollback wording already says so.
 `content-resave` changes nothing. Its whole point is to run other people's code —
 an SEO plugin's score, a builder's compiled CSS, a cache's copy — by firing
 `save_post`. That cost had nowhere to live. `risk` says how bad a mistake would
-be, `isDestructive` says whether state is lost without a snapshot, and neither of
+be, `losesStateWithoutSnapshot` says whether state is lost without a snapshot, and neither of
 them says "this hands control to code we did not write".
 
 `SideEffect` is a closed enum of five consequences, and `OperationDefinition`
@@ -4447,7 +4448,7 @@ time* the operation runs. Anything that depends on what was passed is a plan-tim
 warning, which is why the largest warning clusters in the codebase — an image
 written without an attachment id, a field whose definition cannot be read, a
 no-op — are not side effects and never will be. It is also why "deletion is
-permanent" is absent: `isDestructive` and `rollbackPolicy` already carry it.
+permanent" is absent: `losesStateWithoutSnapshot` and `rollbackPolicy` already carry it.
 
 The five cases:
 
@@ -4491,3 +4492,34 @@ declared, not that the operation was examined and found to carry none. That is
 also why `CatalogExport::absent_pro_rows()` writes `null` here rather than `[]`
 for operations the add-on has not registered — a blank reads as unknown, an empty
 list reads as checked.
+
+## 76. Two facts the catalogue knew and never published
+
+Every definition has always carried two booleans the catalogue kept to itself.
+`isIdempotent` says whether sending the same call twice leaves the site in the
+state one call would have left it in. The other said whether the change loses
+state that only a snapshot could put back. Neither reached a caller through the
+per-dispatcher catalogue, so an agent deciding whether it was safe to retry a
+call that timed out had nothing to read and had to guess.
+
+**The destructive flag was renamed before it was published.** It used to be
+called `isDestructive`, and read as an English word it was wrong on the two
+operations where it mattered most: `media-delete`, which removes a file and
+every resized copy of it and cannot be undone by anything, declares it false,
+while `content-trash`, which a site owner reverses with two clicks, declares it
+true. Nothing was inconsistent — the flag never meant "this is bad", it meant
+"state is lost here unless a snapshot holds it", and a delete has no snapshot to
+hold anything — but a name that has to be explained before it can be read is not
+a name a client can key on. It is now `losesStateWithoutSnapshot`, which says
+what it has always meant. The cross-field rules are unchanged: true still forces
+preview, snapshot and rollback all to `Required`, and a read still forces it
+false.
+
+**Both now appear in `CatalogBuilder::entry()` and `CatalogExport::row()`**,
+beside the three policies, and the export's flag string carries them too. The two
+flags there are written the way round that keeps most rows quiet: almost every
+operation can be sent twice safely, so the string names the few that cannot
+(`not repeatable`) rather than the many that can, and `replaces existing state`
+replaced the word `destructive` for the same reason the field was renamed.
+Absent Pro rows publish `null` for both, matching how they already publish the
+policies — a blank reads as unknown, a `false` would read as checked.

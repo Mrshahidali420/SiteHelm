@@ -124,7 +124,7 @@ final class ElementorThemeTemplateCreateTest extends TestCase {
 		$this->assertSame( Mode::Write, $definition->mode );
 		$this->assertSame( Risk::Medium, $definition->risk );
 		$this->assertFalse( $definition->isReadOnly );
-		$this->assertFalse( $definition->isDestructive );
+		$this->assertFalse( $definition->losesStateWithoutSnapshot );
 		$this->assertFalse( $definition->isIdempotent );
 		$this->assertSame( PreviewPolicy::Required, $definition->previewPolicy );
 		$this->assertSame( SnapshotPolicy::Supported, $definition->snapshotPolicy );

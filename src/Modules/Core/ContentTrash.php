@@ -102,8 +102,8 @@ use SiteHelm\Contracts\SnapshotPolicy;
  * than hidden: explicit restoration skips the `untrash_post` action other
  * plugins may hook.
  *
- * isDestructive IS TRUE, AND THE CONTRACT DECIDES IT, not this file.
- * docs/product/phase-2-foundation-contract.md's `isDestructive` row names
+ * losesStateWithoutSnapshot IS TRUE, AND THE CONTRACT DECIDES IT, not this file.
+ * docs/product/phase-2-foundation-contract.md's `losesStateWithoutSnapshot` row names
  * "moving content to trash" as its own definitional example of the flag being
  * true. That document is frozen; a frozen contract and code that silently
  * disagree is the drift this branch exists to avoid, so the flag follows the
@@ -128,7 +128,7 @@ use SiteHelm\Contracts\SnapshotPolicy;
  * :132 (read operations must not be destructive) and :145 (a destructive
  * operation must declare all three policies Required). CatalogBuilder emits
  * risk, previewPolicy, snapshotPolicy and rollbackPolicy — it does NOT emit
- * isDestructive — so no catalog entry, no response envelope and no client ever
+ * losesStateWithoutSnapshot — so no catalog entry, no response envelope and no client ever
  * sees this value, and no test observes it beyond the definition assertion in
  * ContentTrashTest. That is precisely why it is cheap to get right now and
  * expensive to discover wrong later: nothing today would fail if it were wrong,
@@ -209,7 +209,7 @@ final class ContentTrash implements WriteOperation {
 			requiredCapabilities: [ 'delete_post' ],
 			risk: Risk::Medium,
 			isReadOnly: false,
-			isDestructive: true,
+			losesStateWithoutSnapshot: true,
 			isIdempotent: true,
 			previewPolicy: PreviewPolicy::Required,
 			snapshotPolicy: SnapshotPolicy::Required,

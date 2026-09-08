@@ -118,7 +118,7 @@ final class ElementorThemeConditionsSet implements RollbackDelegate {
 			requiredCapabilities: [ ElementorThemeConditions::CAPABILITY ],
 			risk: Risk::High,
 			isReadOnly: false,
-			isDestructive: false,
+			losesStateWithoutSnapshot: false,
 			isIdempotent: true,
 			previewPolicy: PreviewPolicy::Required,
 			snapshotPolicy: SnapshotPolicy::Required,

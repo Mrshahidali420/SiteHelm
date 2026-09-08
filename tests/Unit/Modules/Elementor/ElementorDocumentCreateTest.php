@@ -130,7 +130,7 @@ final class ElementorDocumentCreateTest extends TestCase {
 		$this->assertSame( [ 'edit_posts' ], $definition->requiredCapabilities );
 		$this->assertSame( Risk::Medium, $definition->risk );
 		$this->assertFalse( $definition->isReadOnly );
-		$this->assertFalse( $definition->isDestructive );
+		$this->assertFalse( $definition->losesStateWithoutSnapshot );
 		$this->assertFalse( $definition->isIdempotent );
 		$this->assertSame( PreviewPolicy::Required, $definition->previewPolicy );
 		$this->assertSame( SnapshotPolicy::Supported, $definition->snapshotPolicy );

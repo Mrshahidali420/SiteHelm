@@ -72,7 +72,7 @@ final class ElementorGlobalClassCreateTest extends TestCase {
 	public function test_the_definition_is_destructive_free_and_previewed(): void {
 		$definition = ElementorGlobalClassCreate::definition();
 
-		$this->assertFalse( $definition->isDestructive );
+		$this->assertFalse( $definition->losesStateWithoutSnapshot );
 		$this->assertSame( [ ElementorGlobalClassWrite::CAPABILITY ], $definition->requiredCapabilities );
 	}
 

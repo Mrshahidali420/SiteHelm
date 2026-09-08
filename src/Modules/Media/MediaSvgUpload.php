@@ -154,7 +154,7 @@ final class MediaSvgUpload implements WriteOperation {
 			requiredCapabilities: [ 'upload_files', 'unfiltered_html' ],
 			risk: Risk::High,
 			isReadOnly: false,
-			isDestructive: false,
+			losesStateWithoutSnapshot: false,
 			isIdempotent: false,
 			previewPolicy: PreviewPolicy::Required,
 			// NOTHING EXISTED BEFORE THIS RAN, SO THERE IS NOTHING TO PUT BACK.

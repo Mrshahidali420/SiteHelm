@@ -367,7 +367,7 @@ final class ContentSearchTest extends TestCase {
 
 		$this->assertSame( 'content-search', $definition->id );
 		$this->assertTrue( $definition->isReadOnly );
-		$this->assertFalse( $definition->isDestructive );
+		$this->assertFalse( $definition->losesStateWithoutSnapshot );
 		$this->assertSame( [ 'edit_posts' ], $definition->requiredCapabilities );
 	}
 }

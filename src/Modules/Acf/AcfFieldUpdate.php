@@ -149,12 +149,12 @@ final class AcfFieldUpdate implements RollbackDelegate {
 			schemaVersion: 1,
 			requiredCapabilities: [ 'edit_post' ],
 			risk: Risk::Medium,
-			// It REPLACES values, it does not remove content. isDestructive: true
+			// It REPLACES values, it does not remove content. losesStateWithoutSnapshot: true
 			// would force nothing REQ-0047 does not already require through the
 			// three policies below, and would misreport a subtitle edit as a
 			// deletion.
 			isReadOnly: false,
-			isDestructive: false,
+			losesStateWithoutSnapshot: false,
 			isIdempotent: true,
 			previewPolicy: PreviewPolicy::Required,
 			snapshotPolicy: SnapshotPolicy::Required,

@@ -238,7 +238,7 @@ final class MenuItemCreate implements WriteOperation {
 			requiredCapabilities: [ MenuTarget::REQUIRED_CAPABILITY ],
 			risk: Risk::Medium,
 			isReadOnly: false,
-			isDestructive: false,
+			losesStateWithoutSnapshot: false,
 			// Not idempotent: repeating the request adds a second item. The plan
 			// token is what makes a retried request safe, not this flag.
 			isIdempotent: false,

@@ -39,7 +39,7 @@ use SiteHelm\Contracts\SnapshotPolicy;
  * back exactly what was there.
  *
  * DESTRUCTIVE, BECAUSE IT REPLACES. Whatever the page held is gone when this
- * lands, so `isDestructive: true` forces preview, snapshot AND rollback to
+ * lands, so `losesStateWithoutSnapshot: true` forces preview, snapshot AND rollback to
  * `Required`: nothing is overwritten that was not previewed, nothing is
  * overwritten without the page first being recorded, and the overwrite can
  * always be undone. `elementor-document-clear` is this operation with an empty
@@ -191,7 +191,7 @@ final class ElementorDocumentBuild implements RollbackDelegate {
 			requiredCapabilities: [ ElementorWriteTarget::REQUIRED_CAPABILITY ],
 			risk: Risk::High,
 			isReadOnly: false,
-			isDestructive: true,
+			losesStateWithoutSnapshot: true,
 			isIdempotent: false,
 			previewPolicy: PreviewPolicy::Required,
 			snapshotPolicy: SnapshotPolicy::Required,

@@ -164,7 +164,7 @@ final class ElementorElementsReorder implements RollbackDelegate {
 			requiredCapabilities: [ ElementorWriteTarget::REQUIRED_CAPABILITY ],
 			risk: Risk::Medium,
 			isReadOnly: false,
-			isDestructive: false,
+			losesStateWithoutSnapshot: false,
 			// Idempotent in the sense the flag means: the same request applied
 			// twice leaves the children in the same order. The plan token is
 			// still what makes a retried request safe.

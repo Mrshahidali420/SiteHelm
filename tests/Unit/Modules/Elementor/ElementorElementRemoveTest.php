@@ -117,7 +117,7 @@ final class ElementorElementRemoveTest extends TestCase {
 	/**
 	 * The registered shape the matrix pins for REQ-0040.
 	 *
-	 * `isDestructive: true` is the row's distinguishing member, and it FORCES all
+	 * `losesStateWithoutSnapshot: true` is the row's distinguishing member, and it FORCES all
 	 * three policies to Required in the OperationDefinition constructor. Both the
 	 * flag and the three policies are asserted, because the constructor's coupling
 	 * runs the other way: it refuses a mismatch, so a definition that quietly
@@ -134,7 +134,7 @@ final class ElementorElementRemoveTest extends TestCase {
 		$this->assertSame( [ 'edit_post' ], $definition->requiredCapabilities );
 		$this->assertSame( 'elementor-write', $definition->dispatcherName() );
 		$this->assertFalse( $definition->isReadOnly );
-		$this->assertTrue( $definition->isDestructive );
+		$this->assertTrue( $definition->losesStateWithoutSnapshot );
 		$this->assertFalse( $definition->isIdempotent );
 		$this->assertSame( Risk::High, $definition->risk );
 		$this->assertSame( PreviewPolicy::Required, $definition->previewPolicy );

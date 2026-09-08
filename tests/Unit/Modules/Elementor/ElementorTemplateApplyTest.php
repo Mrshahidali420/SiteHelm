@@ -153,7 +153,7 @@ final class ElementorTemplateApplyTest extends TestCase {
 		$this->assertSame( [ 'edit_post' ], $definition->requiredCapabilities );
 		$this->assertSame( Risk::High, $definition->risk );
 		$this->assertFalse( $definition->isReadOnly );
-		$this->assertFalse( $definition->isDestructive );
+		$this->assertFalse( $definition->losesStateWithoutSnapshot );
 		$this->assertSame( PreviewPolicy::Required, $definition->previewPolicy );
 		$this->assertSame( RollbackPolicy::Supported, $definition->rollbackPolicy );
 	}

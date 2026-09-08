@@ -40,7 +40,7 @@ final class RedirectDeleteTest extends RedirectTestCase {
 
 		// WordPress has no trash for an option row, and declaring this destructive
 		// is what puts it behind the policy engine's confirmation.
-		$this->assertTrue( $definition->isDestructive );
+		$this->assertTrue( $definition->losesStateWithoutSnapshot );
 
 		// A second delete of the same path is TargetNotFound, so it is not
 		// idempotent, and saying otherwise would invite a retry that reports a
