@@ -90,7 +90,7 @@ final class MediaDelete implements WriteOperation {
 			id: 'media-delete',
 			domain: Domain::Media,
 			mode: Mode::Write,
-			description: 'Permanently delete one media library item and the files behind it. This cannot be undone.',
+			description: 'Permanently delete one media library item and the files behind it. This cannot be undone, and no check is made for where the item is used: pages that embed it keep their markup and show a broken file.',
 			inputSchema: [
 				'type'                 => 'object',
 				'properties'           => [
