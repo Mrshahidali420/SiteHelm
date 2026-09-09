@@ -38,7 +38,14 @@ final class SnapshotStore {
 	private const READ_COLUMNS = 'id, rollback_ref, site_id, user_id, operation_id, module_id, target_key, restore_state, module_versions, created_at, restored_at';
 
 	/**
-	 * Records one snapshot and mints its rollback reference.
+	 * Out-of-retention rows deleted per opportunistic prune, so a site whose
+	 * cron never fires still converges instead of growing without bound.
+	 */
+	private const PRUNE_LIMIT = 50;
+
+	/**
+	 * Records one snapshot, mints its rollback reference, and prunes
+	 * out-of-retention rows on the way through.
 	 *
 	 * @param array<string, mixed> $row The snapshot row to store.
 	 *
@@ -48,6 +55,8 @@ final class SnapshotStore {
 	 */
 	public function capture( array $row ): ?array {
 		global $wpdb;
+
+		$this->pruneOld( (int) $row['created_at'] );
 
 		$reference = self::REF_PREFIX . bin2hex( random_bytes( self::REF_BYTES ) );
 
@@ -140,6 +149,37 @@ final class SnapshotStore {
 	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 	// phpcs:enable WordPress.DB.DirectDatabaseQuery.DirectQuery
 	// phpcs:enable WordPress.DB.DirectDatabaseQuery.NoCaching
+
+	/**
+	 * Deletes a bounded batch of rows older than the retention window.
+	 *
+	 * Bounded so a site with a long backlog pays a small fixed cost per write
+	 * instead of one giant delete; the daily cron's unbounded prune() clears
+	 * the rest.
+	 *
+	 * @param int $now The write's own timestamp.
+	 *
+	 * phpcs:disable WordPress.DB.DirectDatabaseQuery.DirectQuery
+	 * phpcs:disable WordPress.DB.DirectDatabaseQuery.NoCaching
+	 * phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+ * phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+	 */
+	private function pruneOld( int $now ): void {
+		global $wpdb;
+
+		$table = Installer::tableName( Installer::TABLE_SNAPSHOTS );
+		$wpdb->query(
+			$wpdb->prepare(
+				"DELETE FROM {$table} WHERE created_at < %d ORDER BY created_at LIMIT %d",
+				Retention::cutoff( $now ),
+				self::PRUNE_LIMIT
+			)
+		);
+	}
+	// phpcs:enable WordPress.DB.DirectDatabaseQuery.DirectQuery
+	// phpcs:enable WordPress.DB.DirectDatabaseQuery.NoCaching
+	// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 
 	/**
 	 * Deletes snapshots older than the cutoff.

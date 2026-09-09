@@ -49,6 +49,14 @@ final class RetentionTest extends TestCase {
 		$this->assertSame( Retention::MAX_DAYS, $this->retention->days() );
 	}
 
+	public function test_cutoff_subtracts_the_clamped_window(): void {
+		Functions\when( 'get_option' )->justReturn( 30 );
+		$this->assertSame( 1_800_000_000 - ( 30 * 86400 ), Retention::cutoff( 1_800_000_000 ) );
+
+		Functions\when( 'get_option' )->justReturn( 100_000 );
+		$this->assertSame( 1_800_000_000 - ( 365 * 86400 ), Retention::cutoff( 1_800_000_000 ) );
+	}
+
 	public function test_prune_uses_the_retention_cutoff_for_audit_and_snapshots(): void {
 		Functions\when( 'get_option' )->justReturn( 30 );
 		$this->wpdb->queryRowsQueue = [ 1, 2, 3 ];

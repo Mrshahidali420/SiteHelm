@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace SiteHelm\Tests\Unit\Storage;
 
+use Brain\Monkey\Functions;
 use SiteHelm\Storage\Installer;
 use SiteHelm\Storage\SnapshotStore;
 use SiteHelm\Tests\Doubles\FakeWpdb;
@@ -26,6 +27,7 @@ final class SnapshotStoreTest extends TestCase {
 		parent::setUp();
 		$this->wpdb      = new FakeWpdb();
 		$GLOBALS['wpdb'] = $this->wpdb;
+		Functions\when( 'get_option' )->justReturn( 30 );
 		$this->store     = new SnapshotStore();
 	}
 
@@ -126,6 +128,19 @@ final class SnapshotStoreTest extends TestCase {
 	 * Retention deleting from the wrong table would destroy audit evidence
 	 * while reporting that it pruned snapshots, so the table is asserted.
 	 */
+	public function test_capture_opportunistically_prunes_rows_out_of_retention(): void {
+		Functions\when( 'get_option' )->justReturn( 30 );
+		$this->wpdb->queryRowsQueue = [ 3 ];
+
+		$captured = $this->store->capture( $this->row() );
+
+		$this->assertNotNull( $captured );
+		$this->assertStringContainsString( 'DELETE FROM', $this->wpdb->queries[0] );
+		$this->assertStringContainsString( 'created_at <', $this->wpdb->queries[0] );
+		$this->assertStringContainsString( 'LIMIT', $this->wpdb->queries[0] );
+		$this->assertSame( [ 1_800_000_000 - ( 30 * 86400 ), 50 ], $this->wpdb->prepared[0]['args'] );
+	}
+
 	public function test_prune_deletes_rows_older_than_the_cutoff(): void {
 		$this->wpdb->queryRowsQueue = [ 2 ];
 

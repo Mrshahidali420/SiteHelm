@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace SiteHelm\Tests\Unit\Storage;
 
+use Brain\Monkey\Functions;
 use SiteHelm\Storage\AuditStore;
 use SiteHelm\Storage\Installer;
 use SiteHelm\Tests\Doubles\FakeWpdb;
@@ -26,6 +27,7 @@ final class AuditStoreTest extends TestCase {
 		parent::setUp();
 		$this->wpdb      = new FakeWpdb();
 		$GLOBALS['wpdb'] = $this->wpdb;
+		Functions\when( 'get_option' )->justReturn( 30 );
 		$this->store     = new AuditStore();
 	}
 
@@ -211,6 +213,28 @@ final class AuditStoreTest extends TestCase {
 
 		$this->assertSame( 4, $this->store->count( [ 'actorId' => 7 ] ) );
 		$this->assertSame( [ 7 ], $this->wpdb->prepared[0]['args'] );
+	}
+
+	public function test_insert_opportunistically_prunes_rows_out_of_retention(): void {
+		Functions\when( 'get_option' )->justReturn( 30 );
+		$this->wpdb->queryRowsQueue = [ 2 ];
+
+		$this->store->insert( $this->row() );
+
+		$this->assertStringContainsString( 'DELETE FROM', $this->wpdb->queries[0] );
+		$this->assertStringContainsString( 'recorded_at <', $this->wpdb->queries[0] );
+		$this->assertStringContainsString( 'LIMIT', $this->wpdb->queries[0] );
+		$this->assertSame( [ 1_800_000_000 - ( 30 * 86400 ), 50 ], $this->wpdb->prepared[0]['args'] );
+	}
+
+	public function test_the_opportunistic_prune_batch_is_bounded_and_the_insert_still_lands(): void {
+		Functions\when( 'get_option' )->justReturn( 30 );
+		$this->wpdb->queryRowsQueue = [ false ];
+
+		$id = $this->store->insert( $this->row() );
+
+		$this->assertSame( 1, $id );
+		$this->assertCount( 1, $this->wpdb->inserts );
 	}
 
 	public function test_prune_deletes_rows_older_than_the_cutoff(): void {

@@ -39,6 +39,7 @@ final class AuditRecorderTest extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();
 		Functions\when( 'wp_json_encode' )->alias( 'json_encode' );
+		Functions\when( 'get_option' )->justReturn( 30 );
 		$this->wpdb      = new FakeWpdb();
 		$GLOBALS['wpdb'] = $this->wpdb;
 		$this->recorder  = new AuditRecorder( new AuditStore(), new AuditRedactor() );
