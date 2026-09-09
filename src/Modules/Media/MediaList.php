@@ -78,7 +78,7 @@ final class MediaList {
 					'parent'   => [
 						'type'        => 'integer',
 						'minimum'     => 0,
-						'description' => 'Return only items attached to this content item; 0 returns unattached items.',
+						'description' => 'Return only items attached to this content item; 0 returns unattached items. Attachment records where a file was first uploaded — it is not a record of where the item is used, and no operation reports usage.',
 					],
 					'limit'    => [
 						'type'        => 'integer',
@@ -106,7 +106,10 @@ final class MediaList {
 								'filename'    => [ 'type' => 'string' ],
 								'mimeType'    => [ 'type' => 'string' ],
 								'url'         => [ 'type' => 'string' ],
-								'parent'      => [ 'type' => 'integer' ],
+								'parent'      => [
+									'type'        => 'integer',
+									'description' => 'The content item the file was uploaded to, or 0. Not a usage record: an item with parent 0 can still appear in content.',
+								],
 								'uploadedGmt' => [ 'type' => 'string' ],
 							],
 							'required'             => [ 'id', 'title', 'filename', 'mimeType', 'url', 'parent', 'uploadedGmt' ],
