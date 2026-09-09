@@ -77,7 +77,7 @@ use SiteHelm\Contracts\SnapshotPolicy;
  *
  * @package SiteHelm
  */
-final class ContentTermsAssign implements WriteOperation {
+final class ContentTermsReplace implements WriteOperation {
 
 	/**
 	 * The one field this operation promises. It must match the key
@@ -117,11 +117,11 @@ final class ContentTermsAssign implements WriteOperation {
 	 * the operation.
 	 *
 	 * @return OperationDefinition The definition registered for
-	 *                             content-terms-assign.
+	 *                             content-terms-replace.
 	 */
 	public static function definition(): OperationDefinition {
 		return new OperationDefinition(
-			id: 'content-terms-assign',
+			id: 'content-terms-replace',
 			domain: Domain::Content,
 			mode: Mode::Write,
 			description: 'Replace the terms of one existing content item in the named taxonomies, using terms that already exist on the site.',
@@ -176,7 +176,7 @@ final class ContentTermsAssign implements WriteOperation {
 			module: ModuleId::Core,
 			supportedVersions: [ 'wordpress' => '>=' . SITEHELM_MIN_WP ],
 			example: [
-				'operation' => 'content-terms-assign',
+				'operation' => 'content-terms-replace',
 				'arguments' => [
 					'id'    => 42,
 					'terms' => [

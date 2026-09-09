@@ -132,7 +132,7 @@ final class CoreModuleCensusTest extends TestCase {
 			'snapshot'      => 'required',
 			'rollback'      => 'supported',
 		],
-		'content-terms-assign'       => [
+		'content-terms-replace'       => [
 			'dispatcher'    => 'content-write',
 			'schemaVersion' => 1,
 			'capabilities'  => [ 'edit_post' ],

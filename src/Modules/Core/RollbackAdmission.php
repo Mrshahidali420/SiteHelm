@@ -286,7 +286,7 @@ final class RollbackAdmission {
 	 * Refuses a restoration that would write a taxonomy storing term ORDER.
 	 *
 	 * SCOPED TO THE PROMISED MAP, NOT TO EVERY TAXONOMY THE ITEM CARRIES, unlike
-	 * ContentTermsAssign's. The wide scope refused a COLUMN-ONLY rollback merely
+	 * ContentTermsReplace's. The wide scope refused a COLUMN-ONLY rollback merely
 	 * because the post carried an unrelated sorted taxonomy, though such a
 	 * rollback writes no terms — and over-refusing is worse here than anywhere
 	 * else, because this operation IS the recovery path.

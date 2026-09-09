@@ -212,8 +212,8 @@ final class CoreModule implements IntegrationModule {
 		);
 
 		$registry->registerWrite(
-			ContentTermsAssign::definition(),
-			new ContentTermsAssign( $fields, $targets )
+			ContentTermsReplace::definition(),
+			new ContentTermsReplace( $fields, $targets )
 		);
 
 		$registry->registerWrite(

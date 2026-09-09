@@ -11,7 +11,7 @@ namespace SiteHelm\Tests\Unit\Schema;
 
 use SiteHelm\Bootstrap\Plugin;
 use SiteHelm\Contracts\OperationException;
-use SiteHelm\Modules\Core\ContentTermsAssign;
+use SiteHelm\Modules\Core\ContentTermsReplace;
 use SiteHelm\Modules\Menus\MenuFields;
 use SiteHelm\Modules\Menus\MenuItemsReorder;
 use SiteHelm\Registry\CapabilityRegistry;
@@ -27,7 +27,7 @@ use SiteHelm\Tests\TestCase;
  * memory, or a request budget — rather than by refusing.
  *
  * The sweep below is the part that keeps this closed. It descends into nested
- * arrays as well as top-level ones, because `content-terms-assign` is the case
+ * arrays as well as top-level ones, because `content-terms-replace` is the case
  * that shows why: the outer list was one entry per taxonomy, and the unbounded
  * list was the term identifiers inside each entry.
  */
@@ -121,7 +121,7 @@ final class SchemaArrayBoundsTest extends TestCase {
 	 * is the one a sweep over top-level properties would have missed.
 	 */
 	public function test_an_over_long_term_list_is_refused_by_input_validation(): void {
-		$declared = ContentTermsAssign::definition()
+		$declared = ContentTermsReplace::definition()
 			->inputSchema['properties']['terms']['items']['properties']['termIds']['maxItems'];
 
 		$termIds = range( 1, $declared + 1 );
@@ -138,7 +138,7 @@ final class SchemaArrayBoundsTest extends TestCase {
 					],
 				],
 			],
-			ContentTermsAssign::definition()->inputSchema
+			ContentTermsReplace::definition()->inputSchema
 		);
 	}
 

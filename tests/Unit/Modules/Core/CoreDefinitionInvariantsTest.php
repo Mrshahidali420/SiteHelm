@@ -66,7 +66,7 @@ final class CoreDefinitionInvariantsTest extends TestCase {
 		'content-status-set',
 		'content-resave',
 		'content-meta-update',
-		'content-terms-assign',
+		'content-terms-replace',
 		'content-trash',
 		'content-block-update',
 		'redirect-set',

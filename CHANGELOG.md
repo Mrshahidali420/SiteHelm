@@ -65,6 +65,14 @@ an operation behaves.
 
 ### Changed
 
+- **`content-terms-assign` is now called `content-terms-replace`.** The operation has always
+  replaced a post's terms in the named taxonomy — categories not sent in the call are removed,
+  not kept — and its description said so, but the name said "assign", which reads as add.
+  An agent skimming names could wipe a post's remaining categories without meaning to. The
+  name now says what the operation does. A site that had switched the operation off under its
+  old name keeps it switched off: the stored switch list maps the old identifier to the new
+  one on read.
+
 - **The catalogue column that used to be called "destructive" now says what it actually
   measured.** It was never a judgement about how bad an operation is. It was a note about
   whether the old state survives the call, and the only reason it matters is that a snapshot
@@ -75,6 +83,12 @@ an operation behaves.
   Anything reading the export by the old name will need to read the new one.
 
 ### Fixed
+
+- **Content writes refuse identifiers that belong to another kind of item.** WordPress stores
+  media files, menu items and revisions in the same table as posts and pages, so a media
+  file's id handed to a content write resolved like a page and the write went through on the
+  wrong kind of row. Content operations now refuse those ids and point to the operations that
+  manage them.
 
 - **A redirect with a very long source path is refused up front instead of never applying.**
   The change engine records the name of what a plan targets in a column 191 characters wide.

@@ -153,7 +153,7 @@ final class ElementorTemplateLibrary {
 	 * what a create wants and what Elementor itself does.
 	 *
 	 * THE TERM WRITE IS NOT JUDGED, and the reason is the same one
-	 * `ContentTermsAssign` records at length: `wp_set_object_terms()` answers a
+	 * `ContentTermsReplace` records at length: `wp_set_object_terms()` answers a
 	 * WP_Error on a taxonomy that is not registered, which is exactly the state
 	 * of a site where Elementor is present but its library post type has not
 	 * booted yet. The meta is the value this plugin's own reads and verification
