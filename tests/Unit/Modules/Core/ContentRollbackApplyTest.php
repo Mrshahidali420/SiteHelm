@@ -85,7 +85,7 @@ final class ContentRollbackApplyTest extends TestCase {
 		$this->sortedTaxonomies = [];
 		// ALWAYS AN OBJECT, and UNTYPED — two separate decisions about this double.
 		//
-		// Always an object, unlike ContentTermsAssignTest's equivalent, and that is
+		// Always an object, unlike ContentTermsReplaceTest's equivalent, and that is
 		// a real difference rather than a weaker fake. There the payload names the
 		// taxonomy, so an unregistered name reaches get_taxonomy() and `false` is a
 		// live answer. Here every name reaching it has already passed
@@ -1424,7 +1424,7 @@ final class ContentRollbackApplyTest extends TestCase {
 	 * that method — but no test can make it fire through these callers, and the
 	 * honest record is this test rather than one that pretends otherwise.
 	 *
-	 * Distinct from ContentTermsAssign's own casts, which ARE load-bearing: those
+	 * Distinct from ContentTermsReplace's own casts, which ARE load-bearing: those
 	 * read keys off the request payload, where an all-digit name really does arrive
 	 * as an int and never passes through terms().
 	 */

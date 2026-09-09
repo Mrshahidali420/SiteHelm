@@ -1,6 +1,6 @@
 <?php
 /**
- * Tests for ContentTermsAssign (REQ-0016).
+ * Tests for ContentTermsReplace (REQ-0016).
  *
  * @package SiteHelm
  */
@@ -18,7 +18,7 @@ use SiteHelm\Contracts\OperationException;
 use SiteHelm\Contracts\PermissionMode;
 use SiteHelm\Modules\Core\ContentFields;
 use SiteHelm\Modules\Core\ContentTarget;
-use SiteHelm\Modules\Core\ContentTermsAssign;
+use SiteHelm\Modules\Core\ContentTermsReplace;
 use SiteHelm\Modules\Core\CoreModule;
 use SiteHelm\Registry\CapabilityRegistry;
 use SiteHelm\Tests\TestCase;
@@ -40,9 +40,9 @@ use stdClass;
  * interpretation I7 turns on, and the file would read as covered while being
  * blind to it.
  */
-final class ContentTermsAssignTest extends TestCase {
+final class ContentTermsReplaceTest extends TestCase {
 
-	private ContentTermsAssign $operation;
+	private ContentTermsReplace $operation;
 
 	/** @var array<int, array<int, mixed>> Every user_can call, as [userId, capability]. */
 	private array $capabilityChecks = [];
@@ -131,7 +131,7 @@ final class ContentTermsAssignTest extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();
 		$fields          = new ContentFields();
-		$this->operation = new ContentTermsAssign( $fields, new ContentTarget( $fields ) );
+		$this->operation = new ContentTermsReplace( $fields, new ContentTarget( $fields ) );
 
 		$this->capabilityChecks     = [];
 		$this->termWrites           = [];
@@ -1367,7 +1367,7 @@ final class ContentTermsAssignTest extends TestCase {
 				'changed' => array_keys( $planned->afterFields ),
 				'state'   => $after->fields,
 			],
-			$registry->definition( 'content-terms-assign' )->outputSchema
+			$registry->definition( 'content-terms-replace' )->outputSchema
 		);
 	}
 
@@ -1381,7 +1381,7 @@ final class ContentTermsAssignTest extends TestCase {
 
 		$this->assertConformsToOutputSchema(
 			[ 'plan' => [ 'token' => 'plan-token' ] ],
-			$registry->definition( 'content-terms-assign' )->outputSchema
+			$registry->definition( 'content-terms-replace' )->outputSchema
 		);
 	}
 
@@ -1394,7 +1394,7 @@ final class ContentTermsAssignTest extends TestCase {
 	 * checked inside planChange() instead, which runs at preview AND at apply.
 	 */
 	public function test_declaring_assign_terms_in_required_capabilities_is_not_what_this_operation_does(): void {
-		$this->assertSame( [ 'edit_post' ], ContentTermsAssign::definition()->requiredCapabilities );
+		$this->assertSame( [ 'edit_post' ], ContentTermsReplace::definition()->requiredCapabilities );
 	}
 
 	/**
@@ -1402,7 +1402,7 @@ final class ContentTermsAssignTest extends TestCase {
 	 * definition would derive the expectation from the code under test.
 	 */
 	public function test_the_declared_input_schema_is_closed_on_both_levels(): void {
-		$schema = ContentTermsAssign::definition()->inputSchema;
+		$schema = ContentTermsReplace::definition()->inputSchema;
 
 		$this->assertSame( false, $schema['additionalProperties'] );
 		$this->assertSame( [ 'id', 'terms' ], $schema['required'] );

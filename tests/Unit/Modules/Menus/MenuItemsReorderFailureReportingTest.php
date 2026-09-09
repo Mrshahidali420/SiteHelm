@@ -31,7 +31,7 @@ final class MenuItemsReorderFailureReportingTest extends MenuItemsReorderTestCas
 	 * and WordPress still refused the second of three — a save_post filter, a
 	 * row deleted between plan and apply. What the operation owes the operator
 	 * then is an exact account of what DID land, which is the field the porting
-	 * source does not have and which ContentTermsAssign gets wrong by declaring
+	 * source does not have and which ContentTermsReplace gets wrong by declaring
 	 * its completed steps up front.
 	 *
 	 * The expected array is accumulated here from the recorded calls rather than

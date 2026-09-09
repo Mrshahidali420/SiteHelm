@@ -188,6 +188,23 @@ final class ContentTrashTest extends TestCase {
 		$this->assertSame( 'original-title', $state->fields['post_name'] );
 	}
 
+	public function test_resolve_target_refuses_post_types_other_mechanisms_own(): void {
+		foreach ( ContentTarget::FOREIGN_POST_TYPES as $foreign_type ) {
+			$this->stubPost();
+			$this->post->post_type = $foreign_type;
+
+			try {
+				$this->operation->resolveTarget( [ 'id' => 42 ], $this->makeContext() );
+				$this->fail( 'Expected OperationException for post type ' . $foreign_type );
+			} catch ( OperationException $e ) {
+				$this->assertSame( ErrorCode::InvalidInput, $e->errorCode );
+				// One message for all three types: naming the resolved type would
+				// turn the operation into a probe for what an arbitrary id is.
+				$this->assertStringNotContainsString( $foreign_type, $e->getMessage() );
+			}
+		}
+	}
+
 	public function test_resolve_target_rejects_a_missing_post(): void {
 		Functions\when( 'get_post' )->justReturn( null );
 

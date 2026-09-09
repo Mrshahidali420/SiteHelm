@@ -58,7 +58,7 @@ final class SeoTermFields {
 	 * policy engine can answer "could this caller plausibly do this" without a
 	 * target; the authorisation is the taxonomy's own edit capability, re-read
 	 * inside each operation from get_taxonomy()->cap->edit_terms, which is where
-	 * WordPress resolves it and where ContentTermsAssign reads its sibling. A
+	 * WordPress resolves it and where ContentTermsReplace reads its sibling. A
 	 * term meta-capability is not declared for the same reason `edit_user` is not:
 	 * with no target it resolves to do_not_allow.
 	 */

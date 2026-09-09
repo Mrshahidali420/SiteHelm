@@ -380,7 +380,7 @@ final class MenuItemsReorder implements RollbackDelegate {
 	 * items HAVE been written, and the refusal has to say so.
 	 *
 	 * So `$completed` is ACCUMULATED as each write lands rather than declared up
-	 * front. ContentTermsAssign on main declares its steps ahead of the loop and
+	 * front. ContentTermsReplace on main declares its steps ahead of the loop and
 	 * therefore reports "nothing was written" after a mid-loop refusal that left
 	 * two rows changed; that shape is not reproduced here. The steps count items
 	 * rather than naming identifiers, because a step is read by whoever inspects

@@ -32,6 +32,19 @@ final class OperationSwitches {
 	public const OPTION = 'sitehelm_disabled_operations';
 
 	/**
+	 * Renamed operations, old identifier to current.
+	 *
+	 * The stored list survives updates, so an operation renamed in an update
+	 * would otherwise arrive switched ON at a site whose operator had switched
+	 * it OFF under its old name. Mapping on read keeps that choice standing;
+	 * the next console save writes current identifiers and the old one ages
+	 * out on its own.
+	 */
+	private const RENAMED = [
+		'content-terms-assign' => 'content-terms-replace',
+	];
+
+	/**
 	 * Reads the stored list. Signature: (): mixed.
 	 *
 	 * @var callable
@@ -104,7 +117,7 @@ final class OperationSwitches {
 
 		foreach ( $value as $entry ) {
 			if ( is_string( $entry ) && '' !== $entry && preg_match( '/\A[a-z0-9-]+\z/', $entry ) ) {
-				$ids[ $entry ] = true;
+				$ids[ self::RENAMED[ $entry ] ?? $entry ] = true;
 			}
 		}
 

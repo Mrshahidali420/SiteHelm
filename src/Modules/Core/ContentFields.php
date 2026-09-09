@@ -629,7 +629,7 @@ final class ContentFields {
 	 * flattens it, and the numerically sorted read-back matches the promise while
 	 * the curated order is gone.
 	 *
-	 * Both writers that can reach a term write consult this — ContentTermsAssign
+	 * Both writers that can reach a term write consult this — ContentTermsReplace
 	 * refuses while planning, ContentRollbackApply refuses and additionally omits
 	 * the key from its capture. They ask at different scopes, which is why this
 	 * answers the narrow question and neither policy lives here.
@@ -640,7 +640,7 @@ final class ContentFields {
 	 * answer. The truthiness matches the truthiness core applies to the same
 	 * member.
 	 *
-	 * `(string)` on each name, for the reason ContentTermsAssign::planChange()
+	 * `(string)` on each name, for the reason ContentTermsReplace::planChange()
 	 * already records at its own three call sites: both callers pass
 	 * `array_keys()` of a taxonomy-indexed map, and PHP coerces an integer-like
 	 * array key to an int — so a taxonomy registered as '2024', which

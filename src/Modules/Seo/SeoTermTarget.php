@@ -20,7 +20,7 @@ use SiteHelm\Contracts\OperationException;
  * taxonomy, term capability, existence — and it is written once so the read and
  * the write cannot drift apart on it. The taxonomy's own edit capability is read
  * from get_taxonomy()->cap->edit_terms, which is where WordPress resolves it and
- * where ContentTermsAssign reads its sibling; a taxonomy that declares no usable
+ * where ContentTermsReplace reads its sibling; a taxonomy that declares no usable
  * name there is treated as not editable rather than editable.
  *
  * A NON-PUBLIC TAXONOMY IS REFUSED AS INVALID INPUT before the term is looked

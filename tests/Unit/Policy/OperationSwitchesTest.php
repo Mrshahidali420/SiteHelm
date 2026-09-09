@@ -24,6 +24,14 @@ final class OperationSwitchesTest extends TestCase {
 		$this->assertTrue( $switches->isEnabled( 'content-list' ) );
 	}
 
+	public function testAnIdentifierStoredUnderItsOldNameStaysOff(): void {
+		$switches = new OperationSwitches( static fn(): array => [ 'content-terms-assign' ] );
+
+		$this->assertSame( [ 'content-terms-replace' ], $switches->disabled() );
+		$this->assertFalse( $switches->isEnabled( 'content-terms-replace' ) );
+		$this->assertTrue( $switches->isEnabled( 'content-terms-assign' ) );
+	}
+
 	public function testTheDefaultReaderReadsTheOption(): void {
 		Functions\when( 'get_option' )->alias(
 			static fn( string $name, $default_value = false ) => OperationSwitches::OPTION === $name ? [ 'menus-delete' ] : $default_value

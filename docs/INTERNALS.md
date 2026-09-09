@@ -167,7 +167,7 @@ The checklist above still applies EXCEPT steps 3 and 4 — there is no class to 
   not until 2026-08-19, so their size was discovered by running out of something
   rather than by refusing. `SchemaArrayBoundsTest` sweeps the registered input
   schemas recursively and fails on the first array with no bound; it descends into
-  nested arrays because `content-terms-assign` is the case that shows why — the
+  nested arrays because `content-terms-replace` is the case that shows why — the
   outer list was one entry per taxonomy, and the unbounded list was `termIds`
   inside it. Bounds live as named constants on the declaring class, or on the
   module's shared fields class when more than one operation needs the same one
@@ -419,7 +419,7 @@ interpolate `$wpdb->last_error`.
 once.** `[ 'plan approved', 'snapshot captured' ]` is correct only for a single-write
 operation; in a loop it reports the same thing whichever iteration failed, telling an
 operator that nothing changed at the exact moment something had. `AcfFieldUpdate` and
-`ContentTermsAssign` both start from that pair and append one entry per completed
+`ContentTermsReplace` both start from that pair and append one entry per completed
 write (`wrote <field>`, `assigned <taxonomy>`). Naming the thing written is only safe
 because both validate it against what the site itself registered before the loop
 begins; a value taken straight from the payload does not belong in an envelope.

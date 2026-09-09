@@ -152,6 +152,25 @@ final class ContentTarget {
 	public const RESTORABLE_TEMPLATE_FIELDS = [ 'page_template' ];
 
 	/**
+	 * Post types the content writes refuse, because another mechanism owns them.
+	 *
+	 * ContentFields::read() answers for any post row, so without this list an
+	 * attachment id handed to content-trash resolved like a page and was
+	 * trashed as one — while the reverse direction has always been guarded:
+	 * MediaFields::read() answers null for anything that is not an attachment.
+	 * Media items belong to the media operations, menu items to the menu
+	 * operations, and revisions to the rollback machinery; a content write on
+	 * any of them bypasses the checks that surface performs.
+	 *
+	 * ONE MESSAGE covers all three types, for the reason MediaTarget gives one
+	 * message for its refusals: naming which type an arbitrary id resolved to
+	 * turns the operation into a probe for what exists on the site.
+	 *
+	 * @var string[]
+	 */
+	public const FOREIGN_POST_TYPES = [ 'attachment', 'nav_menu_item', 'revision' ];
+
+	/**
 	 * Resolves one existing content item.
 	 *
 	 * @param int $postId The post identifier.
@@ -170,6 +189,14 @@ final class ContentTarget {
 				ErrorCode::TargetNotFound,
 				'The requested content item does not exist or is not visible to your WordPress user.',
 				'Confirm the content identifier and that your WordPress user may edit that item.'
+			);
+		}
+
+		if ( in_array( (string) ( $fields['post_type'] ?? '' ), self::FOREIGN_POST_TYPES, true ) ) {
+			throw new OperationException(
+				ErrorCode::InvalidInput,
+				'The identifier does not name an item the content operations manage.',
+				'Media items are managed by the media operations and menu items by the menu operations; use the matching list operation to find the item.'
 			);
 		}
 
