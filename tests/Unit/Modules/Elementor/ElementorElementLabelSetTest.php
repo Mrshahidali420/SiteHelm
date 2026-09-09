@@ -105,7 +105,7 @@ final class ElementorElementLabelSetTest extends TestCase {
 		$this->assertSame( [ 'edit_post' ], $definition->requiredCapabilities );
 		$this->assertSame( Risk::Low, $definition->risk );
 		$this->assertFalse( $definition->isReadOnly );
-		$this->assertFalse( $definition->isDestructive );
+		$this->assertFalse( $definition->losesStateWithoutSnapshot );
 		$this->assertSame( PreviewPolicy::Required, $definition->previewPolicy );
 		$this->assertSame( SnapshotPolicy::Required, $definition->snapshotPolicy );
 		$this->assertSame( RollbackPolicy::Supported, $definition->rollbackPolicy );

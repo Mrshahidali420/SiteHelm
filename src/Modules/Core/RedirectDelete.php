@@ -73,7 +73,7 @@ final class RedirectDelete implements RollbackDelegate {
 			requiredCapabilities: [ 'manage_options' ],
 			risk: Risk::Medium,
 			isReadOnly: false,
-			isDestructive: true,
+			losesStateWithoutSnapshot: true,
 			isIdempotent: false,
 			previewPolicy: PreviewPolicy::Required,
 			snapshotPolicy: SnapshotPolicy::Required,

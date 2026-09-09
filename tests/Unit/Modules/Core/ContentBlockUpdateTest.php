@@ -168,7 +168,7 @@ final class ContentBlockUpdateTest extends TestCase {
 		$this->assertSame( Mode::Write, $definition->mode );
 		$this->assertSame( 'content-write', $definition->dispatcherName() );
 		$this->assertFalse( $definition->isReadOnly );
-		$this->assertFalse( $definition->isDestructive );
+		$this->assertFalse( $definition->losesStateWithoutSnapshot );
 		$this->assertTrue( $definition->isIdempotent );
 		$this->assertSame( Risk::Medium, $definition->risk );
 		$this->assertSame( PreviewPolicy::Required, $definition->previewPolicy );

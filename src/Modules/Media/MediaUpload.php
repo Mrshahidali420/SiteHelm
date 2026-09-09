@@ -74,7 +74,7 @@ use SiteHelm\Contracts\SnapshotPolicy;
  * AN UPLOAD CANNOT BE ROLLED BACK. That is the designed outcome, not a gap. The
  * alternative is a restore path that deletes an attachment and its files from
  * disk, which is a destructive operation wearing a rollback's clothes and would
- * force isDestructive true and all three policies to required. An operator who
+ * force losesStateWithoutSnapshot true and all three policies to required. An operator who
  * wants an uploaded asset gone deletes it in WordPress, where the confirmation
  * and the trash exist.
  *
@@ -166,7 +166,7 @@ final class MediaUpload implements WriteOperation {
 			requiredCapabilities: [ 'upload_files' ],
 			risk: Risk::High,
 			isReadOnly: false,
-			isDestructive: false,
+			losesStateWithoutSnapshot: false,
 			isIdempotent: false,
 			previewPolicy: PreviewPolicy::Required,
 			// NOTHING EXISTED BEFORE THIS RAN, SO THERE IS NOTHING TO PUT BACK.

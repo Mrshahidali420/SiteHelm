@@ -679,7 +679,7 @@ final class ElementorElementSearchTest extends TestCase {
 		$this->assertSame( Mode::Read, $definition->mode );
 		$this->assertSame( ModuleId::Elementor, $definition->module );
 		$this->assertTrue( $definition->isReadOnly );
-		$this->assertFalse( $definition->isDestructive );
+		$this->assertFalse( $definition->losesStateWithoutSnapshot );
 		$this->assertTrue( $definition->isIdempotent );
 		$this->assertSame( PreviewPolicy::NotApplicable, $definition->previewPolicy );
 		$this->assertSame( SnapshotPolicy::NotApplicable, $definition->snapshotPolicy );

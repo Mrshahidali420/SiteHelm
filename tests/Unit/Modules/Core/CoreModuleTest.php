@@ -94,7 +94,7 @@ final class CoreModuleTest extends TestCase {
 		$this->assertSame( [ 'edit_posts' ], $definition->requiredCapabilities );
 		$this->assertSame( 'low', $definition->risk->value );
 		$this->assertTrue( $definition->isReadOnly );
-		$this->assertFalse( $definition->isDestructive );
+		$this->assertFalse( $definition->losesStateWithoutSnapshot );
 		$this->assertTrue( $definition->isIdempotent );
 		$this->assertFalse( $registry->hasWriteOperation( 'content-list' ) );
 	}
@@ -117,7 +117,7 @@ final class CoreModuleTest extends TestCase {
 		$this->assertSame( [ 'edit_posts' ], $definition->requiredCapabilities );
 		$this->assertSame( 'low', $definition->risk->value );
 		$this->assertTrue( $definition->isReadOnly );
-		$this->assertFalse( $definition->isDestructive );
+		$this->assertFalse( $definition->losesStateWithoutSnapshot );
 		$this->assertTrue( $definition->isIdempotent );
 		$this->assertSame( [ 'type' ], $definition->inputSchema['required'] );
 		$this->assertFalse( $registry->hasWriteOperation( 'taxonomy-list' ) );
@@ -138,7 +138,7 @@ final class CoreModuleTest extends TestCase {
 		$this->assertSame( 'supported', $definition->rollbackPolicy->value );
 		$this->assertSame( 'medium', $definition->risk->value );
 		$this->assertTrue( $definition->isIdempotent );
-		$this->assertFalse( $definition->isDestructive );
+		$this->assertFalse( $definition->losesStateWithoutSnapshot );
 	}
 
 	public function test_module_registers_content_create_with_supported_snapshot_and_rollback(): void {

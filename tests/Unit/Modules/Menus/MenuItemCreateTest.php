@@ -57,7 +57,7 @@ final class MenuItemCreateTest extends MenuItemCreateTestCase {
 		$this->assertSame( SnapshotPolicy::Supported, $definition->snapshotPolicy );
 		$this->assertSame( RollbackPolicy::Supported, $definition->rollbackPolicy );
 		$this->assertFalse( $definition->isReadOnly );
-		$this->assertFalse( $definition->isDestructive );
+		$this->assertFalse( $definition->losesStateWithoutSnapshot );
 		$this->assertFalse( $definition->isIdempotent );
 		$this->assertSame( WriteOutputSchema::schema(), $definition->outputSchema );
 		$this->assertFalse( $definition->inputSchema['additionalProperties'] );

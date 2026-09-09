@@ -89,7 +89,7 @@ final class ContentBlocksReadTest extends TestCase {
 		$this->assertSame( Mode::Read, $definition->mode );
 		$this->assertSame( 'content-read', $definition->dispatcherName() );
 		$this->assertTrue( $definition->isReadOnly );
-		$this->assertFalse( $definition->isDestructive );
+		$this->assertFalse( $definition->losesStateWithoutSnapshot );
 		$this->assertSame( [ 'edit_post' ], $definition->requiredCapabilities );
 		$this->assertFalse( $definition->inputSchema['additionalProperties'] );
 		$this->assertSame( [ 'id' ], $definition->inputSchema['required'] );

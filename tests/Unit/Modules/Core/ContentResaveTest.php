@@ -153,7 +153,7 @@ final class ContentResaveTest extends TestCase {
 		$this->assertSame( [ 'id' ], $definition->inputSchema['required'] );
 		$this->assertSame( [ 'id' ], array_keys( $definition->inputSchema['properties'] ) );
 		$this->assertFalse( $definition->inputSchema['additionalProperties'] );
-		$this->assertFalse( $definition->isDestructive );
+		$this->assertFalse( $definition->losesStateWithoutSnapshot );
 		$this->assertTrue( $definition->isIdempotent );
 		$this->assertSame( PreviewPolicy::Required, $definition->previewPolicy );
 		$this->assertSame( SnapshotPolicy::Required, $definition->snapshotPolicy );

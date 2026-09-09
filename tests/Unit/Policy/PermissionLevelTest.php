@@ -39,7 +39,7 @@ final class PermissionLevelTest extends TestCase {
 			requiredCapabilities: [ 'edit_posts' ],
 			risk: $risk,
 			isReadOnly: $read_only,
-			isDestructive: $destructive,
+			losesStateWithoutSnapshot: $destructive,
 			isIdempotent: true,
 			previewPolicy: $destructive ? PreviewPolicy::Required : PreviewPolicy::NotApplicable,
 			snapshotPolicy: $destructive ? SnapshotPolicy::Required : SnapshotPolicy::NotApplicable,

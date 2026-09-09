@@ -108,7 +108,7 @@ final class CommentReply implements WriteOperation {
 			requiredCapabilities: [ CommentFields::CAPABILITY ],
 			risk: Risk::Medium,
 			isReadOnly: false,
-			isDestructive: false,
+			losesStateWithoutSnapshot: false,
 			isIdempotent: false,
 			previewPolicy: PreviewPolicy::Required,
 			snapshotPolicy: SnapshotPolicy::Supported,

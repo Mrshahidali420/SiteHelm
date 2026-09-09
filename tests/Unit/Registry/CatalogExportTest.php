@@ -52,7 +52,7 @@ final class CatalogExportTest extends TestCase {
 			static fn(): array => []
 		);
 		$this->registry->register(
-			$this->definition( 'media-upload', Domain::Media, Mode::Read, 'Upload one file to the media library.', [ 'upload_files' ], ModuleId::Media ),
+			$this->definition( 'media-upload', Domain::Media, Mode::Read, 'Upload one file to the media library.', [ 'upload_files' ], ModuleId::Media, false ),
 			static fn(): array => []
 		);
 
@@ -80,7 +80,7 @@ final class CatalogExportTest extends TestCase {
 	 * @param string[] $capabilities The capabilities the caller must hold.
 	 * @param ModuleId $module       The module it groups under.
 	 */
-	private function definition( string $id, Domain $domain, Mode $mode, string $description, array $capabilities, ModuleId $module ): OperationDefinition {
+	private function definition( string $id, Domain $domain, Mode $mode, string $description, array $capabilities, ModuleId $module, bool $idempotent = true ): OperationDefinition {
 		return new OperationDefinition(
 			id: $id,
 			domain: $domain,
@@ -100,8 +100,8 @@ final class CatalogExportTest extends TestCase {
 			requiredCapabilities: $capabilities,
 			risk: Risk::Low,
 			isReadOnly: true,
-			isDestructive: false,
-			isIdempotent: true,
+			losesStateWithoutSnapshot: false,
+			isIdempotent: $idempotent,
 			previewPolicy: PreviewPolicy::NotApplicable,
 			snapshotPolicy: SnapshotPolicy::NotApplicable,
 			rollbackPolicy: RollbackPolicy::NotApplicable,
@@ -182,7 +182,8 @@ final class CatalogExportTest extends TestCase {
 		$this->assertSame( 'low', $row['risk'] );
 		$this->assertSame( 'not-applicable', $row['previewPolicy'] );
 		$this->assertSame( 'not-applicable', $row['rollbackPolicy'] );
-		$this->assertFalse( $row['isDestructive'] );
+		$this->assertFalse( $row['losesStateWithoutSnapshot'] );
+		$this->assertFalse( $row['isIdempotent'], 'every upload adds another attachment' );
 		$this->assertTrue( $row['available'] );
 		$this->assertNull( $row['blockedReason'] );
 	}
@@ -232,6 +233,29 @@ final class CatalogExportTest extends TestCase {
 		$this->assertFalse( $row['available'] );
 		$this->assertSame( 'requires_pro', $row['blockedReason'] );
 		$this->assertNull( $row['risk'] );
+		$this->assertNull( $row['losesStateWithoutSnapshot'], 'a blank reads as unknown, false would read as checked' );
+		$this->assertNull( $row['isIdempotent'], 'a blank reads as unknown, true would read as checked' );
+	}
+
+	/**
+	 * The flag string is what a caller actually reads, and both of these are
+	 * written the way round that keeps most rows quiet: it names the few
+	 * operations that cannot be sent twice, not the many that can.
+	 */
+	public function test_the_markdown_names_a_row_that_cannot_simply_be_sent_again(): void {
+		$markdown = $this->export->markdown( $this->context(), 'compact', ModuleId::Media );
+
+		$line = '';
+
+		foreach ( explode( "
+", $markdown ) as $candidate ) {
+			if ( str_contains( $candidate, 'media-upload ' ) ) {
+				$line = $candidate;
+			}
+		}
+
+		$this->assertStringContainsString( 'not repeatable', $line );
+		$this->assertStringNotContainsString( 'replaces existing state', $line );
 	}
 
 	public function test_the_module_filter_returns_only_that_module(): void {

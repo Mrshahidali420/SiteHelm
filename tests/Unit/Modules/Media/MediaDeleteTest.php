@@ -191,10 +191,10 @@ final class MediaDeleteTest extends TestCase {
 		$this->assertSame( PreviewPolicy::Required, $definition->previewPolicy );
 
 		// The pair that says "no way back" in the contract rather than only in
-		// the prose. isDestructive would force both of these to Required.
+		// the prose. losesStateWithoutSnapshot would force both of these to Required.
 		$this->assertSame( SnapshotPolicy::NotApplicable, $definition->snapshotPolicy );
 		$this->assertSame( RollbackPolicy::NotApplicable, $definition->rollbackPolicy );
-		$this->assertFalse( $definition->isDestructive );
+		$this->assertFalse( $definition->losesStateWithoutSnapshot );
 		$this->assertFalse( $definition->isIdempotent );
 		$this->assertFalse( $definition->isReadOnly );
 	}

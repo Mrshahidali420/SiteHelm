@@ -263,7 +263,7 @@ final class MenusDefinitionInvariantsTest extends TestCase {
 
 		foreach ( $reads as $read ) {
 			$this->assertTrue( $read->isReadOnly, "Read '{$read->id}' must declare isReadOnly true." );
-			$this->assertFalse( $read->isDestructive, "Read '{$read->id}' must declare isDestructive false." );
+			$this->assertFalse( $read->losesStateWithoutSnapshot, "Read '{$read->id}' must declare losesStateWithoutSnapshot false." );
 			$this->assertSame( 'not-applicable', $read->previewPolicy->value, "Read '{$read->id}' must declare previewPolicy not-applicable." );
 			$this->assertSame( 'not-applicable', $read->snapshotPolicy->value, "Read '{$read->id}' must declare snapshotPolicy not-applicable." );
 			$this->assertSame( 'not-applicable', $read->rollbackPolicy->value, "Read '{$read->id}' must declare rollbackPolicy not-applicable." );

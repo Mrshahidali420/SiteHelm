@@ -87,7 +87,7 @@ final class UserRoleSetTest extends TestCase {
 		$this->assertSame( 'user-role-set', $definition->id );
 		$this->assertSame( 'content-write', $definition->dispatcherName() );
 		$this->assertFalse( $definition->isReadOnly );
-		$this->assertFalse( $definition->isDestructive );
+		$this->assertFalse( $definition->losesStateWithoutSnapshot );
 		$this->assertTrue( $definition->isIdempotent );
 		$this->assertSame( Risk::High, $definition->risk );
 		$this->assertSame( PreviewPolicy::Required, $definition->previewPolicy );

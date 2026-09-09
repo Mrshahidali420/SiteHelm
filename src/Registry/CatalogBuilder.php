@@ -226,18 +226,20 @@ final class CatalogBuilder {
 
 		return SchemaShape::normalize(
 			[
-				'operation'            => $definition->id,
-				'description'          => $definition->description,
-				'schemaVersion'        => $definition->schemaVersion,
-				'requiredCapabilities' => $definition->requiredCapabilities,
-				'risk'                 => $definition->risk->value,
-				'previewPolicy'        => $definition->previewPolicy->value,
-				'snapshotPolicy'       => $definition->snapshotPolicy->value,
-				'rollbackPolicy'       => $definition->rollbackPolicy->value,
-				'sideEffects'          => $definition->sideEffectRows(),
-				'available'            => null === $blocked_reason,
-				'blockedReason'        => $blocked_reason,
-				'examples'             => $definition->examples(),
+				'operation'                 => $definition->id,
+				'description'               => $definition->description,
+				'schemaVersion'             => $definition->schemaVersion,
+				'requiredCapabilities'      => $definition->requiredCapabilities,
+				'risk'                      => $definition->risk->value,
+				'previewPolicy'             => $definition->previewPolicy->value,
+				'snapshotPolicy'            => $definition->snapshotPolicy->value,
+				'rollbackPolicy'            => $definition->rollbackPolicy->value,
+				'losesStateWithoutSnapshot' => $definition->losesStateWithoutSnapshot,
+				'isIdempotent'              => $definition->isIdempotent,
+				'sideEffects'               => $definition->sideEffectRows(),
+				'available'                 => null === $blocked_reason,
+				'blockedReason'             => $blocked_reason,
+				'examples'                  => $definition->examples(),
 			]
 		);
 	}

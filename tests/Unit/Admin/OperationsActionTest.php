@@ -59,7 +59,7 @@ final class OperationsActionTest extends TestCase {
 			requiredCapabilities: [ 'edit_posts' ],
 			risk: Risk::Low,
 			isReadOnly: true,
-			isDestructive: false,
+			losesStateWithoutSnapshot: false,
 			isIdempotent: true,
 			previewPolicy: PreviewPolicy::NotApplicable,
 			snapshotPolicy: SnapshotPolicy::NotApplicable,

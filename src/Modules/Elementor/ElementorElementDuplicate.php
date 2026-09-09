@@ -161,7 +161,7 @@ final class ElementorElementDuplicate implements RollbackDelegate {
 			requiredCapabilities: [ ElementorWriteTarget::REQUIRED_CAPABILITY ],
 			risk: Risk::Medium,
 			isReadOnly: false,
-			isDestructive: false,
+			losesStateWithoutSnapshot: false,
 			// Not idempotent: applying the same request twice leaves the page with
 			// two copies, which is what the caller asked for both times. The plan
 			// token, not this flag, is what makes a RETRY safe.

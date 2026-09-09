@@ -862,7 +862,7 @@ final class ElementorThemeConditionsSetTest extends TestCase {
 		$this->assertSame( [ 'edit_theme_options' ], $definition->requiredCapabilities );
 		$this->assertSame( 'high', $definition->risk->value );
 		$this->assertFalse( $definition->isReadOnly );
-		$this->assertFalse( $definition->isDestructive );
+		$this->assertFalse( $definition->losesStateWithoutSnapshot );
 		$this->assertTrue( $definition->isIdempotent );
 		$this->assertSame( 'required', $definition->previewPolicy->value );
 		$this->assertSame( 'required', $definition->snapshotPolicy->value );

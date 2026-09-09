@@ -167,17 +167,18 @@ final class CatalogExport {
 		$blocked = PolicyEngine::moduleBlockedReason( $definition, $context );
 
 		return [
-			'operation'      => $definition->id,
-			'dispatcher'     => $dispatcher,
-			'module'         => $definition->module->value,
-			'description'    => $definition->description,
-			'risk'           => $definition->risk->value,
-			'previewPolicy'  => $definition->previewPolicy->value,
-			'rollbackPolicy' => $definition->rollbackPolicy->value,
-			'isDestructive'  => $definition->isDestructive,
-			'sideEffects'    => $definition->sideEffectRows(),
-			'available'      => null === $blocked,
-			'blockedReason'  => $blocked,
+			'operation'                 => $definition->id,
+			'dispatcher'                => $dispatcher,
+			'module'                    => $definition->module->value,
+			'description'               => $definition->description,
+			'risk'                      => $definition->risk->value,
+			'previewPolicy'             => $definition->previewPolicy->value,
+			'rollbackPolicy'            => $definition->rollbackPolicy->value,
+			'losesStateWithoutSnapshot' => $definition->losesStateWithoutSnapshot,
+			'isIdempotent'              => $definition->isIdempotent,
+			'sideEffects'               => $definition->sideEffectRows(),
+			'available'                 => null === $blocked,
+			'blockedReason'             => $blocked,
 		];
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
@@ -206,17 +207,18 @@ final class CatalogExport {
 			}
 
 			$absent[] = [
-				'operation'      => $id,
-				'dispatcher'     => $entry['dispatcher'],
-				'module'         => $entry['module']->value,
-				'description'    => $entry['description'],
-				'risk'           => null,
-				'previewPolicy'  => null,
-				'rollbackPolicy' => null,
-				'isDestructive'  => null,
-				'sideEffects'    => null,
-				'available'      => false,
-				'blockedReason'  => 'requires_pro',
+				'operation'                 => $id,
+				'dispatcher'                => $entry['dispatcher'],
+				'module'                    => $entry['module']->value,
+				'description'               => $entry['description'],
+				'risk'                      => null,
+				'previewPolicy'             => null,
+				'rollbackPolicy'            => null,
+				'losesStateWithoutSnapshot' => null,
+				'isIdempotent'              => null,
+				'sideEffects'               => null,
+				'available'                 => false,
+				'blockedReason'             => 'requires_pro',
 			];
 		}
 
@@ -359,6 +361,13 @@ final class CatalogExport {
 	 * reversible and this one is not" is the material for choosing well, and it
 	 * costs about eight characters a row.
 	 *
+	 * Two of them are written the way round that keeps most rows quiet. Almost
+	 * every operation can be sent twice without doing the work twice, so the
+	 * flag names the few that cannot rather than the many that can; and the
+	 * state flag says what the operation does to what is already there, not
+	 * whether the change is permanent, which `rollback` and `no rollback`
+	 * already answer.
+	 *
 	 * @param array<string, mixed> $row The row.
 	 *
 	 * @return string The flags, joined, or empty when there are none.
@@ -376,8 +385,12 @@ final class CatalogExport {
 			$flags[] = 'no rollback';
 		}
 
-		if ( true === $row['isDestructive'] ) {
-			$flags[] = 'destructive';
+		if ( true === $row['losesStateWithoutSnapshot'] ) {
+			$flags[] = 'replaces existing state';
+		}
+
+		if ( false === $row['isIdempotent'] ) {
+			$flags[] = 'not repeatable';
 		}
 
 		if ( null !== $row['risk'] ) {

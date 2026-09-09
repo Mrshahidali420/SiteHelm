@@ -78,7 +78,7 @@ final class CommentStatusSetTest extends TestCase {
 	 * write destructive would make every client warn about a reversible change.
 	 */
 	public function test_the_write_is_not_destructive_because_no_transition_deletes_anything(): void {
-		$this->assertFalse( CommentStatusSet::definition()->isDestructive );
+		$this->assertFalse( CommentStatusSet::definition()->losesStateWithoutSnapshot );
 	}
 
 	public function test_the_input_enum_is_the_settable_status_list(): void {

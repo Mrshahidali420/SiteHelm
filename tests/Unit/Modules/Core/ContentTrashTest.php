@@ -684,12 +684,12 @@ final class ContentTrashTest extends TestCase {
 		$this->assertSame( RollbackPolicy::Required, $definition->rollbackPolicy );
 		$this->assertSame( SnapshotPolicy::Required, $definition->snapshotPolicy );
 		$this->assertSame( PreviewPolicy::Required, $definition->previewPolicy );
-		// True because docs/product/phase-2-foundation-contract.md's isDestructive
+		// True because docs/product/phase-2-foundation-contract.md's losesStateWithoutSnapshot
 		// row names "moving content to trash" as its own definitional example. The
 		// contract is frozen and governs; see the class docblock for the nuance
 		// that argued the other way and why it does not win.
 		//
-		// THIS LINE IS THE ONLY OBSERVER OF A **TRUE** isDestructive IN THE
+		// THIS LINE IS THE ONLY OBSERVER OF A **TRUE** losesStateWithoutSnapshot IN THE
 		// REPOSITORY, and the only thing pinning THIS operation's flag. Nothing
 		// surfaces the flag at runtime — CatalogBuilder emits risk and the three
 		// policies and not this — so its other readers are OperationDefinition's
@@ -703,7 +703,7 @@ final class ContentTrashTest extends TestCase {
 		// (Corrected 2026-08-02: this comment previously claimed to be the only
 		// observer of the flag anywhere, which the CoreModuleTest assertions have
 		// always falsified.)
-		$this->assertTrue( $definition->isDestructive );
+		$this->assertTrue( $definition->losesStateWithoutSnapshot );
 		$this->assertTrue( $definition->isIdempotent );
 	}
 

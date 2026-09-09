@@ -13,6 +13,16 @@ an operation behaves.
 
 ### Added
 
+- **The catalogue now says whether a call can safely be sent twice.** A write that times out
+  leaves an agent with one question: send it again, or find out what happened first. Send an
+  upload again and there are two copies of the image; send a title change again and nothing
+  happens. The plugin has always known which is which, and never told anybody — the answer sat
+  in the operation's definition where only the code could see it. It is now published beside
+  the risk level and the three policies, in the live catalogue and in the saved export, along
+  with whether the operation writes over what is already there. The export's flag line names
+  the few operations that cannot simply be sent again rather than the many that can, so most
+  rows are unchanged.
+
 - **The catalogue now says what an operation costs beyond the change it names.** Some
   operations do something on top of what they promise, every time, on every site. Saving a
   page runs whatever code the plugins here have hooked to it. Flushing permalinks throws away
@@ -52,6 +62,17 @@ an operation behaves.
   next visit, and the preview says so: that first visit is the slow one. There is nothing to
   undo, because what was cleared was the out-of-date copy, so no snapshot is taken and no
   rollback is offered.
+
+### Changed
+
+- **The catalogue column that used to be called "destructive" now says what it actually
+  measured.** It was never a judgement about how bad an operation is. It was a note about
+  whether the old state survives the call, and the only reason it matters is that a snapshot
+  has to hold that state if anything is going to put it back. Under the old name the rows read
+  wrong: deleting a picture, which nothing can undo, said no, and moving a page to the trash,
+  which is two clicks to reverse, said yes. The field is now called
+  `losesStateWithoutSnapshot`, and in the saved export the flag reads "replaces existing state".
+  Anything reading the export by the old name will need to read the new one.
 
 ### Fixed
 

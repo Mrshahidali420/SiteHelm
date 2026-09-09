@@ -78,7 +78,7 @@ final class ElementorGlobalClassDelete implements RollbackDelegate {
 	/**
 	 * The operation's registered definition.
 	 *
-	 * `isDestructive` is true and `isIdempotent` is false. Running this twice does
+	 * `losesStateWithoutSnapshot` is true and `isIdempotent` is false. Running this twice does
 	 * not converge on the same answer: the second run refuses, because the class
 	 * is gone, and an operator retrying after a timeout deserves that refusal
 	 * rather than a silent success that tells them nothing about what happened.
@@ -111,7 +111,7 @@ final class ElementorGlobalClassDelete implements RollbackDelegate {
 			requiredCapabilities: [ ElementorGlobalClassWrite::CAPABILITY ],
 			risk: Risk::High,
 			isReadOnly: false,
-			isDestructive: true,
+			losesStateWithoutSnapshot: true,
 			isIdempotent: false,
 			previewPolicy: PreviewPolicy::Required,
 			snapshotPolicy: SnapshotPolicy::Required,

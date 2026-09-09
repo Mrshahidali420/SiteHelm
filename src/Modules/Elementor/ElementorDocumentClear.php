@@ -32,7 +32,7 @@ use SiteHelm\Contracts\SnapshotPolicy;
  *
  * THE WIDEST DESTRUCTIVE OPERATION IN THIS MODULE, and the one that most needs
  * saying plainly: `elementor-element-remove` takes one subtree, this takes the
- * whole page's content in one write. `isDestructive: true` forces preview,
+ * whole page's content in one write. `losesStateWithoutSnapshot: true` forces preview,
  * snapshot AND rollback to `Required` in the `OperationDefinition` constructor,
  * so nothing is cleared that was not previewed, nothing is cleared without the
  * document first being recorded, and the clearing can always be undone.
@@ -136,7 +136,7 @@ final class ElementorDocumentClear implements RollbackDelegate {
 			requiredCapabilities: [ ElementorWriteTarget::REQUIRED_CAPABILITY ],
 			risk: Risk::High,
 			isReadOnly: false,
-			isDestructive: true,
+			losesStateWithoutSnapshot: true,
 			isIdempotent: false,
 			previewPolicy: PreviewPolicy::Required,
 			snapshotPolicy: SnapshotPolicy::Required,

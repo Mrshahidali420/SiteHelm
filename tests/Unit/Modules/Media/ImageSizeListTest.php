@@ -209,7 +209,7 @@ final class ImageSizeListTest extends TestCase {
 		$this->assertSame( [ 'read' ], $definition->requiredCapabilities );
 		$this->assertSame( 'low', $definition->risk->value );
 		$this->assertTrue( $definition->isReadOnly );
-		$this->assertFalse( $definition->isDestructive );
+		$this->assertFalse( $definition->losesStateWithoutSnapshot );
 		$this->assertTrue( $definition->isIdempotent );
 		$this->assertSame( 'not-applicable', $definition->previewPolicy->value );
 		$this->assertSame( 'not-applicable', $definition->snapshotPolicy->value );

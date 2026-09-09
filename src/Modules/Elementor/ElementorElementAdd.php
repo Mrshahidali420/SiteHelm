@@ -200,7 +200,7 @@ final class ElementorElementAdd implements RollbackDelegate {
 			requiredCapabilities: [ ElementorWriteTarget::REQUIRED_CAPABILITY ],
 			risk: Risk::Medium,
 			isReadOnly: false,
-			isDestructive: false,
+			losesStateWithoutSnapshot: false,
 			// Not idempotent: the same request applied twice adds two elements. The
 			// plan token is what makes a retried request safe, not this flag.
 			isIdempotent: false,

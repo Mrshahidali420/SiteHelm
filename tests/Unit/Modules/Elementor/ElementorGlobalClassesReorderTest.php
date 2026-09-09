@@ -87,7 +87,7 @@ final class ElementorGlobalClassesReorderTest extends TestCase {
 	public function test_the_definition_changes_nothing_destructively_and_is_repeatable(): void {
 		$definition = ElementorGlobalClassesReorder::definition();
 
-		$this->assertFalse( $definition->isDestructive );
+		$this->assertFalse( $definition->losesStateWithoutSnapshot );
 		$this->assertTrue( $definition->isIdempotent, 'Applying the same permutation twice leaves the same order.' );
 	}
 

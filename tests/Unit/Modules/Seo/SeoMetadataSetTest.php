@@ -102,7 +102,7 @@ final class SeoMetadataSetTest extends TestCase {
 		$this->assertSame( 'content-write', $definition->dispatcherName() );
 		$this->assertFalse( $definition->isReadOnly );
 		$this->assertTrue( $definition->isIdempotent );
-		$this->assertFalse( $definition->isDestructive );
+		$this->assertFalse( $definition->losesStateWithoutSnapshot );
 		$this->assertSame( PreviewPolicy::Required, $definition->previewPolicy );
 		$this->assertSame( SnapshotPolicy::Required, $definition->snapshotPolicy );
 		$this->assertSame( RollbackPolicy::Supported, $definition->rollbackPolicy );

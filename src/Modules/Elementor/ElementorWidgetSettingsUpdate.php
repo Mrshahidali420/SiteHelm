@@ -173,7 +173,7 @@ final class ElementorWidgetSettingsUpdate implements RollbackDelegate {
 			requiredCapabilities: [ ElementorWriteTarget::REQUIRED_CAPABILITY ],
 			risk: Risk::Medium,
 			isReadOnly: false,
-			isDestructive: false,
+			losesStateWithoutSnapshot: false,
 			// The same request applied twice leaves the same values stored. The plan
 			// token is still what makes a retried request safe, not this flag.
 			isIdempotent: true,

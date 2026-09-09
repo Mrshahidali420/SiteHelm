@@ -167,7 +167,7 @@ final class ContentStyleCheckTest extends TestCase {
 		$this->assertSame( Domain::Content, $definition->domain );
 		$this->assertSame( Mode::Read, $definition->mode );
 		$this->assertTrue( $definition->isReadOnly );
-		$this->assertFalse( $definition->isDestructive );
+		$this->assertFalse( $definition->losesStateWithoutSnapshot );
 		$this->assertSame( [ 'edit_post' ], $definition->requiredCapabilities );
 		$this->assertSame( PreviewPolicy::NotApplicable, $definition->previewPolicy );
 		$this->assertSame( SnapshotPolicy::NotApplicable, $definition->snapshotPolicy );

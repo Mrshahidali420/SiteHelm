@@ -146,7 +146,7 @@ final class ElementorPageSettingsGetTest extends TestCase {
 		$this->assertSame( Mode::Read, $definition->mode );
 		$this->assertSame( [ 'edit_post' ], $definition->requiredCapabilities );
 		$this->assertTrue( $definition->isReadOnly );
-		$this->assertFalse( $definition->isDestructive );
+		$this->assertFalse( $definition->losesStateWithoutSnapshot );
 		$this->assertSame( Risk::Low, $definition->risk );
 		$this->assertSame( PreviewPolicy::NotApplicable, $definition->previewPolicy );
 		$this->assertSame( SnapshotPolicy::NotApplicable, $definition->snapshotPolicy );

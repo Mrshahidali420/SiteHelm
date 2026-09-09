@@ -49,7 +49,7 @@ final class MenuItemUpdateTest extends MenuItemUpdateTestCase {
 		$this->assertSame( SnapshotPolicy::Required, $definition->snapshotPolicy );
 		$this->assertSame( RollbackPolicy::Supported, $definition->rollbackPolicy );
 		$this->assertFalse( $definition->isReadOnly );
-		$this->assertFalse( $definition->isDestructive );
+		$this->assertFalse( $definition->losesStateWithoutSnapshot );
 		$this->assertTrue( $definition->isIdempotent );
 		$this->assertSame( WriteOutputSchema::schema(), $definition->outputSchema );
 		$this->assertFalse( $definition->inputSchema['additionalProperties'] );

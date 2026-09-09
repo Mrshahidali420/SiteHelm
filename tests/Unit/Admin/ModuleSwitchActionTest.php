@@ -61,7 +61,7 @@ final class ModuleSwitchActionTest extends TestCase {
 			requiredCapabilities: [ 'edit_posts' ],
 			risk: $risk,
 			isReadOnly: $read_only,
-			isDestructive: $destructive,
+			losesStateWithoutSnapshot: $destructive,
 			isIdempotent: true,
 			previewPolicy: $read_only ? PreviewPolicy::NotApplicable : PreviewPolicy::Required,
 			snapshotPolicy: $read_only ? SnapshotPolicy::NotApplicable : SnapshotPolicy::Required,

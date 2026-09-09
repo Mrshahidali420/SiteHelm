@@ -108,7 +108,7 @@ final class PlanAdmissionTest extends TestCase {
 			requiredCapabilities: [ 'edit_post' ],
 			risk: Risk::Medium,
 			isReadOnly: false,
-			isDestructive: false,
+			losesStateWithoutSnapshot: false,
 			isIdempotent: true,
 			previewPolicy: PreviewPolicy::Required,
 			snapshotPolicy: SnapshotPolicy::Required,

@@ -44,8 +44,8 @@ use SiteHelm\Contracts\SnapshotPolicy;
  * on that level. What makes a delete safe here is the required preview and the
  * warnings in it, not an inflated tier.
  *
- * `isDestructive` IS FALSE, AND THAT IS A CONTRACT WORD RATHER THAN A CLAIM
- * ABOUT THE CHANGE. {@see OperationDefinition} makes `isDestructive: true` force
+ * `losesStateWithoutSnapshot` IS FALSE, AND THAT IS A CONTRACT WORD RATHER THAN A CLAIM
+ * ABOUT THE CHANGE. {@see OperationDefinition} makes `losesStateWithoutSnapshot: true` force
  * preview AND snapshot AND rollback all to `Required`, so in this codebase the
  * flag means "destructive and reversible" — an operation that promises a way
  * back. A delete cannot promise one, so it declares what it can honour and says
@@ -108,7 +108,7 @@ final class MediaDelete implements WriteOperation {
 			requiredCapabilities: [ 'delete_post' ],
 			risk: Risk::High,
 			isReadOnly: false,
-			isDestructive: false,
+			losesStateWithoutSnapshot: false,
 			isIdempotent: false,
 			previewPolicy: PreviewPolicy::Required,
 			snapshotPolicy: SnapshotPolicy::NotApplicable,

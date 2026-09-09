@@ -221,7 +221,7 @@ final class MenuItemDeleteTest extends TestCase {
 		$this->assertSame( [ 'edit_theme_options' ], $definition->requiredCapabilities );
 		$this->assertSame( Risk::High, $definition->risk );
 		$this->assertFalse( $definition->isReadOnly );
-		$this->assertTrue( $definition->isDestructive );
+		$this->assertTrue( $definition->losesStateWithoutSnapshot );
 		$this->assertFalse( $definition->isIdempotent );
 		$this->assertSame( PreviewPolicy::Required, $definition->previewPolicy );
 		$this->assertSame( SnapshotPolicy::Required, $definition->snapshotPolicy );

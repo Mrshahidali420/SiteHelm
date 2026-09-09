@@ -97,7 +97,7 @@ final class SiteRewriteFlush implements WriteOperation {
 			requiredCapabilities: [ self::CAPABILITY ],
 			risk: Risk::Low,
 			isReadOnly: false,
-			isDestructive: false,
+			losesStateWithoutSnapshot: false,
 			isIdempotent: true,
 			previewPolicy: PreviewPolicy::Required,
 			snapshotPolicy: SnapshotPolicy::NotApplicable,

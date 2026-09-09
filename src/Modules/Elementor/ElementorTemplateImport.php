@@ -217,7 +217,7 @@ final class ElementorTemplateImport implements WriteOperation {
 			requiredCapabilities: [ 'edit_posts' ],
 			risk: Risk::High,
 			isReadOnly: false,
-			isDestructive: false,
+			losesStateWithoutSnapshot: false,
 			isIdempotent: false,
 			previewPolicy: PreviewPolicy::Required,
 			snapshotPolicy: SnapshotPolicy::Supported,

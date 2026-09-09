@@ -214,7 +214,7 @@ final class MenuItemUpdate implements RollbackDelegate {
 			requiredCapabilities: [ MenuTarget::REQUIRED_CAPABILITY ],
 			risk: Risk::Medium,
 			isReadOnly: false,
-			isDestructive: false,
+			losesStateWithoutSnapshot: false,
 			// Idempotent: the same request repeated leaves the item in the same
 			// state, because every field it writes is an absolute value rather
 			// than a relative one.

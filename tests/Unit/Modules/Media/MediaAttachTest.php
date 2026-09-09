@@ -256,7 +256,7 @@ final class MediaAttachTest extends TestCase {
 		$this->assertSame( [ 'edit_post' ], $definition->requiredCapabilities );
 		$this->assertFalse( $definition->isReadOnly );
 		$this->assertFalse(
-			$definition->isDestructive,
+			$definition->losesStateWithoutSnapshot,
 			'post_parent is a pointer, the snapshot restores it exactly, and declaring this destructive would force preview, snapshot and rollback all to required.'
 		);
 		$this->assertTrue( $definition->isIdempotent );

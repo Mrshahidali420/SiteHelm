@@ -158,7 +158,7 @@ final class ExtensionsDefinitionInvariantsTest extends TestCase {
 		foreach ( $this->registeredDefinitions() as $definition ) {
 			$this->assertSame( Mode::Read, $definition->mode, "Operation '{$definition->id}' must be a read." );
 			$this->assertTrue( $definition->isReadOnly, "Operation '{$definition->id}' must be read-only." );
-			$this->assertFalse( $definition->isDestructive, "Operation '{$definition->id}' must not be destructive." );
+			$this->assertFalse( $definition->losesStateWithoutSnapshot, "Operation '{$definition->id}' must not be destructive." );
 			$this->assertTrue( $definition->isIdempotent, "Operation '{$definition->id}' must be idempotent." );
 			$this->assertSame( PreviewPolicy::NotApplicable, $definition->previewPolicy );
 			$this->assertSame( SnapshotPolicy::NotApplicable, $definition->snapshotPolicy );

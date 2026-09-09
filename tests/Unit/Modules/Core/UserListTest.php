@@ -75,7 +75,7 @@ final class UserListTest extends TestCase {
 		$this->assertSame( 'user-list', $definition->id );
 		$this->assertSame( 'system-read', $definition->dispatcherName() );
 		$this->assertTrue( $definition->isReadOnly );
-		$this->assertFalse( $definition->isDestructive );
+		$this->assertFalse( $definition->losesStateWithoutSnapshot );
 		$this->assertSame( [ 'list_users' ], $definition->requiredCapabilities );
 		$this->assertSame( false, $definition->inputSchema['additionalProperties'] );
 	}

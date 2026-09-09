@@ -73,7 +73,7 @@ use SiteHelm\Tests\TestCase;
  *
  * REQ-0056 (irreversible permanent deletion) IS DELIBERATELY NOT HERE. It is
  * already unreachable rather than merely absent: OperationDefinition's
- * constructor refuses any definition declaring `isDestructive` without preview,
+ * constructor refuses any definition declaring `losesStateWithoutSnapshot` without preview,
  * snapshot and rollback all required, so an irreversible delete cannot be
  * constructed, let alone registered. That rule is pinned by
  * OperationDefinitionTest::test_destructive_write_requires_all_policies_required.

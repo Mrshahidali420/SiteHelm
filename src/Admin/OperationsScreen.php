@@ -480,7 +480,7 @@ final class OperationsScreen {
 		// atLeast, not an identity test: a tier above High is more worth a
 		// second look, not less, and an identity test would have dropped the
 		// warning colour from exactly the rows that most need it.
-		$is_warn = $definition->isDestructive || $definition->risk->atLeast( Risk::High );
+		$is_warn = $definition->losesStateWithoutSnapshot || $definition->risk->atLeast( Risk::High );
 
 		return sprintf(
 			'<span class="sitehelm-switch%s"><input type="checkbox" name="%s[]" value="%s"%s data-sitehelm-switch>'
@@ -646,7 +646,7 @@ final class OperationsScreen {
 			$badges[] = Ui::badge( 'waiting', __( 'Preview required', 'sitehelm' ) );
 		}
 
-		if ( $definition->isDestructive ) {
+		if ( $definition->losesStateWithoutSnapshot ) {
 			$badges[] = Ui::badge( 'refused', __( 'Destructive', 'sitehelm' ) );
 		}
 

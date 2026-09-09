@@ -91,7 +91,7 @@ final class ElementorGlobalClassDeleteTest extends TestCase {
 	public function test_the_definition_is_destructive_and_carries_every_safety_the_engine_can_require(): void {
 		$definition = ElementorGlobalClassDelete::definition();
 
-		$this->assertTrue( $definition->isDestructive );
+		$this->assertTrue( $definition->losesStateWithoutSnapshot );
 		$this->assertFalse( $definition->isIdempotent, 'A second delete refuses, and an operator retrying deserves that refusal.' );
 		$this->assertSame( PreviewPolicy::Required, $definition->previewPolicy );
 		$this->assertSame( SnapshotPolicy::Required, $definition->snapshotPolicy );

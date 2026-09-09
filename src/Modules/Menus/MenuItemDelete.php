@@ -100,7 +100,7 @@ final class MenuItemDelete implements RollbackDelegate {
 			requiredCapabilities: [ MenuTarget::REQUIRED_CAPABILITY ],
 			risk: Risk::High,
 			isReadOnly: false,
-			isDestructive: true,
+			losesStateWithoutSnapshot: true,
 			// Not idempotent: the identifier the request names is gone after the
 			// first call, so the second call answers target_not_found rather than
 			// repeating the same outcome.

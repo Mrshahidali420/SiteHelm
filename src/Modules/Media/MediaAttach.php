@@ -54,7 +54,7 @@ use SiteHelm\Contracts\SnapshotPolicy;
  *
  * DETACHING IS NOT DESTRUCTIVE. `post_parent` is a pointer; clearing it loses no
  * content, and the snapshot records the prior pointer and restores it exactly.
- * `isDestructive` stays false, which keeps the policies at required / required /
+ * `losesStateWithoutSnapshot` stays false, which keeps the policies at required / required /
  * supported rather than forcing all three to required.
  *
  * IT REDEEMS ITS OWN SNAPSHOTS. `content-rollback-apply` reads a post id out of a
@@ -117,7 +117,7 @@ final class MediaAttach implements RollbackDelegate {
 			requiredCapabilities: [ 'edit_post' ],
 			risk: Risk::Medium,
 			isReadOnly: false,
-			isDestructive: false,
+			losesStateWithoutSnapshot: false,
 			isIdempotent: true,
 			previewPolicy: PreviewPolicy::Required,
 			snapshotPolicy: SnapshotPolicy::Required,

@@ -109,7 +109,7 @@ final class ElementorGlobalClassesReorder implements RollbackDelegate {
 			requiredCapabilities: [ ElementorGlobalClassWrite::CAPABILITY ],
 			risk: Risk::High,
 			isReadOnly: false,
-			isDestructive: false,
+			losesStateWithoutSnapshot: false,
 			isIdempotent: true,
 			previewPolicy: PreviewPolicy::Required,
 			snapshotPolicy: SnapshotPolicy::Required,

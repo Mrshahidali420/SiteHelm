@@ -49,7 +49,7 @@ namespace SiteHelm\Contracts;
  *
  * Absence is not a claim of safety. An empty list means the operation
  * declares none of these six, not that it has been audited and found free of
- * consequence. Read `risk` for size and `isDestructive` for what cannot be
+ * consequence. Read `risk` for size and `losesStateWithoutSnapshot` for what cannot be
  * recovered; this enum is about kind, and it never repeats what those two
  * already say — which is why "the deletion is permanent" is not a case here.
  */

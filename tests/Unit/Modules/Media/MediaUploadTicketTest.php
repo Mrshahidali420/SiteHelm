@@ -244,7 +244,7 @@ final class MediaUploadTicketTest extends TestCase {
 		$this->assertSame( 'media-upload-ticket', $definition->id );
 		$this->assertSame( [ 'upload_files' ], $definition->requiredCapabilities );
 		$this->assertFalse( $definition->isIdempotent );
-		$this->assertFalse( $definition->isDestructive );
+		$this->assertFalse( $definition->losesStateWithoutSnapshot );
 		$this->assertSame( SnapshotPolicy::NotApplicable, $definition->snapshotPolicy, 'A ticket changes nothing, so there is no prior state to keep.' );
 		$this->assertSame( RollbackPolicy::NotApplicable, $definition->rollbackPolicy, 'There is nothing to put back, so no undo is offered.' );
 	}
