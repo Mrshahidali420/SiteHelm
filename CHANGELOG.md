@@ -84,6 +84,13 @@ an operation behaves.
 
 ### Fixed
 
+- **Rolling back one redirect no longer deletes redirects added since.** All redirects live
+  in one stored table, and a rollback used to write the whole recorded table back — so
+  undoing one redirect silently threw away every redirect created between the change and the
+  rollback. The same shape affected menu-location rollbacks, which wrote the whole recorded
+  location map back. Both rollbacks now put back only the one entry they were recorded for
+  and leave every sibling exactly as the site holds it.
+
 - **Content writes refuse identifiers that belong to another kind of item.** WordPress stores
   media files, menu items and revisions in the same table as posts and pages, so a media
   file's id handed to a content write resolved like a page and the write went through on the

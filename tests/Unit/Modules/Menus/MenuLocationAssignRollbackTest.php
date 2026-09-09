@@ -26,8 +26,8 @@ use stdClass;
  * advertised and then refused.
  *
  * THE LOAD-BEARING TEST IS test_the_promise_equals_the_read_back_of_a_real_rollback().
- * A restore writes the whole recorded map back, so the location this snapshot
- * names ends up holding whatever that recorded map assigned it; the promise is
+ * A restore puts the recorded state of its own location back, so the location
+ * this snapshot names ends up holding what the recorded map assigned it; the promise is
  * that value read through readBack()'s own `menuId` rule. The test reassigns the
  * location for real, restores the snapshot, re-reads it, and asserts the promised
  * assignment is the one the location now reports — the guard against a promise
@@ -181,6 +181,25 @@ final class MenuLocationAssignRollbackTest extends TestCase {
 		$this->assertSame( [], $this->operation->promiseRollback( [], $current, $context ) );
 		$this->assertSame( [], $this->operation->promiseRollback( [ 'location' => '', 'locations' => [] ], $current, $context ) );
 		$this->assertSame( [], $this->operation->promiseRollback( [ 'location' => 'primary', 'locations' => 'not-an-array' ], $current, $context ) );
+	}
+
+	public function test_a_sibling_assignment_made_after_the_snapshot_survives_the_rollback(): void {
+		// The snapshot records the whole map, but the restore writes back only
+		// its own location: a menu assigned to another location between the
+		// write and the rollback is not this rollback's to unassign.
+		$context  = $this->makeContext();
+		$current  = $this->operation->resolveTarget( [ 'location' => 'primary', 'menu' => null ], $context );
+		$snapshot = $this->operation->captureSnapshot( $current, $context );
+
+		$this->locations = [
+			'primary' => 12,
+			'footer'  => 12,
+		];
+
+		$this->operation->restore( (array) $snapshot, $context );
+
+		$this->assertSame( 34, $this->locations['primary'] );
+		$this->assertSame( 12, $this->locations['footer'] );
 	}
 
 	public function test_the_promise_equals_the_read_back_of_a_real_rollback(): void {

@@ -402,10 +402,12 @@ final class MenuLocationAssignTest extends TestCase {
 
 		$this->operation->restore( (array) $snapshot, $context );
 
+		// The live map's own key order survives: the restore mutates the current
+		// map rather than writing the sorted recorded one back.
 		$this->assertSame(
 			[
-				'footer'  => 34,
 				'primary' => 34,
+				'footer'  => 34,
 			],
 			$this->locations
 		);

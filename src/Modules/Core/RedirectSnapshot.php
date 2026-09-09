@@ -73,7 +73,7 @@ final class RedirectSnapshot {
 	}
 
 	/**
-	 * Writes a recorded table back, and proves the recorded row is what is stored.
+	 * Puts the recorded state of ONE path back, and proves it is what is stored.
 	 *
 	 * The measurement is on PRESENCE FIRST and value second, and the presence half
 	 * earns its place on exactly one pair of states: a recorded ABSENCE that came
@@ -106,7 +106,21 @@ final class RedirectSnapshot {
 			);
 		}
 
-		$store->replace( $redirects );
+		// ONLY THIS OPERATION'S PATH IS WRITTEN BACK. The snapshot records the
+		// whole table so an absence is expressible, but writing the whole recorded
+		// table would also rewind every sibling row: a redirect added between the
+		// write and this rollback would be silently deleted by a reversal that
+		// claims to have touched one path. The current table is read and one key
+		// is put back to its recorded state, exactly as applyChange() mutates it.
+		$table = $store->all();
+
+		if ( array_key_exists( $source, $redirects ) ) {
+			$table[ $source ] = $redirects[ $source ];
+		} else {
+			unset( $table[ $source ] );
+		}
+
+		$store->replace( $table );
 
 		// array_key_exists() on BOTH sides, never `??`. See the note above: an
 		// absent row and a stored row are the two states the reversal of a create
