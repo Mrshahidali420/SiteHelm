@@ -1744,7 +1744,7 @@
                     "source": {
                         "type": "string",
                         "minLength": 1,
-                        "maxLength": 500,
+                        "maxLength": 182,
                         "description": "The path on this site to redirect, such as /old-pricing. A query string is ignored, a trailing slash does not matter, and the site's home page cannot be a source."
                     },
                     "target": {
@@ -1832,7 +1832,7 @@
                     "source": {
                         "type": "string",
                         "minLength": 1,
-                        "maxLength": 500,
+                        "maxLength": 182,
                         "description": "The path whose redirect should be removed, as redirect-list reports it."
                     }
                 },

@@ -76,6 +76,25 @@ an operation behaves.
 
 ### Fixed
 
+- **A redirect with a very long source path is refused up front instead of never applying.**
+  The change engine records the name of what a plan targets in a column 191 characters wide.
+  A longer name was silently cut short on save, so the preview succeeded and every apply
+  answered "the site changed under you", forever, with nothing logged. The engine now refuses
+  such a target at preview time with a message saying what to send, for every operation, and
+  the redirect source path limit is now 182 characters so the schema and the engine agree.
+
+- **The media list no longer reads like it knows where a file is used.** The `parent` field
+  only records which post a file was first uploaded to, but its description read like a usage
+  record, inviting "delete everything with parent 0" cleanups that break live pages. The
+  descriptions on `media-list` and `media-delete` now say plainly that parent is not usage,
+  that no operation reports usage, and that deletion checks nothing before removing the file.
+
+- **Pro: the schema write refuses when the properties are not sent.** The write replaces the
+  stored schema properties instead of merging them, so leaving `fields` out of a call read
+  like "change nothing" and actually deleted every property the post carried. The member is
+  now required, the same way `type` is, and an omitted `fields` is refused with a message
+  naming the replace semantics; an empty object remains the explicit way to store none.
+
 - **Rewriting a live snippet no longer reports a failure that did not happen.** Replacing the
   body of a snippet, stylesheet or script that is switched on always came back as
   "verification failed", even though the new body was stored correctly. The preview promised
