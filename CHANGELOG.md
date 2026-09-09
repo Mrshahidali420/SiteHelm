@@ -201,6 +201,23 @@ an operation behaves.
 
 ### Security
 
+- **SiteHelm could be told to switch itself off.** Deleting SiteHelm has always been refused,
+  because it cuts the very connection the request arrived on and leaves nothing behind to undo
+  it. Deactivating it does exactly the same through an easier switch, and that was never
+  refused: an agent asked to tidy up the plugin list could have included SiteHelm and gone
+  silent mid-request. The deactivate operation now refuses SiteHelm and its add-on with the
+  same guard as a delete — on the preview, on an approved plan, and on the undo path too, so
+  a rollback can never become the one way to flip the switch. Activating SiteHelm is still
+  allowed, and every other plugin toggles exactly as before. This is a Pro fix.
+
+- **Zips reach the media library only after the owner switches it on.** A licensed site
+  accepted `.zip` files into its media library automatically, because the Pro install
+  operations need them there. But a licence proves a purchase, not a wish to collect archives
+  of runnable code — and the site owner was never asked. There is now a switch on the
+  SiteHelm Health tab, off until the owner turns it on; until then every zip upload is refused
+  exactly as it is on a free site. Installing from a zip already in the library is unchanged.
+  This is a Pro fix.
+
 - **An undo could rewrite the SEO metadata of a post the person was not allowed to edit.**
   Setting a post's SEO metadata asks whether you may edit that particular post. Undoing it
   asked nothing: the undo could not read the saved reference well enough to know which post it
