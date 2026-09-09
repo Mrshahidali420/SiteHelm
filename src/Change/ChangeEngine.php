@@ -129,7 +129,19 @@ final class ChangeEngine {
 	): OperationResult {
 		$this->require_storage();
 
-		$current     = $operation->resolveTarget( $payload, $context );
+		$current = $operation->resolveTarget( $payload, $context );
+
+		// Refused here, not left to the insert: the target_key columns are
+		// varchar(191), and a key the database truncates would preview
+		// cleanly, then answer stale_plan on every apply, forever.
+		if ( strlen( $current->targetKey ) > PlanStore::MAX_TARGET_KEY_LENGTH ) {
+			throw new OperationException(
+				ErrorCode::InvalidInput,
+				'The resolved target name is longer than the change engine can record, so a plan for it could never be applied.',
+				sprintf( 'Name a target that resolves to a key of at most %d bytes.', PlanStore::MAX_TARGET_KEY_LENGTH )
+			);
+		}
+
 		$planned     = $operation->planChange( $current, $payload, $context );
 		$fingerprint = $this->fingerprint->compute( $current, $context );
 		$eligibility = $this->lifecycle->eligibility( $definition, $operation, $current, $context );

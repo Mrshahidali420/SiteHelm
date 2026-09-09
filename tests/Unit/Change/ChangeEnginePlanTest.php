@@ -281,6 +281,21 @@ final class ChangeEnginePlanTest extends TestCase {
 		}
 	}
 
+	public function test_a_target_key_wider_than_the_stored_column_is_refused_at_preview(): void {
+		$this->operation->target   = new TargetState( 'redirect:' . str_repeat( 'a', 200 ), true, [ 'target' => '/x' ] );
+		$this->operation->snapshot = [ 'target' => '/x' ];
+
+		try {
+			$this->runPreview();
+			$this->fail( 'Expected OperationException' );
+		} catch ( OperationException $e ) {
+			$this->assertSame( ErrorCode::InvalidInput, $e->errorCode );
+			$this->assertStringContainsString( (string) PlanStore::MAX_TARGET_KEY_LENGTH, $e->remediation );
+			$this->assertSame( [], $this->wpdb->inserts, 'No plan row may be stored for an unrecordable key.' );
+			$this->assertSame( 0, $this->operation->applyCalls );
+		}
+	}
+
 	public function test_two_previews_of_the_same_state_and_payload_render_identically(): void {
 		$this->operation->snapshot = [ 'post_title' => 'Original title' ];
 

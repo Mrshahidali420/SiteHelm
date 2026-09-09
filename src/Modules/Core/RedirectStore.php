@@ -63,11 +63,14 @@ final class RedirectStore {
 	/**
 	 * The greatest length of a source path, in bytes after normalisation.
 	 *
-	 * Comfortably longer than any path a content management system produces, and
-	 * short enough that MAX_REDIRECTS rows cannot become a megabyte-scale
-	 * autoloaded option.
+	 * Bounded by the change engine's storage, not by taste: the target key is
+	 * `redirect:` plus this path, and the engine records target keys of at
+	 * most 191 bytes, so 182 is the longest path whose plan can ever apply.
+	 * Still comfortably longer than any path a content management system
+	 * produces, and short enough that MAX_REDIRECTS rows cannot become a
+	 * megabyte-scale autoloaded option.
 	 */
-	public const MAX_PATH_LENGTH = 500;
+	public const MAX_PATH_LENGTH = 182;
 
 	/**
 	 * The greatest length of a target, in bytes.

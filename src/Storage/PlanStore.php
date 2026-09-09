@@ -30,6 +30,17 @@ final class PlanStore {
 	public const MAX_TTL     = 3600;
 
 	/**
+	 * The widest target key the engine's tables can record.
+	 *
+	 * The plans, snapshots and audit tables all store target_key as
+	 * varchar(191). A longer key is truncated on insert, and the truncated
+	 * row can never match the freshly resolved key again, so every apply of
+	 * such a plan answers stale_plan forever. The change engine refuses at
+	 * preview time instead.
+	 */
+	public const MAX_TARGET_KEY_LENGTH = 191;
+
+	/**
 	 * Bytes of CSPRNG output per token. 32 bytes render as 64 hex characters,
 	 * comfortably above the ChangePlan value object's 32-character floor.
 	 */
