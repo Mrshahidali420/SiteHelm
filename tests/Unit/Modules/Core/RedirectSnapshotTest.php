@@ -176,6 +176,45 @@ final class RedirectSnapshotTest extends RedirectTestCase {
 		$this->assertSame( [ '/old' ], array_keys( $this->store->all() ) );
 	}
 
+	public function test_a_sibling_added_after_the_snapshot_survives_the_rollback(): void {
+		// The snapshot records the whole table, but the restore writes back only
+		// its own path: a redirect created between the write and the rollback is
+		// not this rollback's to delete.
+		$this->seed( [ $this->row( '/old', '/new' ) ] );
+
+		$snapshot = RedirectSnapshot::capture( $this->store, 'redirect:/old' );
+
+		$this->store->replace(
+			[
+				'/old'   => $this->row( '/old', '/changed' ),
+				'/other' => $this->row( '/other', '/elsewhere' ),
+			]
+		);
+
+		RedirectSnapshot::restore( $this->store, $snapshot );
+
+		$this->assertSame( '/new', $this->store->find( '/old' )['target'] );
+		$this->assertSame( '/elsewhere', $this->store->find( '/other' )['target'] );
+	}
+
+	public function test_a_sibling_deleted_after_the_snapshot_is_not_resurrected(): void {
+		$this->seed(
+			[
+				$this->row( '/old', '/new' ),
+				$this->row( '/other', '/elsewhere' ),
+			]
+		);
+
+		$snapshot = RedirectSnapshot::capture( $this->store, 'redirect:/old' );
+
+		$this->store->replace( [ '/old' => $this->row( '/old', '/changed' ) ] );
+
+		RedirectSnapshot::restore( $this->store, $snapshot );
+
+		$this->assertSame( '/new', $this->store->find( '/old' )['target'] );
+		$this->assertNull( $this->store->find( '/other' ) );
+	}
+
 	public function test_the_path_a_key_names(): void {
 		$this->assertSame( '/old', RedirectSnapshot::pathFromKey( 'redirect:/old' ) );
 		$this->assertNull( RedirectSnapshot::pathFromKey( '/old' ) );

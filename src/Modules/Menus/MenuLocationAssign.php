@@ -292,11 +292,10 @@ final class MenuLocationAssign implements RollbackDelegate {
 	/**
 	 * Captures the entire location map this write is about to rewrite.
 	 *
-	 * THE WHOLE MAP, not this operation's one key, because `set_theme_mod()`
-	 * stores the whole map: a snapshot of one key could only be restored by
-	 * merging it into a map read later, and every sibling assignment made
-	 * between the write and the rollback would ride along into a reversal that
-	 * claims to have touched one location.
+	 * THE WHOLE MAP, not this operation's one key, so that a location holding
+	 * no menu is expressible as an absence and older recorded snapshots keep
+	 * restoring. The restore writes back only this operation's key: a sibling
+	 * assignment made between the write and the rollback survives it.
 	 *
 	 * A LOCATION HOLDING NO MENU IS RECORDED BY ITS ABSENCE, which is how core
 	 * stores it, and the restore reproduces that absence rather than writing 0.
@@ -468,8 +467,9 @@ final class MenuLocationAssign implements RollbackDelegate {
 	 * `pre_set_theme_mod_nav_menu_locations` filter that strips or adds empty
 	 * members is all it takes to reach either.
 	 *
-	 * Only the operation's OWN location is measured, not every recorded key. The
-	 * rest of the map is written and left to the platform: a
+	 * Only the operation's OWN location is measured, because only that key is
+	 * written: the rest of the map is left exactly as the site holds it, so a
+	 * sibling assignment made since the snapshot survives the rollback. A
 	 * `pre_set_theme_mod_nav_menu_locations` filter that drops a location this
 	 * operation never touched is the site's own behaviour, and failing the
 	 * rollback over it would strand the one location this rollback exists for.
@@ -498,7 +498,20 @@ final class MenuLocationAssign implements RollbackDelegate {
 			);
 		}
 
-		set_theme_mod( MenuFields::LOCATIONS_THEME_MOD, $locations );
+		// ONLY THIS OPERATION'S LOCATION IS WRITTEN BACK. The snapshot records
+		// the whole map so an absence is expressible, but writing the whole
+		// recorded map would also rewind every sibling assignment made between
+		// the write and this rollback. The current map is read and one key is
+		// put back to its recorded state, exactly as applyChange() mutates it.
+		$map = $this->currentMap();
+
+		if ( array_key_exists( $location, $locations ) ) {
+			$map[ $location ] = $locations[ $location ];
+		} else {
+			unset( $map[ $location ] );
+		}
+
+		set_theme_mod( MenuFields::LOCATIONS_THEME_MOD, $map );
 
 		$stored = $this->currentMap();
 
