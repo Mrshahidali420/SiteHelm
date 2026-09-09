@@ -76,6 +76,21 @@ an operation behaves.
 
 ### Fixed
 
+- **Rewriting a live snippet no longer reports a failure that did not happen.** Replacing the
+  body of a snippet, stylesheet or script that is switched on always came back as
+  "verification failed", even though the new body was stored correctly. The preview promised
+  the snippet would end up switched off, but a rewrite deliberately never touches whether a
+  snippet runs — so the check compared the wrong promise and cried wolf every time. The
+  preview now promises what actually happens: a new snippet is stored switched off, and a
+  rewritten one keeps the state it had. This is a Pro fix.
+
+- **Expired sign-in tokens are now cleaned up even when scheduled tasks never run.** The
+  cleanup of old OAuth tokens and abandoned app registrations ran only on WordPress's daily
+  schedule, which on many sites never fires — it depends on visitors reaching WordPress
+  itself, and caching, CDNs and hardening guides all get in the way. The code that promised a
+  fallback existed but was never called. It is now: each time an app signs in with a valid
+  token, the cleanup runs too, at most once every fifteen minutes.
+
 - **Six operations said they could be undone when they could not.** Four of them add
   something new to the media library — `media-upload`, `media-import`, `media-svg-upload` and
   `media-upload-ticket` — and there is nothing to put back, because nothing was there before.

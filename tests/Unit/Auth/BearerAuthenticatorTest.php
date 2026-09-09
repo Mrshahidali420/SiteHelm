@@ -235,6 +235,52 @@ final class BearerAuthenticatorTest extends AuthTestCase {
 		);
 	}
 
+	public function test_a_resolved_token_prunes_the_oauth_tables(): void {
+		$_SERVER['HTTP_AUTHORIZATION'] = 'Bearer ' . self::TOKEN;
+		$this->storedToken();
+
+		$this->authenticator()->determineUser( false );
+
+		$deletes = array_filter(
+			$this->wpdb->queries,
+			static fn( string $sql ): bool => str_starts_with( $sql, 'DELETE' )
+		);
+
+		$this->assertCount( 2, $deletes, 'both OAuth tables are pruned once a token resolves' );
+		$this->assertArrayHasKey( 'sitehelm_oauth_gc', $this->transients );
+	}
+
+	public function test_a_second_request_inside_the_throttle_window_does_not_prune_again(): void {
+		$this->transients['sitehelm_oauth_gc'] = 1;
+
+		$_SERVER['HTTP_AUTHORIZATION'] = 'Bearer ' . self::TOKEN;
+		$this->storedToken();
+
+		$this->authenticator()->determineUser( false );
+
+		$deletes = array_filter(
+			$this->wpdb->queries,
+			static fn( string $sql ): bool => str_starts_with( $sql, 'DELETE' )
+		);
+
+		$this->assertSame( [], $deletes, 'the throttle keeps the second request free of prune work' );
+	}
+
+	public function test_a_refused_token_does_not_prune(): void {
+		$_SERVER['HTTP_AUTHORIZATION'] = 'Bearer ' . self::TOKEN;
+		$this->storedToken( [ 'expires_at' => self::NOW - 1 ] );
+
+		$this->authenticator()->determineUser( false );
+
+		$deletes = array_filter(
+			$this->wpdb->queries,
+			static fn( string $sql ): bool => str_starts_with( $sql, 'DELETE' )
+		);
+
+		$this->assertSame( [], $deletes, 'pruning is a side effect of success, never of refusal' );
+		$this->assertArrayNotHasKey( 'sitehelm_oauth_gc', $this->transients );
+	}
+
 	/**
 	 * A minimal REST request that knows its route.
 	 *

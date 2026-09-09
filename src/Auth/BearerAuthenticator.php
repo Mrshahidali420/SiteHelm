@@ -110,6 +110,12 @@ final class BearerAuthenticator {
 		self::$client_name   = is_array( $client ) ? (string) $client['client_name'] : '';
 		self::$authenticated = true;
 
+		// A resolved token is the one signal guaranteed to occur on a site
+		// whose cron never fires: somebody is actively using OAuth. Prune the
+		// two OAuth tables here; the collector throttles itself to one run per
+		// fifteen minutes, so the common request pays one transient read.
+		( new OAuthGarbageCollector( $this->store ) )->collectThrottled( ( $this->clock )() );
+
 		return (int) $row['user_id'];
 	}
 
