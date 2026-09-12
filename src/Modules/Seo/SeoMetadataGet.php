@@ -63,7 +63,7 @@ final class SeoMetadataGet {
 					'id' => [
 						'type'        => 'integer',
 						'minimum'     => 1,
-						'description' => 'Identifier of the post whose SEO metadata is being read.',
+						'description' => 'Identifier of the post whose SEO metadata is being read. Call `content-list` or `content-search` for the ids of this site\'s content items.',
 					],
 				],
 				'required'             => [ 'id' ],

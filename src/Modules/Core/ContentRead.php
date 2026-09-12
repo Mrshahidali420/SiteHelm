@@ -49,7 +49,7 @@ final class ContentRead {
 					'id' => [
 						'type'        => 'integer',
 						'minimum'     => 1,
-						'description' => 'Identifier of the content item to read.',
+						'description' => 'Identifier of the content item to read. Call `content-list` or `content-search` for the ids of this site\'s content items.',
 					],
 				],
 				'required'             => [ 'id' ],

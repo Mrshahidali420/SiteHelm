@@ -84,6 +84,15 @@ an operation behaves.
 
 ### Fixed
 
+- **Every id an operation asks for now says where to get one.** Most operations take a
+  numeric id, and only a few said which listing operation hands those ids out — an agent
+  had to guess, and a guessed id can succeed on the wrong object. Every input id now names
+  its source in its own description: content ids point to `content-list` and
+  `content-search`, media ids to `media-list`, comment ids to `comment-list`, user ids to
+  `user-list`, form ids to `form-list`, and menu item ids to `menu-get`. The term id on the
+  term SEO operations now also says it is a term id, not a post id — the two are separate
+  sequences, so a post id sent there could land on an unrelated term.
+
 - **Rolling back one redirect no longer deletes redirects added since.** All redirects live
   in one stored table, and a rollback used to write the whole recorded table back — so
   undoing one redirect silently threw away every redirect created between the change and the

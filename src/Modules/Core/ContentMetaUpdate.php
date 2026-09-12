@@ -114,7 +114,7 @@ final class ContentMetaUpdate implements WriteOperation {
 					'id'   => [
 						'type'        => 'integer',
 						'minimum'     => 1,
-						'description' => 'Identifier of the content item whose custom fields are being updated.',
+						'description' => 'Identifier of the content item whose custom fields are being updated. Call `content-list` or `content-search` for the ids of this site\'s content items.',
 					],
 					'meta' => [
 						'type'        => 'array',

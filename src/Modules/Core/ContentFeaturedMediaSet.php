@@ -87,7 +87,7 @@ final class ContentFeaturedMediaSet implements WriteOperation {
 					'id'      => [
 						'type'        => 'integer',
 						'minimum'     => 1,
-						'description' => 'Identifier of the content item whose featured image is being set.',
+						'description' => 'Identifier of the content item whose featured image is being set. Call `content-list` or `content-search` for the ids of this site\'s content items.',
 					],
 					'mediaId' => [
 						'type'        => 'integer',

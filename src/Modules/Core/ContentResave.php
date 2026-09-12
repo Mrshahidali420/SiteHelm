@@ -111,7 +111,7 @@ final class ContentResave implements WriteOperation {
 					'id' => [
 						'type'        => 'integer',
 						'minimum'     => 1,
-						'description' => 'Identifier of the content item to save again.',
+						'description' => 'Identifier of the content item to save again. Call `content-list` or `content-search` for the ids of this site\'s content items.',
 					],
 				],
 				'required'             => [ 'id' ],

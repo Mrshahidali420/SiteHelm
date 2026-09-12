@@ -131,7 +131,7 @@ final class ContentTermsReplace implements WriteOperation {
 					'id'    => [
 						'type'        => 'integer',
 						'minimum'     => 1,
-						'description' => 'Identifier of the content item being recategorized.',
+						'description' => 'Identifier of the content item being recategorized. Call `content-list` or `content-search` for the ids of this site\'s content items.',
 					],
 					'terms' => [
 						'type'        => 'array',
@@ -148,7 +148,7 @@ final class ContentTermsReplace implements WriteOperation {
 								'termIds'  => [
 									'type'        => 'array',
 									'maxItems'    => self::MAX_TERM_IDS,
-									'description' => 'Identifiers of existing terms in that taxonomy. An empty list removes them all.',
+									'description' => 'Identifiers of existing terms in that taxonomy. An empty list removes them all. `content-read` reports an item\'s current term ids in its `terms` map.',
 									'items'       => [
 										'type'    => 'integer',
 										'minimum' => 1,

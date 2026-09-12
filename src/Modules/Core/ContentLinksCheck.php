@@ -58,7 +58,7 @@ final class ContentLinksCheck {
 					'id'         => [
 						'type'        => 'integer',
 						'minimum'     => 1,
-						'description' => 'Identifier of the content item whose links to check.',
+						'description' => 'Identifier of the content item whose links to check. Call `content-list` or `content-search` for the ids of this site\'s content items.',
 					],
 					'brokenOnly' => [
 						'type'        => 'boolean',

@@ -76,7 +76,7 @@ final class CommentStatusSet implements RollbackDelegate {
 					'id'     => [
 						'type'        => 'integer',
 						'minimum'     => 1,
-						'description' => 'Identifier of the comment whose status is being changed.',
+						'description' => 'Identifier of the comment whose status is being changed. Call `comment-list` for the ids of this site\'s comments.',
 					],
 					'status' => [
 						'type'        => 'string',

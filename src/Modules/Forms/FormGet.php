@@ -52,7 +52,7 @@ final class FormGet {
 					'id' => [
 						'type'        => 'integer',
 						'minimum'     => 1,
-						'description' => 'Identifier of the form being read.',
+						'description' => 'Identifier of the form being read. Call `form-list` for the ids of the forms on this site.',
 					],
 				],
 				'required'             => [ 'id' ],

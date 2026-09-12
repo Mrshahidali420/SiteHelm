@@ -112,7 +112,7 @@ final class MediaMetaUpdate implements RollbackDelegate {
 					'id'          => [
 						'type'        => 'integer',
 						'minimum'     => 1,
-						'description' => 'Identifier of the media library item whose details are being updated.',
+						'description' => 'Identifier of the media library item whose details are being updated. Call `media-list` for the ids of the media library\'s items.',
 					],
 					'title'       => [
 						'type'        => 'string',

@@ -97,7 +97,7 @@ final class MediaDelete implements WriteOperation {
 					'id' => [
 						'type'        => 'integer',
 						'minimum'     => 1,
-						'description' => 'Identifier of the media library item to delete.',
+						'description' => 'Identifier of the media library item to delete. Call `media-list` for the ids of the media library\'s items.',
 					],
 				],
 				'required'             => [ 'id' ],

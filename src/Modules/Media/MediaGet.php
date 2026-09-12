@@ -60,7 +60,7 @@ final class MediaGet {
 					'id' => [
 						'type'        => 'integer',
 						'minimum'     => 1,
-						'description' => 'Identifier of the media library item to read.',
+						'description' => 'Identifier of the media library item to read. Call `media-list` for the ids of the media library\'s items.',
 					],
 				],
 				'required'             => [ 'id' ],
