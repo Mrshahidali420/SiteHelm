@@ -1397,4 +1397,103 @@ final class ChangeEngineApplyTest extends TestCase {
 			$result->warnings
 		);
 	}
+
+	/**
+	 * A scenario where the operation promises its whole field map but only one
+	 * value moves. The response must name the moved field alone, and `state`
+	 * must carry only that field — not the full map the plan promised.
+	 */
+	public function test_changed_lists_only_the_fields_whose_stored_value_moved(): void {
+		$current = new TargetState(
+			'post:42',
+			true,
+			[
+				'post_title'   => 'Same title',
+				'post_excerpt' => 'Old excerpt',
+			]
+		);
+		$payload = [ 'excerpt' => 'New excerpt' ];
+
+		$this->operation->target  = $current;
+		$this->operation->planned = new PlannedChange(
+			$payload,
+			[
+				'post_title'   => 'Same title',
+				'post_excerpt' => 'New excerpt',
+			]
+		);
+		$this->operation->readBackState = new TargetState(
+			'post:42',
+			true,
+			[
+				'post_title'   => 'Same title',
+				'post_excerpt' => 'New excerpt',
+			]
+		);
+
+		$result = $this->apply(
+			[
+				'payload_hash'      => $this->normalizer->fingerprint( $payload ),
+				'state_fingerprint' => ( new StateFingerprint( $this->normalizer ) )->compute( $current, $this->makeContext() ),
+			]
+		);
+
+		$this->assertSame( VerificationStatus::Verified, $result->verification );
+		$this->assertSame( [ 'post_excerpt' ], $result->data['changed'] );
+		$this->assertSame( [ 'post_excerpt' => 'New excerpt' ], $result->data['state'] );
+	}
+
+	/**
+	 * A write that stores exactly what was already there — content-resave is
+	 * the shipped case — must answer an empty change list, and its state must
+	 * still encode as a JSON object rather than repeat the whole field map.
+	 */
+	public function test_a_write_that_stores_what_was_already_there_reports_nothing_changed(): void {
+		$fields  = [
+			'post_title'   => 'Same title',
+			'post_content' => 'A very large body that must not ride the response.',
+		];
+		$current = new TargetState( 'post:42', true, $fields );
+		$payload = [ 'id' => 42 ];
+
+		$this->operation->target        = $current;
+		$this->operation->planned       = new PlannedChange( $payload, $fields );
+		$this->operation->readBackState = new TargetState( 'post:42', true, $fields );
+
+		$result = $this->apply(
+			[
+				'payload_hash'      => $this->normalizer->fingerprint( $payload ),
+				'state_fingerprint' => ( new StateFingerprint( $this->normalizer ) )->compute( $current, $this->makeContext() ),
+			]
+		);
+
+		$this->assertSame( VerificationStatus::Verified, $result->verification );
+		$this->assertSame( [], $result->data['changed'] );
+		$this->assertInstanceOf( \stdClass::class, $result->data['state'] );
+	}
+
+	/**
+	 * The snapshot store key-sorts every associative array, so a rollback's
+	 * promised map can differ from the live one in key order alone. That must
+	 * not be reported as a change — the same rule the SEO providers follow.
+	 */
+	public function test_a_key_order_difference_alone_is_not_reported_as_a_change(): void {
+		$current = new TargetState( 'post:42', true, [ 'meta' => [ 'b' => 2, 'a' => 1 ] ] );
+		$payload = [ 'id' => 42 ];
+		$sorted  = [ 'meta' => [ 'a' => 1, 'b' => 2 ] ];
+
+		$this->operation->target        = $current;
+		$this->operation->planned       = new PlannedChange( $payload, $sorted );
+		$this->operation->readBackState = new TargetState( 'post:42', true, $sorted );
+
+		$result = $this->apply(
+			[
+				'payload_hash'      => $this->normalizer->fingerprint( $payload ),
+				'state_fingerprint' => ( new StateFingerprint( $this->normalizer ) )->compute( $current, $this->makeContext() ),
+			]
+		);
+
+		$this->assertSame( VerificationStatus::Verified, $result->verification );
+		$this->assertSame( [], $result->data['changed'] );
+	}
 }

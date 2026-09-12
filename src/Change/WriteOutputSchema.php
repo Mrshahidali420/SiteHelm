@@ -60,11 +60,11 @@ final class WriteOutputSchema {
 						'changed' => [
 							'type'        => 'array',
 							'items'       => [ 'type' => 'string' ],
-							'description' => 'The fields the approved plan changed.',
+							'description' => 'The fields whose stored value the write actually moved, measured against the state before it. Empty when the write stored exactly what was already there.',
 						],
 						'state'   => [
 							'type'        => 'object',
-							'description' => 'The verified persisted state of the target.',
+							'description' => 'The verified stored value of each changed field. Fields the write left as they were are not repeated here.',
 						],
 					],
 					'required'             => [ 'target', 'changed', 'state' ],
