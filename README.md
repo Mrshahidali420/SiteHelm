@@ -21,6 +21,7 @@ Turn your WordPress site into something an AI agent can operate — and somethin
 
 SiteHelm is a WordPress plugin that exposes your site as **[MCP](https://modelcontextprotocol.io/) tools**, so Claude, Claude Code, Cursor, VS Code, and any other MCP client can write content, build Elementor pages, manage media and menus, edit ACF and Meta Box fields, moderate comments, and work the SEO plugin you already run. Every change is previewed before it lands, verified after, logged, and undoable.
 
+> [!TIP]
 > **SiteHelm Pro, 30% off for the GitHub community**: use code **`GITHUB30`** at [checkout](https://checkout.freemius.com/plugin/37704/plan/62673/). It applies to the first payment and every renewal.
 
 ## What it does
