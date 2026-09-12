@@ -80,9 +80,47 @@ jobs:
       - name: Exercise the bridge against a stand-in site
         run: node tools/bridge-check.mjs
 
+  # The coverage job re-runs the whole suite with a measuring driver and takes
+  # around 20 minutes. A change that only touches Markdown cannot move line
+  # coverage, so this job looks at the diff first and lets docs-only changes
+  # through without paying for it. The fast test jobs above still run on every
+  # change, so a README count that breaks DocumentationClaimsTest is still
+  # caught. If the diff cannot be read, the answer is "code changed" and
+  # coverage runs — skipping is never the fallback.
+  changes:
+    name: Docs-only check
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.check.outputs.code }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - id: check
+        run: |
+          set -u
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            base="origin/${{ github.base_ref }}"
+          else
+            base="${{ github.event.before }}"
+          fi
+          files=$(git diff --name-only "$base"...HEAD 2>/dev/null) || files=""
+          if [ -z "$files" ]; then
+            echo "could not read the diff; treating as a code change"
+            echo "code=true" >> "$GITHUB_OUTPUT"
+          elif echo "$files" | grep -qvE '\.md$'; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "only Markdown changed; coverage will be skipped"
+            echo "code=false" >> "$GITHUB_OUTPUT"
+          fi
+
   coverage:
     name: Line coverage (>= 80%)
     runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     steps:
       - uses: actions/checkout@v4
 
