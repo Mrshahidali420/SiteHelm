@@ -9,7 +9,7 @@ Every entry names the user-visible outcome. Internal refactors, test additions, 
 documentation-only changes are not listed unless they change what an agent can do or how
 an operation behaves.
 
-## [Unreleased]
+## [0.16.0] — 2026-09-12
 
 ### Added
 
@@ -1758,6 +1758,7 @@ out of scope by design and will not be added. Code ships only through the Pro Co
 guard, and nothing SiteHelm stores ever executes during its own request. See
 [ROADMAP.md](ROADMAP.md).
 
+[0.16.0]: https://github.com/Mrshahidali420/SiteHelm/releases/tag/v0.16.0
 [0.15.0]: https://github.com/Mrshahidali420/SiteHelm/releases/tag/v0.15.0
 [0.14.0]: https://github.com/Mrshahidali420/SiteHelm/releases/tag/v0.14.0
 [0.13.0]: https://github.com/Mrshahidali420/SiteHelm/releases/tag/v0.13.0
