@@ -101,7 +101,7 @@ final class MediaAttach implements RollbackDelegate {
 					'id'     => [
 						'type'        => 'integer',
 						'minimum'     => 1,
-						'description' => 'Identifier of the media library item being attached or detached.',
+						'description' => 'Identifier of the media library item being attached or detached. Call `media-list` for the ids of the media library\'s items.',
 					],
 					'parent' => [
 						'type'        => 'integer',

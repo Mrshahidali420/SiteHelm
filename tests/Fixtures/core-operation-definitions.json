@@ -40,7 +40,7 @@
                     "id": {
                         "type": "integer",
                         "minimum": 1,
-                        "description": "Identifier of the content item to read."
+                        "description": "Identifier of the content item to read. Call `content-list` or `content-search` for the ids of this site's content items."
                     }
                 },
                 "required": [
@@ -414,7 +414,7 @@
                     "id": {
                         "type": "integer",
                         "minimum": 1,
-                        "description": "Identifier of the content item to read."
+                        "description": "Identifier of the content item to read. Call `content-list` or `content-search` for the ids of this site's content items."
                     },
                     "path": {
                         "type": "string",
@@ -578,7 +578,7 @@
                     "id": {
                         "type": "integer",
                         "minimum": 1,
-                        "description": "Identifier of the content item whose links to check."
+                        "description": "Identifier of the content item whose links to check. Call `content-list` or `content-search` for the ids of this site's content items."
                     },
                     "brokenOnly": {
                         "type": "boolean",
@@ -625,7 +625,7 @@
                     "id": {
                         "type": "integer",
                         "minimum": 1,
-                        "description": "Identifier of the content item whose public page to fetch."
+                        "description": "Identifier of the content item whose public page to fetch. Call `content-list` or `content-search` for the ids of this site's content items."
                     },
                     "includeHtml": {
                         "type": "boolean",
@@ -750,7 +750,7 @@
                     "id": {
                         "type": "integer",
                         "minimum": 1,
-                        "description": "Identifier of the content item whose public page to read."
+                        "description": "Identifier of the content item whose public page to read. Call `content-list` or `content-search` for the ids of this site's content items."
                     },
                     "selector": {
                         "type": "string",
@@ -936,7 +936,7 @@
                     "id": {
                         "type": "integer",
                         "minimum": 1,
-                        "description": "Identifier of the content item to revise."
+                        "description": "Identifier of the content item to revise. Call `content-list` or `content-search` for the ids of this site's content items."
                     },
                     "title": {
                         "type": "string",
@@ -1202,7 +1202,7 @@
                     "id": {
                         "type": "integer",
                         "minimum": 1,
-                        "description": "Identifier of the content item whose featured image is being set."
+                        "description": "Identifier of the content item whose featured image is being set. Call `content-list` or `content-search` for the ids of this site's content items."
                     },
                     "mediaId": {
                         "type": "integer",
@@ -1270,7 +1270,7 @@
                     "id": {
                         "type": "integer",
                         "minimum": 1,
-                        "description": "Identifier of the content item whose status is being changed."
+                        "description": "Identifier of the content item whose status is being changed. Call `content-list` or `content-search` for the ids of this site's content items."
                     },
                     "status": {
                         "type": "string",
@@ -1343,7 +1343,7 @@
                     "id": {
                         "type": "integer",
                         "minimum": 1,
-                        "description": "Identifier of the content item to save again."
+                        "description": "Identifier of the content item to save again. Call `content-list` or `content-search` for the ids of this site's content items."
                     }
                 },
                 "required": [
@@ -1405,7 +1405,7 @@
                     "id": {
                         "type": "integer",
                         "minimum": 1,
-                        "description": "Identifier of the content item whose custom fields are being updated."
+                        "description": "Identifier of the content item whose custom fields are being updated. Call `content-list` or `content-search` for the ids of this site's content items."
                     },
                     "meta": {
                         "type": "array",
@@ -1497,7 +1497,7 @@
                     "id": {
                         "type": "integer",
                         "minimum": 1,
-                        "description": "Identifier of the content item being recategorized."
+                        "description": "Identifier of the content item being recategorized. Call `content-list` or `content-search` for the ids of this site's content items."
                     },
                     "terms": {
                         "type": "array",
@@ -1514,7 +1514,7 @@
                                 "termIds": {
                                     "type": "array",
                                     "maxItems": 200,
-                                    "description": "Identifiers of existing terms in that taxonomy. An empty list removes them all.",
+                                    "description": "Identifiers of existing terms in that taxonomy. An empty list removes them all. `content-read` reports an item's current term ids in its `terms` map.",
                                     "items": {
                                         "type": "integer",
                                         "minimum": 1
@@ -1589,7 +1589,7 @@
                     "id": {
                         "type": "integer",
                         "minimum": 1,
-                        "description": "Identifier of the content item to move to the trash."
+                        "description": "Identifier of the content item to move to the trash. Call `content-list` or `content-search` for the ids of this site's content items."
                     }
                 },
                 "required": [
@@ -1651,7 +1651,7 @@
                     "id": {
                         "type": "integer",
                         "minimum": 1,
-                        "description": "Identifier of the content item to revise."
+                        "description": "Identifier of the content item to revise. Call `content-list` or `content-search` for the ids of this site's content items."
                     },
                     "path": {
                         "type": "string",
@@ -1895,7 +1895,7 @@
                     "id": {
                         "type": "integer",
                         "minimum": 1,
-                        "description": "Identifier of the comment whose status is being changed."
+                        "description": "Identifier of the comment whose status is being changed. Call `comment-list` for the ids of this site's comments."
                     },
                     "status": {
                         "type": "string",
@@ -1968,7 +1968,7 @@
                     "id": {
                         "type": "integer",
                         "minimum": 1,
-                        "description": "Identifier of the comment being replied to."
+                        "description": "Identifier of the comment being replied to. Call `comment-list` for the ids of this site's comments."
                     },
                     "content": {
                         "type": "string",
@@ -2037,7 +2037,7 @@
                     "id": {
                         "type": "integer",
                         "minimum": 1,
-                        "description": "Identifier of the user whose role is being changed."
+                        "description": "Identifier of the user whose role is being changed. Call `user-list` for the ids of this site's users."
                     },
                     "role": {
                         "type": "string",

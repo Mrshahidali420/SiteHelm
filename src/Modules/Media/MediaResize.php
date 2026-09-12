@@ -166,7 +166,7 @@ final class MediaResize implements RollbackDelegate {
 					'id'                   => [
 						'type'        => 'integer',
 						'minimum'     => 1,
-						'description' => 'Identifier of the media library image to bring down.',
+						'description' => 'Identifier of the media library image to bring down. Call `media-list` for the ids of the media library\'s items.',
 					],
 					self::INPUT_MAX_WIDTH  => [
 						'type'        => 'integer',

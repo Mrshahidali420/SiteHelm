@@ -88,7 +88,7 @@ final class ContentStyleCheck {
 					'id'       => [
 						'type'        => 'integer',
 						'minimum'     => 1,
-						'description' => 'Identifier of the content item whose public page to read.',
+						'description' => 'Identifier of the content item whose public page to read. Call `content-list` or `content-search` for the ids of this site\'s content items.',
 					],
 					'selector' => [
 						'type'        => 'string',

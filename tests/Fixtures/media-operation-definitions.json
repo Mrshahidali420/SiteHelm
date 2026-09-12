@@ -21,7 +21,7 @@
                     "id": {
                         "type": "integer",
                         "minimum": 1,
-                        "description": "Identifier of the media library item to read."
+                        "description": "Identifier of the media library item to read. Call `media-list` for the ids of the media library's items."
                     }
                 },
                 "required": [
@@ -271,7 +271,7 @@
                     "id": {
                         "type": "integer",
                         "minimum": 1,
-                        "description": "Identifier of the media library item whose details are being updated."
+                        "description": "Identifier of the media library item whose details are being updated. Call `media-list` for the ids of the media library's items."
                     },
                     "title": {
                         "type": "string",
@@ -353,7 +353,7 @@
                     "id": {
                         "type": "integer",
                         "minimum": 1,
-                        "description": "Identifier of the media library item being attached or detached."
+                        "description": "Identifier of the media library item being attached or detached. Call `media-list` for the ids of the media library's items."
                     },
                     "parent": {
                         "type": "integer",
@@ -700,7 +700,7 @@
                     "id": {
                         "type": "integer",
                         "minimum": 1,
-                        "description": "Identifier of the media library image to bring down."
+                        "description": "Identifier of the media library image to bring down. Call `media-list` for the ids of the media library's items."
                     },
                     "maxWidth": {
                         "type": "integer",
@@ -774,7 +774,7 @@
                     "id": {
                         "type": "integer",
                         "minimum": 1,
-                        "description": "Identifier of the media library item to delete."
+                        "description": "Identifier of the media library item to delete. Call `media-list` for the ids of the media library's items."
                     }
                 },
                 "required": [

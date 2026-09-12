@@ -98,7 +98,7 @@ final class UserRoleSet implements RollbackDelegate {
 					'id'   => [
 						'type'        => 'integer',
 						'minimum'     => 1,
-						'description' => 'Identifier of the user whose role is being changed.',
+						'description' => 'Identifier of the user whose role is being changed. Call `user-list` for the ids of this site\'s users.',
 					],
 					'role' => [
 						'type'        => 'string',

@@ -114,7 +114,7 @@ final class MenuItemsReorder implements RollbackDelegate {
 								'id'       => [
 									'type'        => 'integer',
 									'minimum'     => 1,
-									'description' => 'Identifier of the menu item to reposition.',
+									'description' => 'Identifier of the menu item to reposition. Call `menu-get` for the ids of this menu\'s items.',
 								],
 								'parent'   => [
 									'type'        => 'integer',

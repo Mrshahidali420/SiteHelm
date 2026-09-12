@@ -58,7 +58,7 @@ final class SeoTermMetadataGet {
 						],
 						'id'       => [
 							'type'        => 'integer',
-							'description' => 'The term identifier.',
+							'description' => 'Identifier of the term itself, not of a post. Term and post ids are separate sequences, so a wrong id can land on an unrelated term. `content-read` reports an item\'s term ids in its `terms` map.',
 						],
 						'provider' => [
 							'type'        => 'string',

@@ -91,7 +91,7 @@ final class CommentReply implements WriteOperation {
 					'id'      => [
 						'type'        => 'integer',
 						'minimum'     => 1,
-						'description' => 'Identifier of the comment being replied to.',
+						'description' => 'Identifier of the comment being replied to. Call `comment-list` for the ids of this site\'s comments.',
 					],
 					'content' => [
 						'type'        => 'string',

@@ -111,7 +111,7 @@ final class ContentStatusSet implements WriteOperation {
 					'id'     => [
 						'type'        => 'integer',
 						'minimum'     => 1,
-						'description' => 'Identifier of the content item whose status is being changed.',
+						'description' => 'Identifier of the content item whose status is being changed. Call `content-list` or `content-search` for the ids of this site\'s content items.',
 					],
 					'status' => [
 						'type'        => 'string',
