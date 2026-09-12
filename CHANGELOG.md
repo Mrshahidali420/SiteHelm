@@ -84,6 +84,23 @@ an operation behaves.
 
 ### Fixed
 
+- **A write's answer now reports what actually changed, and only that.** Every apply
+  answered with the full list of fields the operation had promised to set, whether they
+  moved or not, and repeated the stored value of each one. Setting one SEO field read as
+  thirteen changed fields; saving a page again read as six, when it changes nothing by
+  design; and re-saving a large page echoed the page's whole body back, which could be
+  bigger than an agent is allowed to receive. The answer now measures the stored values
+  before and after, lists only the fields that really moved, and repeats only those
+  values. A write that stored exactly what was already there answers with an empty list.
+
+- **The first-run "Connect an app" button no longer leads to a refusal.** On a brand-new
+  install, the licence library shows its own welcome screen first, and while that screen
+  waits it hides every SiteHelm page. SiteHelm's own welcome dialog still appeared on top
+  of it, and its button pointed at one of the hidden pages, so clicking it answered
+  "Sorry, you are not allowed to access this page" -- to an administrator, on the first
+  thing they clicked. The dialog now waits until that welcome screen is answered and
+  opens on the next visit to the console.
+
 - **Undoing an SEO change works again.** Every undo of an SEO change reported itself failed,
   and then threw away the correct work it had just done. The plugin puts the old values back,
   then reads them again to check they took. That check compared the two sets of values in a

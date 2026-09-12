@@ -17,6 +17,7 @@ use SiteHelm\Contracts\OperationException;
 use SiteHelm\Contracts\OperationResult;
 use SiteHelm\Contracts\SnapshotPolicy;
 use SiteHelm\Contracts\VerificationStatus;
+use SiteHelm\Registry\PayloadShape;
 use Throwable;
 
 /**
@@ -134,6 +135,9 @@ final class WriteSettlement {
 		// 'state', but a response is ephemeral and this is what an administrator
 		// reviews later. measured_after() carries the rest of that reasoning, and
 		// the not-applied refusal path measures through the same helper.
+		$measured = $this->measured_after( $planned, $after );
+		$changed  = $this->stored_changes( $planned, $current, $after );
+
 		$finished = $this->audit->finish(
 			$auditId,
 			AuditRecorder::OUTCOME_APPLIED,
@@ -141,7 +145,7 @@ final class WriteSettlement {
 			$snapshot['reference'],
 			$targetKey,
 			$current->fields,
-			$this->measured_after( $planned, $after )
+			$measured
 		);
 		if ( ! $finished ) {
 			$warnings[] = 'The audit record was created but its outcome could not be updated.';
@@ -154,8 +158,8 @@ final class WriteSettlement {
 			operationId: $definition->id,
 			data: [
 				'target'  => $targetKey,
-				'changed' => array_keys( $planned->afterFields ),
-				'state'   => $after->fields,
+				'changed' => $changed,
+				'state'   => PayloadShape::map( array_intersect_key( $measured, array_fill_keys( $changed, true ) ) ),
 			],
 			verification: [] === $outcome->adjustedFields
 				? VerificationStatus::Verified
@@ -450,6 +454,42 @@ final class WriteSettlement {
 		}
 
 		return $measured;
+	}
+	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+
+	/**
+	 * The promised fields whose stored value actually moved.
+	 *
+	 * The response's `changed` list used to name every promised key, which
+	 * over-reported on any operation that promises its whole field map: a
+	 * one-description SEO write announced thirteen changed fields, and
+	 * `content-resave` — defined as changing nothing — announced six. An agent
+	 * reads `changed` to learn what it just did, so the list must be the
+	 * measured difference, not the promise.
+	 *
+	 * Comparison goes through the canonical fingerprint, never `===`, for the
+	 * same reason WriteVerifier's does: field values are arrays as often as
+	 * scalars, and two equal maps can differ in key order alone.
+	 *
+	 * @param PlannedChange $planned The promised change.
+	 * @param TargetState   $before  The state resolved immediately before the write.
+	 * @param TargetState   $after   The persisted state.
+	 *
+	 * @return string[] The promised field names whose value moved.
+	 *
+	 * phpcs:disable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+	 */
+	private function stored_changes( PlannedChange $planned, TargetState $before, TargetState $after ): array {
+		$changed = [];
+
+		foreach ( array_keys( $planned->afterFields ) as $field ) {
+			if ( $this->normalizer->fingerprint( [ $field => $after->fields[ $field ] ?? null ] )
+				!== $this->normalizer->fingerprint( [ $field => $before->fields[ $field ] ?? null ] ) ) {
+				$changed[] = (string) $field;
+			}
+		}
+
+		return $changed;
 	}
 	// phpcs:enable WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
 
