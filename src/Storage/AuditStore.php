@@ -53,12 +53,18 @@ final class AuditStore {
 	];
 
 	/**
+	 * Out-of-retention rows deleted per opportunistic prune, so a site whose
+	 * cron never fires still converges instead of growing without bound.
+	 */
+	private const PRUNE_LIMIT = 50;
+
+	/**
 	 * The columns an audit read returns.
 	 */
 	private const READ_COLUMNS = 'id, correlation_id, actor_id, actor_login, client_id, operation_id, target_key, plan_fingerprint, outcome, summary, snapshot_id, rollback_ref, recorded_at, duration_ms';
 
 	/**
-	 * Writes one audit event.
+	 * Writes one audit event and prunes out-of-retention rows on the way through.
 	 *
 	 * @param array<string, mixed> $row The audit row to store.
 	 *
@@ -68,6 +74,8 @@ final class AuditStore {
 	 */
 	public function insert( array $row ): int {
 		global $wpdb;
+
+		$this->pruneOld( (int) $row['recorded_at'] );
 
 		$snapshot_id  = isset( $row['snapshot_id'] ) ? (int) $row['snapshot_id'] : null;
 		$rollback_ref = isset( $row['rollback_ref'] ) ? (string) $row['rollback_ref'] : null;
@@ -245,6 +253,37 @@ final class AuditStore {
 	// phpcs:enable WordPress.DB.DirectDatabaseQuery.DirectQuery
 	// phpcs:enable WordPress.DB.DirectDatabaseQuery.NoCaching
 	// phpcs:enable WordPress.DB.PreparedSQL.NotPrepared
+
+	/**
+	 * Deletes a bounded batch of rows older than the retention window.
+	 *
+	 * Bounded so a site with a long backlog pays a small fixed cost per write
+	 * instead of one giant delete; the daily cron's unbounded prune() clears
+	 * the rest.
+	 *
+	 * @param int $now The write's own timestamp.
+	 *
+	 * phpcs:disable WordPress.DB.DirectDatabaseQuery.DirectQuery
+	 * phpcs:disable WordPress.DB.DirectDatabaseQuery.NoCaching
+	 * phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+ * phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+	 */
+	private function pruneOld( int $now ): void {
+		global $wpdb;
+
+		$table = Installer::tableName( Installer::TABLE_AUDIT );
+		$wpdb->query(
+			$wpdb->prepare(
+				"DELETE FROM {$table} WHERE recorded_at < %d ORDER BY recorded_at LIMIT %d",
+				Retention::cutoff( $now ),
+				self::PRUNE_LIMIT
+			)
+		);
+	}
+	// phpcs:enable WordPress.DB.DirectDatabaseQuery.DirectQuery
+	// phpcs:enable WordPress.DB.DirectDatabaseQuery.NoCaching
+	// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 
 	/**
 	 * Deletes audit events older than the cutoff.

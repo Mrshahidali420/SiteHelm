@@ -91,6 +91,13 @@ an operation behaves.
   location map back. Both rollbacks now put back only the one entry they were recorded for
   and leave every sibling exactly as the site holds it.
 
+- **Activity and rollback records now clean themselves up on busy sites whose scheduled
+  cleanup never runs.** Old audit events and rollback snapshots were only removed by a daily
+  scheduled task. On sites where that task never fires — a common state when WP-Cron is
+  disabled or starved — both tables grew without bound. Each new activity record and each new
+  snapshot now also removes a small batch of records that are past the configured retention
+  window, so the tables converge on their own, the same way pending plans already did.
+
 - **Content writes refuse identifiers that belong to another kind of item.** WordPress stores
   media files, menu items and revisions in the same table as posts and pages, so a media
   file's id handed to a content write resolved like a page and the write went through on the

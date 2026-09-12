@@ -52,11 +52,38 @@ final class Retention {
 	 * @return int Days of retention.
 	 */
 	public function days(): int {
+		return self::resolveDays();
+	}
+
+	/**
+	 * The moment before which audit and snapshot rows are out of retention.
+	 *
+	 * Static so the stores can prune opportunistically on their own writes
+	 * without constructing a pruner; the clamped option read lives here once
+	 * rather than being copied into each store.
+	 *
+	 * @param int $now The current server-side time.
+	 *
+	 * @return int The retention cutoff timestamp.
+	 */
+	public static function cutoff( int $now ): int {
+		return $now - ( self::resolveDays() * self::SECONDS_PER_DAY );
+	}
+
+	/**
+	 * Reads and clamps the retention option.
+	 *
+	 * @return int Days of retention.
+	 *
+ * phpcs:disable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
+	 */
+	private static function resolveDays(): int {
 		$stored = get_option( self::RETENTION_OPTION, self::DEFAULT_DAYS );
 		$days   = is_numeric( $stored ) ? (int) $stored : self::DEFAULT_DAYS;
 
 		return max( self::MIN_DAYS, min( self::MAX_DAYS, $days ) );
 	}
+	// phpcs:enable WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid
 
 	/**
 	 * Prunes every owned table.
