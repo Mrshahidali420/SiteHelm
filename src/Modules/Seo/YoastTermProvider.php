@@ -28,6 +28,8 @@ namespace SiteHelm\Modules\Seo;
  */
 final class YoastTermProvider extends SeoTermProviderBase {
 
+	use SeoStoreComparison;
+
 	/** The option Yoast keeps every term's metadata in. */
 	public const OPTION = 'wpseo_taxonomy_meta';
 
@@ -178,7 +180,7 @@ final class YoastTermProvider extends SeoTermProviderBase {
 
 		$after = $this->option();
 
-		return ( $after[ $taxonomy ][ $term_id ] ?? null ) === ( [] === $term ? null : $term );
+		return $this->storeMatches( $after[ $taxonomy ][ $term_id ] ?? null, [] === $term ? null : $term );
 	}
 
 	/**
