@@ -352,6 +352,14 @@ final class AdminMenu {
 			return;
 		}
 
+		// While the licence SDK's own first-run screen is up, it deregisters
+		// every SiteHelm subpage, so the dialog's button would lead to
+		// "you are not allowed to access this page". Wait until that screen
+		// is answered; the dialog then opens on the next console visit.
+		if ( function_exists( 'sitehelm_fs' ) && sitehelm_fs()->is_activation_mode() ) {
+			return;
+		}
+
 		ConnectModal::render_if_needed();
 	}
 

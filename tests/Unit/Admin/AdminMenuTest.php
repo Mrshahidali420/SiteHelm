@@ -9,6 +9,7 @@ use SiteHelm\Admin\AdminMenu;
 use SiteHelm\Admin\ProCatalogue;
 use SiteHelm\Registry\CapabilityRegistry;
 use SiteHelm\Tests\Doubles\AdminWordPressStubs;
+use SiteHelm\Tests\Doubles\FakeWpdb;
 use SiteHelm\Tests\TestCase;
 
 /**
@@ -148,5 +149,56 @@ final class AdminMenuTest extends TestCase {
 		$this->build( ProCatalogue::STATE_ACTIVE );
 
 		$this->assertNotContains( AdminMenu::PAGE_UPGRADE, $this->slugs() );
+	}
+	/**
+	 * On a fresh install the licence SDK holds its own first-run screen and
+	 * deregisters every SiteHelm subpage while it does, so the connect
+	 * dialog's button would land on "you are not allowed to access this
+	 * page". The dialog waits its turn.
+	 */
+	public function testTheConnectDialogWaitsBehindTheLicenceSdksFirstScreen(): void {
+		Functions\when( 'get_current_screen' )->justReturn( (object) [ 'id' => 'toplevel_page_' . AdminMenu::PAGE_HOME ] );
+		Functions\when( 'sitehelm_fs' )->justReturn(
+			new class() {
+				public function is_activation_mode(): bool {
+					return true;
+				}
+			}
+		);
+
+		$this->menu()->print_connect_modal();
+
+		$this->expectOutputString( '' );
+	}
+
+	public function testTheConnectDialogOpensOnceTheLicenceSdkIsDone(): void {
+		Functions\when( 'get_current_screen' )->justReturn( (object) [ 'id' => 'toplevel_page_' . AdminMenu::PAGE_HOME ] );
+		Functions\when( 'sitehelm_fs' )->justReturn(
+			new class() {
+				public function is_activation_mode(): bool {
+					return false;
+				}
+			}
+		);
+		$GLOBALS['wpdb'] = new FakeWpdb();
+
+		$this->menu()->print_connect_modal();
+
+		$this->expectOutputRegex( '/data-sitehelm-connect-modal/' );
+	}
+
+	private function menu(): AdminMenu {
+		return new AdminMenu(
+			new CapabilityRegistry(),
+			[],
+			null,
+			null,
+			new ProCatalogue(
+				static fn(): array => [
+					'state' => ProCatalogue::STATE_ABSENT,
+					'url'   => '',
+				]
+			)
+		);
 	}
 }
