@@ -27,6 +27,8 @@ namespace SiteHelm\Modules\Seo;
  */
 final class RankMathTermProvider extends SeoTermProviderBase {
 
+	use SeoStoreComparison;
+
 	private const KEY_ROBOTS = 'rank_math_robots';
 
 	private const NOINDEX = 'noindex';
@@ -194,7 +196,7 @@ final class RankMathTermProvider extends SeoTermProviderBase {
 			}
 		}
 
-		return $this->raw_meta( $term_id ) === $meta;
+		return $this->storeMatches( $this->raw_meta( $term_id ), $meta );
 	}
 
 	/**

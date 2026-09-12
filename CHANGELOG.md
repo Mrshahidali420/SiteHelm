@@ -84,6 +84,16 @@ an operation behaves.
 
 ### Fixed
 
+- **Undoing an SEO change works again.** Every undo of an SEO change reported itself failed,
+  and then threw away the correct work it had just done. The plugin puts the old values back,
+  then reads them again to check they took. That check compared the two sets of values in a
+  way that also demanded the same ordering, and the store sorts what it keeps, so the two
+  sides were never in the same order — the check failed on values that all agreed. The undo
+  then reported a failure, and the plugin undid its own correct restore. The check now
+  compares the values and ignores the ordering. A real difference is still a difference: a
+  changed value, a changed type, or a missing key all still fail the check. This affected
+  every SEO undo — post and term metadata, on all supported SEO plugins.
+
 - **Every id an operation asks for now says where to get one.** Most operations take a
   numeric id, and only a few said which listing operation hands those ids out — an agent
   had to guess, and a guessed id can succeed on the wrong object. Every input id now names

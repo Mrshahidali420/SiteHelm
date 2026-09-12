@@ -38,6 +38,8 @@ namespace SiteHelm\Modules\Seo;
  */
 final class AioseoProvider implements SeoProvider {
 
+	use SeoStoreComparison;
+
 	/**
 	 * The table column holding each writable text field.
 	 */
@@ -309,7 +311,7 @@ final class AioseoProvider implements SeoProvider {
 			$wpdb->insert( $table, $expected );
 		}
 
-		return $this->row( $post_id ) === $expected;
+		return $this->storeMatches( $this->row( $post_id ), $expected );
 	}
 
 	/**

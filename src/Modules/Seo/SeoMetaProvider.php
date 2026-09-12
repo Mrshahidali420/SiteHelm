@@ -29,6 +29,8 @@ namespace SiteHelm\Modules\Seo;
  */
 abstract class SeoMetaProvider implements SeoProvider {
 
+	use SeoStoreComparison;
+
 	/**
 	 * Whether this plugin is acting on what it stores.
 	 *
@@ -334,7 +336,7 @@ abstract class SeoMetaProvider implements SeoProvider {
 			}
 		}
 
-		return $this->rawMeta( $post_id ) === $meta;
+		return $this->storeMatches( $this->rawMeta( $post_id ), $meta );
 	}
 
 	/**
