@@ -195,6 +195,7 @@ the survey also found and SiteHelm will not do.
 
 | # | Area | What it would give you | Priority |
 |---|---|---|---|
+| REQ-0129 | Core | **SiteHelm Hub — connect once, run every site** — a hosted hub the AI client connects to once; each site's plugin pairs with the hub, every call names the site it targets, and adding a site becomes install-and-pair instead of another connection in every client config. The safety model does not move: preview, snapshot, verification, the audit log and rollback all keep running inside each site's own plugin, and the hub stores site credentials encrypted or it does not ship. Requested by users 2026-09-14, which is what moves an item up this list — this is the next item that gets a design | should |
 | REQ-0063 | Integrations | Additional page builders (Bricks, Beaver Builder, Divi) through the same element read / write vocabulary as Elementor | could |
 | REQ-0089 | Integrations | Popular theme settings — Astra, Kadence, GeneratePress, Blocksy: read and change the customizer options those themes expose, reversibly | could |
 | REQ-0090 | Integrations | Elementor add-on packs (Essential Addons, Premium Addons, Ultimate Addons) — their widgets discoverable through the existing Elementor control-schema operations | could |
