@@ -34,3 +34,4 @@ HANDOFF-*.md
 # Scratch files for commit and PR text
 *.tmp
 sitehelm-findings.md
+mcp-publisher.exe
