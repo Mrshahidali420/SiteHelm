@@ -1,0 +1,48 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.mrshahidali420/sitehelm",
+  "title": "SiteHelm",
+  "description": "Let an AI agent run your WordPress site: every write previewed, verified and reversible.",
+  "version": "0.16.0",
+  "websiteUrl": "https://www.wpsitehelm.com/",
+  "repository": {
+    "source": "github",
+    "url": "https://github.com/Mrshahidali420/SiteHelm",
+    "id": "1310736651"
+  },
+  "icons": [
+    {
+      "src": "https://www.wpsitehelm.com/brand/icon-256.png",
+      "mimeType": "image/png",
+      "sizes": ["256x256"]
+    }
+  ],
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://{site_host}/wp-json/sitehelm/v1/mcp",
+      "headers": [
+        {
+          "name": "Authorization",
+          "description": "Basic auth built from your WordPress username and an Application Password, as \"Basic <base64 of user:app-password>\".",
+          "isRequired": true,
+          "isSecret": true,
+          "value": "{authorization}"
+        }
+      ],
+      "variables": {
+        "site_host": {
+          "description": "The host of the WordPress site SiteHelm is installed on, without a scheme. Example: example.com",
+          "isRequired": true,
+          "format": "string"
+        },
+        "authorization": {
+          "description": "Authorization header value. Create an Application Password in your WordPress profile, then base64 encode \"username:application-password\".",
+          "isRequired": true,
+          "isSecret": true,
+          "format": "string"
+        }
+      }
+    }
+  ]
+}
