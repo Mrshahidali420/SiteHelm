@@ -1,6 +1,6 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
-  "name": "io.github.mrshahidali420/sitehelm",
+  "name": "io.github.Mrshahidali420/sitehelm",
   "title": "SiteHelm",
   "description": "Let an AI agent run your WordPress site: every write previewed, verified and reversible.",
   "version": "0.16.0",
